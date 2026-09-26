@@ -56,6 +56,7 @@ describe("the site build", () => {
     assert.match(html, /^<!doctype html>/);
     assert.match(head, /<title>Grill<\/title>/);
     assert.match(head, /<meta property="og:title" content="Grill">/);
+    assert.match(head, /<link rel="canonical" href="https:\/\/letsgrill\.ai\/">/);
     assert.match(head, /<meta name="color-scheme" content="light dark">/);
     assert.match(head, /<meta name="theme-color" content="#f7f4ef" media="\(prefers-color-scheme: light\)">/);
     assert.match(head, /<meta name="theme-color" content="#161513" media="\(prefers-color-scheme: dark\)">/);
