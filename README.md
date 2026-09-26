@@ -121,7 +121,7 @@ npm run build:extension          # dist/grill.mcpb
   - `prompts/grill.md`: the same grill for any other assistant, carrying the paste route's judge prompt word for word (a test pins it);
   - `server/`: the Desktop extension's tool;
   - `scripts/judge.mjs`: the judge itself, which also runs on its own (`node scripts/judge.mjs --help`).
-- **Release:** tag `vX.Y.Z` and the release workflow publishes the extension and the skill zips.
+- **Release:** bump the version in `package.json`, `manifest.json` and `.claude-plugin/plugin.json` (a test keeps them equal), then run the release workflow. It tags that version and publishes the extension and the skill zips.
 
 ## License
 

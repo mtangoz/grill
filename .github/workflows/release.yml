@@ -1,17 +1,14 @@
 name: release
 
-# Tag vX.Y.Z to publish:
+# Releases the version in package.json. Run it by hand (nothing to type), or push the matching
+# vX.Y.Z tag. It publishes:
 # - grill.mcpb: the Claude Desktop extension (double-click to install);
 # - grill-skill.zip and weekly-review-skill.zip: for claude.ai, Customize → Skills → upload.
 on:
   push:
     tags: ["v*"]
-  # Run it by hand with a version, and the release creates that tag on the current main.
+  # By hand: no version to type, so a phone keyboard can't mistype one ("V0.1.0" failed here once).
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Version tag to create, for example v0.1.0"
-        required: true
 
 permissions:
   contents: write
@@ -56,8 +53,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ inputs.version || github.ref_name }}"
-          case "$TAG" in v[0-9]*) ;; *) echo "::error::version must look like v0.1.0, got $TAG"; exit 1 ;; esac
+          # The tag is always the version the manifests carry; a pushed tag must name that same one.
+          TAG="v$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then
+            echo "::error::pushed tag $GITHUB_REF_NAME, but package.json says $TAG. Bump the version files first."
+            exit 1
+          fi
           # Draft first, then publish: with release immutability on, a published release takes no
           # more assets, so they must all be attached before it goes public.
           gh release create "$TAG" --draft --target "$GITHUB_SHA" dist/grill.mcpb dist/grill-skill.zip dist/weekly-review-skill.zip dist/SHA256SUMS \
