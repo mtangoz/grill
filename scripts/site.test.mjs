@@ -1,5 +1,5 @@
 // The onboarding site: one source (site/page.html), published as a Claude artifact as-is and as
-// GitHub Pages through scripts/build-site.mjs. These pin what makes both work.
+// on Vercel through scripts/build-site.mjs (every push to main redeploys). These pin what makes both work.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -48,7 +48,7 @@ describe("site/page.html", () => {
   });
 });
 
-describe("the Pages build", () => {
+describe("the site build", () => {
   it("wraps the page into a full document, with its title and styles in the head", () => {
     execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
     const html = readFileSync(join(ROOT, "_site/index.html"), "utf8");

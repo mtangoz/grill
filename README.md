@@ -2,7 +2,7 @@
 
 **A second opinion on your decisions, from a different AI company than the one you think with.**
 
-**Setup guide:** [mtangoz.github.io/grill](https://mtangoz.github.io/grill)
+**Setup guide:** [grill-by-hold.vercel.app](https://grill-by-hold.vercel.app)
 
 Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, Gemini, Grok or Muse. It writes up your decision, and you check it. Then an outside judge, a model from a different company, argues the strongest case against it. It names the cheapest test that would settle each doubt, and gives a verdict.
 
