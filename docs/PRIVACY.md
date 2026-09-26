@@ -11,11 +11,17 @@
 
 ## What leaves, and only with your OK
 
-- **The subject.** When you challenge a decision, Claude writes a challenge subject and shows it to you. Only after you approve it does `scripts/judge.mjs` send it, with your key, to OpenRouter.
+- **The subject.** When you grill a decision, Claude writes it up and shows it to you. Nothing leaves until you approve it. Then it goes one of two ways:
+  - **One-click route** (the Claude Desktop extension, or the plugin in Claude Code): the judge sends it, with your key, to OpenRouter.
+  - **Paste route** (claude.ai web or phone): you paste it into another assistant yourself. That app's own data settings apply; ChatGPT, for example, may use chats for training unless you've turned that off.
 - **Zero-retention routing.** Every request asks OpenRouter to use only endpoints with a zero-data-retention policy (`provider: { zdr: true, data_collection: "deny" }`). If a model has no such endpoint, its request fails and the judge moves to the next model in its chain. It never falls back to a retaining endpoint.
 - **Processing in transit.** OpenRouter and the model provider that serves the request process the subject to answer it. That's the one exposure. Keep names, numbers and details you wouldn't share out of the subject.
-- **The report** is written to a temporary file on your machine and shown to you. Nothing is kept anywhere else.
+- **The report** comes back to your chat. The extension's temporary copy is deleted as soon as it's read.
 
 ## Your key
 
-`OPENROUTER_API_KEY` stays in your environment. The judge sends it only to OpenRouter, in the `Authorization` header. It is never logged, never written to a file, and never put in the chat.
+- **Claude Desktop:** you paste the key into the extension's install dialog. Claude Desktop masks it and stores it securely.
+- **Claude Code:** the plugin asks for it and stores it securely, or reads `OPENROUTER_API_KEY` from your environment.
+- **The paste route** uses no key.
+
+The judge sends the key only to OpenRouter, in the `Authorization` header. It is never logged, never written to a file, never returned to the chat, and never asked for in chat.

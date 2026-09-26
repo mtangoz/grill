@@ -6,7 +6,7 @@
 // all I/O (argv, files, HTTP, exit codes) and calls into this module for everything a
 // test can pin.
 //
-// WHAT THIS IS FOR. Decision Audit sends a piece of work — a plan, a proposal, a piece of
+// WHAT THIS IS FOR. Grill sends a piece of work — a plan, a proposal, a piece of
 // copy, a price, an argument — to a model from a DIFFERENT family than whichever model
 // helped produce it, and asks that model to try to break it. A model reviewing its own
 // kind of reasoning tends to re-derive the assumptions it already accepted while
@@ -785,7 +785,7 @@ export function renderJudgeReport(result) {
   } = result ?? {};
 
   const out = [];
-  out.push(`# Outside judge — ${subjectLabel}`, "");
+  out.push(`# 🔥 Grill — ${subjectLabel}`, "");
 
   if (degraded.length > 0) {
     out.push(

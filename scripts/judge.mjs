@@ -394,7 +394,7 @@ async function callLink(model) {
       headers: {
         Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
-        "X-Title": "Decision Audit",
+        "X-Title": "Grill",
       },
       body: JSON.stringify(bodyFor(model)),
       signal: AbortSignal.timeout(linkTimeoutMs),

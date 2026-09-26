@@ -1,11 +1,14 @@
 {
-  "name": "decision-audit",
+  "name": "grill",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A Claude Code plugin: a weekly decision review with an outside AI judge.",
-  "engines": { "node": ">=20" },
+  "description": "Grill: an outside AI judge for your decisions, as a Claude plugin.",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "test": "node --test scripts/*.test.mjs"
+    "test": "node --test scripts/*.test.mjs",
+    "build:extension": "node scripts/build-extension.mjs && npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb"
   }
 }

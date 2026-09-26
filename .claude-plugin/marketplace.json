@@ -1,11 +1,13 @@
 {
-  "name": "decision-audit",
-  "owner": { "name": "Decision Audit" },
+  "name": "grill",
+  "owner": {
+    "name": "Grill"
+  },
   "plugins": [
     {
-      "name": "decision-audit",
+      "name": "grill",
       "source": ".",
-      "description": "A weekly decision review with an outside AI judge. Bring your own keys and connections."
+      "description": "An outside AI judge for your decisions, plus a weekly decision review. Bring your own key and connections."
     }
   ]
 }

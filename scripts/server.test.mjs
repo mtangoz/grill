@@ -1,0 +1,193 @@
+// Tests for server/index.mjs, spoken to exactly as a chat client would: JSON-RPC over stdio.
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SERVER = join(HERE, "..", "server", "index.mjs");
+const USABLE = join(HERE, "fixtures", "usable-response.json");
+const KEY = "sk-or-v1-test-key-never-echoed";
+
+/** A minimal MCP client: send lines, collect replies by id and notifications in order. */
+function connect(env) {
+  const child = spawn(process.execPath, [SERVER], {
+    env: { PATH: process.env.PATH, ...env },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const waiting = new Map();
+  const notifications = [];
+  let buffer = "";
+  let transcript = "";
+  child.stdout.on("data", (chunk) => {
+    transcript += chunk;
+    buffer += chunk;
+    let nl;
+    while ((nl = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      if (!line.trim()) continue;
+      const msg = JSON.parse(line);
+      if (msg.id !== undefined && waiting.has(msg.id)) {
+        waiting.get(msg.id)(msg);
+        waiting.delete(msg.id);
+      } else if (msg.method) notifications.push(msg);
+      else waiting.get(null)?.(msg);
+    }
+  });
+  let nextId = 1;
+  const request = (method, params) =>
+    new Promise((resolve) => {
+      const id = nextId++;
+      waiting.set(id, resolve);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    });
+  const raw = (line) =>
+    new Promise((resolve) => {
+      waiting.set(null, resolve);
+      child.stdin.write(`${line}\n`);
+    });
+  const close = () =>
+    new Promise((resolve) => {
+      child.on("close", resolve);
+      child.stdin.end();
+    });
+  return { request, raw, close, notifications, transcript: () => transcript };
+}
+
+async function initialized(env) {
+  const client = connect(env);
+  await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } });
+  client.raw.bind(null); // keep the helper shape obvious
+  return client;
+}
+
+const textOf = (res) => res.result.content.map((c) => c.text).join("\n");
+
+describe("the MCP handshake", () => {
+  it("negotiates a supported protocol, and falls back to its newest for an unknown one", async () => {
+    const a = connect({});
+    const known = await a.request("initialize", { protocolVersion: "2025-03-26", capabilities: {} });
+    assert.equal(known.result.protocolVersion, "2025-03-26");
+    assert.equal(known.result.serverInfo.name, "grill");
+    assert.ok(known.result.capabilities.tools);
+    assert.match(known.result.instructions, /OK before calling grill/);
+    await a.close();
+    const b = connect({});
+    const unknown = await b.request("initialize", { protocolVersion: "1999-01-01", capabilities: {} });
+    assert.equal(unknown.result.protocolVersion, "2025-06-18");
+    await b.close();
+  });
+
+  it("lists exactly grill and grill_result, with a required subject", async () => {
+    const c = await initialized({});
+    const res = await c.request("tools/list", {});
+    const names = res.result.tools.map((t) => t.name);
+    assert.deepEqual(names, ["grill", "grill_result"]);
+    const grill = res.result.tools[0];
+    assert.deepEqual(grill.inputSchema.required, ["subject"]);
+    assert.match(grill.description, /different company than Claude/);
+    await c.close();
+  });
+
+  it("answers ping, refuses unknown methods, and reports parse errors", async () => {
+    const c = await initialized({});
+    assert.deepEqual((await c.request("ping", {})).result, {});
+    assert.equal((await c.request("resources/list", {})).error.code, -32601);
+    assert.equal((await c.raw("{not json")).error.code, -32700);
+    await c.close();
+  });
+});
+
+describe("grill without a key", () => {
+  it("returns the setup steps as an error, and starts no judge", async () => {
+    const c = await initialized({});
+    const res = await c.request("tools/call", { name: "grill", arguments: { subject: "We will raise prices." } });
+    assert.equal(res.result.isError, true);
+    assert.match(textOf(res), /openrouter\.ai\/keys/);
+    assert.match(textOf(res), /Settings → Extensions → Grill/);
+    await c.close();
+  });
+
+  it("treats an unfilled install-dialog placeholder as no key", async () => {
+    const c = await initialized({ GRILL_API_KEY: "${user_config.openrouter_api_key}" });
+    const res = await c.request("tools/call", { name: "grill", arguments: { subject: "x" } });
+    assert.equal(res.result.isError, true);
+    assert.match(textOf(res), /isn't set up yet/);
+    await c.close();
+  });
+});
+
+describe("grill input checks", () => {
+  it("refuses an empty subject, an over-long question and a malformed author", async () => {
+    const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE });
+    for (const args of [{ subject: "  " }, { subject: "s", question: "q".repeat(601) }, { subject: "s", author: "Open AI!" }]) {
+      const res = await c.request("tools/call", { name: "grill", arguments: args });
+      assert.equal(res.result.isError, true, JSON.stringify(args));
+    }
+    await c.close();
+  });
+});
+
+describe("a grill end to end (fixture, no network)", () => {
+  it("returns the report, and the key appears nowhere in anything the server wrote", async () => {
+    const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE });
+    const res = await c.request("tools/call", {
+      name: "grill",
+      arguments: { subject: "We will raise prices 20% in Q4.", question: "Which way, and on what grounds?" },
+    });
+    assert.equal(res.result.isError, false);
+    const report = textOf(res);
+    assert.match(report, /^# 🔥 Grill — \(stdin\)/);
+    assert.match(report, /Verdict:/);
+    assert.match(report, /Which way, and on what grounds\?/);
+    await c.close();
+    assert.ok(!c.transcript().includes(KEY), "the key must never be echoed");
+  });
+
+  it("hands back a job id when the judge outlasts the wait, and grill_result collects it", async () => {
+    const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_WAIT_MS: "1" });
+    const first = await c.request("tools/call", { name: "grill", arguments: { subject: "s" } });
+    const match = textOf(first).match(/job_id "([0-9a-f]{8})"/);
+    assert.ok(match, textOf(first));
+    let report = "";
+    for (let i = 0; i < 200 && !report.startsWith("# "); i++) {
+      report = textOf(await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1] } }));
+    }
+    assert.match(report, /^# 🔥 Grill/);
+    const again = await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1] } });
+    assert.equal(again.result.isError, true, "a collected job is gone");
+    await c.close();
+  });
+});
+
+describe("against a loopback OpenRouter", () => {
+  it("sends the install-dialog key as the bearer token, and sends progress while it waits", async () => {
+    const usable = readFileSync(USABLE, "utf8");
+    let seenAuth = null;
+    const fake = createServer((req, res) => {
+      seenAuth = req.headers.authorization;
+      req.resume();
+      req.on("end", () =>
+        setTimeout(() => {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(usable);
+        }, 400),
+      );
+    });
+    await new Promise((r) => fake.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${fake.address().port}/api/v1/chat/completions`;
+    const c = await initialized({ GRILL_API_KEY: KEY, OPENROUTER_API_KEY: "ignored-env-key", JUDGE_OPENROUTER_URL: url, GRILL_PROGRESS_MS: "100" });
+    const res = await c.request("tools/call", { name: "grill", arguments: { subject: "s" }, _meta: { progressToken: "tok-1" } });
+    assert.equal(res.result.isError, false, textOf(res));
+    assert.equal(seenAuth, `Bearer ${KEY}`);
+    const progress = c.notifications.filter((n) => n.method === "notifications/progress");
+    assert.ok(progress.length >= 1, "at least one progress notification while waiting");
+    assert.equal(progress[0].params.progressToken, "tok-1");
+    await c.close();
+    fake.close();
+  });
+});

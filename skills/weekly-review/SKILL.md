@@ -12,12 +12,13 @@ The user spends **at most 30 minutes**. You do the reading and writing; the user
 ## First run: set up once
 
 1. **Where the log lives.** Ask once, then remember it in the log itself.
-   - **A local folder of markdown files.** The default in Claude Code: `~/decision-log/`, one file per record, and Obsidian can open it.
-   - **A Notion database**, through a Notion connector.
-   - **A Google Drive folder with one doc per record**, through a Drive connector.
-2. **Which sources to read.** Use only what the user has connected; see `docs/CONNECTIONS.md` in this plugin. Never ask for credentials; the user connects their own tools.
-3. **The outside judge** needs the user's own `OPENROUTER_API_KEY` in the environment; see the `challenge` skill. Without it, the review still runs, and the challenge subject is left ready for later.
-4. **The review day.** If the client supports scheduled tasks, offer to schedule it weekly. Otherwise suggest a recurring 30-minute calendar event, "Decision review".
+   - **In Claude chat** (web, desktop or phone):
+     - a **Google Drive folder** with one doc per record, or a **Notion database**, through the user's connectors (Customize → Connectors);
+     - with neither, give each record back as a block the user saves in their own notes.
+   - **In Claude Code:** a local folder, `~/decision-log/` by default, one markdown file per record. Obsidian can open it.
+2. **Which sources to read.** Use only what the user has connected. If nothing is, say which connectors would help (Customize → Connectors), and run on what they tell you. Never ask for passwords or keys.
+3. **The outside judge:** see the `grill` skill. It works with the Grill extension or plugin tool, or by pasting into another assistant, so a review never waits on setup.
+4. **The review day.** If the client can schedule tasks, offer to run it weekly. Otherwise suggest a recurring 30-minute calendar event, "Decision review".
 
 ## What to read
 
@@ -71,7 +72,7 @@ For each NEW decision without one, ask: *"What do you expect to happen, by when,
 
 ## Step 4: Challenge
 
-For each decision marked for a challenge, use the `challenge` skill. It writes the subject, gets the user's OK, runs the outside judge, and relays the result.
+For each decision marked for a challenge, use the `grill` skill. It writes the subject, gets the user's OK, sends it to the outside judge, and relays the result.
 
 **Never present your own critique as the outside judge's.** You are the model the user has been thinking with, so your critique is correlated with theirs. If asked for your view, label it "same-model critique".
 

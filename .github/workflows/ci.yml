@@ -21,6 +21,12 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Manifests parse
         run: |
-          node -e 'for (const f of [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"]) JSON.parse(require("fs").readFileSync(f, "utf8"))'
+          node -e 'for (const f of [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", ".mcp.json", "manifest.json"]) JSON.parse(require("fs").readFileSync(f, "utf8"))'
       - name: Tests (no network, no key)
         run: node --test scripts/*.test.mjs
+      - name: The Desktop extension builds and its manifest validates
+        if: matrix.node == 22
+        run: |
+          node scripts/build-extension.mjs
+          npx -y @anthropic-ai/mcpb validate dist/extension/manifest.json
+          npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb

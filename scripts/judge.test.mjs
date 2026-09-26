@@ -80,7 +80,7 @@ describe("a usable tool call", () => {
     assert.equal(result.subjectLabel, subjectPath);
 
     const report = readFileSync(outPath, "utf8");
-    assert.match(report, /^# Outside judge —/);
+    assert.match(report, /^# 🔥 Grill —/);
     assert.match(report, /WEAK/);
   });
 });
@@ -251,7 +251,7 @@ describe("every request", () => {
     assert.ok(capturedBody, "the server never received a request");
     assert.equal(capturedBody.provider.zdr, true);
     assert.equal(capturedBody.provider.data_collection, "deny");
-    assert.equal(capturedHeaders["x-title"], "Decision Audit");
+    assert.equal(capturedHeaders["x-title"], "Grill");
     assert.equal(capturedHeaders["http-referer"], undefined);
   });
 });

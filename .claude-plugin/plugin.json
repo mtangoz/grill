@@ -1,9 +1,27 @@
 {
-  "name": "decision-audit",
+  "name": "grill",
   "version": "0.1.0",
-  "description": "A weekly decision review: decisions pulled from your own notes, one challenged by an outside AI judge, and forecasts you get scored on. Bring your own keys and connections.",
-  "author": { "name": "Decision Audit" },
-  "homepage": "https://github.com/mtangoz/decision-audit",
-  "repository": "https://github.com/mtangoz/decision-audit",
-  "keywords": ["decisions", "decision-log", "forecasting", "calibration", "founders", "red-team", "review"]
+  "description": "Grill your decisions: an outside AI judge, from a different company than your chat assistant, argues the strongest case against a decision or forecast and names the tests that would settle it. Includes a weekly decision review. Bring your own OpenRouter key and connections.",
+  "author": {
+    "name": "Grill"
+  },
+  "homepage": "https://github.com/mtangoz/grill",
+  "repository": "https://github.com/mtangoz/grill",
+  "keywords": [
+    "decisions",
+    "decision-log",
+    "forecasting",
+    "calibration",
+    "founders",
+    "red-team",
+    "review"
+  ],
+  "userConfig": {
+    "openrouter_api_key": {
+      "type": "string",
+      "title": "OpenRouter API key",
+      "description": "Create one at https://openrouter.ai/keys and add a few dollars of credit; a grill costs about a cent. It is masked, stored securely, and sent only to OpenRouter. Or leave it empty if OPENROUTER_API_KEY is already set in your environment.",
+      "sensitive": true
+    }
+  }
 }

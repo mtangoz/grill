@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "grill": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/server/index.mjs"
+      ],
+      "env": {
+        "GRILL_API_KEY": "${user_config.openrouter_api_key}"
+      }
+    }
+  }
+}

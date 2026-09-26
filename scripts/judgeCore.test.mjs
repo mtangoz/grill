@@ -353,7 +353,7 @@ describe("buildJudgeMessages", () => {
 describe("renderJudgeReport", () => {
   it("titles the report 'Outside judge', not the internal tool name", () => {
     const md = renderJudgeReport({ subjectLabel: "plan.md", verdict: "holds", challenges: [] });
-    assert.ok(md.startsWith("# Outside judge — plan.md"));
+    assert.ok(md.startsWith("# 🔥 Grill — plan.md"));
   });
 
   it("puts the degraded banner FIRST — a blind run must never read like a clean one", () => {
