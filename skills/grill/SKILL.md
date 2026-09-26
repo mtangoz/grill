@@ -56,6 +56,7 @@ Show the subject and question, and say where they will go before sending anythin
 
 ## 4. Relay the result
 
+- **Plain words, the same ones the website uses.** Say solid, solid if…, shaky or doesn't hold up for the four verdicts (holds, holds-with-conditions, weak, refuted). Call a challenge a weak spot and a falsifier a quick check. Change the words, never the substance.
 - **Verdict first,** with its one-line reason.
 - **The top challenges by severity,** each with its falsifier. Quote the judge; don't soften it or argue it into agreement.
 - **Degradation:** if the report carries a warning banner (a clipped subject, a failed provider, a judge from an excluded family), say so plainly. "The judge found nothing" and "the judge couldn't see it" must never read the same.

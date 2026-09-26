@@ -69,12 +69,14 @@
   .facts span { font-size: 0.88rem; color: var(--muted); }
 
   .report { font-family: var(--mono); font-size: 0.86rem; line-height: 1.6; border-top: 1px solid var(--ink); padding-top: 14px; margin: 0 0 2.8rem; }
-  .report p { margin: 0 0 0.6rem; max-width: 64ch; display: grid; grid-template-columns: 10ch 1fr; gap: 0 1ch; }
+  .report p { margin: 0 0 0.6rem; max-width: 64ch; display: grid; grid-template-columns: 12ch 1fr; gap: 0 1ch; }
   .report .k, .pairs th { color: var(--quiet); }
 
   h2 { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--quiet); margin: 0 0 0.9rem; }
   .note, .privacy, .pre { font-size: 0.98rem; color: var(--muted); max-width: 36rem; margin: 0 0 1rem; }
   .privacy, .pre { margin-bottom: 2.6rem; }
+  .steps { padding-left: 1.25rem; margin: 0 0 2.6rem; max-width: 36rem; color: var(--muted); }
+  .steps li { margin: 0.45rem 0; padding-left: 0.2rem; }
 
   .pairs { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 0.86rem; margin: 0 0 2.6rem; }
   .pairs th { font-weight: 400; text-align: left; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 0 8px; }
@@ -108,64 +110,73 @@
   <div class="top">
     <a class="mark" href="#top">grill</a>
     <nav aria-label="Sections">
-      <a href="#anywhere">Assistants</a>
+      <a href="#how">How it works</a>
       <a href="#privacy">Privacy</a>
       <a class="only-pre" href="mailto:hello@hold.quest?subject=Grill%20invite">Invite</a>
       <a class="only-public" href="https://github.com/mtangoz/grill">GitHub</a>
     </nav>
   </div>
 
-  <h1>Decide against the strongest case.</h1>
-  <p class="lede">Grill sends your decision to a judge from a different AI company than the one you think with. You get a verdict, the challenges that survive, and the one test that settles each.</p>
-  <p class="cta only-pre"><a class="button" href="mailto:hello@hold.quest?subject=Grill%20invite">Ask for an invite</a><span>Private pilot</span></p>
-  <p class="cta only-public"><a class="button" href="#setup">Set up</a><span>Free and open source</span></p>
+  <h1>Get a second opinion before you decide.</h1>
+  <p class="lede">The AI you chat with tends to agree with you. Grill asks a different AI to find the weak spots in your plan, then gives you one quick way to check each one. Before you commit, not after.</p>
+  <p class="cta only-pre"><a class="button" href="mailto:hello@hold.quest?subject=Grill%20invite">Ask for an invite</a><span>Early access</span></p>
+  <p class="cta only-public"><a class="button" href="#setup">Get started</a><span>Free to try</span></p>
 
-  <div class="scale" role="img" aria-label="The four verdicts: holds, holds with conditions, weak and refuted. The example below landed on weak.">
+  <div class="scale" role="img" aria-label="The four possible results: solid, solid if, shaky, and doesn't hold up. The example below came back shaky.">
     <div class="line"><i style="left:0"></i><i style="left:33.333%"></i><b style="left:66.667%"></b><i style="left:100%;margin-left:-1px"></i></div>
-    <div class="labels" aria-hidden="true"><span>Holds</span><span>With conditions</span><span class="here">Weak</span><span>Refuted</span></div>
+    <div class="labels" aria-hidden="true"><span>Solid</span><span>Solid, if…</span><span class="here">Shaky</span><span>Doesn’t hold up</span></div>
   </div>
 
   <div class="facts">
-    <div><strong>≈ 1¢</strong><span>a grill, on your own key</span></div>
-    <div><strong>0</strong><span>decisions stored by Grill</span></div>
-    <div><strong>1 prompt</strong><span>to start, in the assistant you already use</span></div>
+    <div><strong>1¢</strong><span>about a cent per check, or free by copy and paste</span></div>
+    <div><strong>0</strong><span>decisions kept by Grill. Your plans stay yours.</span></div>
+    <div><strong>Any AI</strong><span>works with ChatGPT, Claude, Gemini, Copilot, Grok and Muse</span></div>
   </div>
 
-  <div class="report" aria-label="An example report">
-    <p><span class="k">decision</span><span>Move the launch to March for team accounts</span></p>
-    <p><span class="k">verdict</span><span>weak · the case rests on teams waiting, and nothing checks that</span></p>
-    <p><span class="k">quote</span><span>“most of our waitlist is teams”</span></p>
-    <p><span class="k">test</span><span>email the waitlist: “alone or with a team?” Read the split in 48h</span></p>
+  <div class="report" aria-label="An example">
+    <p><span class="k">decision</span><span>Take the job in Denver. I’m 80% sure it’s right.</span></p>
+    <p><span class="k">result</span><span>shaky · it assumes you’ll love living there, and nothing checks that</span></p>
+    <p><span class="k">weak spot</span><span>“we’ll figure out the city once we’re there”</span></p>
+    <p><span class="k">quick check</span><span>spend a long weekend there and do the commute at rush hour</span></p>
   </div>
 
-  <h2 id="anywhere">Start from any assistant</h2>
-  <p class="note">The judge always comes from a different company than the assistant you think with.</p>
+  <h2 id="how">How it works</h2>
+  <p class="note">It’s called Grill because a good plan can take a few tough questions.</p>
+  <ol class="steps">
+    <li>Tell your AI what you’re deciding, and how sure you are.</li>
+    <li>It writes a short summary. You check it before anything is shared.</li>
+    <li>A second AI, from a different company, looks for the weak spots and suggests a quick way to check each one.</li>
+    <li>You get a simple result: solid, solid if…, shaky, or doesn’t hold up.</li>
+  </ol>
+
+  <h2 id="anywhere">Works with the AI you already use</h2>
+  <p class="note">The second opinion always comes from a different company than the AI you normally use. That’s the point: it won’t share the same blind spots.</p>
   <table class="pairs">
-    <thead><tr><th scope="col">You think with</th><th scope="col">Judge with</th></tr></thead>
+    <thead><tr><th scope="col">If you use</th><th scope="col">Get the second opinion from</th></tr></thead>
     <tbody>
       <tr><td>ChatGPT</td><td>Claude, Gemini or Grok</td></tr>
-      <tr><td>Copilot</td><td>Gemini, because Copilot can run OpenAI, Anthropic or xAI models</td></tr>
+      <tr><td>Copilot</td><td>Gemini. Copilot can use AI from several companies, so Gemini is the safe pick</td></tr>
       <tr><td>Gemini</td><td>Claude, ChatGPT or Grok</td></tr>
       <tr><td>Grok, GrokBot</td><td>Claude, ChatGPT or Gemini</td></tr>
       <tr><td>Muse</td><td>Claude, ChatGPT or Gemini</td></tr>
-      <tr><td>Claude</td><td>Grill’s one-step judge, or ChatGPT, Gemini or Grok</td></tr>
+      <tr><td>Claude</td><td>Grill’s one-click check, or ChatGPT, Gemini or Grok</td></tr>
     </tbody>
   </table>
 
-  <h2 id="setup">Set up</h2>
-  <p class="pre only-pre">Grill is in a private pilot. <a href="mailto:hello@hold.quest?subject=Grill%20invite">Ask for an invite</a> and say which assistant you use, and you’ll get what you need to start.</p>
+  <h2 id="setup">Get started</h2>
+  <p class="pre only-pre">Grill is in early access. <a href="mailto:hello@hold.quest?subject=Grill%20invite">Ask for an invite</a>, tell us which AI you use, and we’ll send you everything you need.</p>
   <dl class="only-public">
-    <dt>Any assistant</dt><dd>Paste <a href="https://github.com/mtangoz/grill/blob/main/prompts/grill.md">the Grill prompt</a> into it, and say what you’re deciding. No key needed.</dd>
-    <dt>Claude Desktop</dt><dd><a href="https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb">Download Grill</a>, double-click it, and paste a <a href="https://openrouter.ai/keys">model-router key</a>. Then each grill is one step.</dd>
-    <dt>Claude, web or phone</dt><dd>Upload <a href="https://github.com/mtangoz/grill/releases/latest/download/grill-skill.zip">the skill</a> under Customize → Skills. No key needed.</dd>
-    <dt>Claude Code</dt><dd><code>/plugin marketplace add mtangoz/grill</code>, then <code>/plugin install grill@grill</code></dd>
+    <dt>Any AI (easiest)</dt><dd>Copy <a href="https://github.com/mtangoz/grill/blob/main/prompts/grill.md">the Grill prompt</a> into it, then tell it what you’re deciding. Free.</dd>
+    <dt>Claude Desktop</dt><dd><a href="https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb">Download Grill</a>, double-click it, and paste in an <a href="https://openrouter.ai/keys">access key</a>. Each check costs about a cent, and after setup it’s one click.</dd>
+    <dt>Claude on the web or phone</dt><dd>Add <a href="https://github.com/mtangoz/grill/releases/latest/download/grill-skill.zip">the Grill skill</a> under Customize → Skills. Free.</dd>
+    <dt>For developers</dt><dd>In Claude Code: <code>/plugin marketplace add mtangoz/grill</code>, then <code>/plugin install grill@grill</code></dd>
   </dl>
 
-  <h2 id="privacy">Privacy</h2>
-  <p class="privacy">No server, no account, no tracking. Only the write-up you approve leaves. By copy and paste, it goes to the assistant you paste it into. With your own key, it goes only to zero-retention endpoints, with keys blocked and contact details masked: to the judge, and to Jev, a quality check that’s on by default. Grill tells you before each grill, and you can switch Jev off. Grill improves under the same controls, and never sees a real decision.<span class="only-public"> Details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</span></p>
+  <h2 id="privacy">Your privacy</h2>
+  <p class="privacy">Grill has no accounts and keeps nothing. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions.<span class="only-public"> The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</span></p>
 
   <div class="footer">
-    <span class="only-pre">Open source at public release</span>
+    <span class="only-pre">Opening to everyone soon</span>
     <span class="only-public">Open source · <a href="https://github.com/mtangoz/grill">GitHub</a></span>
     <span>Made at <a href="https://hold.quest">Hold</a></span>
   </div>

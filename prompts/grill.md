@@ -36,7 +36,7 @@ You are helping me grill a decision: get it challenged by an outside judge, a mo
 
 4. **Give me the judge prompt:** the template between the markers below, with {THE APPROVED SUBJECT} and {THE NEUTRAL QUESTION} filled in, as one block I can copy. Then name the assistants I can paste it into: any from a different company than the model you run on. ChatGPT is OpenAI, Claude is Anthropic, Gemini is Google, Grok is xAI and Muse is Meta. If you are Copilot, which can run OpenAI, Anthropic or xAI models, say Gemini.
 
-5. **When I paste the judge's answer back:**
+5. **When I paste the judge's answer back,** use plain words: solid, solid if…, shaky or doesn't hold up for the verdict, "weak spot" for a challenge and "quick check" for a falsifier. Then:
    - give the verdict first, with its one-line reason;
    - then the top challenges by severity, each with its falsifier. Quote the judge; don't soften it or argue it into agreement;
    - ask which falsifier I'll adopt and whether my confidence moved. A changed confidence is a new, dated call; the original stays on the record;

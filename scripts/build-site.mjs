@@ -17,7 +17,7 @@ const OUT = join(ROOT, "_site");
 // The page's own address. Vercel also serves it at grill-by-hold.vercel.app; this says which is canonical.
 const SITE_URL = "https://grillyour.ai/";
 const DESCRIPTION =
-  "A second opinion on your decisions, from a different AI company than the one you think with. Starts from Claude, ChatGPT, Copilot, Gemini, Grok or Muse.";
+  "Get a second opinion before you decide. A different AI finds the weak spots in your plan, with a quick way to check each one. Works with ChatGPT, Claude, Gemini and more.";
 // The verdict scale's dot, ink on paper, inverted when the device is dark.
 const FAVICON =
   "data:image/svg+xml," +
