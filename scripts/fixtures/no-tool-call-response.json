@@ -1,0 +1,14 @@
+{
+  "id": "gen-fixture-no-tool-call",
+  "model": "openai/gpt-5.3-codex",
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "Here is my analysis in plain prose, without calling the requested tool."
+      }
+    }
+  ],
+  "usage": { "cost": 0.004 }
+}

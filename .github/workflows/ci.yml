@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Manifests parse
+        run: |
+          node -e 'for (const f of [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"]) JSON.parse(require("fs").readFileSync(f, "utf8"))'
+      - name: Tests (no network, no key)
+        run: node --test scripts/*.test.mjs

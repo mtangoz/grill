@@ -1,0 +1,9 @@
+{
+  "name": "decision-audit",
+  "version": "0.1.0",
+  "description": "A weekly decision review: decisions pulled from your own notes, one challenged by an outside AI judge, and forecasts you get scored on. Bring your own keys and connections.",
+  "author": { "name": "Decision Audit" },
+  "homepage": "https://github.com/mtangoz/decision-audit",
+  "repository": "https://github.com/mtangoz/decision-audit",
+  "keywords": ["decisions", "decision-log", "forecasting", "calibration", "founders", "red-team", "review"]
+}

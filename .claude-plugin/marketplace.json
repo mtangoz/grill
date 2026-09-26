@@ -1,0 +1,11 @@
+{
+  "name": "decision-audit",
+  "owner": { "name": "Decision Audit" },
+  "plugins": [
+    {
+      "name": "decision-audit",
+      "source": ".",
+      "description": "A weekly decision review with an outside AI judge. Bring your own keys and connections."
+    }
+  ]
+}
