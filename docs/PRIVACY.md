@@ -1,6 +1,6 @@
 # Privacy: who can see your decision
 
-**Short version:** Grill has no account and no tracking, and never sees a decision. The only server is the small one that sells Grill Pro, and it never handles a write-up. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
+**Short version:** Grill has no account, and never sees a decision. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. The only server is the small one that sells Grill Pro, and it never handles a write-up. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
 
 ## Who sees what
 
@@ -13,6 +13,7 @@
 | **The app you paste into**, paste route | The approved write-up | That app's settings. Use its private mode, for example a Temporary Chat in ChatGPT |
 | **Jev (TypeSafe)**, quality check, on by default | The masked write-up and the judge's report | A zero-data-retention endpoint, checked weekly; the check is dropped if any other endpoint answers |
 | **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them. With Pro, also your billing details and your key's usage, as below | There is nowhere for anything else to go |
+| **This website** | An anonymous count of page views. No cookie, and nothing that identifies you | Vercel Web Analytics, on the website only. The Grill tool never loads it |
 | **Stripe**, Grill Pro only | Your email, card and billing address | Stripe's own privacy policy. Grill never sees your card |
 | **Grill's Pro server**, Grill Pro only | Your checkout and your subscription's status | It runs only when you buy and when your subscription changes. Write-ups never pass through it |
 | **Grill's router account**, Grill Pro only | Your key's usage: cost, model and time of each check, never the text | Logging is off and every request is zero-retention, account-wide |

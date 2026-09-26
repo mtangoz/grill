@@ -1,18 +1,27 @@
 /**
  * Grill Pro: the only code Grill runs on a server, and it never sees a decision.
  *
- * It does three things:
- *   1. checks a Stripe checkout session was paid;
- *   2. creates the buyer a spending-capped key on Grill's model-router account and shows it once;
- *   3. switches that key off or on when their subscription changes.
+ * It does four things:
+ *   1. starts a Stripe checkout for Grill Pro, applying the early-access coupon when one is configured;
+ *   2. checks a Stripe checkout session was paid;
+ *   3. creates the buyer a spending-capped key on Grill's model-router account and shows it once;
+ *   4. switches that key off or on when their subscription changes.
  * The buyer's write-ups still go straight from their Claude to the router, using that key.
  *
  * There is no database. Stripe is the record: each key's hash is stored on the Stripe customer
  * as its own metadata entry, so two browser tabs racing each other both leave a tracked key
  * (never an orphan the cancel path can't reach).
  *
- * Files in api/ whose names start with "_" are not deployed as functions; api/welcome.js and
- * api/stripe-webhook.js import this one. Nothing here is shipped in the Desktop extension.
+ * Files in api/ whose names start with "_" are not deployed as functions; api/checkout.js,
+ * api/welcome.js and api/stripe-webhook.js import this one. Nothing here is shipped in the
+ * Desktop extension.
+ *
+ * Early access is GRILL_PRO_COUPON: a Stripe coupon id (50% off, duration forever). Set, checkout
+ * applies it and the built site says so. Unset, or not a plain coupon id, checkout charges full
+ * price and the site does not mention the offer. No database: Stripe keeps the discount on the
+ * subscription for as long as that subscription lasts. Ending the offer is unsetting the variable
+ * and redeploying; people who already subscribed keep what they started with.
+ * GRILL_PRO_PRICE_MONTH and GRILL_PRO_PRICE_YEAR are the Stripe price ids ($9/month, $90/year).
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
@@ -23,6 +32,17 @@ export const LINK_TTL_SECONDS = 24 * 60 * 60;
 export const SIGNATURE_TOLERANCE_SECONDS = 300;
 export const CONTACT = "hello@hold.quest";
 export const DOWNLOAD_URL = "https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb";
+export const SITE_URL = "https://grillyour.ai";
+export const COUPON_ENV = "GRILL_PRO_COUPON";
+
+/** List price, and the early-access price (half). The Stripe Price objects carry the real amounts. */
+export const PLANS = Object.freeze({
+  month: { env: "GRILL_PRO_PRICE_MONTH", list: "$9", offer: "$4.50" },
+  year: { env: "GRILL_PRO_PRICE_YEAR", list: "$90", offer: "$45" },
+});
+
+const COUPON_RE = /^[A-Za-z0-9_-]{1,40}$/;
+const PRICE_RE = /^price_[A-Za-z0-9]{8,80}$/;
 
 const KEY_FIELD_PREFIX = "grill_key_"; // + the first 24 characters of the hash: Stripe keys max 40
 const LIVE_STATUSES = new Set(["active", "trialing", "past_due"]); // past_due keeps working while Stripe retries the card
@@ -36,6 +56,28 @@ export class UpstreamError extends Error {}
 export function limitUsd(env = {}) {
   const n = Number(env.GRILL_PRO_KEY_LIMIT);
   return Number.isFinite(n) && n > 0 && n <= 50 ? n : DEFAULT_LIMIT_USD;
+}
+
+/**
+ * The early-access coupon id, or "" when the offer is off.
+ * Anything that isn't a plain coupon id is treated as unset, so a bad value can't change the price.
+ */
+export function couponId(env = {}) {
+  const v = typeof env[COUPON_ENV] === "string" ? env[COUPON_ENV].trim() : "";
+  return COUPON_RE.test(v) ? v : "";
+}
+
+/** The Stripe price id for "month" or "year", or "" when that plan isn't configured. */
+export function priceId(plan, env = {}) {
+  const spec = PLANS[plan];
+  if (!spec) return "";
+  const v = typeof env[spec.env] === "string" ? env[spec.env].trim() : "";
+  return PRICE_RE.test(v) ? v : "";
+}
+
+/** Stripe must see the {CHECKOUT_SESSION_ID} braces literally; URLSearchParams would escape them. */
+function formBody(form) {
+  return new URLSearchParams(form).toString().replaceAll("%7BCHECKOUT_SESSION_ID%7D", "{CHECKOUT_SESSION_ID}");
 }
 
 /** Every key hash recorded on a Stripe customer's metadata. */
@@ -76,7 +118,7 @@ function clients(env, fetchImpl) {
       post: (path, form) =>
         call(
           `${STRIPE_API}${path}`,
-          { method: "POST", headers: { ...stripeAuth(), "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(form).toString() },
+          { method: "POST", headers: { ...stripeAuth(), "Content-Type": "application/x-www-form-urlencoded" }, body: formBody(form) },
           `Stripe POST ${path}`,
         ),
     },
@@ -87,6 +129,42 @@ function clients(env, fetchImpl) {
       remove: (hash) => call(`${ROUTER_API}/keys/${encodeURIComponent(hash)}`, { method: "DELETE", headers: routerAuth() }, "router: delete key"),
     },
   };
+}
+
+/**
+ * Start Grill Pro checkout and return Stripe's hosted page.
+ * The coupon is applied only after Stripe confirms it is 50% off with duration forever,
+ * so a mis-typed coupon can't advertise one price and charge another.
+ * @returns {Promise<{state: "invalid"|"unconfigured"|"redirect", url?: string}>}
+ */
+export async function startCheckout(plan, { env, fetch: fetchImpl }) {
+  if (!Object.hasOwn(PLANS, plan)) return { state: "invalid" };
+  const price = priceId(plan, env);
+  if (!price) return { state: "unconfigured" };
+  const { stripe } = clients(env, fetchImpl);
+  const form = {
+    mode: "subscription",
+    "line_items[0][price]": price,
+    "line_items[0][quantity]": "1",
+    success_url: `${SITE_URL}/welcome?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${SITE_URL}/#pro`,
+  };
+  const coupon = couponId(env);
+  if (coupon) {
+    const c = await stripe.get(`/v1/coupons/${encodeURIComponent(coupon)}`);
+    if (!c.ok) throw new UpstreamError(`Stripe returned ${c.status} for the coupon`);
+    const body = c.body ?? {};
+    if (body.percent_off !== 50 || body.duration !== "forever" || body.valid === false) {
+      throw new UpstreamError("the early-access coupon is not 50% off forever");
+    }
+    form["discounts[0][coupon]"] = coupon;
+  }
+  const created = await stripe.post("/v1/checkout/sessions", form);
+  const url = created.body?.url;
+  if (!created.ok || typeof url !== "string" || !/^https:\/\/checkout\.stripe\.com\//.test(url)) {
+    throw new UpstreamError(`Stripe didn't start checkout (${created.status})`);
+  }
+  return { state: "redirect", url };
 }
 
 /**
@@ -330,7 +408,30 @@ ${help}`,
   }
 }
 
-/** HTTP status for each state. */
+/** HTTP status for each welcome-page state. */
 export function statusFor(state) {
   return { ready: 200, issued: 200, already: 200, unpaid: 402, expired: 410, invalid: 400 }[state] ?? 503;
+}
+
+/** Plain page when checkout can't start. No analytics: this isn't a public marketing page. */
+export function renderCheckoutError(state) {
+  if (state === "invalid") {
+    return page(
+      "Link not recognised · Grill Pro",
+      `<h1>That link doesn’t look right.</h1>
+<p>Go back to <a href="${SITE_URL}/#pro">Grill Pro</a>, or email <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>`,
+    );
+  }
+  if (state === "unconfigured") {
+    return page(
+      "Pro isn’t ready · Grill",
+      `<h1>Grill Pro isn’t taking payment yet.</h1>
+<p>The free ways to use Grill are on <a href="${SITE_URL}/#setup">the site</a>. Questions? Email <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>`,
+    );
+  }
+  return page(
+    "Something went wrong · Grill Pro",
+    `<h1>Something went wrong on our side.</h1>
+<p>Your card hasn’t been charged. Try again from <a href="${SITE_URL}/#pro">the Pro section</a> in a minute. If it keeps happening, email <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>`,
+  );
 }

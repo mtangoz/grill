@@ -8,13 +8,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   checkSession,
+  couponId,
   DOWNLOAD_URL,
   handleEvent,
   issueKey,
   keyHashes,
   limitUsd,
+  priceId,
+  renderCheckoutError,
   renderWelcome,
   ROUTER_API,
+  startCheckout,
   statusFor,
   STRIPE_API,
   UpstreamError,
@@ -65,6 +69,76 @@ const sessionRoute = (session) => [`GET ${STRIPE_API}/v1/checkout/sessions/${SES
 const customerRoute = (metadata = {}) => [`GET ${STRIPE_API}/v1/customers/${CUSTOMER}`, { body: { id: CUSTOMER, metadata } }];
 const createRoute = (data = { hash: HASH, limit: 3, limit_reset: "monthly" }) => [`POST ${ROUTER_API}/keys`, { body: { data, key: KEY } }];
 const saveRoute = (status = 200) => [`POST ${STRIPE_API}/v1/customers/${CUSTOMER}`, { status, body: { id: CUSTOMER } }];
+
+const PRICE_ENV = { ...ENV, GRILL_PRO_PRICE_MONTH: "price_month1234", GRILL_PRO_PRICE_YEAR: "price_year12345" };
+const COUPON = { id: "early50", percent_off: 50, duration: "forever", valid: true };
+const CHECKOUT_URL = "https://checkout.stripe.com/c/pay/cs_test_a1B2c3D4e5F6g7H8i9J0";
+const couponRoute = (body = COUPON, status = 200) => [`GET ${STRIPE_API}/v1/coupons/early50`, { status, body }];
+const sessionCreateRoute = (body = { url: CHECKOUT_URL }, status = 200) => [`POST ${STRIPE_API}/v1/checkout/sessions`, { status, body }];
+
+describe("starting checkout", () => {
+  it("ignores a bad plan or a missing price, and calls no one", async () => {
+    const fetch = fakeFetch([]);
+    assert.equal((await startCheckout("lifetime", { env: PRICE_ENV, fetch })).state, "invalid");
+    assert.equal((await startCheckout("month", { env: ENV, fetch })).state, "unconfigured");
+    assert.equal(priceId("month", { GRILL_PRO_PRICE_MONTH: "price_short" }), "");
+    assert.equal(fetch.calls.length, 0);
+  });
+
+  it("charges full price when no coupon is set, and keeps the session placeholder literal", async () => {
+    const fetch = fakeFetch([sessionCreateRoute()]);
+    const out = await startCheckout("month", { env: PRICE_ENV, fetch });
+    assert.deepEqual(out, { state: "redirect", url: CHECKOUT_URL });
+    const post = fetch.calls[0];
+    const form = new URLSearchParams(post.init.body.replaceAll("{CHECKOUT_SESSION_ID}", "SESSION"));
+    assert.equal(form.get("mode"), "subscription");
+    assert.equal(form.get("line_items[0][price]"), "price_month1234");
+    assert.equal(form.get("line_items[0][quantity]"), "1");
+    assert.equal(form.get("success_url"), "https://grillyour.ai/welcome?session_id=SESSION");
+    assert.equal(form.get("cancel_url"), "https://grillyour.ai/#pro");
+    assert.equal(form.get("discounts[0][coupon]"), null);
+    assert.match(post.init.body, /session_id%3D\{CHECKOUT_SESSION_ID\}/);
+    assert.ok(!post.init.body.includes("%7BCHECKOUT_SESSION_ID%7D"));
+    assert.equal(post.init.headers.Authorization, "Bearer sk_test_fake");
+  });
+
+  it("applies a 50% forever coupon, and refuses one that isn't", async () => {
+    assert.equal(couponId({ GRILL_PRO_COUPON: " early50 " }), "early50");
+    for (const bad of ["", "  ", "has space", "a/b", "x".repeat(41)]) assert.equal(couponId({ GRILL_PRO_COUPON: bad }), "", JSON.stringify(bad));
+
+    const ok = fakeFetch([couponRoute(), sessionCreateRoute()]);
+    const out = await startCheckout("year", { env: { ...PRICE_ENV, GRILL_PRO_COUPON: "early50" }, fetch: ok });
+    assert.equal(out.url, CHECKOUT_URL);
+    const form = new URLSearchParams(ok.calls.at(-1).init.body);
+    assert.equal(form.get("line_items[0][price]"), "price_year12345");
+    assert.equal(form.get("discounts[0][coupon]"), "early50");
+
+    for (const body of [
+      { percent_off: 10, duration: "forever", valid: true },
+      { percent_off: 50, duration: "once", valid: true },
+      { percent_off: 50, duration: "forever", valid: false },
+    ]) {
+      const fetch = fakeFetch([couponRoute(body)]);
+      await assert.rejects(startCheckout("month", { env: { ...PRICE_ENV, GRILL_PRO_COUPON: "early50" }, fetch }), UpstreamError);
+      assert.ok(!fetch.calls.some((c) => c.method === "POST"), JSON.stringify(body));
+    }
+  });
+
+  it("won't redirect anywhere but Stripe's own checkout", async () => {
+    const fetch = fakeFetch([sessionCreateRoute({ url: "https://evil.example/pay" })]);
+    await assert.rejects(startCheckout("month", { env: PRICE_ENV, fetch }), UpstreamError);
+  });
+
+  it("the error pages are plain, and the welcome page does not count visits", () => {
+    for (const state of ["invalid", "unconfigured", "error"]) {
+      const html = renderCheckoutError(state);
+      assert.match(html, /<h1>[^<]+<\/h1>/, state);
+      assert.ok(!html.includes("—"), state);
+      assert.ok(!html.includes("_vercel/insights"), state);
+    }
+    assert.ok(!renderWelcome({ state: "ready" }, {}, SESSION).includes("_vercel/insights"));
+  });
+});
 
 describe("checking a checkout session", () => {
   it("refuses a malformed session id without calling anyone", async () => {
@@ -335,9 +409,46 @@ describe("the endpoints", () => {
     }
   });
 
-  it("/welcome is routed to the function, and vercel.json changes nothing else", () => {
+  it("/welcome and /checkout are routed to their functions, and the site build is what Vercel runs", () => {
     const config = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
-    assert.deepEqual(config, { rewrites: [{ source: "/welcome", destination: "/api/welcome" }] });
+    assert.deepEqual(config, {
+      buildCommand: "node scripts/build-site.mjs",
+      outputDirectory: "_site",
+      rewrites: [
+        { source: "/welcome", destination: "/api/welcome" },
+        { source: "/checkout", destination: "/api/checkout" },
+      ],
+    });
+  });
+
+  it("checkout redirects to Stripe, and a bad plan never calls anyone", async () => {
+    const saved = { fetch: globalThis.fetch, env: { ...process.env } };
+    process.env.STRIPE_SECRET_KEY = "sk_test_endpoint";
+    process.env.GRILL_PRO_PRICE_MONTH = "price_month1234";
+    delete process.env.GRILL_PRO_COUPON;
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ url: CHECKOUT_URL }), { status: 200 });
+    };
+    try {
+      const { GET } = await import("../api/checkout.js");
+      const res = await GET(new Request("https://grillyour.ai/checkout?plan=month"));
+      assert.equal(res.status, 303);
+      assert.equal(res.headers.get("location"), CHECKOUT_URL);
+      assert.equal(res.headers.get("cache-control"), "no-store");
+      const bad = await GET(new Request("https://grillyour.ai/checkout?plan=nope"));
+      assert.equal(bad.status, 400);
+      assert.match(await bad.text(), /doesn’t look right/);
+      assert.equal(calls, 1, "the bad plan made no Stripe call");
+    } finally {
+      globalThis.fetch = saved.fetch;
+      for (const [k, v] of Object.entries(saved.env)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      for (const k of Object.keys(process.env)) if (!(k in saved.env)) delete process.env[k];
+    }
   });
 
   it("none of this ships in the Desktop extension", () => {

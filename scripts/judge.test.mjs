@@ -91,7 +91,7 @@ describe("a usable tool call", () => {
 
     const report = readFileSync(outPath, "utf8");
     assert.match(report, /^# 🔥 Grill —/);
-    assert.match(report, /WEAK/);
+    assert.match(report, /\*\*Verdict: shaky\*\*/);
   });
 });
 
@@ -416,7 +416,7 @@ describe("--check: the Jev quality check", () => {
     assert.equal(r.result.challenges.length, 1);
     assert.deepEqual(r.result.degraded, []);
     assert.match(r.result.quality.unavailable, /returned 500: upstream exploded/);
-    assert.match(r.report, /Verdict: 🟠 WEAK/);
+    assert.match(r.report, /Verdict: shaky/);
     assert.match(r.report, /quality check unavailable: OpenRouter's decisions endpoint returned 500: upstream exploded/);
     assert.doesNotMatch(r.report, /DEGRADED RUN/);
     assert.match(r.stderr, /quality check unavailable/);

@@ -89,14 +89,12 @@
   dd { margin: 0; color: var(--muted); }
 
   .footer { font-size: 0.88rem; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 1.1rem; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-
-  /* Until the first release there is nothing to download, so the page offers an invite instead.
-     Removing the "prerelease" class from <main> is the whole switch. */
-  .prerelease .only-public { display: none; }
-  main:not(.prerelease) .only-pre { display: none; }
-  /* Pro shows only once there's a release to download AND payment links: data-pro on <main>. */
-  .prerelease .only-pro, main:not([data-pro]) .only-pro { display: none; }
   .small { font-size: 0.9rem; color: var(--quiet); }
+
+  /* Early access is a build-time switch. scripts/build-site.mjs adds data-offer to <main>
+     when GRILL_PRO_COUPON is set, and removes it when the variable is unset. */
+  main:not([data-offer]) .offer { display: none; }
+  main[data-offer] .no-offer { display: none; }
 
   @media (max-width: 560px) {
     main { padding-top: 1.6rem; }
@@ -109,21 +107,29 @@
   }
 </style>
 
-<main class="prerelease" id="top">
+<main id="top">
   <div class="top">
     <a class="mark" href="#top">grill</a>
     <nav aria-label="Sections">
+      <a href="#setup">Get started</a>
       <a href="#how">How it works</a>
       <a href="#privacy">Privacy</a>
-      <a class="only-pre" href="mailto:hello@hold.quest?subject=Grill%20invite">Invite</a>
-      <a class="only-public" href="https://github.com/mtangoz/grill">GitHub</a>
+      <a href="https://github.com/mtangoz/grill">GitHub</a>
     </nav>
   </div>
 
   <h1>Get a second opinion before you decide.</h1>
   <p class="lede">The AI you chat with tends to agree with you. Grill asks a different AI to find the weak spots in your plan, then gives you one quick way to check each one. Before you commit, not after.</p>
-  <p class="cta only-pre"><a class="button" href="mailto:hello@hold.quest?subject=Grill%20invite">Ask for an invite</a><span>Early access</span></p>
-  <p class="cta only-public"><a class="button" href="#setup">Get started</a><span>Free to try</span></p>
+  <p class="cta"><a class="button" href="#setup">Get started</a><span>Free, with the AI you already use</span></p>
+
+  <h2 id="setup">Get started</h2>
+  <p class="note">Four free ways in. The same steps are in the <a href="https://github.com/mtangoz/grill#set-up">README</a>.</p>
+  <dl>
+    <dt>Any AI (easiest)</dt><dd>Copy <a href="https://github.com/mtangoz/grill/blob/main/prompts/grill.md">the Grill prompt</a> into ChatGPT, Copilot, Gemini, Grok or Muse, then tell it what you’re deciding. Free.</dd>
+    <dt>Claude on the web or phone</dt><dd>Add <a href="https://github.com/mtangoz/grill/releases/latest/download/grill-skill.zip">the Grill skill</a> under Customize → Skills. Free.</dd>
+    <dt>Claude Desktop</dt><dd><a href="https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb">Download Grill</a>, double-click it, and paste in your own <a href="https://openrouter.ai/keys">OpenRouter key</a>. Each check costs about a cent, and after setup it’s one click.</dd>
+    <dt>Claude Code</dt><dd><code>/plugin marketplace add mtangoz/grill</code>, then <code>/plugin install grill@grill</code></dd>
+  </dl>
 
   <div class="scale" role="img" aria-label="The four possible results: solid, solid if, shaky, and doesn't hold up. The example below came back shaky.">
     <div class="line"><i style="left:0"></i><i style="left:33.333%"></i><b style="left:66.667%"></b><i style="left:100%;margin-left:-1px"></i></div>
@@ -166,28 +172,20 @@
     </tbody>
   </table>
 
-  <h2 id="setup">Get started</h2>
-  <p class="pre only-pre">Grill is in early access. <a href="mailto:hello@hold.quest?subject=Grill%20invite">Ask for an invite</a>, tell us which AI you use, and we’ll send you everything you need.</p>
-  <dl class="only-public">
-    <dt>Any AI (easiest)</dt><dd>Copy <a href="https://github.com/mtangoz/grill/blob/main/prompts/grill.md">the Grill prompt</a> into it, then tell it what you’re deciding. Free.</dd>
-    <dt>Claude Desktop</dt><dd><a href="https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb">Download Grill</a>, double-click it, and paste in an <a href="https://openrouter.ai/keys">access key</a>. Each check costs about a cent, and after setup it’s one click.</dd>
-    <dt>Claude on the web or phone</dt><dd>Add <a href="https://github.com/mtangoz/grill/releases/latest/download/grill-skill.zip">the Grill skill</a> under Customize → Skills. Free.</dd>
-    <dt>For developers</dt><dd>In Claude Code: <code>/plugin marketplace add mtangoz/grill</code>, then <code>/plugin install grill@grill</code></dd>
-  </dl>
+  <h2 id="privacy">Your privacy</h2>
+  <p class="privacy">Grill has no accounts and keeps nothing. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions. Pro adds billing through Stripe: we see your email and your key’s usage, never what you decide. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</p>
 
-  <section class="only-pro">
-    <h2 id="pro">Rather not set anything up?</h2>
-    <p class="note">Grill Pro is $9 a month. We handle the AI account behind the one-click check, so there’s nothing to sign up for and no credit to top up. You pay, paste one key into Claude Desktop, and you’re done. Cancel anytime.</p>
-    <p class="cta"><a class="button" href="#pro">Get Pro · $9 a month</a><a href="#pro">or $90 a year</a></p>
-    <p class="small">Works in Claude Desktop and Claude Code. The free options stay free. <a href="/terms/">Terms</a></p>
+  <section id="pro">
+    <h2>Rather not manage a key?</h2>
+    <p class="note no-offer">Grill Pro is $9 a month, or $90 a year. It’s optional: for people who’d rather not manage a key. We handle the AI account behind the one-click check, so there’s nothing to sign up for and no credit to top up. You pay, paste one key into Claude Desktop, and you’re done. Cancel anytime.</p>
+    <p class="note offer">Early access: 50% off Pro for life. That’s $4.50 a month, or $45 a year, instead of $9 or $90. We handle the AI account behind the one-click check, so there’s nothing to sign up for and no credit to top up. You pay, paste one key into Claude Desktop, and you’re done. The lower price lasts as long as you keep that subscription. Cancel anytime.</p>
+    <p class="cta no-offer"><a class="button" href="https://grillyour.ai/checkout?plan=month">Get Pro · $9 a month</a><a href="https://grillyour.ai/checkout?plan=year">or $90 a year</a></p>
+    <p class="cta offer"><a class="button" href="https://grillyour.ai/checkout?plan=month">Get Pro · $4.50 a month</a><a href="https://grillyour.ai/checkout?plan=year">or $45 a year</a></p>
+    <p class="small">Optional. Works in Claude Desktop and Claude Code. The free ways above stay free. <a href="/terms/">Terms</a></p>
   </section>
 
-  <h2 id="privacy">Your privacy</h2>
-  <p class="privacy">Grill has no accounts and keeps nothing. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions.<span class="only-pro"> Pro adds billing through Stripe: we see your email and your key’s usage, never what you decide.</span><span class="only-public"> The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</span></p>
-
   <div class="footer">
-    <span class="only-pre">Opening to everyone soon</span>
-    <span class="only-public">Open source · <a href="https://github.com/mtangoz/grill">GitHub</a></span>
+    <span>Open source · <a href="https://github.com/mtangoz/grill">GitHub</a></span>
     <span>Made at <a href="https://hold.quest">Hold</a></span>
   </div>
 </main>

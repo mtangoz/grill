@@ -87,7 +87,7 @@ const CHECK_NOTE = checkEnabled()
 
 const DESCRIPTION = [
   "Send a decision, plan or forecast to an outside AI judge: a model from a different company than Claude.",
-  "It writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict (holds, holds-with-conditions, weak or refuted).",
+  "It writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict (solid, solid if, shaky, or doesn't hold up).",
   "Before calling: write the subject, meaning the decision, the options, the reasons, the prediction and confidence exactly as the user gave them, and the strongest case against. Show it to the user, and call only after they approve, because it leaves their machine for a model router (zero-data-retention endpoints only).",
   CHECK_NOTE,
   "Costs about a cent on the user's own key and usually takes 1–3 minutes. If the result is a job id, call grill_result with it.",
