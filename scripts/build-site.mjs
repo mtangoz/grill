@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "_site");
 // The page's own address. Vercel also serves it at grill-by-hold.vercel.app; this says which is canonical.
-const SITE_URL = "https://letsgrill.ai/";
+const SITE_URL = "https://grillyour.ai/";
 const DESCRIPTION =
   "A second opinion on your decisions, from a different AI company than the one you think with. Starts from Claude, ChatGPT, Copilot, Gemini, Grok or Muse.";
 // The verdict scale's dot, ink on paper, inverted when the device is dark.
