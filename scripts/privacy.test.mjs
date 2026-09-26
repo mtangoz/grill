@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeMasked, redactSensitive } from "./judgeCore.mjs";
+import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const USABLE = readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8");
@@ -123,8 +124,8 @@ describe("the code users install can talk to one place: OpenRouter", () => {
   const build = readFileSync(join(ROOT, "scripts/build-extension.mjs"), "utf8");
   const shipped = JSON.parse(build.match(/const FILES = (\[[^\]]+\])/)[1]).filter((f) => f.endsWith(".mjs"));
 
-  it("ships the server and the judge, and nothing else runnable", () => {
-    assert.deepEqual(shipped.sort(), ["scripts/judge.mjs", "scripts/judgeCore.mjs", "server/index.mjs"]);
+  it("ships the server, the judge and the check's pure core, and nothing else runnable", () => {
+    assert.deepEqual(shipped.sort(), ["scripts/checkCore.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "server/index.mjs"]);
   });
 
   it("imports only Node built-ins and its own files: no third-party code at all", () => {
@@ -149,10 +150,111 @@ describe("the code users install can talk to one place: OpenRouter", () => {
     assert.equal(fetches, 1);
   });
 
-  it("that one fetch targets OpenRouter, or loopback in tests, and nothing else", () => {
+  it("that one fetch can reach only the two OpenRouter endpoints, or loopback in tests, and nothing else", () => {
     const judge = readFileSync(join(ROOT, "scripts/judge.mjs"), "utf8");
-    assert.match(judge, /const OPENROUTER_DEFAULT_URL = "https:\/\/openrouter\.ai\/api\/v1\/chat\/completions";/);
-    assert.match(judge, /fetch\(OPENROUTER_URL,/);
-    assert.match(judge, /LOOPBACK_HOSTS/);
+
+    // The two destinations, each spelled out exactly once.
+    assert.match(judge, /^const OPENROUTER_DEFAULT_URL = "https:\/\/openrouter\.ai\/api\/v1\/chat\/completions";$/m);
+    assert.match(judge, /^const DECISIONS_DEFAULT_URL = "https:\/\/openrouter\.ai\/api\/alpha\/decisions";$/m);
+
+    // Each reaches the code only through the loopback guard, assigned once.
+    assert.match(judge, /^const OPENROUTER_URL = resolveEndpoint\("JUDGE_OPENROUTER_URL", process\.env\.JUDGE_OPENROUTER_URL, OPENROUTER_DEFAULT_URL\);$/m);
+    assert.match(judge, /^const DECISIONS_URL = resolveEndpoint\("JUDGE_DECISIONS_URL", process\.env\.JUDGE_DECISIONS_URL, DECISIONS_DEFAULT_URL\);$/m);
+    assert.equal((judge.match(/\bOPENROUTER_URL =/g) ?? []).length, 1);
+    assert.equal((judge.match(/\bDECISIONS_URL =/g) ?? []).length, 1);
+    assert.match(judge, /if \(!LOOPBACK_HOSTS\.has\(host\)\)/);
+
+    // The one fetch takes its URL from its helper's parameter, and follows no redirect...
+    assert.deepEqual([...judge.matchAll(/\bfetch\(([^,]+),/g)].map((m) => m[1]), ["url"]);
+    assert.match(judge, /^async function postJson\(url, body, timeoutMs\) \{$/m);
+    assert.match(judge, /redirect: "error",/);
+
+    // ...and every call of that helper passes one of the two resolved endpoints: nothing else.
+    const firstArgs = [...judge.matchAll(/\bpostJson\(([^,)]*)/g)].map((m) => m[1].trim());
+    assert.deepEqual(firstArgs.sort(), ["DECISIONS_URL", "OPENROUTER_URL", "url"]);
+
+    // Any other URL in the file is prose, in a comment, never something a request could use.
+    for (const line of judge.split("\n").filter((l) => /https?:\/\//.test(l))) {
+      const code = line.trim();
+      const isDestination = code.startsWith("const OPENROUTER_DEFAULT_URL = ") || code.startsWith("const DECISIONS_DEFAULT_URL = ");
+      assert.ok(isDestination || /^(\*|\/\/|\/\*\*)/.test(code), `a URL outside a comment: ${code}`);
+    }
+    for (const f of ["scripts/judgeCore.mjs", "scripts/checkCore.mjs"]) {
+      assert.doesNotMatch(readFileSync(join(ROOT, f), "utf8"), /https?:\/\//, `${f} names a URL`);
+    }
+  });
+});
+
+describe("the quality check is a second destination, and nothing more", () => {
+  it("follows no redirect on either path, so the write-up never reaches a host the code did not name", async () => {
+    let sinkHits = 0;
+    const sink = createServer((req, res) => {
+      sinkHits += 1;
+      req.resume();
+      res.end("{}");
+    });
+    await new Promise((r) => sink.listen(0, "127.0.0.1", r));
+    const elsewhere = `http://127.0.0.1:${sink.address().port}/collect`;
+
+    const run = async (fake) => {
+      try {
+        const child = spawn(process.execPath, [join(ROOT, "scripts/judge.mjs"), "--check", "--json"], {
+          env: { PATH: process.env.PATH, OPENROUTER_API_KEY: "test-key-loopback-only", ...fake.env },
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        let stdout = "";
+        child.stdout.on("data", (d) => (stdout += d));
+        child.stderr.resume();
+        child.stdin.end("Decision: raise prices 20% in Q4.");
+        const code = await new Promise((r) => child.on("close", r));
+        return { code, result: JSON.parse(stdout) };
+      } finally {
+        await fake.close();
+      }
+    };
+
+    // Closed in `finally`: an open server keeps this file's process alive, so a failing
+    // assertion would otherwise hang the suite instead of failing it.
+    try {
+      // The check's path redirects: the check is unavailable, the grill is intact.
+      const a = await run(await startFakeOpenRouter({ decisions: () => ({ redirect: elsewhere }) }));
+      assert.equal(a.code, 0);
+      assert.equal(a.result.verdict, "weak");
+      assert.match(a.result.quality.unavailable, /unexpected redirect/);
+
+      // The judge's path redirects: every link fails, degraded, and the check sends nothing.
+      const b = await run(await startFakeOpenRouter({ chat: () => ({ redirect: elsewhere }) }));
+      assert.equal(b.code, 0);
+      assert.equal(b.result.verdict, null);
+      assert.ok(b.result.degraded.some((d) => /no response from OpenRouter/.test(d)));
+    } finally {
+      sink.closeAllConnections?.();
+      await new Promise((r) => sink.close(r));
+    }
+    assert.equal(sinkHits, 0, "a redirect target received a request");
+  });
+
+  it("refuses a --check-flaw text that holds a key: exit 1, and neither destination receives anything", async () => {
+    const fake = await startFakeOpenRouter();
+    let code;
+    let stderr = "";
+    try {
+      const child = spawn(
+        process.execPath,
+        [join(ROOT, "scripts/judge.mjs"), "--check", "--check-flaw", "leaks sk-or-v1-0123456789abcdef0123456789abcdef"],
+        { env: { PATH: process.env.PATH, OPENROUTER_API_KEY: "test-key-loopback-only", ...fake.env }, stdio: ["pipe", "pipe", "pipe"] },
+      );
+      child.stderr.on("data", (d) => (stderr += d));
+      child.stdout.resume();
+      child.stdin.end("Decision: raise prices.");
+      code = await new Promise((r) => child.on("close", r));
+    } finally {
+      await fake.close();
+    }
+
+    assert.equal(code, 1);
+    assert.match(stderr, /Nothing was sent/);
+    assert.ok(!stderr.includes("0123456789abcdef"), "the error never echoes the secret");
+    assert.equal(fake.seen.chat.length + fake.seen.decisions.length, 0);
   });
 });

@@ -2,6 +2,8 @@
 
 **A second opinion on your decisions, from an AI that isn't Claude.**
 
+**Setup guide:** [mtangoz.github.io/grill](https://mtangoz.github.io/grill)
+
 Say **"grill this"** in any Claude chat. Claude writes up your decision, and you check it. Then an outside judge, a model from a different company, argues the strongest case against it. It names the cheapest test that would settle each doubt, and gives a verdict.
 
 > **Verdict: 🟠 WEAK.** The plan assumes customers stay at the new price, and nothing in it tests that.
@@ -79,6 +81,10 @@ Every change must still pass the checks. See [LEARNING.md](LEARNING.md).
 Claude helped you think it through, so its critique shares your blind spots. A judge from another company doesn't. Grill keeps Claude models out of the judging, and tells you if a run ever lands on one anyway.
 
 The judge must argue your side before it attacks, quote the words it targets, and give every challenge a test that would settle it. A verdict of "holds" with no challenges is a real answer; it's told a made-up objection is worse than none.
+
+**Quality checks:**
+- **Local, always on:** Grill checks every quote a challenge attacks against your write-up, and flags any it can't find.
+- **Optional:** Jev, a decision model from TypeSafe, scores whether each falsifier is a real test and whether the verdict fits. Turn it on in Grill's settings; it adds about $0.0002 a grill.
 
 ## If something's off
 

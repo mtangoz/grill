@@ -14,6 +14,8 @@
 //
 // Zero dependencies. Node >= 20. ESM throughout.
 
+import { GOOD_NOUL, PLANTED_FLAW_QUESTION } from "./checkCore.mjs";
+
 /** Severities ranked so "no more severe than X" is a numeric comparison. Mirrors judgeCore's SEVERITIES. */
 const SEVERITY_RANK = Object.freeze({ minor: 0, moderate: 1, serious: 2, fatal: 3 });
 
@@ -22,6 +24,36 @@ const CAUGHT_SEVERITIES = new Set(["fatal", "serious", "moderate"]);
 
 function lower(v) {
   return typeof v === "string" ? v.toLowerCase() : "";
+}
+
+function count(v) {
+  return Number.isInteger(v) && v >= 0 ? v : 0;
+}
+
+/**
+ * The numbers from judge.mjs's local quote check, or null. Counts only: the missing indexes
+ * point into challenge text this module never carries.
+ */
+function groundingOf(r) {
+  const g = r.grounding;
+  if (!g || typeof g !== "object" || !Number.isInteger(g.checked)) return null;
+  return { checked: count(g.checked), found: Math.min(count(g.found), count(g.checked)) };
+}
+
+/**
+ * The numbers from the Jev check, or null when it did not run or came back unavailable. Counts
+ * and probabilities only — never its flags or its `unavailable` reason, which can carry an error
+ * body, and an eval summary is written to be posted publicly.
+ */
+function qualityOf(r) {
+  const q = r.quality;
+  if (!q || typeof q !== "object" || typeof q.unavailable === "string") return null;
+  const pair = (p) => ({ n: count(p?.n), good: Math.min(count(p?.good), count(p?.n)) });
+  return {
+    concrete: pair(q.concrete),
+    engages: pair(q.engages),
+    verdictFits: typeof q.verdictFits === "number" ? q.verdictFits : null,
+  };
 }
 
 /**
@@ -73,6 +105,16 @@ export function scoreCase(caseDef, result) {
     }
   }
 
+  // THE SEMANTIC CATCH, beside the phrase match above and never instead of it. Jev was asked
+  // whether any challenge identifies the case's planted flaw in the case's own words, which sees
+  // a catch the phrase match misses when the judge quotes different words. Informational only:
+  // the phrase match stays the gate, because it needs no second model to be right.
+  let semanticCaught = null;
+  if (kind === "flawed" || kind === "loaded") {
+    const p = r.quality && typeof r.quality === "object" ? r.quality.extra?.[PLANTED_FLAW_QUESTION] : undefined;
+    semanticCaught = typeof p === "number" ? p >= GOOD_NOUL : null;
+  }
+
   let falseAlarm = null;
   if (kind === "sound") {
     if (!usable) {
@@ -102,6 +144,11 @@ export function scoreCase(caseDef, result) {
     decorrelated: usable ? (typeof r.decorrelated === "boolean" ? r.decorrelated : null) : false,
     costUsd: typeof r.costUsd === "number" ? r.costUsd : null,
     servedModel: typeof r.servedModel === "string" ? r.servedModel : null,
+    grounding: groundingOf(r),
+    quality: qualityOf(r),
+    semanticCaught,
+    // Billed even when its answers were unusable, so it counts toward the run's total either way.
+    checkCostUsd: typeof r.quality?.costUsd === "number" ? r.quality.costUsd : null,
   };
 }
 
@@ -141,16 +188,43 @@ function directionOf(key) {
 }
 
 /**
+ * good / n for an INFORMATIONAL metric, or null when there was nothing to divide. Unlike `rate`,
+ * there is no pass direction to satisfy here, so an empty basis reads "n/a" — never a flattering
+ * 1.0 that a reader could mistake for a measurement.
+ */
+function share({ good, n }) {
+  return n > 0 ? good / n : null;
+}
+
+/** Sum `{good, n}` pairs over the scores that have one. */
+function tally(list, pick) {
+  const total = { good: 0, n: 0 };
+  for (const s of list) {
+    const p = pick(s);
+    if (p && Number.isInteger(p.n) && p.n > 0) {
+      total.good += p.good;
+      total.n += p.n;
+    }
+  }
+  return total;
+}
+
+/**
  * Roll a list of `scoreCase` results (each optionally carrying a `latencyMs` eval.mjs measured
  * around the subprocess call — a timing concern that belongs to the I/O layer, not here) up
  * into the metrics table and a pass/fail check against `thresholds`.
  *
- * Returns `{metrics, regressions, checks}`. `metrics` is the flat table of actual values.
- * `regressions` is human-readable strings, one per failed threshold, suitable for a CI
+ * Returns `{metrics, regressions, checks, informational}`. `metrics` is the flat table of actual
+ * values. `regressions` is human-readable strings, one per failed threshold, suitable for a CI
  * annotation or an issue body — this is what `eval.mjs` uses to decide its exit code.
  * `checks` echoes the threshold actually applied to each metric alongside the outcome, purely
  * so `renderSummary` — which receives no separate `thresholds` argument — can render a
  * pass/fail table without recomputing or re-parsing anything.
+ *
+ * `informational` does the same for the quality metrics (grounding, and the Jev scores), with
+ * the counts behind each rate. They are NEVER gated: they are not in CHECKS, so no threshold,
+ * even one set by mistake in thresholds.json, can turn them into a regression. Twelve cases
+ * scored by a second stochastic model is a signal to read, not a bar to hold a release to.
  */
 export function summarize(scores, thresholds) {
   const list = Array.isArray(scores) ? scores : [];
@@ -160,19 +234,56 @@ export function summarize(scores, thresholds) {
   const loaded = list.filter((s) => s.kind === "loaded");
   const sound = list.filter((s) => s.kind === "sound");
 
+  const grounded = tally(list, (s) => s.grounding && { good: s.grounding.found, n: s.grounding.checked });
+  const concrete = tally(list, (s) => s.quality?.concrete);
+  const engages = tally(list, (s) => s.quality?.engages);
+  const verdictFit = tally(
+    list,
+    (s) => typeof s.quality?.verdictFits === "number" && { good: s.quality.verdictFits >= GOOD_NOUL ? 1 : 0, n: 1 },
+  );
+  // Over the flawed and loaded cases Jev actually scored, so the phrase match beside it can be
+  // counted on exactly the same cases.
+  const semanticScored = [...flawed, ...loaded].filter((s) => typeof s.semanticCaught === "boolean");
+  const semantic = { good: semanticScored.filter((s) => s.semanticCaught).length, n: semanticScored.length };
+  const phraseOnSame = semanticScored.filter((s) => s.caught === true).length;
+
   const metrics = {
     catchRate: rate(flawed.filter((s) => s.caught === true).length, flawed.length, "catchRate"),
     falseAlarmRate: rate(sound.filter((s) => s.falseAlarm === true).length, sound.length, "falseAlarmRate"),
     loadedCatchRate: rate(loaded.filter((s) => s.caught === true).length, loaded.length, "loadedCatchRate"),
     decorrelatedRate: rate(list.filter((s) => s.decorrelated === true).length, n, "decorrelatedRate"),
     schemaViolationRate: rate(list.filter((s) => (s.schemaIssues || 0) > 0).length, n, "schemaViolationRate"),
-    totalCostUsd: list.reduce((sum, s) => sum + (typeof s.costUsd === "number" ? s.costUsd : 0), 0),
+    groundedRate: share(grounded),
+    concreteRate: share(concrete),
+    engagesRate: share(engages),
+    verdictFitRate: share(verdictFit),
+    semanticCatchRate: share(semantic),
+    totalCostUsd: list.reduce(
+      (sum, s) => sum + (typeof s.costUsd === "number" ? s.costUsd : 0) + (typeof s.checkCostUsd === "number" ? s.checkCostUsd : 0),
+      0,
+    ),
     meanLatencyMs: (() => {
       const known = list.map((s) => s.latencyMs).filter((v) => typeof v === "number");
       return known.length > 0 ? known.reduce((a, b) => a + b, 0) / known.length : 0;
     })(),
     n,
   };
+
+  const notRun = "none scored (the Jev check did not run, or came back unavailable)";
+  const informational = [
+    { key: "groundedRate", label: "Quoted targets found in the write-up", ...grounded, unit: "challenges", none: "no challenges to check" },
+    { key: "concreteRate", label: "Falsifiers scored concrete and cheap (Jev)", ...concrete, unit: "challenges scored", none: notRun },
+    { key: "engagesRate", label: "Challenges that engage the write-up (Jev)", ...engages, unit: "challenges scored", none: notRun },
+    { key: "verdictFitRate", label: "Verdicts that fit their challenges (Jev)", ...verdictFit, unit: "cases scored", none: notRun },
+    {
+      key: "semanticCatchRate",
+      label: "Planted flaw identified, semantic (Jev)",
+      ...semantic,
+      unit: "flawed/loaded cases scored",
+      note: `phrase match caught ${phraseOnSame} of the same ${semantic.n}`,
+      none: notRun,
+    },
+  ].map((row) => ({ ...row, value: metrics[row.key] }));
 
   const regressions = [];
   const checks = [];
@@ -191,7 +302,7 @@ export function summarize(scores, thresholds) {
     }
   }
 
-  return { metrics, regressions, checks };
+  return { metrics, regressions, checks, informational };
 }
 
 const METRIC_LABEL = Object.freeze({
@@ -214,7 +325,7 @@ const METRIC_LABEL = Object.freeze({
  * to protect, and without ever needing to re-read a real decision to explain a miss.
  */
 export function renderSummary(summary, scores) {
-  const { metrics = {}, regressions = [], checks = [] } = summary ?? {};
+  const { metrics = {}, regressions = [], checks = [], informational = [] } = summary ?? {};
   const list = Array.isArray(scores) ? scores : [];
   const out = [];
 
@@ -233,6 +344,18 @@ export function renderSummary(summary, scores) {
   }
   out.push("");
 
+  // A separate table, under its own heading, with no Threshold or Status column: nothing here
+  // can fail a run, and a reader must never have to work out which rows do.
+  if (Array.isArray(informational) && informational.length > 0) {
+    out.push("## Quality (informational, not gated)", "", "| Metric | Value | Basis |", "| --- | --- | --- |");
+    for (const row of informational) {
+      const value = typeof row.value === "number" ? row.value.toFixed(2) : "n/a";
+      const basis = row.n > 0 ? `${row.good} of ${row.n} ${row.unit}${row.note ? `; ${row.note}` : ""}` : row.none ?? "none";
+      out.push(`| ${row.label} | ${value} | ${basis} |`);
+    }
+    out.push("");
+  }
+
   const failedCases = list.filter((s) =>
     s.kind === "flawed" || s.kind === "loaded" ? s.caught === false : s.kind === "sound" ? s.falseAlarm === true : false,
   );
@@ -248,7 +371,14 @@ export function renderSummary(summary, scores) {
         s.verdict === null
           ? "no usable result (verdict null)"
           : `verdict=${s.verdict}, challenges=[${s.challengeSummary.map((c) => `${c.severity}/${c.kind}`).join(", ")}]`;
-      out.push(`- **${s.id}** — expected ${expected}; got ${got}`);
+      // Tells a phrasing miss (Jev saw the flaw named in other words) from a real one.
+      const semantic =
+        s.semanticCaught === true
+          ? "; Jev: a challenge does identify the planted flaw"
+          : s.semanticCaught === false
+            ? "; Jev: no challenge identifies it either"
+            : "";
+      out.push(`- **${s.id}** — expected ${expected}; got ${got}${semantic}`);
     }
     out.push("");
   } else {

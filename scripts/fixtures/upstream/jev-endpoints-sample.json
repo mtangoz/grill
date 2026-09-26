@@ -1,0 +1,12 @@
+{
+  "data": {
+    "id": "typesafe/jev-1.13",
+    "endpoints": [
+      {
+        "name": "TypeSafe | typesafe/jev-1.13-20260917",
+        "provider_name": "TypeSafe",
+        "tag": "typesafe"
+      }
+    ]
+  }
+}

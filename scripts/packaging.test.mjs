@@ -35,6 +35,38 @@ describe("the manifests agree", () => {
     assert.equal(manifest.server.mcp_config.env.GRILL_API_KEY, ref);
   });
 
+  it("the user_config keys match across manifest.json, plugin.json and .mcp.json", () => {
+    // Declared: the same keys, and each the same kind of setting, in the plugin and the extension.
+    const keys = Object.keys(manifest.user_config).sort();
+    assert.deepEqual(Object.keys(plugin.userConfig).sort(), keys);
+    for (const k of keys) {
+      for (const field of ["type", "title", "sensitive", "default"]) {
+        assert.deepEqual(plugin.userConfig[k][field], manifest.user_config[k][field], `${k}.${field} differs`);
+      }
+    }
+    // Wired: both launchers hand the server the same environment, and every declared key reaches it.
+    assert.deepEqual(mcp.mcpServers.grill.env, manifest.server.mcp_config.env);
+    const referenced = (env) =>
+      Object.values(env)
+        .map((v) => String(v).match(/^\$\{user_config\.([a-z0-9_]+)\}$/)?.[1])
+        .filter(Boolean)
+        .sort();
+    assert.deepEqual(referenced(manifest.server.mcp_config.env), keys);
+    assert.deepEqual(referenced(mcp.mcpServers.grill.env), keys);
+  });
+
+  it("the Jev check is a boolean setting that defaults to OFF, says what it sends, and is wired as GRILL_CHECK", () => {
+    for (const cfg of [plugin.userConfig.jev_quality_check, manifest.user_config.jev_quality_check]) {
+      assert.equal(cfg.type, "boolean");
+      assert.equal(cfg.default, false, "a second data flow must be opted into, never out of");
+      assert.notEqual(cfg.sensitive, true);
+      assert.equal(cfg.title, "Quality check with Jev");
+      assert.match(cfg.description, /TypeSafe then also sees your masked write-up/);
+    }
+    assert.equal(manifest.server.mcp_config.env.GRILL_CHECK, "${user_config.jev_quality_check}");
+    assert.equal(mcp.mcpServers.grill.env.GRILL_CHECK, "${user_config.jev_quality_check}");
+  });
+
   it("both launch the same server file, which exists", () => {
     assert.equal(manifest.server.entry_point, "server/index.mjs");
     assert.deepEqual(manifest.server.mcp_config.args, ["${__dirname}/server/index.mjs"]);
@@ -52,14 +84,18 @@ describe("the extension build", () => {
   it("stages every file the server reaches, keeping the relative layout", () => {
     execFileSync(process.execPath, [join(ROOT, "scripts/build-extension.mjs")], { stdio: "pipe" });
     const staged = join(ROOT, "dist/extension");
-    for (const f of ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs"]) {
+    for (const f of ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs"]) {
       assert.ok(existsSync(join(staged, f)), `missing ${f}`);
     }
     const server = readFileSync(join(ROOT, "server/index.mjs"), "utf8");
     assert.match(server, /new URL\("\.\.\/scripts\/judge\.mjs", import\.meta\.url\)/);
-    const judge = readFileSync(join(ROOT, "scripts/judge.mjs"), "utf8");
-    for (const [, rel] of judge.matchAll(/from "\.\/([^"]+)"/g)) {
-      assert.ok(existsSync(join(staged, "scripts", rel)), `judge.mjs imports ${rel}, which the build does not stage`);
+    // Every staged script's own imports too, not just the judge's: judgeCore imports checkCore,
+    // and a module missing one hop down fails at install time just the same.
+    for (const f of ["scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs"]) {
+      const src = readFileSync(join(ROOT, f), "utf8");
+      for (const [, rel] of src.matchAll(/from "\.\/([^"]+)"/g)) {
+        assert.ok(existsSync(join(staged, "scripts", rel)), `${f} imports ${rel}, which the build does not stage`);
+      }
     }
   });
 });

@@ -7,6 +7,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = join(HERE, "..", "server", "index.mjs");
 const USABLE = join(HERE, "fixtures", "usable-response.json");
@@ -189,5 +191,44 @@ describe("against a loopback OpenRouter", () => {
     assert.equal(progress[0].params.progressToken, "tok-1");
     await c.close();
     fake.close();
+  });
+});
+
+describe("the Jev quality check setting", () => {
+  const grill = async (env) => {
+    const fake = await startFakeOpenRouter();
+    const c = await initialized({ GRILL_API_KEY: KEY, ...fake.env, ...env });
+    const res = await c.request("tools/call", { name: "grill", arguments: { subject: "We will raise prices 20% in Q4." } });
+    await c.close();
+    await fake.close();
+    return { res, fake };
+  };
+
+  it("GRILL_CHECK=true reaches the judge: the decisions path gets the check, and the report shows it", async () => {
+    for (const on of ["true", "1"]) {
+      const { res, fake } = await grill({ GRILL_CHECK: on });
+      assert.equal(res.result.isError, false, textOf(res));
+      assert.equal(fake.seen.decisions.length, 1, `GRILL_CHECK=${on}`);
+      assert.equal(fake.seen.decisions[0].body.model, "typesafe/jev-1.13");
+      assert.match(textOf(res), /## Quality check \(Jev\)/);
+    }
+  });
+
+  it("is off for false, for an unfilled install-dialog placeholder, and for anything else", async () => {
+    for (const off of ["false", "${user_config.jev_quality_check}", "TRUE", "yes", ""]) {
+      const { res, fake } = await grill({ GRILL_CHECK: off });
+      assert.equal(res.result.isError, false, textOf(res));
+      assert.equal(fake.seen.chat.length, 1, "the grill itself still ran");
+      assert.equal(fake.seen.decisions.length, 0, `GRILL_CHECK=${JSON.stringify(off)} must not start the check`);
+      assert.doesNotMatch(textOf(res), /Quality check/);
+    }
+  });
+
+  it("the setting is the only switch: JUDGE_CHECK=1 in the host's environment cannot turn it on", async () => {
+    const { res, fake } = await grill({ JUDGE_CHECK: "1", GRILL_CHECK: "false" });
+    assert.equal(res.result.isError, false, textOf(res));
+    assert.equal(fake.seen.decisions.length, 0);
+    const unset = await grill({ JUDGE_CHECK: "1" });
+    assert.equal(unset.fake.seen.decisions.length, 0);
   });
 });

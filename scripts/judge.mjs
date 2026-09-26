@@ -38,6 +38,13 @@
  *   --dry-run          print what would be sent and exit. No key needed, no network call.
  *   --json             print the machine-readable result object instead of the markdown
  *                      report (a file passed via --out still gets the markdown report).
+ *   --check            after a usable verdict, also score the REVIEW with Jev (see QUALITY
+ *                      CHECK below). Off by default, because it sends the masked write-up to
+ *                      a second party.
+ *   --check-flaw <text>
+ *                      with --check, also ask Jev whether any challenge identifies this
+ *                      specific flaw. The eval loop passes each case's planted flaw; the text
+ *                      is masked like the subject before it is sent.
  *   --help, -h         print this text.
  *
  * ENVIRONMENT
@@ -56,20 +63,39 @@
  *                         carries a live API key, so a non-loopback override would send
  *                         both the subject and the key wherever it pointed. This exists for
  *                         the tests in this repository and has no other use.
+ *   JUDGE_CHECK           "1" turns the quality check on, like --check. Any other non-empty
+ *                         value except "0" is reported and ignored: the check stays off.
+ *   JUDGE_DECISIONS_URL   test-only override of the decisions endpoint the quality check
+ *                         uses. Loopback-only, for the same reason and by the same guard as
+ *                         JUDGE_OPENROUTER_URL.
  *
- * PRIVACY. Every request asks OpenRouter to route only to endpoints with a zero-data-
+ * QUALITY CHECK (opt-in). With --check, once the judge has returned a usable verdict, ONE more
+ * request goes to OpenRouter's decisions endpoint, pinned to `typesafe/jev-1.13` (Jev, from
+ * TypeSafe, whose only endpoint is on OpenRouter's zero-data-retention list). It carries the
+ * already-masked write-up, the question, the verdict and its reason, and the top five
+ * challenges, and it asks whether the falsifiers are concrete, whether each challenge engages
+ * with what the write-up argues, and whether the verdict fits the challenges' weight. An answer
+ * from any provider but TypeSafe is dropped. The check can never fail or degrade the grill:
+ * whatever goes wrong, the report says "quality check unavailable" and the exit code is
+ * unchanged. With JUDGE_FIXTURE set it sends nothing. See checkCore.mjs.
+ *
+ * PRIVACY. Every judge request asks OpenRouter to route only to endpoints with a zero-data-
  * retention policy (`provider: { zdr: true, data_collection: "deny" }`). This is not
  * configurable — there is no flag or environment variable that turns it off. A model with
  * no such endpoint fails that request, and the chain walks on to the next link rather than
- * silently falling back to a data-retaining endpoint. No `HTTP-Referer` header is sent;
- * requests identify themselves only by the `X-Title` header below.
+ * silently falling back to a data-retaining endpoint. The quality check's documented request
+ * body has no such field, so its guarantee is the pinned model instead (see QUALITY CHECK).
+ * Every request leaves through one function, to one of two OpenRouter URLs, and follows no
+ * redirect. No `HTTP-Referer` header is sent; requests identify themselves only by the
+ * `X-Title` header below.
  *
  * EXIT CODES. Non-zero ONLY for a failure that is OURS to fix: bad arguments, an empty
  * subject, a missing key on a real (non-fixture, non-dry-run) run, or an unusable endpoint
  * override. A run that COMPLETED but could not see everything — a clipped subject, a
  * provider outage, a judge from the subject's own model family — prints the degradation
  * loudly on stderr, renders the banner in the report, and exits 0. "Nothing found" and
- * "the judge was blind" must never look the same.
+ * "the judge was blind" must never look the same. The quality check never changes the exit
+ * code either way.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -85,6 +111,7 @@ import {
   MAX_LINK_TIMEOUT_MS,
   MIN_LINK_TIMEOUT_MS,
   buildJudgeMessages,
+  checkGrounding,
   decorrelationOf,
   reconcileVerdict,
   renderJudgeReport,
@@ -95,33 +122,49 @@ import {
   toolCallArgumentsOf,
   validateChallenges,
 } from "./judgeCore.mjs";
+import {
+  buildCheckRequest,
+  CHECK_MAX_CHALLENGES,
+  CHECK_TIMEOUT_MS,
+  CHECK_WRITE_UP_BUDGET,
+  JEV_MODEL,
+  JEV_PROVIDER,
+  plantedFlawQuestion,
+  readCheck,
+} from "./checkCore.mjs";
 
 /**
- * THE ENDPOINT, and why the override is LOOPBACK-ONLY.
+ * THE ENDPOINTS, and why each override is LOOPBACK-ONLY.
  *
- * Every request below attaches `Authorization: Bearer $OPENROUTER_API_KEY`. An override
- * that accepted any host would ship the subject AND a live metered credential wherever it
+ * There are exactly two places a request can go: the judge's chat endpoint and, only with
+ * --check, the decisions endpoint the quality check uses. Both are spelled out once, below,
+ * and scripts/privacy.test.mjs pins that nothing else in this file names a destination.
+ *
+ * Every request attaches `Authorization: Bearer $OPENROUTER_API_KEY`. An override that
+ * accepted any host would ship the subject AND a live metered credential wherever it
  * pointed — `JUDGE_OPENROUTER_URL=https://attacker.example/collect` is an exfiltration
- * primitive, not a test seam. So the override is honoured only for a loopback host, which
+ * primitive, not a test seam. So an override is honoured only for a loopback host, which
  * is all a test needs, and anything else FAILS CLOSED and loudly rather than silently
  * falling back to the real endpoint — a silent fallback would make a misconfigured run
- * indistinguishable from a correct one.
+ * indistinguishable from a correct one. One guard serves both overrides, so they cannot
+ * drift apart.
  */
 const OPENROUTER_DEFAULT_URL = "https://openrouter.ai/api/v1/chat/completions";
+const DECISIONS_DEFAULT_URL = "https://openrouter.ai/api/alpha/decisions";
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
-function resolveEndpoint(raw) {
+function resolveEndpoint(name, raw, defaultUrl) {
   const override = typeof raw === "string" ? raw.trim() : "";
-  if (override === "") return OPENROUTER_DEFAULT_URL;
+  if (override === "") return defaultUrl;
   let host = null;
   try {
     host = new URL(override).hostname;
   } catch {
-    return fail(`JUDGE_OPENROUTER_URL is not a URL: ${override}`);
+    return fail(`${name} is not a URL: ${override}`);
   }
   if (!LOOPBACK_HOSTS.has(host)) {
     return fail(
-      `JUDGE_OPENROUTER_URL must point at loopback — got host "${host}". Every request carries a live `
+      `${name} must point at loopback — got host "${host}". Every request carries a live `
         + "OPENROUTER_API_KEY, so a non-loopback override would send the subject and the key there. "
         + "It exists for this project's own tests and has no other use.",
     );
@@ -129,7 +172,8 @@ function resolveEndpoint(raw) {
   return override;
 }
 
-const OPENROUTER_URL = resolveEndpoint(process.env.JUDGE_OPENROUTER_URL);
+const OPENROUTER_URL = resolveEndpoint("JUDGE_OPENROUTER_URL", process.env.JUDGE_OPENROUTER_URL, OPENROUTER_DEFAULT_URL);
+const DECISIONS_URL = resolveEndpoint("JUDGE_DECISIONS_URL", process.env.JUDGE_DECISIONS_URL, DECISIONS_DEFAULT_URL);
 
 function fail(message) {
   console.error(`[judge] ERROR: ${message}`);
@@ -148,6 +192,8 @@ function parseArgs(argv) {
     dryRun: false,
     json: false,
     author: "",
+    check: false,
+    checkFlaw: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -191,6 +237,12 @@ function parseArgs(argv) {
         break;
       case "--json":
         opts.json = true;
+        break;
+      case "--check":
+        opts.check = true;
+        break;
+      case "--check-flaw":
+        opts.checkFlaw = next();
         break;
       case "--help":
       case "-h":
@@ -286,6 +338,26 @@ if (subject.clipped) {
 
 const subjectLabel = subjectLabels.length === 1 ? subjectLabels[0] : `${subjectLabels.length} sources`;
 
+// ── The quality check: opt-in, and fully decided before anything is sent ──────
+// Exactly "1" turns it on. Anything else that is set, bar "0", is announced and ignored rather
+// than guessed at: this switch starts a second flow of the write-up to a third party, so the
+// only safe reading of a value nobody recognises is "off", and an ignored setting nobody can
+// see would be indistinguishable from no setting.
+const checkEnv = typeof process.env.JUDGE_CHECK === "string" ? process.env.JUDGE_CHECK.trim() : "";
+if (checkEnv !== "" && checkEnv !== "0" && checkEnv !== "1") {
+  console.error(`[judge] JUDGE_CHECK=${checkEnv} is not "1" — IGNORED, the quality check is off unless --check is passed`);
+}
+const checkWanted = opts.check || checkEnv === "1";
+
+// The planted-flaw question is text that will be SENT, so it goes through the same gate as the
+// subject: a secret stops the run here, before any request; contact details are masked.
+let checkExtra = null;
+if (opts.checkFlaw !== null) {
+  if (!checkWanted) fail("--check-flaw adds a question to the quality check, so it needs --check (or JUDGE_CHECK=1)");
+  checkExtra = plantedFlawQuestion(outgoing(opts.checkFlaw, "--check-flaw text"));
+  if (checkExtra === null) fail("--check-flaw needs the flaw, in words");
+}
+
 // ── Context ──────────────────────────────────────────────────────────────────
 const contextBlocks = [];
 for (const path of opts.contexts) {
@@ -342,6 +414,9 @@ if (ignoredTimeout !== null) {
     `[judge] JUDGE_TIMEOUT_MS=${ignoredTimeout} is not a millisecond count in [${MIN_LINK_TIMEOUT_MS}, ${MAX_LINK_TIMEOUT_MS}] — IGNORED, using ${linkTimeoutMs}ms`,
   );
 }
+// The check's one request never gets longer than one judge attempt does, so JUDGE_TIMEOUT_MS
+// bounds both and there is no second knob to forget.
+const checkTimeoutMs = Math.min(CHECK_TIMEOUT_MS, linkTimeoutMs);
 
 function bodyFor(model) {
   const body = { model, messages };
@@ -383,6 +458,15 @@ if (opts.dryRun) {
   console.log(`[judge] declared author: ${opts.author || "(none — default exclusion only)"}`);
   console.log("[judge] data policy: zero-data-retention endpoints only, on every request (not configurable)");
   console.log(`[judge] chain walk: ${walksChain ? `ON — up to ${attemptChain.length} request(s)` : "off — one request"}`);
+  console.log(
+    `[judge] quality check: ${
+      checkWanted
+        ? `ON — after a usable verdict, one POST to ${DECISIONS_URL} (${JEV_MODEL}; answers used only if served by ${JEV_PROVIDER}) carrying the masked write-up, the question, the verdict and the top ${CHECK_MAX_CHALLENGES} challenges${
+            checkExtra ? `, plus the question(s) ${Object.keys(checkExtra).join(", ")}` : ""
+          }`
+        : "off (--check or JUDGE_CHECK=1 turns it on)"
+    }`,
+  );
   console.log(`[judge] prompt: ${promptChars} chars`);
   for (const d of degraded) console.log(`[judge] DEGRADED: ${d}`);
   console.log("\n--- payload (truncated to 20k chars for display) ---");
@@ -400,61 +484,99 @@ if (!FIXTURE && !process.env.OPENROUTER_API_KEY) {
   );
 }
 
-async function callLink(model) {
-  if (FIXTURE) {
-    return { data: JSON.parse(readFileOrFail(FIXTURE, "fixture")), failure: null, status: 200 };
-  }
+/**
+ * THE ONE PLACE THE INSTALLED CODE TOUCHES THE NETWORK. scripts/privacy.test.mjs counts the
+ * fetch calls across every shipped file and requires exactly one, here, and requires every
+ * caller to pass OPENROUTER_URL or DECISIONS_URL. Both requests go through it — the judge's
+ * and the opt-in quality check's — so they share one set of headers, one timeout mechanism
+ * and one guarded body read, and neither can quietly grow a second, laxer copy.
+ *
+ * It never throws and never exits: it reports what happened, and each caller decides what
+ * that means. For the judge an unparseable body is fatal; for the check it only makes the
+ * check unavailable.
+ *
+ * `redirect: "error"`, because a redirect is the one way a request could reach a URL this
+ * file never named: fetch's default re-sends a 307/308's body — the write-up — to wherever
+ * the redirect points (it strips only the key). Neither endpoint redirects in normal
+ * operation, so a refused hop costs nothing but a failed request, which each caller already
+ * handles.
+ *
+ * Returns `{outcome: "ok", status, data}`, or `{outcome, status, detail|error}` with outcome
+ * "no-response" (no status at all), "http" (a non-2xx; `detail` is its body),
+ * "stalled" (headers arrived, the body did not) or "unparseable" (`detail` is the body).
+ */
+async function postJson(url, body, timeoutMs) {
   let response = null;
   try {
-    response = await fetch(OPENROUTER_URL, {
+    response = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
         "X-Title": "Grill",
       },
-      body: JSON.stringify(bodyFor(model)),
-      signal: AbortSignal.timeout(linkTimeoutMs),
+      body: JSON.stringify(body),
+      redirect: "error",
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {
-    return { data: null, failure: `no response from OpenRouter: ${e?.message ?? e}`, status: null };
+    return { outcome: "no-response", status: null, error: e };
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    return {
-      data: null,
-      status: response.status,
-      failure: `OpenRouter returned ${response.status} for ${
-        walksChain ? `link ${model}` : `chain ${modelChain.join(">")}`
-      }: ${detail.slice(0, 300)}`,
-    };
+    return { outcome: "http", status: response.status, detail };
   }
   // THE BODY READ IS INSIDE A GUARD, and that placement is the whole point. `AbortSignal
   // .timeout` stays armed after `fetch` resolves — it is attached to the response STREAM,
-  // not just the request — so a judge that returns headers promptly and then keeps
+  // not just the request — so a model that returns headers promptly and then keeps
   // generating for the rest of its budget aborts HERE, not at the `fetch` call above.
   // Left unguarded, that rejection would escape as an unhandled promise rejection and
   // crash the process before any diagnostic could be written.
-  //
-  // `status: null` is load-bearing: it makes this a TRANSPORT outcome, so
-  // `shouldAdvanceChain` walks to the next link instead of treating a 200-that-never-
-  // arrived as an answer. The degradation path this already had is the one a stalled body
-  // belongs on.
   let bodyText;
   try {
     bodyText = await response.text();
   } catch (e) {
+    return { outcome: "stalled", status: response.status, error: e };
+  }
+  try {
+    return { outcome: "ok", status: response.status, data: JSON.parse(bodyText) };
+  } catch {
+    return { outcome: "unparseable", status: response.status, detail: bodyText };
+  }
+}
+
+async function callLink(model) {
+  if (FIXTURE) {
+    return { data: JSON.parse(readFileOrFail(FIXTURE, "fixture")), failure: null, status: 200 };
+  }
+  const r = await postJson(OPENROUTER_URL, bodyFor(model), linkTimeoutMs);
+  if (r.outcome === "no-response") {
+    return { data: null, failure: `no response from OpenRouter: ${r.error?.message ?? r.error}`, status: null };
+  }
+  if (r.outcome === "http") {
+    return {
+      data: null,
+      status: r.status,
+      failure: `OpenRouter returned ${r.status} for ${
+        walksChain ? `link ${model}` : `chain ${modelChain.join(">")}`
+      }: ${r.detail.slice(0, 300)}`,
+    };
+  }
+  if (r.outcome === "stalled") {
+    // `status: null` is load-bearing: it makes this a TRANSPORT outcome, so
+    // `shouldAdvanceChain` walks to the next link instead of treating a 200-that-never-
+    // arrived as an answer. The degradation path this already had is the one a stalled body
+    // belongs on.
     return {
       data: null,
       status: null,
-      failure: `the judge never finished sending its answer — a ${response.status} arrived but the body stalled, which is the ${linkTimeoutMs}ms per-attempt ceiling firing mid-generation: ${e?.message ?? e}`,
+      failure: `the judge never finished sending its answer — a ${r.status} arrived but the body stalled, which is the ${linkTimeoutMs}ms per-attempt ceiling firing mid-generation: ${r.error?.message ?? r.error}`,
     };
   }
-  try {
-    return { data: JSON.parse(bodyText), failure: null, status: response.status };
-  } catch {
-    return fail(`OpenRouter returned unparseable JSON: ${bodyText.slice(0, 500)}`);
+  if (r.outcome === "unparseable") {
+    return fail(`OpenRouter returned unparseable JSON: ${r.detail.slice(0, 500)}`);
   }
+  return { data: r.data, failure: null, status: r.status };
 }
 
 if (FIXTURE) console.error(`[judge] fixture: ${FIXTURE} (no network call, replayed per attempt)`);
@@ -559,6 +681,11 @@ if (data) {
 const validation = validateChallenges(parsed?.challenges, { maxChallenges: opts.max });
 const verdict = reconcileVerdict(parsed?.verdict, validation.challenges);
 
+// Against the texts exactly as SENT — masked, and clipped if the subject was — because the
+// question is whether the judge quoted words it was actually given. Local and free: this
+// sends nothing, so it always runs.
+const grounding = checkGrounding(validation.challenges, subject.text, opts.question);
+
 const result = {
   subjectLabel,
   question: opts.question,
@@ -580,7 +707,63 @@ const result = {
   decorrelated,
   costUsd,
   masked,
+  grounding,
+  // null: not asked for. Otherwise readCheck's summary, or `{unavailable: reason}`.
+  quality: null,
 };
+
+/** Why a check request that went out came back with nothing usable, for the report. */
+function checkFailure(r) {
+  if (r.outcome === "no-response") {
+    const cause = r.error?.cause?.message ? ` (${r.error.cause.message})` : "";
+    return `no response from OpenRouter's decisions endpoint: ${r.error?.message ?? r.error}${cause}`;
+  }
+  if (r.outcome === "http") return `OpenRouter's decisions endpoint returned ${r.status}: ${r.detail.slice(0, 300)}`;
+  if (r.outcome === "stalled") return `Jev's answer stalled after a ${r.status} and hit the ${checkTimeoutMs}ms ceiling`;
+  return "OpenRouter's decisions endpoint returned a body that is not JSON";
+}
+
+/**
+ * The opt-in quality check. NEVER THROWS AND NEVER EXITS: whatever happens, the grill above
+ * it is already complete, and the worst this can do is say it has nothing to add. The try is
+ * the backstop for that promise; every expected failure is handled before it.
+ */
+async function runQualityCheck(forResult) {
+  try {
+    if (FIXTURE) {
+      return { unavailable: "not run: JUDGE_FIXTURE replays a saved judge response, and a fixture run sends nothing" };
+    }
+    if (!forResult.verdict) {
+      return { unavailable: "not run: the grill returned no usable verdict, so there was nothing to check and nothing was sent" };
+    }
+    // The subject as the JUDGE was sent it — already masked — clipped again to what Jev can
+    // hold. Never the raw input: this second reader sees nothing the first did not.
+    const writeUp = budgetText(subject.text, CHECK_WRITE_UP_BUDGET);
+    const request = buildCheckRequest({
+      subject: writeUp.text,
+      question: opts.question,
+      result: forResult,
+      extraQuestions: checkExtra,
+    });
+    const r = await postJson(DECISIONS_URL, request, checkTimeoutMs);
+    if (r.outcome !== "ok") return { unavailable: checkFailure(r) };
+    const quality = readCheck(r.data);
+    if (writeUp.clipped && !quality.unavailable) {
+      quality.flags.push(
+        `Jev saw only the first ${writeUp.keptChars} of ${writeUp.originalChars} characters of the write-up, so these scores cover only that part.`,
+      );
+    }
+    return quality;
+  } catch (e) {
+    return { unavailable: `the check failed unexpectedly: ${e?.message ?? e}` };
+  }
+}
+
+if (checkWanted) {
+  result.quality = await runQualityCheck(result);
+  // Said on stderr for whoever is watching, but never as DEGRADED: the grill is intact.
+  if (result.quality.unavailable) console.error(`[judge] quality check unavailable: ${result.quality.unavailable}`);
+}
 
 const report = renderJudgeReport(result);
 

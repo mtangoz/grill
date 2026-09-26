@@ -79,3 +79,45 @@ export function checkChain(chainString, modelsJson, zdrJson) {
 
   return problems;
 }
+
+/**
+ * Is `slug` on OpenRouter's zero-data-retention endpoint list? For the quality check's pinned
+ * model (checkCore.JEV_MODEL), which is not a chat model and has no entry in /api/v1/models at
+ * all (verified 2026-09-26), so `checkChain`'s catalog lookup would report it missing every week.
+ * This list is the one fact its privacy promise rests on.
+ *
+ * @param {string} slug the model id, e.g. "typesafe/jev-1.13".
+ * @param {{data?: Array<{model_id?: string}>}} zdrJson parsed body of GET /api/v1/endpoints/zdr.
+ * @param {string} consequence what breaks if it is missing, for the problem sentence.
+ * @returns {string[]} one problem, or none.
+ */
+export function checkZdrListed(slug, zdrJson, consequence) {
+  if (idsOf(zdrJson?.data, "model_id").has(slug)) return [];
+  return [`${slug}: no zero-data-retention endpoint (GET /api/v1/endpoints/zdr, data[].model_id) — ${consequence}`];
+}
+
+/**
+ * Does EVERY endpoint serving `slug` have a zero-data-retention listing? checkZdrListed only proves
+ * one does. The Decisions API takes no routing field for zero retention, and the runtime check can
+ * only see a provider's NAME, so a second, retaining endpoint from the same provider would pass it.
+ * This weekly check is what catches that: each (provider, tag) pair from the model's endpoint list
+ * must appear among the ZDR rows for the same model.
+ *
+ * @param {string} slug e.g. "typesafe/jev-1.13".
+ * @param {{data?: {endpoints?: Array<{provider_name?: string, tag?: string}>}}} endpointsJson
+ *   parsed body of GET /api/v1/models/<slug>/endpoints.
+ * @param {{data?: Array<{model_id?: string, provider_name?: string, tag?: string}>}} zdrJson
+ * @param {string} consequence what breaks, for the problem sentence.
+ * @returns {string[]}
+ */
+export function checkAllEndpointsZdr(slug, endpointsJson, zdrJson, consequence) {
+  const endpoints = Array.isArray(endpointsJson?.data?.endpoints) ? endpointsJson.data.endpoints : null;
+  if (!endpoints || endpoints.length === 0) {
+    return [`${slug}: its endpoint list could not be read (GET /api/v1/models/${slug}/endpoints) — ${consequence}`];
+  }
+  const key = (e) => `${e?.provider_name ?? ""}|${e?.tag ?? ""}`;
+  const zdr = new Set((Array.isArray(zdrJson?.data) ? zdrJson.data : []).filter((z) => z?.model_id === slug).map(key));
+  return endpoints
+    .filter((e) => !zdr.has(key(e)))
+    .map((e) => `${slug}: endpoint ${e?.provider_name ?? "?"} (${e?.tag ?? "?"}) is not zero-data-retention — ${consequence}`);
+}

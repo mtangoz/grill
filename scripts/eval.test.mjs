@@ -11,6 +11,8 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = join(HERE, "eval.mjs");
 const FIXTURES = join(HERE, "fixtures");
@@ -30,7 +32,16 @@ function runCli(args, env) {
 /** A clean environment: real process.env (so PATH/node resolve) minus every var these CLIs read. */
 function envFor(overrides = {}) {
   const env = { ...process.env };
-  for (const k of ["OPENROUTER_API_KEY", "JUDGE_FIXTURE", "JUDGE_MODEL", "JUDGE_TIMEOUT_MS", "JUDGE_OPENROUTER_URL", "GITHUB_STEP_SUMMARY"]) {
+  for (const k of [
+    "OPENROUTER_API_KEY",
+    "JUDGE_FIXTURE",
+    "JUDGE_MODEL",
+    "JUDGE_TIMEOUT_MS",
+    "JUDGE_OPENROUTER_URL",
+    "JUDGE_CHECK",
+    "JUDGE_DECISIONS_URL",
+    "GITHUB_STEP_SUMMARY",
+  ]) {
     delete env[k];
   }
   return { ...env, ...overrides };
@@ -150,5 +161,57 @@ describe("argument and input handling", () => {
     const { code, stderr } = await runCli(["--concurrency", "0"], envFor({ JUDGE_FIXTURE: join(FIXTURES, "usable-response.json") }));
     assert.equal(code, 1);
     assert.match(stderr, /--concurrency must be a positive integer/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("the quality check in the eval loop", () => {
+  it("always asks for it; under a fixture it sends nothing, so its rows read n/a", async () => {
+    const oneCase = tempCasesDir("sound-ab-test-pricing-page");
+    const outPath = join(oneCase, "out.json");
+    const { stdout } = await runCli(["--cases", oneCase, "--out", outPath], envFor({ JUDGE_FIXTURE: join(FIXTURES, "usable-response.json") }));
+
+    assert.match(stdout, /## Quality \(informational, not gated\)/);
+    assert.match(stdout, /\| Falsifiers scored concrete and cheap \(Jev\) \| n\/a \|/);
+    const written = JSON.parse(readFileSync(outPath, "utf8"));
+    assert.equal(written.scores[0].quality, null, "the fixture run's check did not run");
+    assert.deepEqual(written.scores[0].grounding, { checked: 1, found: 0 }, "the local quote check still ran");
+  });
+
+  it("sends each flawed case's planted flaw to Jev, scores the semantic catch, and leaves the gate to the phrase match", async () => {
+    const id = "hidden-assumption-annual-billing";
+    const caseDef = JSON.parse(readFileSync(join(CASES_DIR, `${id}.json`), "utf8"));
+    const dir = tempCasesDir(id, "sound-ab-test-pricing-page");
+    const outPath = join(dir, "out.json");
+    const fake = await startFakeOpenRouter();
+
+    const { code, stdout } = await runCli(
+      ["--cases", dir, "--out", outPath, "--concurrency", "1"],
+      envFor({ OPENROUTER_API_KEY: "test-key-loopback-only", ...fake.env }),
+    );
+    await fake.close();
+
+    assert.equal(fake.seen.chat.length, 2);
+    assert.equal(fake.seen.decisions.length, 2, "--check on every case");
+    const flawed = fake.seen.decisions.find((d) => d.body.state.write_up === caseDef.subject);
+    const sound = fake.seen.decisions.find((d) => d.body.state.write_up !== caseDef.subject);
+    assert.ok(flawed, "the flawed case's subject reached the check verbatim (it holds nothing to mask)");
+    assert.equal(
+      flawed.body.questions.catches_planted_flaw.instructions,
+      `Does any challenge identify this specific flaw: ${caseDef.why.replace(/\.$/, "")}?`,
+    );
+    assert.equal(sound.body.questions.catches_planted_flaw, undefined, "a sound case has no planted flaw to ask about");
+
+    const written = JSON.parse(readFileSync(outPath, "utf8"));
+    const flawedScore = written.scores.find((s) => s.id === id);
+    // usable-response.json quotes none of this case's must_target phrases: a phrase-match miss
+    // that Jev (answering 0.9 here) scores as a semantic catch. The gate still reads the miss.
+    assert.equal(flawedScore.caught, false);
+    assert.equal(flawedScore.semanticCaught, true);
+    assert.equal(written.summary.metrics.semanticCatchRate, 1);
+    assert.equal(written.summary.metrics.catchRate, 0);
+    assert.ok(written.summary.regressions.some((r) => r.startsWith("catchRate")));
+    assert.equal(code, 1, "the phrase-match gate still decides the exit code");
+    assert.match(stdout, /Planted flaw identified, semantic \(Jev\) \| 1\.00 \| 1 of 1 flawed\/loaded cases scored; phrase match caught 0 of the same 1/);
   });
 });

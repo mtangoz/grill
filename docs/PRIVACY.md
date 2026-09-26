@@ -11,6 +11,7 @@
 | **OpenRouter**, one-click route | The approved write-up, in transit; request metadata (token counts, timing) | It stores no prompts unless you opt in (below). It samples a small number of prompts for anonymous categorization |
 | **The judge's model provider** | The approved write-up, in transit | Grill routes **only** to zero-data-retention endpoints (`provider: { zdr: true, data_collection: "deny" }`), and never falls back to one that retains |
 | **The app you paste into**, paste route | The approved write-up | That app's settings. Use its private mode, for example a Temporary Chat in ChatGPT |
+| **Jev (TypeSafe)**, optional quality check | **Nothing unless you turn it on.** Then the masked write-up and the judge's report | A zero-data-retention endpoint, checked weekly; the check is dropped if any other endpoint answers |
 | **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them | There is nowhere for anything else to go |
 
 ## What Grill enforces in code
@@ -20,6 +21,8 @@ Each of these is pinned by a test, so it can't quietly stop being true.
 - **Keys and tokens never leave.** If the write-up, question or context contains anything shaped like an API key, token or private key, the run stops before any network call and says so. It never echoes the value.
 - **Contact details are masked.** Email addresses, phone numbers and card numbers are replaced with `[email]`, `[phone]` and `[card number]` before sending. The report says how many, never what.
 - **One destination.** The code you install makes exactly one kind of network call, to OpenRouter. It has no other network code and no third-party packages, so there is no hidden dependency to trust.
+- **Quotes are checked locally.** Every quote a challenge attacks is checked against your write-up on your own machine, so a made-up objection is flagged. This sends nothing anywhere.
+- **The Jev quality check is off by default.** Turned on, Jev scores whether the falsifiers are real tests and the verdict fits. The result is kept only if Jev's zero-retention endpoint answered.
 - **Nothing stored.** The write-up reaches the judge through a pipe, never a file. The report's temporary copy is deleted once read.
 - **Verifiable builds.** Each release is built by GitHub Actions from the tagged source, with a signed provenance attestation and checksums. You can confirm the extension is exactly this code.
 

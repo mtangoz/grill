@@ -14,6 +14,7 @@ import {
   autoRouterPlugin,
   budgetText,
   challengeScore,
+  checkGrounding,
   CHALLENGE_KINDS,
   CONFIDENCES,
   CONTEXT_BUDGET,
@@ -794,4 +795,135 @@ describe("resolveWalkBudget", () => {
       assert.equal(b.ignored, null);
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+describe("checkGrounding — is each quoted target really in the write-up?", () => {
+  const SUBJECT = "We will raise prices 20% in Q4 — and we expect churn to stay \"flat\" through week 6.\n\nThe team's view:   it's   fine.";
+  const at = (...targets) => targets.map((target) => ({ target }));
+
+  it("finds an exact quote and reports counts with 0-based missing indexes", () => {
+    const g = checkGrounding(at("raise prices 20% in Q4", "we will cut costs", "churn to stay"), SUBJECT, "");
+    assert.deepEqual(g, { checked: 3, found: 2, missing: [1] });
+  });
+
+  it("ignores case", () => {
+    assert.deepEqual(checkGrounding(at("WE WILL RAISE PRICES"), SUBJECT, "").missing, []);
+  });
+
+  it("collapses whitespace on both sides: newlines, runs of spaces, a non-breaking space", () => {
+    assert.deepEqual(checkGrounding(at("in Q4 — and we", "the team's view: it's fine", "raise prices\n20%"), SUBJECT, "").missing, []);
+  });
+
+  it("straightens curly quotes, in either direction", () => {
+    assert.deepEqual(checkGrounding(at("to stay “flat” through", "the team’s view"), SUBJECT, "").missing, []);
+    const curlySubject = "The team’s “plan” is sound.";
+    assert.deepEqual(checkGrounding(at("the team's \"plan\" is"), curlySubject, "").missing, []);
+  });
+
+  it("straightens dashes, including an em dash typed as two hyphens", () => {
+    assert.deepEqual(checkGrounding(at("in Q4 - and we", "in Q4 – and we", "in Q4 -- and we"), SUBJECT, "").missing, []);
+    assert.deepEqual(checkGrounding(at("a well—known risk"), "a well-known risk", "").missing, []);
+  });
+
+  it("strips leading and trailing ellipses and quote marks", () => {
+    const targets = at(
+      "“raise prices 20% in Q4”",
+      "\"raise prices 20% in Q4\"",
+      "'raise prices'",
+      "…raise prices 20%…",
+      "...raise prices 20%...",
+      "\"…raise prices 20% in Q4…\"",
+      "`raise prices`",
+      "  «raise prices»  ",
+    );
+    assert.deepEqual(checkGrounding(targets, SUBJECT, "").missing, []);
+  });
+
+  it("matches the question too, for a loaded-framing challenge that quotes it", () => {
+    const g = checkGrounding(at("doesn't it make sense"), SUBJECT, "Doesn’t it make sense to just ship?");
+    assert.deepEqual(g.missing, []);
+  });
+
+  it("does not match across the join between subject and question", () => {
+    assert.deepEqual(checkGrounding(at("end. start"), "the end.", "start here").missing, [0]);
+  });
+
+  it("flags an invented quote, however plausible", () => {
+    assert.deepEqual(checkGrounding(at("we guarantee churn stays flat"), SUBJECT, "").missing, [0]);
+  });
+
+  it("treats a quote of nothing — a bare ellipsis, empty quotes — as missing, never as trivially found", () => {
+    assert.deepEqual(checkGrounding(at("…", "\"\"", "...", "   "), SUBJECT, "").missing, [0, 1, 2, 3]);
+  });
+
+  it("keeps an ellipsis INSIDE a quote literal, so an elided quote is flagged (a documented limit)", () => {
+    assert.deepEqual(checkGrounding(at("raise prices … through week 6"), SUBJECT, "").missing, [0]);
+  });
+
+  it("survives junk: no challenges, non-string targets, missing texts", () => {
+    assert.deepEqual(checkGrounding(undefined, SUBJECT, ""), { checked: 0, found: 0, missing: [] });
+    assert.deepEqual(checkGrounding([{ target: 42 }, null, {}], SUBJECT, ""), { checked: 3, found: 0, missing: [0, 1, 2] });
+    assert.deepEqual(checkGrounding(at("x"), undefined, undefined), { checked: 1, found: 0, missing: [0] });
+  });
+
+  it("stays linear on a hostile target (a long run of dots cannot hang the process)", () => {
+    const started = Date.now();
+    checkGrounding(at(".".repeat(200000) + "x" + ".".repeat(200000), "\"'".repeat(100000) + "x"), SUBJECT, "");
+    assert.ok(Date.now() - started < 2000, "took too long");
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("renderJudgeReport — the grounding footer and the Jev section", () => {
+  const base = { verdict: "weak", challenges: [], degraded: [] };
+
+  it("says how many quotes were found when all were", () => {
+    const md = renderJudgeReport({ ...base, grounding: { checked: 5, found: 5, missing: [] } });
+    assert.match(md, /- quotes checked: 5 of 5 found in the write-up/);
+  });
+
+  it("warns, numbering the challenges as the report does, when some were not", () => {
+    const md = renderJudgeReport({ ...base, grounding: { checked: 5, found: 3, missing: [1, 3] } });
+    assert.match(md, /- ⚠ 2 of 5 challenges quote words that aren't in the write-up \(#2, #4\); weigh those with care/);
+  });
+
+  it("keeps the warning grammatical for one", () => {
+    const md = renderJudgeReport({ ...base, grounding: { checked: 1, found: 0, missing: [0] } });
+    assert.match(md, /- ⚠ 1 of 1 challenge quotes words that aren't in the write-up \(#1\); weigh it with care/);
+  });
+
+  it("puts a missing quote in the footer, NEVER in the degradation banner", () => {
+    const md = renderJudgeReport({ ...base, grounding: { checked: 2, found: 0, missing: [0, 1] } });
+    assert.doesNotMatch(md, /DEGRADED RUN/);
+    assert.ok(md.indexOf("aren't in the write-up") > md.indexOf("\n---\n"), "it sits below the footer rule");
+  });
+
+  it("says nothing when there was nothing to check, or no grounding at all", () => {
+    for (const grounding of [{ checked: 0, found: 0, missing: [] }, null, undefined]) {
+      const md = renderJudgeReport({ ...base, grounding });
+      assert.doesNotMatch(md, /quotes checked|in the write-up/);
+    }
+  });
+
+  it("renders the Jev section after the review and before the footer, when there is one", () => {
+    const md = renderJudgeReport({
+      ...base,
+      strongestObjection: "fix the number",
+      quality: { concrete: { n: 1, good: 1 }, engages: { n: 1, good: 1 }, verdictFits: 0.9, answersQuestion: null, flags: [], costUsd: 0.0002 },
+    });
+    assert.ok(md.indexOf("## If you fix one thing") < md.indexOf("## Quality check (Jev)"));
+    assert.ok(md.indexOf("## Quality check (Jev)") < md.indexOf("\n---\n"));
+  });
+
+  it("says 'quality check unavailable' without degrading the run", () => {
+    const md = renderJudgeReport({ ...base, quality: { unavailable: "OpenRouter's decisions endpoint returned 500: boom" } });
+    assert.match(md, /quality check unavailable: OpenRouter's decisions endpoint returned 500: boom/);
+    assert.doesNotMatch(md, /DEGRADED RUN/);
+  });
+
+  it("has no Jev section when the check was not asked for", () => {
+    assert.doesNotMatch(renderJudgeReport({ ...base, quality: null }), /Quality check/);
+    assert.doesNotMatch(renderJudgeReport(base), /Quality check/);
+  });
 });

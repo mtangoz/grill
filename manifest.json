@@ -24,7 +24,8 @@
         "${__dirname}/server/index.mjs"
       ],
       "env": {
-        "GRILL_API_KEY": "${user_config.openrouter_api_key}"
+        "GRILL_API_KEY": "${user_config.openrouter_api_key}",
+        "GRILL_CHECK": "${user_config.jev_quality_check}"
       }
     }
   },
@@ -66,6 +67,12 @@
       "description": "Create one at https://openrouter.ai/keys and add a few dollars of credit; a grill costs about a cent. It is masked, stored securely, and sent only to OpenRouter.",
       "sensitive": true,
       "required": true
+    },
+    "jev_quality_check": {
+      "type": "boolean",
+      "title": "Quality check with Jev",
+      "description": "Also score each grill with Jev (TypeSafe, a zero-retention decision model on OpenRouter): are the falsifiers concrete, does the verdict fit? TypeSafe then also sees your masked write-up. About $0.0002 a grill.",
+      "default": false
     }
   }
 }

@@ -16,6 +16,12 @@
  * THE KEY. GRILL_API_KEY (filled from the install dialog) wins, then OPENROUTER_API_KEY from the
  * environment. It goes into the judge's environment and nowhere else: it is never returned,
  * logged or echoed.
+ *
+ * THE QUALITY CHECK. GRILL_CHECK (the install dialog's "Quality check with Jev" setting) set to
+ * "true" or "1" passes --check, which also sends the masked write-up to Jev on OpenRouter; see
+ * scripts/checkCore.mjs. That setting is the ONLY switch on this path: JUDGE_CHECK is removed
+ * from the judge's environment, so a variable left in the host's shell cannot start a data flow
+ * the setting says is off.
  */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -50,6 +56,16 @@ function resolveApiKey(env = process.env) {
     if (value && !value.startsWith("${")) return value;
   }
   return "";
+}
+
+/**
+ * Is the quality check switched on? Only an exact "true" or "1": the hosts substitute a boolean
+ * setting as "true"/"false", and an unfilled placeholder arrives as literal `${…}` text. Anything
+ * unrecognised reads as off, because on starts a second flow of the write-up to a third party.
+ */
+function checkEnabled(env = process.env) {
+  const value = typeof env.GRILL_CHECK === "string" ? env.GRILL_CHECK.trim() : "";
+  return value === "true" || value === "1";
 }
 
 const SETUP_TEXT = [
@@ -114,8 +130,11 @@ function startJob({ subject, question, author }) {
   const args = [JUDGE, "--json", "--out", join(dir, "report.md")];
   if (question) args.push("--question", question);
   if (author) args.push("--author", author);
+  if (checkEnabled()) args.push("--check");
+  const env = { ...process.env, OPENROUTER_API_KEY: resolveApiKey() };
+  delete env.JUDGE_CHECK; // the setting above decides, never an inherited variable
   const child = spawn(process.execPath, args, {
-    env: { ...process.env, OPENROUTER_API_KEY: resolveApiKey() },
+    env,
     stdio: ["pipe", "pipe", "pipe"],
   });
   let stderr = "";

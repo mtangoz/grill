@@ -23,6 +23,10 @@
 //
 // Zero dependencies. Node >= 20. ESM throughout.
 
+// The one import: the optional quality check's section is rendered into the report below.
+// checkCore imports nothing, so this cannot become a cycle.
+import { renderCheck } from "./checkCore.mjs";
+
 /** Confidence levels a challenge can be filed at. Also used as the tool schema's enum. */
 export const CONFIDENCES = Object.freeze(["high", "medium", "low"]);
 
@@ -751,6 +755,114 @@ export function reconcileVerdict(statedVerdict, challenges) {
   return { verdict: stated, stated, coherent: true, note: null };
 }
 
+// ── Grounding: are the quoted targets really in the write-up? ──────────────────
+//
+// `target` is the anti-strawman gate: a challenge must quote the words it attacks. The schema
+// can demand a quote; only a check can tell whether the quote is real. This one is local, free
+// and sends nothing — a plain substring test after normalising the ways a faithful quote
+// legitimately drifts when a model retypes it.
+
+const SINGLE_QUOTES_RX = /[‘’‚‛′‵‹›]/g;
+const DOUBLE_QUOTES_RX = /[“”„‟″‶«»]/g;
+const DASHES_RX = /[‐-―−﹘﹣－]/g;
+
+/**
+ * Case folded, whitespace collapsed, curly quotes and dashes straightened, "…" spelled "...".
+ * Two or more hyphens become one, because "--" is how an em dash is typed. Applied to both sides
+ * of the comparison, so a straightening can only ever make a faithful quote match, never make an
+ * invented one appear.
+ */
+function normaliseForQuote(text) {
+  return String(text ?? "")
+    .toLowerCase()
+    .replace(SINGLE_QUOTES_RX, "'")
+    .replace(DOUBLE_QUOTES_RX, '"')
+    .replace(DASHES_RX, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/…/g, "...")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const QUOTE_EDGE_CHARS = new Set([" ", '"', "'", "`"]);
+
+/**
+ * Strip leading and trailing quote marks and ellipses (a run of three or more dots) from an
+ * already-normalised quote. A linear scan rather than a regex on purpose: the target is a
+ * third-party model's text, and the obvious `(?:\.{3,}|["'])+$` backtracks exponentially on a
+ * long run of dots.
+ */
+function trimQuoteEdges(s) {
+  let start = 0;
+  let end = s.length;
+  for (let moved = true; moved && start < end; ) {
+    moved = false;
+    if (QUOTE_EDGE_CHARS.has(s[start])) {
+      start += 1;
+      moved = true;
+      continue;
+    }
+    let dots = 0;
+    while (start + dots < end && s[start + dots] === ".") dots += 1;
+    if (dots >= 3) {
+      start += dots;
+      moved = true;
+    }
+  }
+  for (let moved = true; moved && end > start; ) {
+    moved = false;
+    if (QUOTE_EDGE_CHARS.has(s[end - 1])) {
+      end -= 1;
+      moved = true;
+      continue;
+    }
+    let dots = 0;
+    while (end - dots > start && s[end - 1 - dots] === ".") dots += 1;
+    if (dots >= 3) {
+      end -= dots;
+      moved = true;
+    }
+  }
+  return s.slice(start, end);
+}
+
+/**
+ * Check each challenge's `target` against what the judge was shown: the subject or the question.
+ *
+ * Pass the texts exactly as they were SENT (masked, and clipped if the subject was), because the
+ * question is "did the judge quote words it was given", and a masked email reads "[email]" there.
+ * Returns `{checked, found, missing}`, where `missing` holds 0-based indexes into `challenges`;
+ * the report shows them 1-based, as the challenge headings are numbered. A target that normalises
+ * to nothing (say, a bare "…") quotes nothing, so it is missing, not trivially found.
+ *
+ * A missing quote is a warning for the reader, never a degradation: the challenge may still be
+ * right, it just is not anchored to words the write-up contains. Known limits, all in the
+ * direction of a false warning rather than a missed one: an ellipsis INSIDE a quote, trailing
+ * punctuation the source did not have, and a contradicted-by-context quote taken from the context.
+ */
+export function checkGrounding(challenges, subject, question) {
+  const list = Array.isArray(challenges) ? challenges : [];
+  const haystacks = [normaliseForQuote(subject), normaliseForQuote(question)].filter((h) => h !== "");
+  const missing = [];
+  list.forEach((c, i) => {
+    const needle = trimQuoteEdges(normaliseForQuote(typeof c?.target === "string" ? c.target : ""));
+    if (needle === "" || !haystacks.some((h) => h.includes(needle))) missing.push(i);
+  });
+  return { checked: list.length, found: list.length - missing.length, missing };
+}
+
+/** The report's footer line for a grounding result, or "" when there was nothing to check. */
+function describeGrounding(grounding) {
+  const checked = grounding?.checked;
+  if (!Number.isInteger(checked) || checked <= 0) return "";
+  const missing = Array.isArray(grounding.missing) ? grounding.missing.filter((i) => Number.isInteger(i)) : [];
+  if (missing.length === 0) return `quotes checked: ${checked} of ${checked} found in the write-up`;
+  const one = missing.length === 1;
+  return `⚠ ${missing.length} of ${checked} challenge${checked === 1 ? "" : "s"} quote${one ? "s" : ""} words that aren't in the write-up (${missing
+    .map((i) => `#${i + 1}`)
+    .join(", ")}); weigh ${one ? "it" : "those"} with care`;
+}
+
 /** The messages array sent as the chat request. */
 export function buildJudgeMessages({ subject, question = "", contextBlocks = [], subjectLabel = "the subject" } = {}) {
   const system = [
@@ -865,6 +977,8 @@ export function renderJudgeReport(result) {
     declaredAuthor = "",
     decorrelated = null,
     costUsd = null,
+    grounding = null,
+    quality = null,
   } = result ?? {};
 
   const out = [];
@@ -926,6 +1040,11 @@ export function renderJudgeReport(result) {
 
   if (strongestObjection) out.push("## If you fix one thing", "", strongestObjection, "");
 
+  // The optional Jev section: [] unless the check was asked for. It sits after the review it
+  // grades and never touches the banner above: it is a second opinion on the review, not a
+  // condition of it.
+  out.push(...renderCheck(quality));
+
   const meta = [];
   // WHAT WAS EXCLUDED, not just that something was. The stamp IS the product, and once the
   // excluded set is variable a bare "(decorrelated)" is unauditable: a reader cannot tell a
@@ -947,6 +1066,10 @@ export function renderJudgeReport(result) {
   if (typeof costUsd === "number") meta.push(`cost: $${costUsd.toFixed(4)}`);
   const maskedLine = describeMasked(result.masked);
   if (maskedLine) meta.push(`masked before sending: ${maskedLine}`);
+  // A warning in the footer, deliberately NOT a degradation: the run saw everything, and a
+  // challenge whose quote drifted may still be right. The banner is reserved for blind runs.
+  const groundingLine = describeGrounding(grounding);
+  if (groundingLine) meta.push(groundingLine);
   if (rejected.length > 0) {
     meta.push(
       `dropped as malformed: ${rejected.length} (${rejected.map((r) => r.reason).join(", ")}) — the judge broke the output contract on these, so they are not visible above`,

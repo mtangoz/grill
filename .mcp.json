@@ -6,7 +6,8 @@
         "${CLAUDE_PLUGIN_ROOT}/server/index.mjs"
       ],
       "env": {
-        "GRILL_API_KEY": "${user_config.openrouter_api_key}"
+        "GRILL_API_KEY": "${user_config.openrouter_api_key}",
+        "GRILL_CHECK": "${user_config.jev_quality_check}"
       }
     }
   }

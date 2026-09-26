@@ -13,6 +13,13 @@
  * case it runs comes from evals/cases/*.json, fictional and committed to the repo — this
  * script never reads anything else as a subject.
  *
+ * THE QUALITY CHECK IS ALWAYS ON HERE (`--check`), because these subjects are synthetic and
+ * the eval is where the check's numbers are worth collecting. Flawed and loaded cases also
+ * pass their `why` as `--check-flaw`, so Jev says whether any challenge identified the planted
+ * flaw in other words than the phrases the gate matches. Both are informational: see
+ * evalCore.summarize. Under JUDGE_FIXTURE the judge sends nothing, so neither does the check,
+ * and those rows read "n/a".
+ *
  * USAGE
  *   node scripts/eval.mjs [--cases evals/cases] [--concurrency 4] [--out evals/results/latest.json]
  *
@@ -108,8 +115,13 @@ const cases = caseFiles.map((f) => {
 function runOneCase(caseDef) {
   return new Promise((resolve) => {
     const startedAt = Date.now();
-    const args = ["--json"];
+    const args = ["--json", "--check"];
     if (caseDef.question) args.push("--question", caseDef.question);
+    // Only where there is a planted flaw to find: a sound case has none, and asking whether a
+    // challenge found one would only invite a false positive.
+    if ((caseDef.kind === "flawed" || caseDef.kind === "loaded") && typeof caseDef.why === "string" && caseDef.why.trim()) {
+      args.push("--check-flaw", caseDef.why);
+    }
 
     const child = spawn(process.execPath, [JUDGE_CLI, ...args], {
       env: process.env,

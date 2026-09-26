@@ -370,3 +370,143 @@ describe("decorrelation is a floor, not a ceiling", () => {
     assert.ok(regressions.some((r) => /decorrelat/i.test(r)), JSON.stringify(regressions));
   });
 });
+
+// ---------------------------------------------------------------------------
+describe("scoreCase — quality numbers ride along, text never does", () => {
+  const flawedCase = { id: "f", kind: "flawed", why: "the planted flaw", expect: { must_target: ["hidden fee"] } };
+  const soundCase = { id: "s", kind: "sound", why: "sound", expect: { verdict_in: ["holds"], max_severity: "moderate" } };
+  const quality = (over = {}) => ({
+    concrete: { n: 3, good: 2 },
+    engages: { n: 3, good: 3 },
+    verdictFits: 0.8,
+    answersQuestion: 0.7,
+    costUsd: 0.0002,
+    provider: "TypeSafe",
+    flags: ["Only QUOTED-SUBJECT-SENTINEL of 3 falsifiers"],
+    extra: { catches_planted_flaw: 0.91 },
+    ...over,
+  });
+
+  it("carries the grounding counts and the Jev scores as numbers only", () => {
+    const s = scoreCase(flawedCase, usableResult({ grounding: { checked: 3, found: 2, missing: [1] }, quality: quality() }));
+    assert.deepEqual(s.grounding, { checked: 3, found: 2 });
+    assert.deepEqual(s.quality, { concrete: { n: 3, good: 2 }, engages: { n: 3, good: 3 }, verdictFits: 0.8 });
+    assert.equal(s.checkCostUsd, 0.0002);
+    assert.ok(!JSON.stringify(s).includes("SENTINEL"), "flags are sentences and are not carried");
+  });
+
+  it("scores the semantic catch for flawed and loaded cases from catches_planted_flaw, at >= 0.5", () => {
+    assert.equal(scoreCase(flawedCase, usableResult({ quality: quality() })).semanticCaught, true);
+    assert.equal(scoreCase(flawedCase, usableResult({ quality: quality({ extra: { catches_planted_flaw: 0.2 } }) })).semanticCaught, false);
+    assert.equal(scoreCase(flawedCase, usableResult({ quality: quality({ extra: {} }) })).semanticCaught, null);
+    const loaded = { ...flawedCase, kind: "loaded" };
+    assert.equal(scoreCase(loaded, usableResult({ quality: quality() })).semanticCaught, true);
+  });
+
+  it("leaves the semantic catch null for a sound case — there is no planted flaw to catch", () => {
+    assert.equal(scoreCase(soundCase, usableResult({ quality: quality() })).semanticCaught, null);
+  });
+
+  it("treats an unavailable check as no scores at all, keeping only what it cost", () => {
+    const s = scoreCase(flawedCase, usableResult({ quality: { unavailable: "OpenRouter returned 500: ECHOED-BODY", costUsd: 0.0001 } }));
+    assert.equal(s.quality, null);
+    assert.equal(s.semanticCaught, null);
+    assert.equal(s.checkCostUsd, 0.0001);
+    assert.ok(!JSON.stringify(s).includes("ECHOED-BODY"), "an unavailable reason can carry an error body; it is not carried");
+  });
+
+  it("is null, not zero, when the run carried neither", () => {
+    const s = scoreCase(flawedCase, usableResult());
+    assert.equal(s.grounding, null);
+    assert.equal(s.quality, null);
+    assert.equal(s.semanticCaught, null);
+    assert.equal(s.checkCostUsd, null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("summarize — quality metrics are informational and never gated", () => {
+  const row = (over) => ({ id: "x", kind: "flawed", caught: false, decorrelated: true, schemaIssues: 0, costUsd: 0.01, latencyMs: 1, ...over });
+
+  const scores = [
+    row({ kind: "flawed", caught: true, semanticCaught: true, grounding: { checked: 4, found: 3 }, quality: { concrete: { n: 4, good: 3 }, engages: { n: 4, good: 4 }, verdictFits: 0.9 }, checkCostUsd: 0.0002 }),
+    row({ kind: "flawed", caught: false, semanticCaught: true, grounding: { checked: 2, found: 2 }, quality: { concrete: { n: 2, good: 0 }, engages: { n: 2, good: 1 }, verdictFits: 0.2 }, checkCostUsd: 0.0002 }),
+    row({ kind: "loaded", caught: false, semanticCaught: false, grounding: { checked: 1, found: 1 }, quality: { concrete: { n: 1, good: 1 }, engages: { n: 1, good: 1 }, verdictFits: 0.6 } }),
+    row({ kind: "sound", falseAlarm: false, caught: null, semanticCaught: null, grounding: { checked: 0, found: 0 }, quality: null }),
+  ];
+
+  it("computes groundedRate, concreteRate, engagesRate and verdictFitRate from the pooled counts", () => {
+    const { metrics } = summarize(scores, {});
+    assert.equal(metrics.groundedRate, 6 / 7);
+    assert.equal(metrics.concreteRate, 4 / 7);
+    assert.equal(metrics.engagesRate, 6 / 7);
+    assert.equal(metrics.verdictFitRate, 2 / 3);
+  });
+
+  it("computes semanticCatchRate over the flawed and loaded cases Jev scored, beside the phrase match on the same cases", () => {
+    const { metrics, informational } = summarize(scores, {});
+    assert.equal(metrics.semanticCatchRate, 2 / 3);
+    const semantic = informational.find((r) => r.key === "semanticCatchRate");
+    assert.equal(semantic.good, 2);
+    assert.equal(semantic.n, 3);
+    assert.match(semantic.note, /phrase match caught 1 of the same 3/);
+  });
+
+  it("reads n/a (null), never a flattering 1, when nothing was scored", () => {
+    const { metrics } = summarize([row({ kind: "flawed" })], {});
+    for (const k of ["groundedRate", "concreteRate", "engagesRate", "verdictFitRate", "semanticCatchRate"]) {
+      assert.equal(metrics[k], null, k);
+    }
+  });
+
+  it("never gates on them, even when thresholds.json names them", () => {
+    const gatedByMistake = { groundedRate: 1, concreteRate: 1, engagesRate: 1, verdictFitRate: 1, semanticCatchRate: 1 };
+    const { checks, regressions } = summarize(scores, gatedByMistake);
+    assert.deepEqual(checks, []);
+    assert.deepEqual(regressions, []);
+  });
+
+  it("adds what the checks cost to the run's total", () => {
+    const { metrics } = summarize(scores, {});
+    assert.ok(Math.abs(metrics.totalCostUsd - (0.04 + 0.0004)) < 1e-12);
+  });
+
+  it("keeps the gated phrase-match catchRate exactly as it was", () => {
+    assert.equal(summarize(scores, {}).metrics.catchRate, 1 / 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("renderSummary — the Quality (informational, not gated) section", () => {
+  it("renders every informational metric with its basis, and n/a where nothing was scored", () => {
+    const summary = summarize(
+      [
+        { id: "a", kind: "flawed", caught: false, semanticCaught: true, decorrelated: true, schemaIssues: 0, grounding: { checked: 2, found: 1 }, quality: null },
+      ],
+      { catchRate: 0.67 },
+    );
+    const md = renderSummary(summary, []);
+    assert.match(md, /## Quality \(informational, not gated\)/);
+    assert.match(md, /\| Metric \| Value \| Basis \|/);
+    assert.match(md, /\| Quoted targets found in the write-up \| 0\.50 \| 1 of 2 challenges \|/);
+    assert.match(md, /\| Falsifiers scored concrete and cheap \(Jev\) \| n\/a \| none scored \(the Jev check did not run, or came back unavailable\) \|/);
+    assert.match(md, /\| Planted flaw identified, semantic \(Jev\) \| 1\.00 \| 1 of 1 flawed\/loaded cases scored; phrase match caught 0 of the same 1 \|/);
+    // The gated table is unchanged and comes first.
+    assert.ok(md.indexOf("| Catch rate (flawed) |") < md.indexOf("## Quality (informational, not gated)"));
+    assert.ok(!md.slice(md.indexOf("## Quality")).includes("FAIL"), "nothing informational can read as a failure");
+  });
+
+  it("says, on a failed case, whether Jev saw the planted flaw anyway", () => {
+    const base = { kind: "flawed", verdict: "weak", caught: false, expect: { must_target: ["p"] }, challengeSummary: [] };
+    const md = renderSummary({ metrics: { n: 2 }, regressions: [], checks: [] }, [
+      { ...base, id: "seen", semanticCaught: true },
+      { ...base, id: "missed", semanticCaught: false },
+    ]);
+    assert.match(md, /\*\*seen\*\*.*; Jev: a challenge does identify the planted flaw/);
+    assert.match(md, /\*\*missed\*\*.*; Jev: no challenge identifies it either/);
+  });
+
+  it("omits the section for a summary built without it", () => {
+    assert.doesNotMatch(renderSummary({ metrics: { n: 0 }, regressions: [], checks: [] }, []), /Quality \(informational/);
+  });
+});
