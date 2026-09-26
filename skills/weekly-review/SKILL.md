@@ -96,7 +96,16 @@ Ask three questions in one message:
 2. Did the falsifier fire: yes, no, or not yet?
 3. Was it a good call given what was known, and did it turn out well? Pick one: `good call / good outcome`, `good call / bad luck`, `bad call / got lucky`, `bad call / bad outcome`, or `unclear`.
 
-Append the answers to the record's Review section. If the log can't be edited, write a new review note that links the record instead. Give each UNREVIEWABLE record a falsifier and a date now, or archive it if the user says it no longer matters.
+Append the answers to the record's Review section.
+
+If a reviewed decision was grilled and its outcome is now yes or no, offer once (opt-in) to share the **resolved** signal. It is what tells Grill whether its verdicts predict outcomes:
+
+`https://github.com/mtangoz/grill/issues/new?template=grill-signal.yml&event=resolved&category=…&judge=…&verdict=…&confidence=…&outcome=…`
+
+- `confidence`: under-30, 30-49, 50-69, 70-89 or 90-plus.
+- The other values follow the `grill` skill's step 5.
+
+Choices only, never words from the decision. The issue is public. If the log can't be edited, write a new review note that links the record instead. Give each UNREVIEWABLE record a falsifier and a date now, or archive it if the user says it no longer matters.
 
 ## Step 7: The weekly Decision Health note
 

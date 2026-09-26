@@ -9,6 +9,9 @@
   },
   "scripts": {
     "test": "node --test scripts/*.test.mjs",
-    "build:extension": "node scripts/build-extension.mjs && npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb"
+    "build:extension": "node scripts/build-extension.mjs && npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb",
+    "eval": "node scripts/eval.mjs",
+    "upstream": "node scripts/upstream-check.mjs",
+    "learn": "node scripts/signals.mjs"
   }
 }

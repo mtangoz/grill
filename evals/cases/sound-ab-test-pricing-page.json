@@ -1,0 +1,11 @@
+{
+  "id": "sound-ab-test-pricing-page",
+  "kind": "sound",
+  "subject": "Cascade Metrics is deciding whether to replace its pricing page outright with a new three-tier layout, or run a 50/50 A/B test against the current page for three weeks before committing. The team recommends the A/B test. Reasoning: the new layout changes both the tier boundaries and the framing of the enterprise tier's contact-sales flow, two changes that have historically moved conversion in opposite directions on other SaaS pricing pages the team has studied, so the net effect here is genuinely unclear. The plan: run the test at an even traffic split, pre-register that at least 400 checkout starts per arm are needed before reading results (roughly three weeks at current traffic), and treat a null result as informative — if the test shows no significant difference, ship whichever version is cheaper to maintain rather than rerun it. Prediction, offered at 55% confidence: the new layout will modestly increase paid conversion, on the order of low single-digit percentage points, but the team flags this as a weak-confidence guess and states plainly that bundling two changes together makes attributing any effect to a single cause impossible from this test alone. The strongest case against: a positive result won't say which change worked, so a follow-up isolating test would still be needed to act on either change individually.",
+  "question": "Should Cascade Metrics A/B test the new pricing page before replacing the current one outright?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "Falsifiable, pre-registered sample size and read date, honest low confidence, and states its own attribution limitation up front."
+}

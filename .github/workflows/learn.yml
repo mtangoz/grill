@@ -1,0 +1,35 @@
+name: learn
+
+# The monthly learning report: aggregate the public, dropdown-only "signal" issues into
+# worth-engaging rates by judge family and verdict-vs-outcome tables, then post ONE issue with the
+# recommendations. It recommends; it never changes the judge. Every change it suggests must also
+# pass the synthetic evals (eval.yml) before it merges. See LEARNING.md.
+on:
+  schedule:
+    - cron: "0 14 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Aggregate the signals
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/signals.mjs --period "$(date -u +%Y-%m)" > learning-report.md
+      - name: Post the report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Learning report: $(date -u +%Y-%m)"
+          gh issue create --title "$title" --body-file learning-report.md --label learning || \
+            gh issue create --title "$title" --body-file learning-report.md

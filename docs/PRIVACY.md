@@ -1,27 +1,53 @@
-# Privacy: where your data goes
+# Privacy: who can see your decision
 
-**Short version:** your notes stay in your tools, and your log stays where you put it. One thing leaves your machine: the challenge subject you approve, sent to the outside judge.
+**Short version:** Grill has no server, no account and no tracking. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
 
-## What stays put
+## Who sees what
 
-- **Your notes, email and calendar** are read in place, through the connections you set up. Nothing is copied to a server. The plugin has none.
-- **The log** holds summaries and short quotes, never full transcripts. It lives where you choose: a local folder, Notion, or Google Drive.
-- **Personal, health and HR details** about named people are left out unless you ask for them.
-- **No telemetry.** The plugin sends no analytics and no usage data.
+| Who | What they see | What stops more |
+|---|---|---|
+| **You** | Everything | — |
+| **Claude** (Anthropic) | The conversation you're already having | Your Claude privacy settings |
+| **OpenRouter**, one-click route | The approved write-up, in transit; request metadata (token counts, timing) | It stores no prompts unless you opt in (below). It samples a small number of prompts for anonymous categorization |
+| **The judge's model provider** | The approved write-up, in transit | Grill routes **only** to zero-data-retention endpoints (`provider: { zdr: true, data_collection: "deny" }`), and never falls back to one that retains |
+| **The app you paste into**, paste route | The approved write-up | That app's settings. Use its private mode, for example a Temporary Chat in ChatGPT |
+| **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them | There is nowhere for anything else to go |
 
-## What leaves, and only with your OK
+## What Grill enforces in code
 
-- **The subject.** When you grill a decision, Claude writes it up and shows it to you. Nothing leaves until you approve it. Then it goes one of two ways:
-  - **One-click route** (the Claude Desktop extension, or the plugin in Claude Code): the judge sends it, with your key, to OpenRouter.
-  - **Paste route** (claude.ai web or phone): you paste it into another assistant yourself. That app's own data settings apply; ChatGPT, for example, may use chats for training unless you've turned that off.
-- **Zero-retention routing.** Every request asks OpenRouter to use only endpoints with a zero-data-retention policy (`provider: { zdr: true, data_collection: "deny" }`). If a model has no such endpoint, its request fails and the judge moves to the next model in its chain. It never falls back to a retaining endpoint.
-- **Processing in transit.** OpenRouter and the model provider that serves the request process the subject to answer it. That's the one exposure. Keep names, numbers and details you wouldn't share out of the subject.
-- **The report** comes back to your chat. The extension's temporary copy is deleted as soon as it's read.
+Each of these is pinned by a test, so it can't quietly stop being true.
+- **Nothing leaves without your OK.** Claude shows you the write-up before anything is sent.
+- **Keys and tokens never leave.** If the write-up, question or context contains anything shaped like an API key, token or private key, the run stops before any network call and says so. It never echoes the value.
+- **Contact details are masked.** Email addresses, phone numbers and card numbers are replaced with `[email]`, `[phone]` and `[card number]` before sending. The report says how many, never what.
+- **One destination.** The code you install makes exactly one kind of network call, to OpenRouter. It has no other network code and no third-party packages, so there is no hidden dependency to trust.
+- **Nothing stored.** The write-up reaches the judge through a pipe, never a file. The report's temporary copy is deleted once read.
+- **Verifiable builds.** Each release is built by GitHub Actions from the tagged source, with a signed provenance attestation and checksums. You can confirm the extension is exactly this code.
+
+## Two OpenRouter settings to check (one-click route)
+
+Both are off by default. Keep them off:
+1. **Input & Output Logging** (Observability settings). If you use it for other work, add your Grill key under **Excluded API Keys**.
+2. **OpenRouter use of inputs/outputs** (Privacy settings), the 1% discount for letting OpenRouter use your data.
 
 ## Your key
 
-- **Claude Desktop:** you paste the key into the extension's install dialog. Claude Desktop masks it and stores it securely.
+- **Claude Desktop:** you paste it into the extension's install dialog, which masks it and stores it securely.
 - **Claude Code:** the plugin asks for it and stores it securely, or reads `OPENROUTER_API_KEY` from your environment.
-- **The paste route** uses no key.
+- **The paste route** needs no key.
 
-The judge sends the key only to OpenRouter, in the `Authorization` header. It is never logged, never written to a file, never returned to the chat, and never asked for in chat.
+The judge sends the key only to OpenRouter, in the `Authorization` header. It is never logged, never written to a file, and never asked for in chat.
+
+## Your log
+
+The weekly review keeps your decision log where you choose: a Google Drive folder, a Notion database, a local folder, or your own notes. It holds summaries and short quotes, never full transcripts, and leaves out personal, health and HR details about named people unless you ask.
+
+## On your own computer
+
+Claude Desktop may keep local logs of tool calls, including the write-up, on your computer. That is Claude's local logging, not Grill's.
+
+## Helping Grill improve
+
+Grill learns the way OpenRouter's router does: from aggregate choices, never from content ([LEARNING.md](../LEARNING.md)).
+- **After a grill,** Claude may offer a link that pre-fills a public GitHub issue with a few choices: the kind of decision, the judge's model family, the verdict, whether it was worth engaging, and where you used Grill.
+- **The form has no text boxes.** Grill's monthly report discards any issue edited to contain anything else.
+- **You open the link and submit it yourself, or you don't.** It's off unless you choose it, every time.

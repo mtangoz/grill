@@ -77,6 +77,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import {
   autoRouterPlugin,
   budgetText,
+  redactSensitive,
   CONTEXT_BUDGET,
   DEFAULT_CHAIN,
   JUDGE_TOOL,
@@ -259,7 +260,23 @@ if (subjectParts.length === 0) {
 
 const degraded = [];
 
-const subjectRaw = subjectParts.join("\n\n");
+// Privacy, before anything else is built: a secret anywhere in what would be sent stops the run
+// with no network call; contact details are masked. See redactSensitive in judgeCore.mjs.
+const masked = { email: 0, phone: 0, card: 0 };
+function outgoing(text, what) {
+  const r = redactSensitive(text);
+  if (r.secrets.length > 0) {
+    fail(
+      `the ${what} contains what looks like ${r.secrets.join(" and ")}. Nothing was sent. ` +
+        "Remove it and try again; a judge never needs a key or token to weigh a decision.",
+    );
+  }
+  for (const k of Object.keys(masked)) masked[k] += r.masked[k];
+  return r.text;
+}
+
+const subjectRaw = outgoing(subjectParts.join("\n\n"), "subject");
+opts.question = outgoing(opts.question, "question");
 const subject = budgetText(subjectRaw, SUBJECT_BUDGET);
 if (subject.clipped) {
   degraded.push(
@@ -272,7 +289,7 @@ const subjectLabel = subjectLabels.length === 1 ? subjectLabels[0] : `${subjectL
 // ── Context ──────────────────────────────────────────────────────────────────
 const contextBlocks = [];
 for (const path of opts.contexts) {
-  const raw = readFileOrFail(path, "context file");
+  const raw = outgoing(readFileOrFail(path, "context file"), `context file ${path}`);
   const block = budgetText(raw, CONTEXT_BUDGET);
   if (block.clipped) {
     // Context clipping is reported but is NOT a degradation of the review itself: the
@@ -562,6 +579,7 @@ const result = {
   declaredAuthor: opts.author,
   decorrelated,
   costUsd,
+  masked,
 };
 
 const report = renderJudgeReport(result);

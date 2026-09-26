@@ -57,11 +57,22 @@ Your log lives in a Google Drive folder or Notion database you choose. Once a mo
 
 - **Your notes stay in your tools.** Only the write-up you approve leaves:
   - on the one-click route, it goes to OpenRouter's zero-data-retention endpoints;
-  - on the paste route, it goes to the assistant you paste it into, under that app's own settings.
-- **Your key** is masked, stored by Claude, and sent only to OpenRouter.
-- **Nothing else:** no servers, no accounts, no tracking.
+  - on the paste route, it goes to the assistant you paste it into.
+- **Grill enforces this in code,** and tests pin each rule:
+  - a key or token in the write-up stops the run before anything is sent;
+  - email addresses, phone numbers and card numbers are masked;
+  - the installed code can talk to OpenRouter and nothing else, and uses no third-party packages.
+- **No servers, accounts or tracking.** Grill's makers never see your decisions.
 
-Details: [docs/PRIVACY.md](docs/PRIVACY.md).
+Details, including two OpenRouter settings to check: [docs/PRIVACY.md](docs/PRIVACY.md).
+
+## How Grill gets better
+
+Like OpenRouter's router, Grill learns from aggregate choices, never from content:
+- **Weekly:** 12 synthetic decisions with planted flaws check that the judge still catches them.
+- **Monthly:** a report counts the choices people opt to share after a grill: was it worth engaging, and did the verdict match what happened.
+
+Every change must still pass the checks. See [LEARNING.md](LEARNING.md).
 
 ## Why not just ask Claude?
 

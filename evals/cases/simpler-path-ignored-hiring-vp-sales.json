@@ -1,0 +1,11 @@
+{
+  "id": "simpler-path-ignored-hiring-vp-sales",
+  "kind": "flawed",
+  "subject": "Fernbridge (9 people, $60K MRR, no dedicated salesperson today — the two co-founders close deals themselves) is deciding whether to hire a VP of Sales at $190K base plus commission, sourced over the next two months. The stated reasoning: deals are closing slower than the founders would like, and a senior hire with an existing network should shorten the sales cycle and free the founders to focus on product. The plan: run a search now, budget for the VP plus two AEs within six months, and treat the hire as the main lever for hitting next year's revenue target. Prediction, offered at 70% confidence: a VP of Sales hire will cut the average sales cycle by a third within two quarters of starting, because a senior operator brings playbooks and relationships the founders don't have time to build themselves. The strongest case against: at $60K MRR, Fernbridge has closed only 14 deals total, and the founders have never actually reviewed those calls together to find out why the slow ones stalled — several stalled at the same pricing-approval step, which a shared call review might explain for a fraction of a VP's first-year cost.",
+  "question": "Should Fernbridge hire a VP of Sales now to shorten its sales cycle?",
+  "expect": {
+    "must_target": ["hire as the main lever", "the main lever for hitting", "run a search now"],
+    "verdict_not": ["holds"]
+  },
+  "why": "Proposes a $190K hire as the primary lever without first trying the near-free diagnostic (reviewing the 14 existing calls) the subject itself names."
+}

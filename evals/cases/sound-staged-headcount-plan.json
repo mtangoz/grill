@@ -1,0 +1,11 @@
+{
+  "id": "sound-staged-headcount-plan",
+  "kind": "sound",
+  "subject": "Arbor Labs (14 people, $340K ARR, growing about 8% month over month for the last two quarters) is deciding between hiring 4 engineers now to build out a year of roadmap, or hiring 1 engineer now and tying the next 3 hires to specific ARR thresholds ($500K, $650K, $800K) crossed on a trailing-30-day basis. The team recommends the staged plan. Reasoning: the company's last hiring round, done ahead of revenue in anticipation of a launch that slipped four months, left it overstaffed for two quarters and forced a pause on other spending; the team names this as the direct reason for preferring thresholds this time. The plan: hire 1 engineer immediately for the highest-priority item, and pre-commit the next three hiring decisions to the named ARR thresholds rather than to a calendar date or a roadmap guess. Prediction, offered at 65% confidence: staging hires to revenue will mean slower feature output for the next two quarters than the all-at-once plan would produce, which the team accepts explicitly as the trade-off for not repeating the prior overstaffing mistake, and states that if growth stalls below $500K ARR for two consecutive quarters, the plan should be revisited rather than assumed still right. The strongest case against: competitors moving faster on roadmap could win deals Arbor needs to reach $500K in the first place, so staging could be self-defeating if the market window is short.",
+  "question": "Should Arbor Labs stage its next three engineering hires against ARR thresholds instead of hiring all four now?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "Ties the decision to a named prior failure, states a measurable revisit condition, and acknowledges a real competitive counter-argument."
+}

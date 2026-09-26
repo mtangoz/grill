@@ -411,6 +411,89 @@ function str(v) {
  * itself is truncated, because a caller sizing an allowance against this contract would
  * otherwise overflow silently.
  */
+// ── Privacy: what never leaves, and what is masked on the way out ──────────────
+//
+// The judge only ever sees text the user approved, but people paste things they did not mean to
+// send. Two rules, applied to everything sent (subject, question, context) before a request is
+// built:
+//   - SECRETS BLOCK. Anything shaped like a key, token or private key stops the run before any
+//     network call. Masking a secret would still send most of it; refusing is the only safe
+//     direction, and the user fixes it in one edit.
+//   - CONTACT DETAILS ARE MASKED. Email addresses, phone numbers and card numbers never matter to
+//     whether a decision holds, so they are replaced with [email], [phone] and [card number].
+//     The report says how many were masked, never what they were.
+// High precision over high recall: a pattern that fires on ordinary prose would teach users to
+// ignore it. Anything these miss is what the "show the subject first" rule is for.
+const SECRET_PATTERNS = Object.freeze([
+  ["an API key (sk-…)", /\bsk-[A-Za-z0-9_-]{20,}/],
+  ["a Stripe key", /\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}/],
+  ["a GitHub token", /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})/],
+  ["an AWS access key", /\bAKIA[0-9A-Z]{16}\b/],
+  ["a Slack token", /\bxox[abprs]-[A-Za-z0-9-]{10,}/],
+  ["a Google API key", /\bAIza[0-9A-Za-z_-]{35}\b/],
+  ["a JSON web token", /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
+  ["a private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
+]);
+
+const EMAIL_RX = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+const CARD_RX = /(?<!\d)(?<!\d\.)(?:\d[ -]?){12,18}\d(?!\d)(?!\.\d)/g; // a sentence's full stop may follow; a decimal may not
+const PHONE_RXS = [
+  /(?<![\w+])\+\d{1,3}(?:[\s.-]?\d){7,12}(?!\w)/g, // +44 20 7946 0958
+  /(?<![\w+])(?:\(\d{3}\)\s?|\d{3}[\s.-])\d{3}[\s.-]\d{4}(?!\w)/g, // (212) 555-0100, 212-555-0100
+];
+
+function luhnValid(digits) {
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    let d = Number(digits[digits.length - 1 - i]);
+    if (i % 2 === 1) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+
+/**
+ * Check one outgoing text. Returns the masked text, counts of what was masked, and the kinds of
+ * secret found (the caller refuses to send when that list is non-empty). Never returns a value.
+ */
+export function redactSensitive(text) {
+  const input = typeof text === "string" ? text : "";
+  const secrets = SECRET_PATTERNS.filter(([, rx]) => rx.test(input)).map(([label]) => label);
+  const masked = { email: 0, phone: 0, card: 0 };
+  let out = input.replace(EMAIL_RX, () => {
+    masked.email += 1;
+    return "[email]";
+  });
+  out = out.replace(CARD_RX, (m) => {
+    const digits = m.replace(/[ -]/g, "");
+    if (digits.length < 13 || digits.length > 19 || !luhnValid(digits)) return m;
+    masked.card += 1;
+    return "[card number]";
+  });
+  for (const rx of PHONE_RXS) {
+    out = out.replace(rx, (m) => {
+      const digits = m.replace(/\D/g, "");
+      if (digits.length < 10 || digits.length > 15) return m;
+      masked.phone += 1;
+      return "[phone]";
+    });
+  }
+  return { text: out, masked, secrets };
+}
+
+/** "2 email addresses, 1 phone number", or "" when nothing was masked. */
+export function describeMasked(masked = {}) {
+  const parts = [];
+  const n = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+  if (masked.email) parts.push(n(masked.email, "email address", "email addresses"));
+  if (masked.phone) parts.push(n(masked.phone, "phone number", "phone numbers"));
+  if (masked.card) parts.push(n(masked.card, "card number", "card numbers"));
+  return parts.join(", ");
+}
+
 export function budgetText(text, budget) {
   const full = typeof text === "string" ? text : "";
   if (budget <= 0 || full.length <= budget) {
@@ -862,6 +945,8 @@ export function renderJudgeReport(result) {
   );
   if (requestedChain.length > 0) meta.push(`chain asked: \`${requestedChain.join(" > ")}\``);
   if (typeof costUsd === "number") meta.push(`cost: $${costUsd.toFixed(4)}`);
+  const maskedLine = describeMasked(result.masked);
+  if (maskedLine) meta.push(`masked before sending: ${maskedLine}`);
   if (rejected.length > 0) {
     meta.push(
       `dropped as malformed: ${rejected.length} (${rejected.map((r) => r.reason).join(", ")}) — the judge broke the output contract on these, so they are not visible above`,

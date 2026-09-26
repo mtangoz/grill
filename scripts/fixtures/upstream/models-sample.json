@@ -1,0 +1,33 @@
+{
+  "_comment": "Trimmed, real-shape sample of GET https://openrouter.ai/api/v1/models, captured 2026-09-26. Fields kept: id, canonical_slug, name, context_length, pricing — enough to exercise checkChain's data[].id lookup without carrying the full ~460-model, ~750KB real response. Values are copied verbatim from the live API; only the entry list was trimmed. z-ai/glm-5.3-prime is real and, as of capture, has NO entry in zdr-sample.json's real ZDR data — kept deliberately so upstreamCore.test.mjs can exercise the 'in the catalog but no ZDR coverage' problem against real data instead of a fabricated model id.",
+  "data": [
+    {
+      "id": "openrouter/auto",
+      "canonical_slug": "openrouter/auto",
+      "name": "Auto Router",
+      "context_length": 2000000,
+      "pricing": { "prompt": "-1", "completion": "-1" }
+    },
+    {
+      "id": "openai/gpt-5.6-sol",
+      "canonical_slug": "openai/gpt-5.6-sol-20260709",
+      "name": "OpenAI: GPT-5.6 Sol",
+      "context_length": 1050000,
+      "pricing": { "prompt": "0.000002", "completion": "0.00001" }
+    },
+    {
+      "id": "openai/gpt-5.3-codex",
+      "canonical_slug": "openai/gpt-5.3-codex-20260224",
+      "name": "OpenAI: GPT-5.3-Codex",
+      "context_length": 400000,
+      "pricing": { "prompt": "0.00000175", "completion": "0.000014" }
+    },
+    {
+      "id": "z-ai/glm-5.3-prime",
+      "canonical_slug": "z-ai/glm-5.3-prime-20260921",
+      "name": "Z.ai: GLM 5.3 Prime",
+      "context_length": 1000000,
+      "pricing": { "prompt": "0.0000028", "completion": "0.0000088" }
+    }
+  ]
+}

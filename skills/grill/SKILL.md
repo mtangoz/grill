@@ -14,6 +14,10 @@ The user has been thinking with you, so your critique is correlated with theirs.
 
 If the user seems new ("what is this?", "set up Grill"), say in two lines what it does. Then offer to grill **one real decision right now**: something they decided or will decide this week, and how sure they are. The first grill is the setup.
 
+If they use the one-click route, mention once the two OpenRouter settings that keep their subjects unstored. Both are off by default:
+- **Input & Output Logging** (Observability settings): leave it off, or list their Grill key under "Excluded API Keys".
+- **OpenRouter use of inputs/outputs** (Privacy settings): leave it off.
+
 ## 1. Write the subject
 
 Ask only for what's missing, at most two questions. Then write:
@@ -41,6 +45,9 @@ Show the subject and question, and say where they will go before sending anythin
 
 **If you don't have the tool** (claude.ai on the web or phone, or no extension yet), use the paste route:
 1. Fill in `paste-prompt.md` from this skill's folder with the approved subject and question.
+   - Mask what the one-click route masks: email addresses become [email], phone numbers [phone], card numbers [card number].
+   - Never include a key or token.
+   - Suggest they turn on the app's private mode first, for example a Temporary Chat in ChatGPT.
 2. Give it back as one block they can copy. If it is under 6,000 characters, also give an "Open in ChatGPT" link: `https://chatgpt.com/?q=` followed by the URL-encoded prompt. For Gemini or any other assistant, they paste it themselves.
 3. Ask them to paste the judge's answer back here. That answer is the outside judge's; your own view is not.
 4. Mention once that Claude Desktop with the Grill extension does this in one step: https://github.com/mtangoz/grill#set-up
@@ -53,3 +60,19 @@ Show the subject and question, and say where they will go before sending anythin
 - **Next steps:** ask which falsifier they'll adopt and whether their confidence moved. A changed confidence is a new, dated call; the original stays on the record.
 - **Recording:** if they keep a decision log, record the verdict and the falsifier they adopt.
 - **Your own view:** only if asked, labelled "same-model critique".
+
+## 5. Offer to share a signal (opt-in, every time)
+
+Grill improves the way OpenRouter's router does: from aggregate choices, never from content. After they answer "worth engaging?", offer once: *"Want to help Grill get better? This shares only a few choices, no words from your decision."*
+
+If they say yes, give them this link, filled in, to open and submit themselves:
+
+`https://github.com/mtangoz/grill/issues/new?template=grill-signal.yml&event=rated&category=…&judge=…&verdict=…&rating=…&client=…`
+
+- `category`: one of pricing, hiring, fundraising, product, timing, vendor, operations, personal, other.
+- `judge`: the served model's family, which is the part before the `/`, such as openai, google, deepseek, meta, mistral, qwen, xai or moonshot. Use `other` for anything else, and `paste-route` for the paste route.
+- `verdict`: holds, holds-with-conditions, weak or refuted.
+- `rating`: yes or no.
+- `client`: desktop, web, phone or code.
+
+Never put anything else in the link. Tell them the issue is public. If they say no, drop it.

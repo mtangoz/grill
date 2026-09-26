@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write      # signs the build-provenance attestation
+  attestations: write
 
 jobs:
   release:
@@ -31,9 +33,20 @@ jobs:
           cd skills
           zip -r ../dist/grill-skill.zip grill
           zip -r ../dist/weekly-review-skill.zip weekly-review
+      - name: Checksums
+        run: cd dist && sha256sum grill.mcpb grill-skill.zip weekly-review-skill.zip > SHA256SUMS && cat SHA256SUMS
+      - name: Attest build provenance
+        # Attestations need a public repo (or GitHub Enterprise Cloud); a private pre-launch release skips them.
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/grill.mcpb
+            dist/grill-skill.zip
+            dist/weekly-review-skill.zip
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/grill.mcpb dist/grill-skill.zip dist/weekly-review-skill.zip \
-            --title "Grill $GITHUB_REF_NAME" --notes "Install steps: https://github.com/$GITHUB_REPOSITORY#set-up"
+          gh release create "$GITHUB_REF_NAME" dist/grill.mcpb dist/grill-skill.zip dist/weekly-review-skill.zip dist/SHA256SUMS \
+            --title "Grill $GITHUB_REF_NAME" --notes "Install steps: https://github.com/$GITHUB_REPOSITORY#set-up. Verify a download: gh attestation verify <file> --repo $GITHUB_REPOSITORY"

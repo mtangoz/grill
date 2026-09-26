@@ -1,0 +1,57 @@
+name: eval
+
+# The judge's self-improvement measurement loop: run the 12 synthetic cases under evals/cases/
+# through the real judge CLI and score the result against evals/thresholds.json. Never touches
+# a real user's decision — see evals/README.md.
+on:
+  schedule:
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/judge.mjs
+      - scripts/judgeCore.mjs
+      - evals/**
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run the judge self-eval
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: node scripts/eval.mjs
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: evals/results
+          if-no-files-found: ignore
+      - name: On a scheduled failure, open or update ONE issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          TITLE="Judge quality below threshold"
+          BODY="The weekly judge self-eval (evals/) failed its quality thresholds on $(date -u +%F).
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          See the run's job summary or the uploaded eval-results artifact for the metrics table and which cases failed."
+          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --search "$TITLE in:title" --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+          fi

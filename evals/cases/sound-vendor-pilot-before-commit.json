@@ -1,0 +1,11 @@
+{
+  "id": "sound-vendor-pilot-before-commit",
+  "kind": "sound",
+  "subject": "Portside Supply needs a freight-rate quoting API and is choosing between signing a 12-month contract with Vendor X immediately, or running a 30-day paid pilot with both Vendor X and Vendor Y against real historical shipments before picking one. The team recommends the pilot. Reasoning: the two vendors' published accuracy numbers (Vendor X claims 94% quote-to-invoice accuracy, Vendor Y claims 96%) come from each vendor's own benchmark on its own lane mix, which does not necessarily match Portside's specific lanes, so the numbers are not directly comparable without an independent test. The plan: pay the modest pilot fee for both vendors, run 200 of last quarter's real shipments through each API, and compare the quoted rate to what was actually invoiced. Prediction, offered at 60% confidence: the pilot will show one vendor is clearly more accurate on Portside's actual lane mix than the published numbers alone would suggest, but the team states plainly it could also come back close to a tie, in which case the deciding factor becomes price and integration effort instead of accuracy. The strongest case against: the pilot costs a modest fee and a few days of an engineer's time wiring up two APIs instead of one, which is real cost for a company this size to spend before signing anything.",
+  "question": "Should Portside Supply pilot both freight-quoting vendors before committing to one?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "Names why the vendors' own benchmarks aren't comparable, proposes a real test, and openly admits the pilot could come back a tie."
+}
