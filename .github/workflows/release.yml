@@ -37,6 +37,8 @@ jobs:
       - name: Zip the skills for claude.ai upload
         run: |
           cd skills
+          # MIT asks for the notice in every copy, so each skill carries it.
+          cp ../LICENSE grill/LICENSE && cp ../LICENSE weekly-review/LICENSE
           zip -r ../dist/grill-skill.zip grill
           zip -r ../dist/weekly-review-skill.zip weekly-review
       - name: Checksums
@@ -56,5 +58,8 @@ jobs:
         run: |
           TAG="${{ inputs.version || github.ref_name }}"
           case "$TAG" in v[0-9]*) ;; *) echo "::error::version must look like v0.1.0, got $TAG"; exit 1 ;; esac
-          gh release create "$TAG" --target "$GITHUB_SHA" dist/grill.mcpb dist/grill-skill.zip dist/weekly-review-skill.zip dist/SHA256SUMS \
+          # Draft first, then publish: with release immutability on, a published release takes no
+          # more assets, so they must all be attached before it goes public.
+          gh release create "$TAG" --draft --target "$GITHUB_SHA" dist/grill.mcpb dist/grill-skill.zip dist/weekly-review-skill.zip dist/SHA256SUMS \
             --title "Grill $TAG" --notes "Install steps: https://github.com/$GITHUB_REPOSITORY#set-up. Verify a download: gh attestation verify <file> --repo $GITHUB_REPOSITORY"
+          gh release edit "$TAG" --draft=false

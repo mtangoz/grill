@@ -3,6 +3,7 @@
   "name": "grill",
   "display_name": "Grill",
   "version": "0.1.0",
+  "license": "MIT",
   "description": "Grill your decisions: an outside AI judge from a different company than Claude argues the strongest case against a decision or forecast.",
   "long_description": "Say **\"grill this\"** in any chat. Claude writes up the decision, shows it to you, and, once you approve, sends it to an outside judge: a model from a different company, reached through a model router with your own key.\n\nThe judge writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict: holds, holds with conditions, weak, or refuted.\n\nEvery request goes to zero-data-retention endpoints only. A grill costs about a cent and takes 1–3 minutes.",
   "author": {

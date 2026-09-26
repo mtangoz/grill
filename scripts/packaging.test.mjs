@@ -27,6 +27,11 @@ describe("the manifests agree", () => {
     assert.equal(pkg.version, plugin.version);
   });
 
+  it("one license everywhere, and the MIT text beside it", () => {
+    for (const m of [pkg, plugin, manifest]) assert.equal(m.license, "MIT");
+    assert.match(readFileSync(join(ROOT, "LICENSE"), "utf8"), /^MIT License\n\nCopyright \(c\) \d{4} /);
+  });
+
   it("the key setting has the same name in the plugin, its MCP config and the extension, and is always sensitive", () => {
     const ref = "${user_config.openrouter_api_key}";
     assert.equal(plugin.userConfig.openrouter_api_key.sensitive, true);
@@ -86,7 +91,7 @@ describe("the extension build", () => {
   it("stages every file the server reaches, keeping the relative layout", () => {
     execFileSync(process.execPath, [join(ROOT, "scripts/build-extension.mjs")], { stdio: "pipe" });
     const staged = join(ROOT, "dist/extension");
-    for (const f of ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs"]) {
+    for (const f of ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "LICENSE"]) {
       assert.ok(existsSync(join(staged, f)), `missing ${f}`);
     }
     const server = readFileSync(join(ROOT, "server/index.mjs"), "utf8");

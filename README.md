@@ -122,3 +122,7 @@ npm run build:extension          # dist/grill.mcpb
   - `server/`: the Desktop extension's tool;
   - `scripts/judge.mjs`: the judge itself, which also runs on its own (`node scripts/judge.mjs --help`).
 - **Release:** tag `vX.Y.Z` and the release workflow publishes the extension and the skill zips.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
