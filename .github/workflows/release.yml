@@ -6,6 +6,12 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # Run it by hand with a version, and the release creates that tag on the current main.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to create, for example v0.1.0"
+        required: true
 
 permissions:
   contents: write
@@ -48,5 +54,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/grill.mcpb dist/grill-skill.zip dist/weekly-review-skill.zip dist/SHA256SUMS \
-            --title "Grill $GITHUB_REF_NAME" --notes "Install steps: https://github.com/$GITHUB_REPOSITORY#set-up. Verify a download: gh attestation verify <file> --repo $GITHUB_REPOSITORY"
+          TAG="${{ inputs.version || github.ref_name }}"
+          case "$TAG" in v[0-9]*) ;; *) echo "::error::version must look like v0.1.0, got $TAG"; exit 1 ;; esac
+          gh release create "$TAG" --target "$GITHUB_SHA" dist/grill.mcpb dist/grill-skill.zip dist/weekly-review-skill.zip dist/SHA256SUMS \
+            --title "Grill $TAG" --notes "Install steps: https://github.com/$GITHUB_REPOSITORY#set-up. Verify a download: gh attestation verify <file> --repo $GITHUB_REPOSITORY"
