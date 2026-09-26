@@ -1,0 +1,11 @@
+{
+  "id": "unfalsifiable-launch-buzz",
+  "kind": "flawed",
+  "subject": "Driftpost, a photo-journaling app with 40,000 people on a waitlist, is deciding whether to open general availability on the first Tuesday of next month, timed to a competitor's funding announcement, or wait six weeks for a promised in-app collaboration feature. The team favors launching immediately, arguing that timing the announcement around industry attention matters more than feature completeness this early. Reasons given: momentum compounds, and every week on the waitlist raises the number of people who forget why they signed up. The plan: open general availability now, disable signup caps, and run a paid influencer push the same week. Prediction, offered with high confidence: launching now will put Driftpost 'in the cultural conversation' around journaling apps this quarter, and that shift in conversation will carry the product's growth for the rest of the year regardless of the exact signup numbers in the first month. The strongest case against: the collaboration feature was the single most requested item on the waitlist survey, and several waitlisted users have already said they will churn out if it is not there at launch — a risk a six-week delay would avoid entirely.",
+  "question": "Should Driftpost launch general availability next month or wait six weeks for the collaboration feature?",
+  "expect": {
+    "must_target": ["in the cultural conversation", "shift in conversation will carry", "regardless of the exact signup"],
+    "verdict_not": ["holds"]
+  },
+  "why": "Plants an unfalsifiable prediction ('in the cultural conversation', 'regardless of the exact signup numbers') that no observation could disprove."
+}

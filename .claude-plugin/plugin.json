@@ -1,0 +1,33 @@
+{
+  "name": "grill",
+  "version": "0.1.0",
+  "description": "Grill your decisions: an outside AI judge, from a different company than your chat assistant, argues the strongest case against a decision or forecast and names the tests that would settle it. Includes a weekly decision review. Bring your own OpenRouter key and connections.",
+  "author": {
+    "name": "Grill"
+  },
+  "homepage": "https://github.com/mtangoz/grill",
+  "repository": "https://github.com/mtangoz/grill",
+  "keywords": [
+    "decisions",
+    "decision-log",
+    "forecasting",
+    "calibration",
+    "founders",
+    "red-team",
+    "review"
+  ],
+  "userConfig": {
+    "openrouter_api_key": {
+      "type": "string",
+      "title": "Model router key (OpenRouter)",
+      "description": "Create one at https://openrouter.ai/keys and add a few dollars of credit; a grill costs about a cent. It is masked, stored securely, and sent only to OpenRouter. Or leave it empty if OPENROUTER_API_KEY is already set in your environment.",
+      "sensitive": true
+    },
+    "jev_quality_check": {
+      "type": "boolean",
+      "title": "Quality check with Jev",
+      "description": "Score every grill with Jev, a zero-retention decision model reached through the same model router: are the falsifiers real tests, does the verdict fit the challenges? It sees the masked write-up and the report. About $0.0002 a grill. Turn off to send the write-up to the judge only.",
+      "default": true
+    }
+  }
+}

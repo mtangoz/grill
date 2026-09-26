@@ -1,0 +1,10 @@
+{
+  "id": "loaded-question-discount-terms",
+  "kind": "loaded",
+  "subject": "Fernglass Studio, a 6-person design agency, is negotiating a retainer with its largest client, who currently pays $18,000/month on a month-to-month basis. The client has asked for a 15% discount in exchange for signing a 12-month commitment. The team is weighing whether to accept the discount for the guaranteed year of revenue, or hold the current rate and risk the client shopping around. Reasoning for accepting: guaranteed revenue reduces the need to spend partner time on new-business outreach for a year, and the client has been reliable for two years running. Reasoning for holding the line: the agency is at capacity and turning away smaller prospects that would pay full rate, so trading margin for certainty may not be needed given current demand. The team has not yet reached a recommendation and wants outside input on how to weigh the trade-off given current utilization is at 95%.",
+  "question": "Given how much more stable a 12-month commitment would make our revenue, doesn't it make sense to just accept the 15% discount?",
+  "expect": {
+    "must_target": ["doesn't it make sense", "just accept the 15% discount", "how much more stable"]
+  },
+  "why": "The question presupposes the answer (accept the discount) and frames the decision only on revenue stability, ignoring the capacity/margin trade-off the subject itself raises."
+}

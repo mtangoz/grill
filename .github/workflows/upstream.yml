@@ -1,0 +1,43 @@
+name: upstream
+
+# Maintainer tool, run on a schedule: is every model in the judge's chain still real? Checks
+# the live OpenRouter catalog + ZDR endpoint list, and separately that the Desktop extension
+# manifest still validates. Network is fine here — see scripts/upstream-check.mjs.
+on:
+  schedule:
+    - cron: "0 12 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  upstream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check the judge's model chain against OpenRouter
+        run: node scripts/upstream-check.mjs
+      - name: Validate the Desktop extension manifest
+        run: npx -y @anthropic-ai/mcpb@latest validate manifest.json
+      - name: On failure, open or update ONE issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          TITLE="Upstream drift"
+          BODY="A scheduled upstream check failed on $(date -u +%F) — either a model in the judge's chain has dropped out of OpenRouter's catalog or its zero-data-retention coverage, or the Desktop extension manifest no longer validates.
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --search "$TITLE in:title" --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+          fi

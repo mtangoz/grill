@@ -1,0 +1,11 @@
+{
+  "id": "hidden-assumption-annual-billing",
+  "kind": "flawed",
+  "subject": "Loomview (12 people, $1.4M ARR) is deciding whether to eliminate monthly billing entirely and move all new self-serve contracts to annual-only pricing, starting next quarter. Today, 70% of self-serve customers pay monthly and 30% pay annually; on the enterprise tier, sold by a rep and worth 55% of revenue, 100% of customers already pay annually. The stated reasons are simpler invoicing, predictable cash flow, and less month-to-month churn to manage. The plan: any new signup, self-serve or enterprise, must choose an annual plan; existing monthly customers are grandfathered for 12 months. Prediction, offered at 70% confidence: because our enterprise customers all commit annually without complaint, moving the self-serve tier to annual-only billing will simply extend the retention we already see at the top of the funnel to the rest of the customer base, cutting voluntary churn by roughly half within two quarters. The strongest case against: self-serve customers are mostly small teams evaluating the product on a monthly budget, several of whom have said in support tickets that they could not have signed up if annual payment were required on day one — so the policy may not convert them to annual, it may simply cost the signups that segment currently provides.",
+  "question": "Should Loomview move all new self-serve contracts to annual-only billing next quarter?",
+  "expect": {
+    "must_target": ["commit annually without complaint", "moving the self-serve tier to annual-only", "extend the retention we already see"],
+    "verdict_not": ["holds"]
+  },
+  "why": "Plants a hidden assumption that self-serve customers will behave like enterprise customers, contradicted by the support-ticket evidence in the same paragraph."
+}

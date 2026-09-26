@@ -1,0 +1,33 @@
+{
+  "_comment": "Trimmed, real-shape sample of GET https://openrouter.ai/api/v1/endpoints/zdr, captured 2026-09-26. Note the id field here is `model_id`, NOT `id` as on /api/v1/models — the two endpoints do not share a key name. openrouter/auto has zero entries in the real response (it is a router, not a concrete model with its own ZDR endpoint) and z-ai/glm-5.3-prime also has zero real entries as of capture, which is what lets upstreamCore.test.mjs exercise a genuine 'no ZDR coverage' finding against real data. The typesafe/jev-1.13 row (the quality check's pinned model) is copied from the same live response, trimmed to the fields kept here; it is that model's only endpoint (GET /api/v1/models/typesafe/jev-1.13/endpoints, same day), and the model has no entry in /api/v1/models at all.",
+  "data": [
+    {
+      "model_id": "openai/gpt-5.6-sol",
+      "model_name": "OpenAI: GPT-5.6 Sol",
+      "provider_name": "Azure",
+      "tag": "azure/us",
+      "pricing": { "prompt": "0.0000044", "completion": "0.000022" }
+    },
+    {
+      "model_id": "openai/gpt-5.6-sol",
+      "model_name": "OpenAI: GPT-5.6 Sol",
+      "provider_name": "OpenAI",
+      "tag": "openai/zdr",
+      "pricing": { "prompt": "0.000002", "completion": "0.00001" }
+    },
+    {
+      "model_id": "openai/gpt-5.3-codex",
+      "model_name": "OpenAI: GPT-5.3-Codex",
+      "provider_name": "Azure",
+      "tag": "azure",
+      "pricing": { "prompt": "0.00000175", "completion": "0.000014" }
+    },
+    {
+      "model_id": "typesafe/jev-1.13",
+      "model_name": "TypeSafe: Jev 1.13",
+      "provider_name": "TypeSafe",
+      "tag": "typesafe",
+      "pricing": { "prompt": "0.000000042", "completion": "0" }
+    }
+  ]
+}

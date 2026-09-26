@@ -1,0 +1,17 @@
+{
+  "name": "grill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Grill: an outside AI judge for your decisions, as a Claude plugin.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test scripts/*.test.mjs",
+    "build:extension": "node scripts/build-extension.mjs && npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb",
+    "eval": "node scripts/eval.mjs",
+    "upstream": "node scripts/upstream-check.mjs",
+    "learn": "node scripts/signals.mjs"
+  }
+}

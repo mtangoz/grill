@@ -1,0 +1,11 @@
+{
+  "id": "evidence-mismatch-vendor-uptime",
+  "kind": "flawed",
+  "subject": "Corewell Ops is choosing between two background-check vendors for a new tenant-screening add-on: Vendor A charges $3.10 per check with a published 99.2% report-delivered-on-time rate over the last 90 days, and Vendor B charges $2.40 per check with a published 97.6% on-time rate over the same window. The team recommends Vendor B to save on unit cost as the feature scales past a few hundred checks a month. The stated reasoning: at expected volume, the price difference is worth more than a small gap in on-time delivery, since a slightly late report rarely blocks a lease signing outright. Prediction, offered at 80% confidence: switching to Vendor B will cut screening costs by roughly a quarter with no meaningful increase in tenant complaints, because Vendor B's 97.6% on-time rate is basically identical to Vendor A's, so the two vendors are interchangeable on reliability and the decision comes down to price alone. The strongest case against: at the volume projected for next year — about 4,000 checks a month — a 1.6-point gap in on-time rate is roughly 64 additional late reports every month landing on live lease closings, not a rounding error.",
+  "question": "Should Corewell Ops switch its tenant-screening add-on to the cheaper background-check vendor?",
+  "expect": {
+    "must_target": ["basically identical to Vendor A", "interchangeable on reliability", "rate is basically identical"],
+    "verdict_not": ["holds"]
+  },
+  "why": "The cited numbers (99.2% vs 97.6%, times projected volume) contradict the 'basically identical / interchangeable' claim drawn from them."
+}

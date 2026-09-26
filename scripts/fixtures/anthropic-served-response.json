@@ -1,0 +1,23 @@
+{
+  "id": "gen-fixture-anthropic-served",
+  "model": "anthropic/claude-opus-5",
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "message": {
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+              "name": "report_challenge",
+              "arguments": "{\"steelman\":\"The plan is well scoped and cheap to reverse.\",\"counter_steelman\":\"none — the subject argues no direction\",\"challenges\":[],\"verdict\":\"holds\",\"verdict_reason\":\"No fatal issue found.\",\"strongest_objection\":\"None significant.\"}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "usage": { "cost": 0.0081 }
+}

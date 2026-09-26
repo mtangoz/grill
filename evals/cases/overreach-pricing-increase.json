@@ -1,0 +1,11 @@
+{
+  "id": "overreach-pricing-increase",
+  "kind": "flawed",
+  "subject": "Meridian CLI is raising its Pro tier from $29/month to $39/month for all new signups, keeping existing customers grandfathered for 12 months. The increase follows a survey of 40 current Pro customers in which 31 said they would still subscribe at $39, and follows two competitors raising their own prices earlier this year. The stated reasoning: the product has added meaningful features since the price was last set two years ago, and the survey suggests willingness to pay has room to move. The plan: raise the price for new signups next month, message it as reflecting added value, and monitor new-signup conversion for six weeks. Prediction, offered at 75% confidence: the 40-customer survey proves that the entire addressable market — including the much larger population of people who have never tried Meridian CLI — is willing to pay $39, so the company should treat pricing as settled for at least the next two years rather than revisiting it after this one increase. The strongest case against: the 40 people surveyed already use and like the product, a different population from a first-time visitor deciding whether to try it at all, and that visitor's price sensitivity was never tested.",
+  "question": "Should Meridian CLI raise its Pro tier price for new signups next month?",
+  "expect": {
+    "must_target": ["the entire addressable market", "treat pricing as settled", "proves that the entire"],
+    "verdict_not": ["holds"]
+  },
+  "why": "Overreaches from a 40-person survey of existing happy customers to the entire addressable market, and from one price change to pricing being 'settled' for two years."
+}

@@ -1,0 +1,11 @@
+{
+  "id": "missing-failure-mode-office-lease",
+  "kind": "flawed",
+  "subject": "Panelcraft, a 22-person hardware startup, has the option to sign a 5-year lease on a larger office at $38/sqft, well under the current market rate of $46/sqft for comparable nearby space, if signed by the end of the month. The landlord is offering three months free rent as an added incentive. The team wants to sign now: reasons given are the below-market rate, the free months, and avoiding another round of office-hunting during a busy fundraising quarter. The plan: sign the 5-year term, budget for the full headcount growth the current roadmap assumes, and treat the free months as a buffer for build-out delays. Prediction, offered at 75% confidence: locking in this rate now will save the company roughly $180,000 in rent over the lease term compared to renewing at market rate year over year, making this a straightforwardly good deal regardless of how the next funding round goes. The strongest case against: hardware startups routinely see a fundraising round slip or come in smaller than planned, and the lease says nothing about what happens to the company's exposure if headcount has to shrink instead of grow into the space.",
+  "question": "Should Panelcraft sign the 5-year office lease this month?",
+  "expect": {
+    "must_target": ["straightforwardly good deal", "good deal regardless of", "the next funding round goes"],
+    "verdict_not": ["holds"]
+  },
+  "why": "Omits the failure mode the subject itself raises: a slipped or smaller funding round leaving Panelcraft stuck paying for space it can't use."
+}

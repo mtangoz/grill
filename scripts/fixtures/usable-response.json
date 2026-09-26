@@ -1,0 +1,23 @@
+{
+  "id": "gen-fixture-usable",
+  "model": "openai/gpt-5.6-sol",
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "message": {
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+              "name": "report_challenge",
+              "arguments": "{\"steelman\":\"The plan concentrates effort on the change most likely to move the number that matters, and defers everything else until that bet is settled.\",\"counter_steelman\":\"none — the subject argues no direction\",\"challenges\":[{\"kind\":\"unsupported-claim\",\"severity\":\"moderate\",\"target\":\"this will double signups within a month\",\"challenge\":\"No baseline or comparable launch is cited for the multiplier, so the number reads as a hope rather than an estimate.\",\"what_would_have_to_be_true\":\"A past change of similar size produced a similar lift over a similar period.\",\"falsifier\":\"Pull the signup curve from the last comparable launch and compare the slope.\",\"confidence\":\"medium\"}],\"verdict\":\"weak\",\"verdict_reason\":\"The core direction is reasonable but the headline number is asserted rather than supported.\",\"strongest_objection\":\"Back the multiplier with a real comparable before repeating it externally.\"}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "usage": { "cost": 0.0123, "include": true }
+}

@@ -1,0 +1,57 @@
+name: Grill signal (no content)
+description: Share how a grill went, as choices only. Nothing about your decision.
+title: "Grill signal"
+labels: ["signal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This form has no text boxes on purpose.** Grill learns from these choices only: which judges and verdicts help people, and which verdicts turn out right. It never learns from what you decided. Issues here are public, so leave the title as it is.
+  - type: dropdown
+    id: event
+    attributes:
+      label: Event
+      options: ["rated", "resolved"]
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Kind of decision
+      options: ["pricing", "hiring", "fundraising", "product", "timing", "vendor", "operations", "personal", "other"]
+    validations:
+      required: true
+  - type: dropdown
+    id: judge
+    attributes:
+      label: Judge family
+      options: ["openai", "google", "deepseek", "meta", "mistral", "qwen", "xai", "moonshot", "other", "paste-route"]
+    validations:
+      required: true
+  - type: dropdown
+    id: verdict
+    attributes:
+      label: Verdict
+      options: ["holds", "holds-with-conditions", "weak", "refuted"]
+    validations:
+      required: true
+  - type: dropdown
+    id: rating
+    attributes:
+      label: Worth engaging?
+      options: ["yes", "no", "not-asked"]
+  - type: dropdown
+    id: confidence
+    attributes:
+      label: Your confidence when you made the call
+      options: ["under-30", "30-49", "50-69", "70-89", "90-plus", "none"]
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Did it come true? (resolved only)
+      options: ["yes", "no", "unclear", "not-yet"]
+  - type: dropdown
+    id: client
+    attributes:
+      label: Where you used Grill
+      options: ["desktop", "web", "phone", "code"]

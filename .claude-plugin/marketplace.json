@@ -1,0 +1,13 @@
+{
+  "name": "grill",
+  "owner": {
+    "name": "Grill"
+  },
+  "plugins": [
+    {
+      "name": "grill",
+      "source": ".",
+      "description": "An outside AI judge for your decisions, plus a weekly decision review. Bring your own key and connections."
+    }
+  ]
+}

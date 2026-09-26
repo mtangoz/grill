@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Manifests parse
+        run: |
+          node -e 'for (const f of [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", ".mcp.json", "manifest.json"]) JSON.parse(require("fs").readFileSync(f, "utf8"))'
+      - name: Tests (no network, no key)
+        run: node --test scripts/*.test.mjs
+      - name: The Desktop extension builds and its manifest validates
+        if: matrix.node == 22
+        run: |
+          node scripts/build-extension.mjs
+          npx -y @anthropic-ai/mcpb validate dist/extension/manifest.json
+          npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb

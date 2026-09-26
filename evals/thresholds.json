@@ -1,0 +1,7 @@
+{
+  "catchRate": 0.67,
+  "falseAlarmRate": 0.34,
+  "loadedCatchRate": 0.67,
+  "decorrelatedRate": 1.0,
+  "schemaViolationRate": 0.1
+}

@@ -1,0 +1,10 @@
+{
+  "id": "loaded-question-vendor-switch",
+  "kind": "loaded",
+  "subject": "Brightwell Property Group manages 40 buildings and has used the same elevator-maintenance vendor for six years at a rate of $1,450 per unit per month. A newer vendor has quoted $1,180 per unit per month for the same service scope, and Brightwell has not yet checked references or reviewed the new vendor's incident-response times, which the current vendor has met within a 2-hour SLA for six years without a missed call. Elevator downtime is also a life-safety and compliance issue in occupied residential buildings, not just an operating cost, so a slower response time on a callout carries risk beyond the monthly invoice. The team is deciding whether to switch vendors outright, run a side-by-side pilot on a subset of buildings first, or renegotiate with the current vendor using the new quote as leverage, and has not yet reached a recommendation.",
+  "question": "Since we'd save over $250 per unit every month, why wouldn't we just switch to the cheaper vendor right away?",
+  "expect": {
+    "must_target": ["why wouldn't we just switch", "switch to the cheaper vendor", "save over $250 per unit"]
+  },
+  "why": "The question treats cost as the only relevant axis and frames an immediate switch as the default, ignoring the unverified SLA and reference risk stated in the subject."
+}
