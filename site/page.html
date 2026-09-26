@@ -94,6 +94,9 @@
      Removing the "prerelease" class from <main> is the whole switch. */
   .prerelease .only-public { display: none; }
   main:not(.prerelease) .only-pre { display: none; }
+  /* Pro shows only once there's a release to download AND payment links: data-pro on <main>. */
+  .prerelease .only-pro, main:not([data-pro]) .only-pro { display: none; }
+  .small { font-size: 0.9rem; color: var(--quiet); }
 
   @media (max-width: 560px) {
     main { padding-top: 1.6rem; }
@@ -172,8 +175,15 @@
     <dt>For developers</dt><dd>In Claude Code: <code>/plugin marketplace add mtangoz/grill</code>, then <code>/plugin install grill@grill</code></dd>
   </dl>
 
+  <section class="only-pro">
+    <h2 id="pro">Rather not set anything up?</h2>
+    <p class="note">Grill Pro is $9 a month. We handle the AI account behind the one-click check, so there’s nothing to sign up for and no credit to top up. You pay, paste one key into Claude Desktop, and you’re done. Cancel anytime.</p>
+    <p class="cta"><a class="button" href="#pro">Get Pro · $9 a month</a><a href="#pro">or $90 a year</a></p>
+    <p class="small">Works in Claude Desktop and Claude Code. The free options stay free. <a href="/terms/">Terms</a></p>
+  </section>
+
   <h2 id="privacy">Your privacy</h2>
-  <p class="privacy">Grill has no accounts and keeps nothing. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions.<span class="only-public"> The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</span></p>
+  <p class="privacy">Grill has no accounts and keeps nothing. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions.<span class="only-pro"> Pro adds billing through Stripe: we see your email and your key’s usage, never what you decide.</span><span class="only-public"> The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</span></p>
 
   <div class="footer">
     <span class="only-pre">Opening to everyone soon</span>

@@ -27,18 +27,18 @@ const FAVICON =
   );
 
 const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
-const head = [
+const headFor = ({ description, url }) => [
   '<meta charset="utf-8">',
   '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
   '<meta name="color-scheme" content="light dark">',
   '<meta name="theme-color" content="#f7f4ef" media="(prefers-color-scheme: light)">',
   '<meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">',
   `<link rel="icon" href="${FAVICON}">`,
-  `<meta name="description" content="${DESCRIPTION}">`,
-  `<link rel="canonical" href="${SITE_URL}">`,
-  `<meta property="og:url" content="${SITE_URL}">`,
+  `<meta name="description" content="${description}">`,
+  `<link rel="canonical" href="${url}">`,
+  `<meta property="og:url" content="${url}">`,
   '<meta property="og:title" content="Grill">',
-  `<meta property="og:description" content="${DESCRIPTION}">`,
+  `<meta property="og:description" content="${description}">`,
   '<meta property="og:type" content="website">',
   '<meta name="twitter:card" content="summary">',
   "<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>",
@@ -50,10 +50,19 @@ const cut = page.indexOf("</style>");
 if (cut === -1) throw new Error("site/page.html must open with its <title>, links and <style>");
 const pageHead = page.slice(0, cut + "</style>".length);
 const pageBody = page.slice(cut + "</style>".length);
+const doc = (head, title, body) => `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${body}\n</body>\n</html>\n`;
 
 mkdirSync(OUT, { recursive: true });
+writeFileSync(join(OUT, "index.html"), doc(headFor({ description: DESCRIPTION, url: SITE_URL }), pageHead, pageBody));
+
+// Other pages (site/terms.html) are a <title> and a body; they borrow the main page's styles.
+const style = pageHead.slice(pageHead.indexOf("<style>"));
+const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
+const termsTitle = terms.match(/^<title>[^<]*<\/title>/)?.[0];
+if (!termsTitle) throw new Error("site/terms.html must open with its <title>");
+mkdirSync(join(OUT, "terms"), { recursive: true });
 writeFileSync(
-  join(OUT, "index.html"),
-  `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${pageHead}\n</head>\n<body>${pageBody}\n</body>\n</html>\n`,
+  join(OUT, "terms", "index.html"),
+  doc(headFor({ description: "Grill Pro terms, in plain words.", url: `${SITE_URL}terms/` }), `${termsTitle}\n${style}`, terms.slice(termsTitle.length)),
 );
-console.log("built _site/index.html");
+console.log("built _site/index.html and _site/terms/index.html");

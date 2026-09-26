@@ -41,10 +41,35 @@ describe("site/page.html", () => {
     assert.match(visible, /class="[^"]*only-pre[^"]*"[^>]*>[\s\S]*?mailto:hello@hold\.quest/);
   });
 
+  it("Pro stays hidden until there's a release and real Stripe links; then every buy link is Stripe's", () => {
+    assert.match(page, /\.prerelease \.only-pro, main:not\(\[data-pro\]\) \.only-pro \{ display: none; \}/);
+    const pro = page.match(/<section class="only-pro">([\s\S]*?)<\/section>/)?.[1];
+    assert.ok(pro, "the Pro section exists");
+    const buy = [...pro.matchAll(/<a[^>]*href="([^"]+)"[^>]*>(?:Get Pro|or \$90)/g)].map((m) => m[1]);
+    assert.equal(buy.length, 2);
+    if (/<main[^>]*\bdata-pro\b/.test(page)) {
+      for (const href of buy) assert.match(href, /^https:\/\/buy\.stripe\.com\//, "Pro is on, so the buy links must be real");
+    }
+  });
+
   it("defines its colours as tokens for light, dark-by-system and dark-by-choice", () => {
     assert.match(page, /:root \{[\s\S]*--paper:/);
     assert.match(page, /@media \(prefers-color-scheme: dark\)[\s\S]*:root:not\(\[data-theme="light"\]\)/);
     assert.match(page, /:root\[data-theme="dark"\]/);
+  });
+});
+
+describe("the terms page", () => {
+  const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
+
+  it("says what the code does: the allowance, the prices, cancelling and refunds", async () => {
+    const { DEFAULT_LIMIT_USD } = await import("../api/_pro.mjs");
+    assert.match(terms, new RegExp(`up to \\$${DEFAULT_LIMIT_USD} of AI time a month`));
+    assert.match(terms, /\$9 a month or \$90 a year/);
+    assert.match(page, /Grill Pro is \$9 a month/);
+    assert.match(terms, /cancel anytime/);
+    assert.match(terms, /within 30 days of your first payment/);
+    assert.ok(!terms.includes("—"), "no em dashes");
   });
 });
 
@@ -62,5 +87,9 @@ describe("the site build", () => {
     assert.match(head, /<meta name="theme-color" content="#161513" media="\(prefers-color-scheme: dark\)">/);
     assert.match(head, /--paper:/);
     assert.match(rest, /<body>[\s\S]*id="setup"/);
+    const terms = readFileSync(join(ROOT, "_site/terms/index.html"), "utf8");
+    assert.match(terms, /<title>Grill Pro terms<\/title>/);
+    assert.match(terms, /<link rel="canonical" href="https:\/\/grillyour\.ai\/terms\/">/);
+    assert.match(terms, /--paper:/, "the terms page borrows the site's styles");
   });
 });

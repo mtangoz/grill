@@ -74,6 +74,7 @@ const SETUP_TEXT = [
   "1. Create one at https://openrouter.ai/keys. Sign in, and add a few dollars of credit; a grill costs about a cent.",
   "2. Paste it into Grill's settings where you installed it (Claude Desktop: Settings → Extensions → Grill).",
   `Step-by-step: ${SETUP_URL}`,
+  "Have Grill Pro? Paste the key from your welcome page there instead.",
   "Until then, the grill skill can write the subject as a prompt for you to paste into ChatGPT or Gemini instead.",
 ].join("\n");
 

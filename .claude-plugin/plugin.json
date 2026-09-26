@@ -21,7 +21,7 @@
     "openrouter_api_key": {
       "type": "string",
       "title": "Model router key (OpenRouter)",
-      "description": "Create one at https://openrouter.ai/keys and add a few dollars of credit; a grill costs about a cent. It is masked, stored securely, and sent only to OpenRouter. Or leave it empty if OPENROUTER_API_KEY is already set in your environment.",
+      "description": "Create one at https://openrouter.ai/keys and add a few dollars of credit; a grill costs about a cent. It is masked, stored securely, and sent only to OpenRouter. Have Grill Pro? Paste your Pro key here instead. Or leave it empty if OPENROUTER_API_KEY is already set in your environment.",
       "sensitive": true
     },
     "jev_quality_check": {

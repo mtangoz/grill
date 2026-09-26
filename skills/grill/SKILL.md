@@ -14,7 +14,7 @@ The user has been thinking with you, so your critique is correlated with theirs.
 
 If the user seems new ("what is this?", "set up Grill"), say in two lines what it does. Then offer to grill **one real decision right now**: something they decided or will decide this week, and how sure they are. The first grill is the setup.
 
-If they use the one-click route, mention once the two settings in their model router account that keep write-ups unstored. Both are off by default:
+If they set up the one-click route with their own model-router key (not Grill Pro, whose account is already set this way), mention once the two settings in that account that keep write-ups unstored. Both are off by default:
 - **Input & Output Logging** (Observability settings): leave it off, or list their Grill key under "Excluded API Keys".
 - **Use of inputs/outputs** (Privacy settings, the 1% discount): leave it off.
 

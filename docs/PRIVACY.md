@@ -1,6 +1,6 @@
 # Privacy: who can see your decision
 
-**Short version:** Grill has no server, no account and no tracking. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
+**Short version:** Grill has no account and no tracking, and never sees a decision. The only server is the small one that sells Grill Pro, and it never handles a write-up. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
 
 ## Who sees what
 
@@ -12,7 +12,10 @@
 | **The judge's model provider** | The approved write-up, in transit | Grill routes **only** to zero-data-retention endpoints (`provider: { zdr: true, data_collection: "deny" }`), and never falls back to one that retains |
 | **The app you paste into**, paste route | The approved write-up | That app's settings. Use its private mode, for example a Temporary Chat in ChatGPT |
 | **Jev (TypeSafe)**, quality check, on by default | The masked write-up and the judge's report | A zero-data-retention endpoint, checked weekly; the check is dropped if any other endpoint answers |
-| **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them | There is nowhere for anything else to go |
+| **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them. With Pro, also your billing details and your key's usage, as below | There is nowhere for anything else to go |
+| **Stripe**, Grill Pro only | Your email, card and billing address | Stripe's own privacy policy. Grill never sees your card |
+| **Grill's Pro server**, Grill Pro only | Your checkout and your subscription's status | It runs only when you buy and when your subscription changes. Write-ups never pass through it |
+| **Grill's router account**, Grill Pro only | Your key's usage: cost, model and time of each check, never the text | Logging is off and every request is zero-retention, account-wide |
 
 ## What Grill enforces in code
 
@@ -31,6 +34,17 @@ Each of these is pinned by a test, so it can't quietly stop being true.
 Both are off by default. Keep them off:
 1. **Input & Output Logging** (Observability settings). If you use it for other work, add your Grill key under **Excluded API Keys**.
 2. **Use of inputs/outputs** (Privacy settings), the 1% discount for letting the router use your data.
+
+## Grill Pro
+
+Pro changes who pays for the AI, not where your write-up goes.
+- **Your write-ups still go straight** from your Claude to the router, using your Pro key. They never pass through Grill's server.
+- **Your Pro key comes from Grill's router account.** That account is set to zero-data-retention endpoints only, with logging off, for every key.
+- **What Grill keeps for Pro:**
+  - your email and subscription, in Stripe;
+  - a record of which key is yours, stored on your Stripe customer;
+  - each key's usage in the router account (cost, model and time of each check, never the text).
+- **The key is shown to you once** and stored nowhere. If you lose it, we switch it off and give you a new one.
 
 ## Your key
 
