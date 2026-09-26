@@ -1,4 +1,4 @@
-// The onboarding site: one source (site/page.html), published as a Claude artifact as-is and as
+// The onboarding site: one source (site/page.html), published as a Claude artifact as-is and
 // on Vercel through scripts/build-site.mjs (every push to main redeploys). These pin what makes both work.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
