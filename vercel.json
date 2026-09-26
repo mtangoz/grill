@@ -1,3 +1,8 @@
 {
-  "rewrites": [{ "source": "/welcome", "destination": "/api/welcome" }]
+  "buildCommand": "node scripts/build-site.mjs",
+  "outputDirectory": "_site",
+  "rewrites": [
+    { "source": "/welcome", "destination": "/api/welcome" },
+    { "source": "/checkout", "destination": "/api/checkout" }
+  ]
 }

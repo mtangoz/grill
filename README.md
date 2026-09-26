@@ -6,7 +6,7 @@
 
 Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, Gemini, Grok or Muse. It writes up your decision, and you check it. Then an outside judge, a model from a different company, argues the strongest case against it. It names the cheapest test that would settle each doubt, and gives a verdict.
 
-> **Verdict: 🟠 WEAK.** The plan assumes customers stay at the new price, and nothing in it tests that.
+> **Verdict: shaky.** The plan assumes customers stay at the new price, and nothing in it tests that.
 > **Falsifier:** show the new price to one in ten new signups for two weeks, and compare how many start paying.
 
 ## Set up
@@ -68,6 +68,7 @@ Your log lives in a Google Drive folder or Notion database you choose. Once a mo
 | Grill | Free |
 | The one-click judge | Your own key's credit: about a cent a grill, so $5 lasts hundreds |
 | The copy-and-paste routes | Free, on the assistants you already use |
+| Grill Pro (optional) | $9 a month or $90 a year, if you'd rather not manage a key. The free routes stay free. The site says when early access takes half off, for life |
 
 ## Privacy
 
@@ -78,7 +79,7 @@ Your log lives in a Google Drive folder or Notion database you choose. Once a mo
   - a key or token in the write-up stops the run before anything is sent;
   - email addresses, phone numbers and card numbers are masked;
   - the installed code can talk to the model router and nothing else, and uses no third-party packages.
-- **No servers, accounts or tracking.** Grill's makers never see your decisions.
+- This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. Grill's makers never see your decisions.
 
 Details, including two router settings to check: [docs/PRIVACY.md](docs/PRIVACY.md).
 
@@ -94,7 +95,7 @@ Every change must still pass the checks. See [LEARNING.md](LEARNING.md).
 
 It helped you think it through, so its critique shares your blind spots. A judge from another company doesn't. In Claude, Grill keeps Claude models out of the judging, and tells you if a run ever lands on one anyway. Everywhere else, the table above picks the judge.
 
-The judge must argue your side before it attacks, quote the words it targets, and give every challenge a test that would settle it. A verdict of "holds" with no challenges is a real answer; it's told a made-up objection is worse than none.
+The judge must argue your side before it attacks, quote the words it targets, and give every challenge a test that would settle it. A verdict of "solid" with no challenges is a real answer; it's told a made-up objection is worse than none.
 
 **Quality checks:**
 - **Local, always on:** Grill checks every quote a challenge attacks against your write-up, and flags any it can't find.
@@ -122,6 +123,27 @@ npm run build:extension          # dist/grill.mcpb
   - `server/`: the Desktop extension's tool;
   - `scripts/judge.mjs`: the judge itself, which also runs on its own (`node scripts/judge.mjs --help`).
 - **Release:** bump the version in `package.json`, `manifest.json` and `.claude-plugin/plugin.json` (a test keeps them equal), then run the release workflow. It tags that version and publishes the extension and the skill zips.
+
+### The website and Grill Pro
+
+The site is `site/page.html`, built by `node scripts/build-site.mjs` into `_site/`, which Vercel serves. Checkout, the welcome page and the webhook live in `api/`. None of that is in the Desktop extension.
+
+Set these on the Vercel project. `GRILL_PRO_COUPON` has to be available when the site builds, because the page is static. Changing it does nothing until the next deploy. Unset means full price and no offer on the page.
+
+| Variable | What it is |
+|---|---|
+| `STRIPE_SECRET_KEY` | Stripe secret key. The server uses it. The site never sees it. |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret for `/api/stripe-webhook`. |
+| `OPENROUTER_MANAGEMENT_KEY` | Creates each buyer's capped key, and switches it off when they cancel. |
+| `GRILL_PRO_PRICE_MONTH` | Stripe price id for Grill Pro at $9 a month (`price_…`). |
+| `GRILL_PRO_PRICE_YEAR` | Stripe price id for Grill Pro at $90 a year (`price_…`). |
+| `GRILL_PRO_COUPON` | Optional. A Stripe coupon id. When set, checkout applies it and the site says "Early access: 50% off Pro for life" ($4.50 a month, or $45 a year). The coupon must be 50% off with duration `forever`. |
+| `GRILL_PORTAL_URL` | Optional. The Stripe customer portal (`https://billing.stripe.com/…`), linked from the welcome page. |
+| `GRILL_PRO_KEY_LIMIT` | Optional. Monthly allowance in dollars. Default 3, and it won't go above 50. |
+
+In Stripe, create a product, those two recurring prices, and a coupon with `percent_off` 50 and `duration` `forever`. Put the coupon's id in `GRILL_PRO_COUPON`. Point a webhook at `https://grillyour.ai/api/stripe-webhook` for `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted` and `customer.deleted`. The discount stays on a subscription for as long as that subscription lasts, including renewals, because Stripe stores it. There is no database. To end early access, unset `GRILL_PRO_COUPON` and redeploy. People who already subscribed keep the discount.
+
+Web Analytics is a snippet the site build adds to the public pages only, not to the Grill tool. Enable it in the project's Analytics tab, then redeploy.
 
 ## License
 

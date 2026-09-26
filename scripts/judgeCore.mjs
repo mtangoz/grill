@@ -941,11 +941,13 @@ const KIND_LABEL = Object.freeze({
   "loaded-framing": "Loaded framing",
 });
 
+// What a person reads. The keys above (holds, holds-with-conditions, weak, refuted) stay
+// the tool's own words; these are the same four the website uses.
 const VERDICT_BADGE = Object.freeze({
-  holds: "✅ HOLDS",
-  "holds-with-conditions": "🟡 HOLDS WITH CONDITIONS",
-  weak: "🟠 WEAK",
-  refuted: "🔴 REFUTED",
+  holds: "solid",
+  "holds-with-conditions": "solid if",
+  weak: "shaky",
+  refuted: "doesn't hold up",
 });
 
 /**

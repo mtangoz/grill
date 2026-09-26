@@ -8,7 +8,7 @@ description: Grill a decision, plan or forecast. An outside AI judge, a model fr
 The user has been thinking with you, so your critique is correlated with theirs. Grilling sends the decision to a judge from a **different model family**. The judge writes:
 - a steelman of the decision, and a counter-steelman;
 - challenges, each with a **falsifier**: the cheapest test that would settle it;
-- a verdict: `holds`, `holds-with-conditions`, `weak` or `refuted`.
+- a verdict, in the same words as the website: solid, solid if, shaky, or doesn't hold up. The tool's own result uses `holds`, `holds-with-conditions`, `weak` or `refuted` for those four.
 
 ## First time
 
@@ -74,7 +74,7 @@ If they say yes, give them this link, filled in, to open and submit themselves:
 
 - `category`: one of pricing, hiring, fundraising, product, timing, vendor, operations, personal, other.
 - `judge`: the served model's family, which is the part before the `/`, such as openai, google, deepseek, meta, mistral, qwen, xai or moonshot. Use `other` for anything else, and `paste-route` for the paste route.
-- `verdict`: holds, holds-with-conditions, weak or refuted.
+- `verdict`: holds, holds-with-conditions, weak or refuted. Plain words map back as solid → holds, solid if → holds-with-conditions, shaky → weak, doesn't hold up → refuted.
 - `rating`: yes or no.
 - `client`: desktop, web, phone or code.
 

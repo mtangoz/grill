@@ -29,27 +29,39 @@ describe("site/page.html", () => {
     assert.match(page, /<td>Copilot<\/td><td>Gemini\b(?![^<]*(Claude|ChatGPT|Grok))/);
   });
 
-  it("while pre-release, shows no link into the private repo and offers an invite instead", () => {
-    // The switch is one class on <main>. Once it is removed, this test has nothing to check.
-    if (!/<main class="prerelease"/.test(page)) return;
-    assert.match(page, /\.prerelease \.only-public \{ display: none; \}/);
-    assert.match(page, /main:not\(\.prerelease\) \.only-pre \{ display: none; \}/);
-    // Drop every element marked only-public (none nests an element of its own tag), and what
-    // is left is the page a visitor sees.
-    const visible = page.replace(/<(\w+)\b[^>]*\bclass="[^"]*\bonly-public\b[^"]*"[^>]*>[\s\S]*?<\/\1>/g, "");
-    assert.doesNotMatch(visible, /github\.com|\/plugin |releases\/latest/);
-    assert.match(visible, /class="[^"]*only-pre[^"]*"[^>]*>[\s\S]*?mailto:hello@hold\.quest/);
+  it("is open: the free routes are on the page, and the invite wall is gone", () => {
+    assert.doesNotMatch(page, /prerelease|Ask for an invite|Opening to everyone|only-pre|only-public/);
+    assert.match(page, /<main id="top">/);
+    assert.match(page, /github\.com\/mtangoz\/grill#set-up/);
+    const setupAt = page.indexOf('id="setup"');
+    const proAt = page.indexOf('id="pro"');
+    assert.ok(setupAt > 0 && proAt > setupAt, "the free routes come before Pro");
   });
 
-  it("Pro stays hidden until there's a release and real Stripe links; then every buy link is Stripe's", () => {
-    assert.match(page, /\.prerelease \.only-pro, main:not\(\[data-pro\]\) \.only-pro \{ display: none; \}/);
-    const pro = page.match(/<section class="only-pro">([\s\S]*?)<\/section>/)?.[1];
+  it("shows full-price Pro unless the build turns the early-access offer on", () => {
+    assert.match(page, /main:not\(\[data-offer\]\) \.offer \{ display: none; \}/);
+    assert.match(page, /main\[data-offer\] \.no-offer \{ display: none; \}/);
+    assert.doesNotMatch(page, /<main[^>]*\bdata-offer\b/);
+    const pro = page.match(/<section id="pro">([\s\S]*?)<\/section>/)?.[1];
     assert.ok(pro, "the Pro section exists");
-    const buy = [...pro.matchAll(/<a[^>]*href="([^"]+)"[^>]*>(?:Get Pro|or \$90)/g)].map((m) => m[1]);
-    assert.equal(buy.length, 2);
-    if (/<main[^>]*\bdata-pro\b/.test(page)) {
-      for (const href of buy) assert.match(href, /^https:\/\/buy\.stripe\.com\//, "Pro is on, so the buy links must be real");
-    }
+    assert.match(pro, /Early access: 50% off Pro for life/);
+    assert.match(pro, /\$4\.50 a month/);
+    assert.match(pro, /\$45 a year/);
+    const buy = [...pro.matchAll(/<a[^>]*href="([^"]+)"[^>]*>/g)].map((m) => m[1]);
+    assert.deepEqual(buy, [
+      "https://grillyour.ai/checkout?plan=month",
+      "https://grillyour.ai/checkout?plan=year",
+      "https://grillyour.ai/checkout?plan=month",
+      "https://grillyour.ai/checkout?plan=year",
+      "/terms/",
+    ]);
+  });
+
+  it("says the website counts visits anonymously, and the tool does not", () => {
+    const sentence = "This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you.";
+    assert.ok(page.includes(sentence));
+    assert.ok(readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8").includes(sentence));
+    assert.ok(readFileSync(join(ROOT, "README.md"), "utf8").includes(sentence));
   });
 
   it("defines its colours as tokens for light, dark-by-system and dark-by-choice", () => {
@@ -91,5 +103,32 @@ describe("the site build", () => {
     assert.match(terms, /<title>Grill Pro terms<\/title>/);
     assert.match(terms, /<link rel="canonical" href="https:\/\/grillyour\.ai\/terms\/">/);
     assert.match(terms, /--paper:/, "the terms page borrows the site's styles");
+    const snippet = '<script defer src="/_vercel/insights/script.js"></script>';
+    assert.ok(html.includes("window.va"), "the home page counts visits");
+    assert.ok(html.includes(snippet));
+    assert.ok(terms.includes(snippet), "the terms page counts visits");
+    assert.ok(!page.includes(snippet), "the artifact source does not count visits");
+    assert.ok(!readFileSync(join(ROOT, "site/terms.html"), "utf8").includes(snippet));
+    for (const f of ["server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/build-extension.mjs"]) {
+      assert.ok(!readFileSync(join(ROOT, f), "utf8").includes("_vercel/insights"), `${f} must not load website analytics`);
+    }
+  });
+
+  it("the early-access offer is on only when GRILL_PRO_COUPON is set at build time", () => {
+    const build = (coupon) => {
+      const env = { ...process.env };
+      if (coupon) env.GRILL_PRO_COUPON = coupon;
+      else delete env.GRILL_PRO_COUPON;
+      execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env });
+      return readFileSync(join(ROOT, "_site/index.html"), "utf8");
+    };
+    const off = build("");
+    assert.match(off, /<main id="top">/);
+    assert.doesNotMatch(off, /<main id="top" data-offer>/);
+    const on = build("early50");
+    assert.match(on, /<main id="top" data-offer>/);
+    // A value that isn't a coupon id is the same as unset: full price, no offer.
+    const junk = build("not a coupon");
+    assert.doesNotMatch(junk, /<main id="top" data-offer>/);
   });
 });
