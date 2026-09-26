@@ -224,6 +224,39 @@ describe("the Jev quality check setting", () => {
     }
   });
 
+  it("one grill can skip the check, and no grill can switch on a check the settings turned off", async () => {
+    const run = async (env, args) => {
+      const fake = await startFakeOpenRouter();
+      const c = await initialized({ GRILL_API_KEY: KEY, ...fake.env, ...env });
+      const res = await c.request("tools/call", { name: "grill", arguments: { subject: "We will raise prices 20% in Q4.", ...args } });
+      await c.close();
+      await fake.close();
+      return { res, fake };
+    };
+    const skipped = await run({}, { quality_check: false });
+    assert.equal(skipped.res.result.isError, false, textOf(skipped.res));
+    assert.equal(skipped.fake.seen.chat.length, 1, "the grill itself still ran");
+    assert.equal(skipped.fake.seen.decisions.length, 0, "quality_check: false skips Jev for this grill");
+    const next = await run({}, {});
+    assert.equal(next.fake.seen.decisions.length, 1, "the next grill follows the setting again");
+    const cannotEnable = await run({ GRILL_CHECK: "false" }, { quality_check: true });
+    assert.equal(cannotEnable.fake.seen.decisions.length, 0, "a switched-off check stays off");
+  });
+
+  it("tells Claude, before every call, whether Jev will see the write-up and how to skip it", async () => {
+    for (const [env, want] of [
+      [{}, /quality check is ON[\s\S]*sees the masked write-up[\s\S]*quality_check: false/],
+      [{ GRILL_CHECK: "false" }, /quality check is switched OFF/],
+    ]) {
+      const c = await initialized({ GRILL_API_KEY: KEY, ...env });
+      const res = await c.request("tools/list", {});
+      const grillTool = res.result.tools.find((t) => t.name === "grill");
+      assert.match(grillTool.description, want);
+      assert.equal(grillTool.inputSchema.properties.quality_check.type, "boolean");
+      await c.close();
+    }
+  });
+
   it("the setting is the only switch: JUDGE_CHECK in the host's environment changes nothing", async () => {
     const { res, fake } = await grill({ JUDGE_CHECK: "1", GRILL_CHECK: "false" });
     assert.equal(res.result.isError, false, textOf(res));

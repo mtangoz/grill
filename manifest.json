@@ -70,7 +70,7 @@
     "jev_quality_check": {
       "type": "boolean",
       "title": "Quality check with Jev",
-      "description": "Score every grill with Jev, a zero-retention decision model reached through the same model router: are the falsifiers real tests, does the verdict fit the challenges? It sees the masked write-up and the report. About $0.0002 a grill. Turn off to send the write-up to the judge only.",
+      "description": "Score every grill with Jev, a zero-retention decision model reached through the same model router: are the falsifiers real tests, does the verdict fit the challenges? It sees the masked write-up and the report. About $0.0002 a grill. Claude tells you before each grill, and you can skip it for one. Turn off to send the write-up to the judge only.",
       "default": true
     }
   }

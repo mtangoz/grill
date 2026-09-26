@@ -22,7 +22,7 @@ Each of these is pinned by a test, so it can't quietly stop being true.
 - **Contact details are masked.** Email addresses, phone numbers and card numbers are replaced with `[email]`, `[phone]` and `[card number]` before sending. The report says how many, never what.
 - **One destination.** The code you install makes exactly one kind of network call, to the model router. It has no other network code and no third-party packages, so there is no hidden dependency to trust.
 - **Quotes are checked locally.** Every quote a challenge attacks is checked against your write-up on your own machine, so a made-up objection is flagged. This sends nothing anywhere.
-- **The Jev quality check is on by default.** Jev scores whether the falsifiers are real tests and the verdict fits. Switch it off in Grill's settings to send the write-up to the judge only. The result is kept only if Jev's zero-retention endpoint answered.
+- **The Jev quality check is on by default.** Jev scores whether the falsifiers are real tests and the verdict fits. Claude tells you before each grill that Jev will see it. Skip it for one grill by saying so, or switch it off in Grill's settings to send the write-up to the judge only. The result is kept only if Jev's zero-retention endpoint answered.
 - **Nothing stored.** The write-up reaches the judge through a pipe, never a file. The report's temporary copy is deleted once read.
 - **Verifiable builds.** Each release is built by GitHub Actions from the tagged source, with a signed provenance attestation and checksums. You can confirm the extension is exactly this code.
 

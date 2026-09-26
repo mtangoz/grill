@@ -346,7 +346,7 @@ export function renderCheck(quality) {
     "",
     `_Scored by Jev (\`${JEV_MODEL}\`, served by ${JEV_PROVIDER} with zero data retention)${
       typeof costUsd === "number" ? ` · cost $${costUsd.toFixed(6)}` : ""
-    }. It grades the review above, not your decision._`,
+    }. It grades the review above, not your decision. Jev is on by default: ask to skip it for one grill, or switch it off in Grill's settings._`,
     "",
   );
   return out;

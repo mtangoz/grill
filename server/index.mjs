@@ -77,10 +77,18 @@ const SETUP_TEXT = [
   "Until then, the grill skill can write the subject as a prompt for you to paste into ChatGPT or Gemini instead.",
 ].join("\n");
 
+// The user must know who sees the write-up before they approve it, and whether the Jev check is
+// one of them depends on their setting. The server knows the setting, so it says so here, where
+// Claude reads it before every call. (A setting change restarts the server, so this stays true.)
+const CHECK_NOTE = checkEnabled()
+  ? "The Jev quality check is ON: Jev, a decision model from TypeSafe, also sees the masked write-up and the report, on a zero-retention endpoint. Tell the user that before they approve, and that they can skip it for this grill (pass quality_check: false) or switch it off in Grill's settings."
+  : "The Jev quality check is switched OFF in Grill's settings, so only the judge sees the write-up.";
+
 const DESCRIPTION = [
   "Send a decision, plan or forecast to an outside AI judge: a model from a different company than Claude.",
   "It writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict (holds, holds-with-conditions, weak or refuted).",
   "Before calling: write the subject, meaning the decision, the options, the reasons, the prediction and confidence exactly as the user gave them, and the strongest case against. Show it to the user, and call only after they approve, because it leaves their machine for a model router (zero-data-retention endpoints only).",
+  CHECK_NOTE,
   "Costs about a cent on the user's own key and usually takes 1–3 minutes. If the result is a job id, call grill_result with it.",
 ].join(" ");
 
@@ -102,6 +110,11 @@ const TOOLS = [
           type: "string",
           description:
             "Optional. The model family that wrote the subject, if not Claude, for example openai. That family is excluded from judging too.",
+        },
+        quality_check: {
+          type: "boolean",
+          description:
+            "Optional. false skips the Jev quality check for this grill only, when the user asks. It never turns on a check the user switched off in settings.",
         },
       },
       required: ["subject"],
@@ -125,13 +138,13 @@ const TOOLS = [
 
 const jobs = new Map();
 
-function startJob({ subject, question, author }) {
+function startJob({ subject, question, author, skipCheck }) {
   const id = randomUUID().slice(0, 8);
   const dir = mkdtempSync(join(tmpdir(), "grill-"));
   const args = [JUDGE, "--json", "--out", join(dir, "report.md")];
   if (question) args.push("--question", question);
   if (author) args.push("--author", author);
-  if (checkEnabled()) args.push("--check");
+  if (checkEnabled() && !skipCheck) args.push("--check");
   const env = { ...process.env, OPENROUTER_API_KEY: resolveApiKey() };
   delete env.JUDGE_CHECK; // the setting above decides, never an inherited variable
   const child = spawn(process.execPath, args, {
@@ -205,12 +218,13 @@ async function callTool(name, args = {}, onTick) {
     const subject = typeof args.subject === "string" ? args.subject : "";
     const question = typeof args.question === "string" ? args.question.trim() : "";
     const author = typeof args.author === "string" ? args.author.trim().toLowerCase() : "";
+    const skipCheck = args.quality_check === false; // off for this grill only; never switches it on
     if (!subject.trim()) return text("There's no subject to grill. Write it, show it to the user, then call again.", true);
     if (subject.length > MAX_SUBJECT_CHARS) return text(`The subject is ${subject.length} characters; trim it under ${MAX_SUBJECT_CHARS}.`, true);
     if (question.length > MAX_QUESTION_CHARS) return text(`The question is over ${MAX_QUESTION_CHARS} characters; shorten it.`, true);
     if (author && !AUTHOR_RE.test(author)) return text("author must be a lowercase model-family name, like openai.", true);
     if (!resolveApiKey()) return text(SETUP_TEXT, true);
-    const job = startJob({ subject, question, author });
+    const job = startJob({ subject, question, author, skipCheck });
     return (await waitFor(job, waitMs(), onTick)) ? outcomeOf(job) : pending(job);
   }
   if (name === "grill_result") {

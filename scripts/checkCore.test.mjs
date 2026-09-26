@@ -325,6 +325,7 @@ describe("renderCheck", () => {
     assert.match(md, /typesafe\/jev-1\.13/);
     assert.match(md, /cost \$0\.000210/);
     assert.match(md, /grades the review above, not your decision/);
+    assert.match(md, /skip it for one grill, or switch it off in Grill's settings/);
   });
 
   it("leaves out what was not scored rather than printing 0 of 0", () => {

@@ -98,7 +98,7 @@ The judge must argue your side before it attacks, quote the words it targets, an
 
 **Quality checks:**
 - **Local, always on:** Grill checks every quote a challenge attacks against your write-up, and flags any it can't find.
-- **Jev, on by default:** a decision model from TypeSafe, on a zero-retention endpoint, scores whether each falsifier is a real test and whether the verdict fits. It adds about $0.0002 a grill; switch it off in Grill's settings.
+- **Jev, on by default:** a decision model from TypeSafe, on a zero-retention endpoint, scores whether each falsifier is a real test and whether the verdict fits. Claude tells you before each grill that Jev will see the masked write-up. Skip it for one grill by saying so, or switch it off in Grill's settings. It adds about $0.0002 a grill.
 
 ## If something's off
 

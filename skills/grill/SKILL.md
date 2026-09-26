@@ -33,7 +33,9 @@ Leave out names of people who aren't needed, and anything personal, health- or H
 ## 2. Get the user's OK
 
 Show the subject and question, and say where they will go before sending anything:
-- **One-click route:** a model router, zero-data-retention endpoints only, plus a Jev quality check on the same terms. About a cent, on their own key.
+- **One-click route:** a model router, zero-data-retention endpoints only. About a cent, on their own key.
+  - **Say who else sees it.** If the `grill` tool's description says the Jev quality check is on, tell them: Jev, a decision model from TypeSafe, also sees the masked write-up and the report, on the same zero-retention terms. It checks the judge's work. They can skip it for this grill, or switch it off in Grill's settings (Claude Desktop: Settings → Extensions → Grill).
+  - If they say skip it, call the tool with `quality_check: false`. That covers this grill only.
 - **Paste route:** the assistant they paste it into, under that app's own data settings.
 
 ## 3. Send it
