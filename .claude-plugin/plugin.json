@@ -19,15 +19,15 @@
   "userConfig": {
     "openrouter_api_key": {
       "type": "string",
-      "title": "OpenRouter API key",
+      "title": "Model router key (OpenRouter)",
       "description": "Create one at https://openrouter.ai/keys and add a few dollars of credit; a grill costs about a cent. It is masked, stored securely, and sent only to OpenRouter. Or leave it empty if OPENROUTER_API_KEY is already set in your environment.",
       "sensitive": true
     },
     "jev_quality_check": {
       "type": "boolean",
       "title": "Quality check with Jev",
-      "description": "Also score each grill with Jev (TypeSafe, a zero-retention decision model on OpenRouter): are the falsifiers concrete, does the verdict fit? TypeSafe then also sees your masked write-up. About $0.0002 a grill.",
-      "default": false
+      "description": "Score every grill with Jev, a zero-retention decision model reached through the same model router: are the falsifiers real tests, does the verdict fit the challenges? It sees the masked write-up and the report. About $0.0002 a grill. Turn off to send the write-up to the judge only.",
+      "default": true
     }
   }
 }

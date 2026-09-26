@@ -55,13 +55,15 @@ describe("the manifests agree", () => {
     assert.deepEqual(referenced(mcp.mcpServers.grill.env), keys);
   });
 
-  it("the Jev check is a boolean setting that defaults to OFF, says what it sends, and is wired as GRILL_CHECK", () => {
+  it("the Jev check is a boolean setting that defaults to ON, says what it sends, and is wired as GRILL_CHECK", () => {
     for (const cfg of [plugin.userConfig.jev_quality_check, manifest.user_config.jev_quality_check]) {
       assert.equal(cfg.type, "boolean");
-      assert.equal(cfg.default, false, "a second data flow must be opted into, never out of");
+      assert.equal(cfg.default, true, "on by default (founder decision, 2026-09-26); the description must say what it sends");
       assert.notEqual(cfg.sensitive, true);
       assert.equal(cfg.title, "Quality check with Jev");
-      assert.match(cfg.description, /TypeSafe then also sees your masked write-up/);
+      assert.match(cfg.description, /sees the masked write-up/);
+      assert.match(cfg.description, /zero-retention/);
+      assert.match(cfg.description, /Turn off/);
     }
     assert.equal(manifest.server.mcp_config.env.GRILL_CHECK, "${user_config.jev_quality_check}");
     assert.equal(mcp.mcpServers.grill.env.GRILL_CHECK, "${user_config.jev_quality_check}");

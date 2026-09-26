@@ -260,7 +260,7 @@
       <div class="panel" role="tabpanel" id="panel-desktop" aria-labelledby="tab-desktop">
         <p class="note">The one-click judge, on Mac or Windows. About 2 minutes, and nothing else to install.</p>
         <ol class="do">
-          <li><strong>Get a key.</strong> At <a href="https://openrouter.ai/keys">openrouter.ai/keys</a>, sign in, click <em>Create key</em>, and add $5 of credit. A grill costs about a cent.</li>
+          <li><strong>Get a key</strong> for Grill's model router. At <a href="https://openrouter.ai/keys">openrouter.ai/keys</a>, sign in, click <em>Create key</em>, and add $5 of credit. A grill costs about a cent.</li>
           <li><strong>Install Grill.</strong> Download <a href="https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb">grill.mcpb</a> and double-click it, or drag it onto the Claude window. Paste your key when Claude asks.</li>
           <li><strong>Try it.</strong> In any chat, paste this:</li>
         </ol>
@@ -277,7 +277,7 @@
       </div>
 
       <div class="panel" role="tabpanel" id="panel-code" aria-labelledby="tab-code" hidden>
-        <p class="note">Installs the plugin and asks for your OpenRouter key, or uses <code>OPENROUTER_API_KEY</code> if it's set.</p>
+        <p class="note">Installs the plugin and asks for your model router key, or uses <code>OPENROUTER_API_KEY</code> if it's set.</p>
         <div class="code"><code id="code-cmds">/plugin marketplace add mtangoz/grill
 /plugin install grill@grill</code><button class="copy" data-copy="code-cmds">Copy</button></div>
       </div>
@@ -292,9 +292,9 @@
           <thead><tr><th>Who</th><th>What they see</th><th>What stops more</th></tr></thead>
           <tbody>
             <tr><td>Claude</td><td>The conversation you're already having</td><td>Your Claude privacy settings</td></tr>
-            <tr><td>OpenRouter</td><td>The approved write-up, in transit, and request metadata</td><td>It stores no prompts unless you opt in. Keep two settings off; the privacy notes say which</td></tr>
+            <tr><td>The model router</td><td>The approved write-up, in transit, and request metadata</td><td>It stores no prompts unless you opt in; the privacy notes name the two settings to keep off</td></tr>
             <tr><td>The judge's model</td><td>The approved write-up, in transit</td><td>Grill routes only to zero-data-retention endpoints, and never falls back</td></tr>
-            <tr><td>The quality check</td><td>Off unless you turn it on. Then Jev (TypeSafe) scores the masked write-up and report</td><td>Also a zero-data-retention endpoint</td></tr>
+            <tr><td>The quality check</td><td>Jev (TypeSafe) scores the masked write-up and the report. On by default</td><td>A zero-data-retention endpoint, through the same router. You can switch it off</td></tr>
             <tr><td>Grill's makers</td><td class="nothing">Nothing</td><td>There is nowhere for it to go</td></tr>
           </tbody>
         </table>
@@ -302,7 +302,7 @@
       <ul class="rules">
         <li><span><strong>Keys never leave.</strong> A key or token in the write-up stops the grill before anything is sent.</span></li>
         <li><span><strong>Contact details are masked.</strong> Emails, phone numbers and card numbers become [email], [phone] and [card number].</span></li>
-        <li><span><strong>One destination.</strong> The code you install can reach OpenRouter and nothing else, and uses no third-party packages.</span></li>
+        <li><span><strong>One destination.</strong> The code you install can reach the model router and nothing else, and uses no third-party packages.</span></li>
         <li><span><strong>Checkable builds.</strong> Releases are built from the public source, with checksums and a provenance attestation.</span></li>
       </ul>
       <p><a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">Read the privacy notes</a>. Every rule above is pinned by a test.</p>
@@ -310,11 +310,11 @@
 
     <section id="better" aria-labelledby="better-title">
       <span class="label">Getting better</span>
-      <h2 id="better-title">It learns from choices, never from your decisions</h2>
-      <p>OpenRouter's router improves without reading prompts: it follows which models people choose for each task. Grill borrows that idea.</p>
+      <h2 id="better-title">It improves under the same privacy controls as your grills</h2>
+      <p>Grill's self-improvement runs with the same controls as a grill: masked text, zero-retention routing and nothing kept. It never sees a real decision.</p>
       <div class="loops">
-        <div class="loop"><span class="label">Continuous</span><h3>Model choice</h3><p>The judge comes through OpenRouter's router, which follows what people use for each kind of task. Grill keeps Claude's family out.</p></div>
-        <div class="loop"><span class="label">Weekly</span><h3>Quality</h3><p>Twelve made-up decisions with planted flaws, sound plans and loaded questions. Jev, a decision model from TypeSafe, scores whether each falsifier is a real test.</p></div>
+        <div class="loop"><span class="label">Continuous</span><h3>Model choice</h3><p>A model router follows which models people choose for each kind of task, so the judge improves as models do. Claude's family is always kept out.</p></div>
+        <div class="loop"><span class="label">Weekly</span><h3>Quality</h3><p>Twelve made-up decisions with planted flaws, sound plans and loaded questions, run through the same zero-retention routing as your grills. Jev scores every report.</p></div>
         <div class="loop"><span class="label">Monthly, opt-in</span><h3>Usefulness</h3><p>After a grill you can share a few choices: was it worth engaging, and later, did the call come true. The form has no text boxes.</p></div>
       </div>
       <p class="gate"><b>Every change has to pass the weekly checks before it ships.</b> A problem found in the real world becomes a new made-up case, so the checks grow with what's learned.</p>
@@ -325,7 +325,7 @@
       <h2 id="cost-title">What it costs</h2>
       <div class="cost">
         <div><strong>Free</strong><span>Grill itself, open source</span></div>
-        <div><strong>≈ $0.01</strong><span>A grill, on your own OpenRouter credit. $5 lasts hundreds</span></div>
+        <div><strong>≈ $0.01</strong><span>A grill, paid from your own key's credit. $5 lasts hundreds</span></div>
         <div><strong>$0</strong><span>The paste route, on your ChatGPT or Gemini account</span></div>
       </div>
     </section>
@@ -344,7 +344,7 @@
         </details>
         <details>
           <summary>What if the judge is wrong?</summary>
-          <p>It will be, sometimes. It has to quote the words it attacks, and Grill checks those quotes against your write-up, so a made-up objection is flagged. The verdict is evidence to weigh. You decide.</p>
+          <p>It will be, sometimes. It has to quote the words it attacks, and Grill checks those quotes against your write-up, so a made-up objection is flagged. Jev also scores whether each test it names is a real one. The verdict is evidence to weigh. You decide.</p>
         </details>
         <details>
           <summary>Does Grill keep my decisions?</summary>

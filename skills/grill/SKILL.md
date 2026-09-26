@@ -14,9 +14,9 @@ The user has been thinking with you, so your critique is correlated with theirs.
 
 If the user seems new ("what is this?", "set up Grill"), say in two lines what it does. Then offer to grill **one real decision right now**: something they decided or will decide this week, and how sure they are. The first grill is the setup.
 
-If they use the one-click route, mention once the two OpenRouter settings that keep their subjects unstored. Both are off by default:
+If they use the one-click route, mention once the two settings in their model router account that keep write-ups unstored. Both are off by default:
 - **Input & Output Logging** (Observability settings): leave it off, or list their Grill key under "Excluded API Keys".
-- **OpenRouter use of inputs/outputs** (Privacy settings): leave it off.
+- **Use of inputs/outputs** (Privacy settings, the 1% discount): leave it off.
 
 ## 1. Write the subject
 
@@ -33,7 +33,7 @@ Leave out names of people who aren't needed, and anything personal, health- or H
 ## 2. Get the user's OK
 
 Show the subject and question, and say where they will go before sending anything:
-- **One-click route:** OpenRouter, zero-data-retention endpoints only. About a cent, on their own key.
+- **One-click route:** a model router, zero-data-retention endpoints only, plus a Jev quality check on the same terms. About a cent, on their own key.
 - **Paste route:** the assistant they paste it into, under that app's own data settings.
 
 ## 3. Send it
@@ -63,7 +63,7 @@ Show the subject and question, and say where they will go before sending anythin
 
 ## 5. Offer to share a signal (opt-in, every time)
 
-Grill improves the way OpenRouter's router does: from aggregate choices, never from content. After they answer "worth engaging?", offer once: *"Want to help Grill get better? This shares only a few choices, no words from your decision."*
+Grill improves under the same privacy controls as a grill: from a few shared choices, never from content. After they answer "worth engaging?", offer once: *"Want to help Grill get better? This shares only a few choices, no words from your decision."*
 
 If they say yes, give them this link, filled in, to open and submit themselves:
 

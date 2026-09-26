@@ -1,6 +1,6 @@
 # How Grill gets better without seeing your decisions
 
-OpenRouter's Auto Router improves every day without reading anyone's prompts. It learns from aggregate spend: which models people actually choose for each kind of task. Grill copies that idea, one layer up.
+A model router improves every day without reading anyone's prompts: it learns which models people choose for each kind of task. Grill copies that idea one layer up, and runs its whole loop under the same privacy controls as a grill: masked text, zero-retention routing, nothing kept.
 
 **The rule:** Grill learns from synthetic cases, public metadata and choices people share. Never from a decision.
 
@@ -8,12 +8,12 @@ OpenRouter's Auto Router improves every day without reading anyone's prompts. It
 
 | Loop | Learns from | Runs | Output |
 |---|---|---|---|
-| **1. Model choice** | OpenRouter's market data: which models people use for each task type | Continuously, inside OpenRouter's router | The judge Grill gets, inherited free as models improve |
+| **1. Model choice** | The router's market data: which models people use for each task type | Continuously, inside the router | The judge Grill gets, inherited free as models improve |
 | **2. Quality** | 12 synthetic decisions in `evals/cases/`, with planted flaws, sound cases and loaded questions. Each report is also scored by **Jev**, TypeSafe's typed decision model, which is a third model family | Weekly, and on every change to the judge (`eval.yml`) | Gated: catch rate, false-alarm rate, loaded-question catches, decorrelation. Watched: quotes grounded, falsifiers concrete, verdicts that fit, and Jev's reading of whether the planted flaw was caught. An issue if a gate falls below its floor |
 | **3. Usefulness and accuracy** | Opt-in, dropdown-only signals: "worth engaging?" by judge family, and each verdict against its outcome | Monthly (`learn.yml`) | A report with recommendations, such as "exclude judge family X" or "verdicts aren't predicting outcomes" |
 
 **Plus upkeep** (`upstream.yml`, weekly):
-- the judge's fallback models still exist on OpenRouter, and still have zero-retention endpoints;
+- the judge's fallback models still exist on the router, and still have zero-retention endpoints; every endpoint serving Jev is zero-retention;
 - the extension manifest still validates against the latest `mcpb` tool.
 
 ## Why Jev for quality

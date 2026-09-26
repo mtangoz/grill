@@ -59,17 +59,18 @@ function resolveApiKey(env = process.env) {
 }
 
 /**
- * Is the quality check switched on? Only an exact "true" or "1": the hosts substitute a boolean
- * setting as "true"/"false", and an unfilled placeholder arrives as literal `${…}` text. Anything
- * unrecognised reads as off, because on starts a second flow of the write-up to a third party.
+ * Is the quality check switched on? ON BY DEFAULT (founder decision, 2026-09-26): a check on a
+ * zero-retention endpoint, on the already-masked write-up, is part of what a grill is. Only an
+ * explicit off turns it off: "false", "0", "off" or "no", in any case. An unset variable, an empty
+ * one or an unfilled `${…}` placeholder means the user never changed the default, so it stays on.
  */
 function checkEnabled(env = process.env) {
-  const value = typeof env.GRILL_CHECK === "string" ? env.GRILL_CHECK.trim() : "";
-  return value === "true" || value === "1";
+  const value = typeof env.GRILL_CHECK === "string" ? env.GRILL_CHECK.trim().toLowerCase() : "";
+  return !["false", "0", "off", "no"].includes(value);
 }
 
 const SETUP_TEXT = [
-  "Grill isn't set up yet: it needs your own OpenRouter API key.",
+  "Grill isn't set up yet: it needs a key for its model router, OpenRouter.",
   "1. Create one at https://openrouter.ai/keys. Sign in, and add a few dollars of credit; a grill costs about a cent.",
   "2. Paste it into Grill's settings where you installed it (Claude Desktop: Settings → Extensions → Grill).",
   `Step-by-step: ${SETUP_URL}`,
@@ -79,8 +80,8 @@ const SETUP_TEXT = [
 const DESCRIPTION = [
   "Send a decision, plan or forecast to an outside AI judge: a model from a different company than Claude.",
   "It writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict (holds, holds-with-conditions, weak or refuted).",
-  "Before calling: write the subject, meaning the decision, the options, the reasons, the prediction and confidence exactly as the user gave them, and the strongest case against. Show it to the user, and call only after they approve, because it leaves their machine for OpenRouter (zero-data-retention endpoints only).",
-  "Costs about a cent on the user's own OpenRouter key and usually takes 1–3 minutes. If the result is a job id, call grill_result with it.",
+  "Before calling: write the subject, meaning the decision, the options, the reasons, the prediction and confidence exactly as the user gave them, and the strongest case against. Show it to the user, and call only after they approve, because it leaves their machine for a model router (zero-data-retention endpoints only).",
+  "Costs about a cent on the user's own key and usually takes 1–3 minutes. If the result is a job id, call grill_result with it.",
 ].join(" ");
 
 const TOOLS = [

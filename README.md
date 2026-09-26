@@ -13,7 +13,7 @@ Say **"grill this"** in any Claude chat. Claude writes up your decision, and you
 
 ### Claude Desktop (Mac or Windows): the one-click judge, 2 minutes
 
-1. **Get a key.** Go to [openrouter.ai/keys](https://openrouter.ai/keys), sign in, click **Create key**, and add $5 of credit. A grill costs about a cent.
+1. **Get a key** for Grill's model router: go to [openrouter.ai/keys](https://openrouter.ai/keys), sign in, click **Create key**, and add $5 of credit. A grill costs about a cent.
 2. **Install Grill.** Download **[grill.mcpb](https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb)** and double-click it, or drag it onto the Claude window. Paste your key when Claude asks. There's nothing else to install; Claude Desktop runs it.
 3. **Try it.** In any chat, type:
    *Grill this: we're moving our launch to March. I'm 70% sure it gets us more signups.*
@@ -33,7 +33,7 @@ Want it in one step? Use Claude Desktop, above.
 /plugin install grill@grill
 ```
 
-It asks for your OpenRouter key, or uses `OPENROUTER_API_KEY` if it's already set.
+It asks for your model router key, or uses `OPENROUTER_API_KEY` if it's already set.
 
 ## The weekly review (optional)
 
@@ -52,25 +52,25 @@ Your log lives in a Google Drive folder or Notion database you choose. Once a mo
 | | Cost |
 |---|---|
 | Grill | Free |
-| The one-click judge | Your own OpenRouter credit: about a cent a grill, so $5 lasts hundreds |
+| The one-click judge | Your own key's credit: about a cent a grill, so $5 lasts hundreds |
 | The paste route | Free, on your ChatGPT or Gemini account |
 
 ## Privacy
 
 - **Your notes stay in your tools.** Only the write-up you approve leaves:
-  - on the one-click route, it goes to OpenRouter's zero-data-retention endpoints;
+  - on the one-click route, it goes through a model router to zero-data-retention endpoints only;
   - on the paste route, it goes to the assistant you paste it into.
 - **Grill enforces this in code,** and tests pin each rule:
   - a key or token in the write-up stops the run before anything is sent;
   - email addresses, phone numbers and card numbers are masked;
-  - the installed code can talk to OpenRouter and nothing else, and uses no third-party packages.
+  - the installed code can talk to the model router and nothing else, and uses no third-party packages.
 - **No servers, accounts or tracking.** Grill's makers never see your decisions.
 
-Details, including two OpenRouter settings to check: [docs/PRIVACY.md](docs/PRIVACY.md).
+Details, including two router settings to check: [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## How Grill gets better
 
-Like OpenRouter's router, Grill learns from aggregate choices, never from content:
+Grill's self-improvement runs under the same privacy controls as a grill: masked text, zero-retention routing, nothing kept. It never sees a real decision:
 - **Weekly:** 12 synthetic decisions with planted flaws check that the judge still catches them.
 - **Monthly:** a report counts the choices people opt to share after a grill: was it worth engaging, and did the verdict match what happened.
 
@@ -84,7 +84,7 @@ The judge must argue your side before it attacks, quote the words it targets, an
 
 **Quality checks:**
 - **Local, always on:** Grill checks every quote a challenge attacks against your write-up, and flags any it can't find.
-- **Optional:** Jev, a decision model from TypeSafe, scores whether each falsifier is a real test and whether the verdict fits. Turn it on in Grill's settings; it adds about $0.0002 a grill.
+- **Jev, on by default:** a decision model from TypeSafe, on a zero-retention endpoint, scores whether each falsifier is a real test and whether the verdict fits. It adds about $0.0002 a grill; switch it off in Grill's settings.
 
 ## If something's off
 

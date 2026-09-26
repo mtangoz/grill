@@ -204,18 +204,18 @@ describe("the Jev quality check setting", () => {
     return { res, fake };
   };
 
-  it("GRILL_CHECK=true reaches the judge: the decisions path gets the check, and the report shows it", async () => {
-    for (const on of ["true", "1"]) {
-      const { res, fake } = await grill({ GRILL_CHECK: on });
+  it("the check is ON by default: unset, empty, an unfilled placeholder or true all run it", async () => {
+    for (const on of ["true", "1", "", "${user_config.jev_quality_check}", "TRUE", "yes", undefined]) {
+      const { res, fake } = await grill(on === undefined ? {} : { GRILL_CHECK: on });
       assert.equal(res.result.isError, false, textOf(res));
-      assert.equal(fake.seen.decisions.length, 1, `GRILL_CHECK=${on}`);
+      assert.equal(fake.seen.decisions.length, 1, `GRILL_CHECK=${JSON.stringify(on)}`);
       assert.equal(fake.seen.decisions[0].body.model, "typesafe/jev-1.13");
       assert.match(textOf(res), /## Quality check \(Jev\)/);
     }
   });
 
-  it("is off for false, for an unfilled install-dialog placeholder, and for anything else", async () => {
-    for (const off of ["false", "${user_config.jev_quality_check}", "TRUE", "yes", ""]) {
+  it("is off only when switched off: false, 0, off or no, in any case", async () => {
+    for (const off of ["false", "0", "off", "no", "FALSE", " Off "]) {
       const { res, fake } = await grill({ GRILL_CHECK: off });
       assert.equal(res.result.isError, false, textOf(res));
       assert.equal(fake.seen.chat.length, 1, "the grill itself still ran");
@@ -224,11 +224,11 @@ describe("the Jev quality check setting", () => {
     }
   });
 
-  it("the setting is the only switch: JUDGE_CHECK=1 in the host's environment cannot turn it on", async () => {
+  it("the setting is the only switch: JUDGE_CHECK in the host's environment changes nothing", async () => {
     const { res, fake } = await grill({ JUDGE_CHECK: "1", GRILL_CHECK: "false" });
     assert.equal(res.result.isError, false, textOf(res));
-    assert.equal(fake.seen.decisions.length, 0);
-    const unset = await grill({ JUDGE_CHECK: "1" });
-    assert.equal(unset.fake.seen.decisions.length, 0);
+    assert.equal(fake.seen.decisions.length, 0, "switched off stays off");
+    const onByDefault = await grill({ JUDGE_CHECK: "0" });
+    assert.equal(onByDefault.fake.seen.decisions.length, 1, "on by default stays on");
   });
 });

@@ -19,6 +19,8 @@ concurrency:
 
 jobs:
   deploy:
+    # Pages needs a public repo on a free plan. While the repo is private, skip rather than fail.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
