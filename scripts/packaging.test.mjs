@@ -136,3 +136,22 @@ describe("the skills", () => {
     assert.ok(text.includes("{THE NEUTRAL QUESTION}"));
   });
 });
+
+describe("the any-assistant prompt", () => {
+  const prompt = readFileSync(join(ROOT, "prompts/grill.md"), "utf8");
+
+  it("carries the paste route's judge prompt word for word, so the two cannot drift", () => {
+    const paste = readFileSync(join(ROOT, "skills/grill/paste-prompt.md"), "utf8").split("\n");
+    const rules = paste.flatMap((line, i) => (line === "---" ? [i] : []));
+    const judge = paste.slice(rules[0] + 1, rules.at(-1)).join("\n").trim();
+    assert.ok(judge.length > 1000, "could not find the judge prompt between paste-prompt.md's rules");
+    assert.ok(prompt.includes(judge), "prompts/grill.md no longer contains paste-prompt.md's judge prompt");
+  });
+
+  it("names the assistants people start from, and pairs Copilot only with a company it can't run", () => {
+    for (const name of ["Claude", "ChatGPT", "Copilot", "Gemini", "Grok", "Muse"]) {
+      assert.ok(prompt.includes(name), `no mention of ${name}`);
+    }
+    assert.match(prompt, /^\| Copilot [^\n]*\| Gemini \|$/m);
+  });
+});

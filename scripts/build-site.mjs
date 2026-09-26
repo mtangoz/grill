@@ -4,7 +4,7 @@
  *
  * site/page.html is a page body (title, styles, markup, script) with no document skeleton, so the
  * same file publishes as a Claude artifact unchanged. This wraps it into a full document with the
- * link-preview tags a shared URL needs, and writes _site/index.html for GitHub Pages.
+ * link-preview tags a shared URL needs, and writes _site/index.html, which Vercel serves.
  *
  *   node scripts/build-site.mjs        # writes _site/index.html
  */
@@ -15,12 +15,23 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "_site");
 const DESCRIPTION =
-  "A second opinion on your decisions, from an AI that isn't Claude. Set up Grill in Claude chat in two minutes.";
+  "A second opinion on your decisions, from a different AI company than the one you think with. Starts from Claude, ChatGPT, Copilot, Gemini, Grok or Muse.";
+// The verdict scale's dot, ink on paper, inverted when the device is dark.
+const FAVICON =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><style>circle{fill:#1c1b19}" +
+      "@media (prefers-color-scheme:dark){circle{fill:#ece7df}}</style><circle cx='16' cy='16' r='9'/></svg>",
+  );
 
 const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
 const head = [
   '<meta charset="utf-8">',
   '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
+  '<meta name="color-scheme" content="light dark">',
+  '<meta name="theme-color" content="#f7f4ef" media="(prefers-color-scheme: light)">',
+  '<meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">',
+  `<link rel="icon" href="${FAVICON}">`,
   `<meta name="description" content="${DESCRIPTION}">`,
   '<meta property="og:title" content="Grill">',
   `<meta property="og:description" content="${DESCRIPTION}">`,

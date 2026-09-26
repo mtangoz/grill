@@ -1,414 +1,172 @@
 <title>Grill</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap">
 <style>
+  /* Paper and ink, like hold.quest, where Grill is advertised. Dark follows the device setting. */
   :root {
-    --paper: #f4f6f8;
-    --surface: #ffffff;
-    --ink: #15181e;
-    --muted: #586070;
-    --rule: #dbe0e7;
-    --ember: #d4461f;
-    --ember-soft: #fbe6de;
-    --holds: #1f7a4d;
-    --conditions: #a56a0b;
-    --weak: #c2410c;
-    --refuted: #b42318;
-    --code-bg: #eef1f5;
-    --shadow: 0 1px 2px rgba(21, 24, 30, 0.06), 0 8px 24px rgba(21, 24, 30, 0.06);
-    --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
-    --body: "Source Sans 3", "Segoe UI", system-ui, -apple-system, sans-serif;
-    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    color-scheme: light;
+    --paper: #f7f4ef;
+    --ink: #1c1b19;
+    --muted: #4a4742;
+    --quiet: #6a655e;
+    --rule: #ddd6cb;
+    --code-bg: #ece6dc;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       color-scheme: dark;
-      --paper: #101318;
-      --surface: #181c23;
-      --ink: #eceff4;
-      --muted: #a3abb9;
-      --rule: #2a3039;
-      --ember: #f06b44;
-      --ember-soft: #3a1f17;
-      --holds: #4cc38a;
-      --conditions: #e0a93b;
-      --weak: #f0833e;
-      --refuted: #f06b62;
-      --code-bg: #20252e;
-      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
+      --paper: #161513;
+      --ink: #ece7df;
+      --muted: #b4ada2;
+      --quiet: #938c81;
+      --rule: #34312c;
+      --code-bg: #24221f;
     }
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --paper: #101318;
-    --surface: #181c23;
-    --ink: #eceff4;
-    --muted: #a3abb9;
-    --rule: #2a3039;
-    --ember: #f06b44;
-    --ember-soft: #3a1f17;
-    --holds: #4cc38a;
-    --conditions: #e0a93b;
-    --weak: #f0833e;
-    --refuted: #f06b62;
-    --code-bg: #20252e;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
+    --paper: #161513;
+    --ink: #ece7df;
+    --muted: #b4ada2;
+    --quiet: #938c81;
+    --rule: #34312c;
+    --code-bg: #24221f;
   }
 
-  body {
-    background: var(--paper);
-    color: var(--ink);
-    font: 400 17px/1.6 var(--body);
-    padding-inline: 20px;
-    padding-block: 0 64px;
-  }
-  .wrap { max-width: 1080px; margin: 0 auto; }
-  a { color: var(--ink); text-decoration-color: var(--ember); text-underline-offset: 3px; }
-  a:hover { color: var(--ember); }
-  :focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; border-radius: 4px; }
-  h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
-  h2 { font-size: clamp(26px, 3.4vw, 34px); font-weight: 800; letter-spacing: -0.01em; }
-  h3 { font-size: 19px; font-weight: 600; }
-  p { margin: 0; max-width: 65ch; }
-  .label { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  html { background: var(--paper); }
+  body { margin: 0; padding: 0 20px; background: var(--paper); color: var(--ink); font-family: var(--sans); line-height: 1.55; -webkit-text-size-adjust: 100%; }
+  a { color: var(--ink); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  a:hover { text-decoration-thickness: 2px; }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 2px; }
+  code { font-family: var(--mono); font-size: 0.86em; background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
 
-  /* The wordmark: two short, angled bars, like the marks a grill leaves. */
-  .marks { display: inline-flex; gap: 4px; transform: skewX(-24deg); }
-  .marks i { display: block; width: 5px; height: 18px; background: var(--ember); border-radius: 1px; }
+  main { max-width: 44rem; margin: 0 auto; padding: 2.5rem 0 3.5rem; }
+  .top { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; font-size: 0.9rem; }
+  .mark { font: 700 1.1rem/1 var(--sans); letter-spacing: -0.01em; text-decoration: none; }
+  .top nav { display: flex; gap: 18px; }
+  .top nav a { color: var(--muted); text-decoration: none; }
+  .top nav a:hover { color: var(--ink); }
 
-  header.top {
-    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
-    padding-block: 20px; border-bottom: 1px solid var(--rule);
-  }
-  .brand { display: flex; align-items: center; gap: 10px; font: 800 22px/1 var(--display); text-decoration: none; color: var(--ink); }
-  .pill { font: 500 11px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ember); background: var(--ember-soft); padding: 5px 8px; border-radius: 999px; }
-  nav.links { display: flex; gap: 18px; flex-wrap: wrap; font-size: 15px; }
-  nav.links a { text-decoration: none; color: var(--muted); }
-  nav.links a:hover { color: var(--ink); }
+  h1 { font-size: clamp(2.1rem, 5.6vw, 3rem); font-weight: 650; letter-spacing: -0.025em; line-height: 1.08; margin: 3.2rem 0 1rem; text-wrap: balance; max-width: 16ch; }
+  .lede { font-size: 1.12rem; color: var(--muted); max-width: 34rem; margin: 0 0 1.6rem; }
+  .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 0 0 2.8rem; font-size: 0.9rem; color: var(--quiet); }
+  .button { display: inline-block; padding: 10px 18px; border-radius: 999px; background: var(--ink); color: var(--paper); font-weight: 600; font-size: 0.95rem; text-decoration: none; }
+  .button:hover { opacity: 0.88; }
 
-  section { padding-block: 56px 8px; display: grid; gap: 22px; }
-  /* Grid and flex children default to min-width: auto, so one long unbreakable line would widen
-     the whole page on a phone. Let every track shrink; long content wraps or scrolls in place. */
-  section > *, .hero > *, .panel > *, .steps > *, .loops > *, .cost > * { min-width: 0; }
+  /* The one visual: the four verdicts, with the example's landing point. */
+  .scale { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--quiet); margin: 0 0 2.6rem; }
+  .scale .line { position: relative; height: 1px; background: var(--ink); margin: 0 0 10px; }
+  .scale .line i { position: absolute; top: -4px; width: 1px; height: 9px; background: var(--ink); }
+  .scale .line b { position: absolute; top: -5px; width: 11px; height: 11px; margin-left: -5px; border-radius: 50%; background: var(--ink); }
+  .scale .labels { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .scale .labels span:nth-child(2) { text-align: center; transform: translateX(-12%); }
+  .scale .labels span:nth-child(3) { text-align: center; transform: translateX(12%); }
+  .scale .labels span:last-child { text-align: right; }
+  .scale .here { color: var(--ink); font-weight: 600; }
 
-  /* Hero */
-  .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; padding-block: 56px 24px; }
-  .hero h1 { font-size: clamp(36px, 5.2vw, 58px); font-weight: 800; line-height: 1.04; letter-spacing: -0.02em; }
-  .hero h1 em { font-style: normal; color: var(--ember); }
-  .hero .lede { font-size: 19px; color: var(--muted); margin-top: 18px; }
-  .ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 26px; }
-  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 18px; border-radius: 10px; font: 600 16px/1 var(--body); text-decoration: none; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; }
-  .btn.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-  .btn.primary:hover { color: var(--paper); background: var(--ember); border-color: var(--ember); }
-  .say { margin-top: 22px; font: 400 15px/1.5 var(--mono); color: var(--muted); }
-  .say b { color: var(--ink); font-weight: 500; }
+  .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; border-block: 1px solid var(--rule); padding-block: 18px; margin: 0 0 2.6rem; }
+  .facts strong { display: block; font: 650 1.5rem/1.1 var(--sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .facts span { font-size: 0.88rem; color: var(--muted); }
 
-  /* The report card: the product's real output, in its real shape. */
-  .report { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
-  .report-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--rule); font: 500 13px/1.3 var(--mono); color: var(--muted); }
-  .report-body { padding: 18px; display: grid; gap: 14px; font-size: 15.5px; }
-  .verdict { display: inline-flex; align-items: center; gap: 8px; font: 600 13px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 7px 10px; border-radius: 8px; width: fit-content; }
-  .v-holds { color: var(--holds); background: color-mix(in srgb, var(--holds) 12%, transparent); }
-  .v-conditions { color: var(--conditions); background: color-mix(in srgb, var(--conditions) 14%, transparent); }
-  .v-weak { color: var(--weak); background: color-mix(in srgb, var(--weak) 13%, transparent); }
-  .v-refuted { color: var(--refuted); background: color-mix(in srgb, var(--refuted) 13%, transparent); }
-  .challenge { border-top: 1px dashed var(--rule); padding-top: 14px; display: grid; gap: 8px; }
-  .challenge .meta { font: 500 12.5px/1.3 var(--mono); color: var(--muted); }
-  .challenge .meta b { color: var(--weak); font-weight: 500; }
-  blockquote { margin: 0; padding: 8px 12px; border-left: 3px solid var(--ember); background: var(--code-bg); font: 400 14px/1.5 var(--mono); border-radius: 0 6px 6px 0; }
-  .falsifier { font-size: 15px; }
-  .falsifier b { font-family: var(--mono); font-size: 12.5px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ember); margin-right: 6px; }
-  .report-foot { padding: 12px 18px; border-top: 1px solid var(--rule); font: 400 12.5px/1.5 var(--mono); color: var(--muted); }
+  .report { font-family: var(--mono); font-size: 0.86rem; line-height: 1.6; border-top: 1px solid var(--ink); padding-top: 14px; margin: 0 0 2.8rem; }
+  .report p { margin: 0 0 0.6rem; max-width: 64ch; display: grid; grid-template-columns: 10ch 1fr; gap: 0 1ch; }
+  .report .k, .pairs th { color: var(--quiet); }
 
-  /* How it works: a real sequence, so it is numbered. */
-  .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; counter-reset: step; }
-  .steps li { counter-increment: step; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 18px; display: grid; gap: 8px; align-content: start; }
-  .steps li::before { content: counter(step); font: 800 28px/1 var(--display); color: var(--ember); }
-  .steps p { font-size: 15.5px; color: var(--muted); }
-  .scale { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-  .scale p { font-size: 15.5px; color: var(--muted); }
+  h2 { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--quiet); margin: 0 0 0.9rem; }
+  .note, .privacy, .pre { font-size: 0.98rem; color: var(--muted); max-width: 36rem; margin: 0 0 1rem; }
+  .privacy, .pre { margin-bottom: 2.6rem; }
 
-  /* Set up */
-  .tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--rule); }
-  .tab { font: 600 15px/1 var(--body); padding: 12px 14px; border: 0; background: none; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
-  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ember); }
-  .panel { display: grid; gap: 14px; padding-top: 8px; }
-  .panel .note { color: var(--muted); font-size: 15.5px; }
-  ol.do { margin: 0; padding-left: 22px; display: grid; gap: 12px; max-width: 70ch; }
-  ol.do li::marker { font-weight: 700; color: var(--ember); }
-  .code { display: flex; align-items: stretch; gap: 0; max-width: 640px; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--code-bg); }
-  .code code { flex: 1; min-width: 0; padding: 11px 14px; font: 400 14px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-  .copy { border: 0; border-left: 1px solid var(--rule); background: var(--surface); color: var(--ink); font: 600 13px/1 var(--body); padding: 0 14px; cursor: pointer; }
-  .copy:hover { color: var(--ember); }
+  .pairs { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 0.86rem; margin: 0 0 2.6rem; }
+  .pairs th { font-weight: 400; text-align: left; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 0 8px; }
+  .pairs td { padding: 8px 0; border-top: 1px solid var(--rule); vertical-align: top; }
+  .pairs td:first-child, .pairs th:first-child { width: 11rem; padding-right: 1.5ch; }
+  .pairs td:last-child { color: var(--muted); }
 
-  /* Privacy table */
-  .table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); }
-  table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 15.5px; }
-  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  tr:last-child td { border-bottom: 0; }
-  th { font: 500 12px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-  td:first-child { font-weight: 600; white-space: nowrap; }
-  .nothing { color: var(--holds); font-weight: 700; }
-  .rules { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 28px; }
-  .rules li { display: grid; grid-template-columns: 18px 1fr; gap: 10px; font-size: 16px; }
-  .rules li::before { content: ""; width: 10px; height: 10px; margin-top: 8px; border-radius: 2px; background: var(--ember); transform: skewX(-24deg); }
+  dl { display: grid; grid-template-columns: 11rem 1fr; gap: 10px 20px; margin: 0 0 2.6rem; font-size: 0.98rem; }
+  dt { font-weight: 600; }
+  dd { margin: 0; color: var(--muted); }
 
-  /* Getting better */
-  .loops { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .loop { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 18px; display: grid; gap: 8px; align-content: start; }
-  .loop .label { color: var(--ember); }
-  .loop p { font-size: 15.5px; color: var(--muted); }
-  .gate { font-size: 16px; color: var(--muted); }
-  .gate b { color: var(--ink); }
+  .footer { font-size: 0.88rem; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 1.1rem; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
-  /* Cost + FAQ */
-  .cost { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .cost div { border-top: 2px solid var(--ink); padding-top: 12px; display: grid; gap: 4px; }
-  .cost strong { font: 800 26px/1.1 var(--display); font-variant-numeric: tabular-nums; }
-  .cost span { color: var(--muted); font-size: 15px; }
-  details { border-bottom: 1px solid var(--rule); padding-block: 14px; }
-  details:first-of-type { border-top: 1px solid var(--rule); }
-  summary { cursor: pointer; font: 600 18px/1.4 var(--display); list-style-position: outside; }
-  details p { margin-top: 10px; color: var(--muted); }
+  /* Until the public release, the downloads sit in a private repo, so the page offers an invite
+     instead. Removing the "prerelease" class from <main> is the whole switch. */
+  .prerelease .only-public { display: none; }
+  main:not(.prerelease) .only-pre { display: none; }
 
-  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 14.5px; }
-
-  @media (max-width: 860px) {
-    .hero { grid-template-columns: 1fr; gap: 32px; }
-    .steps { grid-template-columns: repeat(2, 1fr); }
-    .loops, .cost { grid-template-columns: 1fr; }
-    .rules { grid-template-columns: 1fr; }
-  }
-  @media (max-width: 480px) {
-    body { font-size: 16px; padding-inline: 16px; }
-    .steps { grid-template-columns: 1fr; }
-    nav.links { display: none; }
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .btn, .tab, .copy, a { transition: color 0.15s, background-color 0.15s, border-color 0.15s; }
+  @media (max-width: 560px) {
+    main { padding-top: 1.6rem; }
+    h1 { margin-top: 2.4rem; }
+    .facts { grid-template-columns: 1fr; gap: 12px; }
+    .scale .labels span { font-size: 0.62rem; }
+    .pairs td:first-child, .pairs th:first-child { width: 7.5rem; }
+    dl { grid-template-columns: 1fr; gap: 2px 0; }
+    dd { margin-bottom: 10px; }
   }
 </style>
 
-<div class="wrap">
-  <header class="top">
-    <a class="brand" href="#top" aria-label="Grill, home"><span class="marks" aria-hidden="true"><i></i><i></i></span>Grill <span class="pill">v0.1 preview</span></a>
-    <nav class="links" aria-label="Sections">
-      <a href="#how">How it works</a>
-      <a href="#setup">Set up</a>
+<main class="prerelease" id="top">
+  <div class="top">
+    <a class="mark" href="#top">grill</a>
+    <nav aria-label="Sections">
+      <a href="#anywhere">Assistants</a>
       <a href="#privacy">Privacy</a>
-      <a href="#better">Getting better</a>
-      <a href="https://github.com/mtangoz/grill">GitHub</a>
+      <a class="only-pre" href="mailto:hello@hold.quest?subject=Grill%20invite">Invite</a>
+      <a class="only-public" href="https://github.com/mtangoz/grill">GitHub</a>
     </nav>
-  </header>
+  </div>
 
-  <main id="top">
-    <section class="hero" aria-labelledby="hero-title">
-      <div>
-        <h1 id="hero-title">A second opinion on your decisions, from an AI that <em>isn't Claude.</em></h1>
-        <p class="lede">Claude helped you think it through, so its critique shares your blind spots. Grill sends the decision to a judge from a different company. It argues the strongest case against you, and names the cheapest test that would settle each doubt.</p>
-        <div class="ctas">
-          <a class="btn primary" href="#setup">Set up in 2 minutes</a>
-          <a class="btn" href="#how">How it works</a>
-        </div>
-        <p class="say">In any Claude chat, say <b>“grill this”</b>.</p>
-      </div>
+  <h1>Decide against the strongest case.</h1>
+  <p class="lede">Grill sends your decision to a judge from a different AI company than the one you think with. You get a verdict, the challenges that survive, and the one test that settles each.</p>
+  <p class="cta only-pre"><a class="button" href="mailto:hello@hold.quest?subject=Grill%20invite">Ask for an invite</a><span>Private pilot</span></p>
+  <p class="cta only-public"><a class="button" href="#setup">Set up</a><span>Free and open source</span></p>
 
-      <article class="report" aria-label="An example grill report">
-        <div class="report-head"><span>Grill · move launch to March</span><span>example</span></div>
-        <div class="report-body">
-          <span class="verdict v-weak">Verdict · Weak</span>
-          <p>The case rests on teams waiting for team accounts, and nothing in it checks that.</p>
-          <div class="challenge">
-            <span class="meta"><b>Serious</b> · hidden assumption · confidence high</span>
-            <blockquote>“most of our waitlist is teams”</blockquote>
-            <p>The waitlist form never asked about team size, so this is a guess, and the whole delay rests on it.</p>
-            <p class="falsifier"><b>Falsifier</b>Email the waitlist one question, “alone or with a team?”, and read the split in 48 hours.</p>
-          </div>
-        </div>
-        <div class="report-foot">judge: a model outside Claude's family · quotes checked: 4 of 4 found · cost $0.01</div>
-      </article>
-    </section>
+  <div class="scale" role="img" aria-label="The four verdicts: holds, holds with conditions, weak and refuted. The example below landed on weak.">
+    <div class="line"><i style="left:0"></i><i style="left:33.333%"></i><b style="left:66.667%"></b><i style="left:100%;margin-left:-1px"></i></div>
+    <div class="labels" aria-hidden="true"><span>Holds</span><span>With conditions</span><span class="here">Weak</span><span>Refuted</span></div>
+  </div>
 
-    <section id="how" aria-labelledby="how-title">
-      <span class="label">How it works</span>
-      <h2 id="how-title">One decision in, a verdict and its tests out</h2>
-      <ol class="steps">
-        <li><h3>You say “grill this”</h3><p>Name the decision, and how sure you are. A plan, a price, a hire, a forecast.</p></li>
-        <li><h3>Claude writes it up</h3><p>The options, your reasons, your confidence and the best case against. You check it. Nothing leaves until you approve.</p></li>
-        <li><h3>An outside judge attacks it</h3><p>It must argue your side first, quote the words it targets, and give every challenge a test that would settle it.</p></li>
-        <li><h3>You get a verdict</h3><p>Plus the challenges, ranked, each with its falsifier. Pick the tests worth running, and log your call.</p></li>
-      </ol>
-      <div class="scale" aria-label="The four verdicts">
-        <span class="verdict v-holds">Holds</span>
-        <span class="verdict v-conditions">Holds with conditions</span>
-        <span class="verdict v-weak">Weak</span>
-        <span class="verdict v-refuted">Refuted</span>
-        <p>One fatal challenge refutes. Ten minor ones don't. “Holds” with nothing found is a real answer.</p>
-      </div>
-    </section>
+  <div class="facts">
+    <div><strong>≈ 1¢</strong><span>a grill, on your own key</span></div>
+    <div><strong>0</strong><span>decisions stored by Grill</span></div>
+    <div><strong>1 prompt</strong><span>to start, in the assistant you already use</span></div>
+  </div>
 
-    <section id="setup" aria-labelledby="setup-title">
-      <span class="label">Set up</span>
-      <h2 id="setup-title">Pick where you use Claude</h2>
-      <div class="tabs" role="tablist" aria-label="Where you use Claude">
-        <button class="tab" role="tab" id="tab-desktop" aria-controls="panel-desktop" aria-selected="true">Claude Desktop</button>
-        <button class="tab" role="tab" id="tab-web" aria-controls="panel-web" aria-selected="false">Web or phone</button>
-        <button class="tab" role="tab" id="tab-code" aria-controls="panel-code" aria-selected="false">Claude Code</button>
-      </div>
+  <div class="report" aria-label="An example report">
+    <p><span class="k">decision</span><span>Move the launch to March for team accounts</span></p>
+    <p><span class="k">verdict</span><span>weak · the case rests on teams waiting, and nothing checks that</span></p>
+    <p><span class="k">quote</span><span>“most of our waitlist is teams”</span></p>
+    <p><span class="k">test</span><span>email the waitlist: “alone or with a team?” Read the split in 48h</span></p>
+  </div>
 
-      <div class="panel" role="tabpanel" id="panel-desktop" aria-labelledby="tab-desktop">
-        <p class="note">The one-click judge, on Mac or Windows. About 2 minutes, and nothing else to install.</p>
-        <ol class="do">
-          <li><strong>Get a key</strong> for Grill's model router. At <a href="https://openrouter.ai/keys">openrouter.ai/keys</a>, sign in, click <em>Create key</em>, and add $5 of credit. A grill costs about a cent.</li>
-          <li><strong>Install Grill.</strong> Download <a href="https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb">grill.mcpb</a> and double-click it, or drag it onto the Claude window. Paste your key when Claude asks.</li>
-          <li><strong>Try it.</strong> In any chat, paste this:</li>
-        </ol>
-        <div class="code"><code id="try-text">Grill this: we're moving our launch to March. I'm 70% sure it gets us more signups.</code><button class="copy" data-copy="try-text">Copy</button></div>
-      </div>
+  <h2 id="anywhere">Start from any assistant</h2>
+  <p class="note">The judge always comes from a different company than the assistant you think with.</p>
+  <table class="pairs">
+    <thead><tr><th scope="col">You think with</th><th scope="col">Judge with</th></tr></thead>
+    <tbody>
+      <tr><td>ChatGPT</td><td>Claude, Gemini or Grok</td></tr>
+      <tr><td>Copilot</td><td>Gemini, because Copilot can run OpenAI, Anthropic or xAI models</td></tr>
+      <tr><td>Gemini</td><td>Claude, ChatGPT or Grok</td></tr>
+      <tr><td>Grok, GrokBot</td><td>Claude, ChatGPT or Gemini</td></tr>
+      <tr><td>Muse</td><td>Claude, ChatGPT or Gemini</td></tr>
+      <tr><td>Claude</td><td>Grill’s one-step judge, or ChatGPT, Gemini or Grok</td></tr>
+    </tbody>
+  </table>
 
-      <div class="panel" role="tabpanel" id="panel-web" aria-labelledby="tab-web" hidden>
-        <p class="note">claude.ai in a browser or the Claude app. No key needed.</p>
-        <ol class="do">
-          <li><strong>Add the skill.</strong> Download <a href="https://github.com/mtangoz/grill/releases/latest/download/grill-skill.zip">grill-skill.zip</a>. In Claude, open <em>Customize → Skills</em>, upload it, and switch it on. For the weekly review as well, go to <em>Customize → Plugins → Add → Add marketplace</em> and enter <code>mtangoz/grill</code>.</li>
-          <li><strong>Say “grill this: …”.</strong> Claude writes the judge's prompt. Tap <em>Open in ChatGPT</em>, or paste it into Gemini, then paste the answer back.</li>
-        </ol>
-        <p class="note">Want it in one step? Use Claude Desktop.</p>
-      </div>
+  <h2 id="setup">Set up</h2>
+  <p class="pre only-pre">Grill is in a private pilot. <a href="mailto:hello@hold.quest?subject=Grill%20invite">Ask for an invite</a> and say which assistant you use, and you’ll get what you need to start.</p>
+  <dl class="only-public">
+    <dt>Any assistant</dt><dd>Paste <a href="https://github.com/mtangoz/grill/blob/main/prompts/grill.md">the Grill prompt</a> into it, and say what you’re deciding. No key needed.</dd>
+    <dt>Claude Desktop</dt><dd><a href="https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb">Download Grill</a>, double-click it, and paste a <a href="https://openrouter.ai/keys">model-router key</a>. Then each grill is one step.</dd>
+    <dt>Claude, web or phone</dt><dd>Upload <a href="https://github.com/mtangoz/grill/releases/latest/download/grill-skill.zip">the skill</a> under Customize → Skills. No key needed.</dd>
+    <dt>Claude Code</dt><dd><code>/plugin marketplace add mtangoz/grill</code>, then <code>/plugin install grill@grill</code></dd>
+  </dl>
 
-      <div class="panel" role="tabpanel" id="panel-code" aria-labelledby="tab-code" hidden>
-        <p class="note">Installs the plugin and asks for your model router key, or uses <code>OPENROUTER_API_KEY</code> if it's set.</p>
-        <div class="code"><code id="code-cmds">/plugin marketplace add mtangoz/grill
-/plugin install grill@grill</code><button class="copy" data-copy="code-cmds">Copy</button></div>
-      </div>
-    </section>
+  <h2 id="privacy">Privacy</h2>
+  <p class="privacy">No server, no account, no tracking. Only the write-up you approve leaves. By copy and paste, it goes to the assistant you paste it into. With your own key, it goes only to zero-retention endpoints, for the judge and a quality check you can switch off, with keys blocked and contact details masked. Grill improves under the same controls, and never sees a real decision.<span class="only-public"> Details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</span></p>
 
-    <section id="privacy" aria-labelledby="privacy-title">
-      <span class="label">Privacy</span>
-      <h2 id="privacy-title">Who can see your decision</h2>
-      <p>Grill has no server, no account and no tracking. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Who</th><th>What they see</th><th>What stops more</th></tr></thead>
-          <tbody>
-            <tr><td>Claude</td><td>The conversation you're already having</td><td>Your Claude privacy settings</td></tr>
-            <tr><td>The model router</td><td>The approved write-up, in transit, and request metadata</td><td>It stores no prompts unless you opt in; the privacy notes name the two settings to keep off</td></tr>
-            <tr><td>The judge's model</td><td>The approved write-up, in transit</td><td>Grill routes only to zero-data-retention endpoints, and never falls back</td></tr>
-            <tr><td>The quality check</td><td>Jev (TypeSafe) scores the masked write-up and the report. On by default</td><td>A zero-data-retention endpoint, through the same router. You can switch it off</td></tr>
-            <tr><td>Grill's makers</td><td class="nothing">Nothing</td><td>There is nowhere for it to go</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <ul class="rules">
-        <li><span><strong>Keys never leave.</strong> A key or token in the write-up stops the grill before anything is sent.</span></li>
-        <li><span><strong>Contact details are masked.</strong> Emails, phone numbers and card numbers become [email], [phone] and [card number].</span></li>
-        <li><span><strong>One destination.</strong> The code you install can reach the model router and nothing else, and uses no third-party packages.</span></li>
-        <li><span><strong>Checkable builds.</strong> Releases are built from the public source, with checksums and a provenance attestation.</span></li>
-      </ul>
-      <p><a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">Read the privacy notes</a>. Every rule above is pinned by a test.</p>
-    </section>
-
-    <section id="better" aria-labelledby="better-title">
-      <span class="label">Getting better</span>
-      <h2 id="better-title">It improves under the same privacy controls as your grills</h2>
-      <p>Grill's self-improvement runs with the same controls as a grill: masked text, zero-retention routing and nothing kept. It never sees a real decision.</p>
-      <div class="loops">
-        <div class="loop"><span class="label">Continuous</span><h3>Model choice</h3><p>A model router follows which models people choose for each kind of task, so the judge improves as models do. Claude's family is always kept out.</p></div>
-        <div class="loop"><span class="label">Weekly</span><h3>Quality</h3><p>Twelve made-up decisions with planted flaws, sound plans and loaded questions, run through the same zero-retention routing as your grills. Jev scores every report.</p></div>
-        <div class="loop"><span class="label">Monthly, opt-in</span><h3>Usefulness</h3><p>After a grill you can share a few choices: was it worth engaging, and later, did the call come true. The form has no text boxes.</p></div>
-      </div>
-      <p class="gate"><b>Every change has to pass the weekly checks before it ships.</b> A problem found in the real world becomes a new made-up case, so the checks grow with what's learned.</p>
-    </section>
-
-    <section aria-labelledby="cost-title">
-      <span class="label">Cost</span>
-      <h2 id="cost-title">What it costs</h2>
-      <div class="cost">
-        <div><strong>Free</strong><span>Grill itself, open source</span></div>
-        <div><strong>≈ $0.01</strong><span>A grill, paid from your own key's credit. $5 lasts hundreds</span></div>
-        <div><strong>$0</strong><span>The paste route, on your ChatGPT or Gemini account</span></div>
-      </div>
-    </section>
-
-    <section aria-labelledby="faq-title">
-      <span class="label">Questions</span>
-      <h2 id="faq-title">Before you start</h2>
-      <div>
-        <details>
-          <summary>Why not just ask Claude to critique it?</summary>
-          <p>You worked the decision out with Claude, so its critique is correlated with your reasoning. A judge trained by another company has different blind spots. Grill keeps Claude models out of the judging, and says so in the report if a run ever lands on one.</p>
-        </details>
-        <details>
-          <summary>What's a falsifier?</summary>
-          <p>The cheapest test that would settle a doubt either way: an email to your waitlist, a two-week price test, a call with three customers. Grill makes the judge name one for every challenge, so you leave with things to do, not just objections.</p>
-        </details>
-        <details>
-          <summary>What if the judge is wrong?</summary>
-          <p>It will be, sometimes. It has to quote the words it attacks, and Grill checks those quotes against your write-up, so a made-up objection is flagged. Jev also scores whether each test it names is a real one. The verdict is evidence to weigh. You decide.</p>
-        </details>
-        <details>
-          <summary>Does Grill keep my decisions?</summary>
-          <p>No. There's no Grill server. Your log, if you keep one with the weekly review, lives in your own Google Drive, Notion or notes.</p>
-        </details>
-        <details>
-          <summary>What's the weekly review?</summary>
-          <p>An optional ritual. Once a week Claude reads the tools you've connected, lists the decisions you made, asks you to put a number on each, grills the one that matters most, and brings back the ones whose results are in. Once a month you bet on how many of your calls will come true.</p>
-        </details>
-      </div>
-    </section>
-  </main>
-
-  <footer>
-    <span>Grill · open source · bring your own key</span>
-    <span><a href="https://github.com/mtangoz/grill">GitHub</a> · <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">Privacy</a> · <a href="https://github.com/mtangoz/grill/blob/main/LEARNING.md">How it learns</a></span>
-  </footer>
-</div>
-
-<script>
-  (function () {
-    var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
-    function select(id) {
-      tabs.forEach(function (t) {
-        var on = t.id === id;
-        t.setAttribute("aria-selected", on ? "true" : "false");
-        t.tabIndex = on ? 0 : -1;
-        document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
-      });
-      try { localStorage.setItem("grill-setup-tab", id); } catch (e) {}
-    }
-    tabs.forEach(function (t, i) {
-      t.addEventListener("click", function () { select(t.id); });
-      t.addEventListener("keydown", function (e) {
-        if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-        var next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
-        select(next.id);
-        next.focus();
-      });
-    });
-    try {
-      var saved = localStorage.getItem("grill-setup-tab");
-      if (saved && document.getElementById(saved)) select(saved);
-    } catch (e) {}
-
-    document.querySelectorAll(".copy").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var el = document.getElementById(btn.getAttribute("data-copy"));
-        var text = el.textContent;
-        function done(label) { btn.textContent = label; setTimeout(function () { btn.textContent = "Copy"; }, 1600); }
-        function selectIt() {
-          var range = document.createRange();
-          range.selectNodeContents(el);
-          var sel = window.getSelection();
-          sel.removeAllRanges();
-          sel.addRange(range);
-          done("Selected");
-        }
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(function () { done("Copied"); }, selectIt);
-        } else {
-          selectIt();
-        }
-      });
-    });
-  })();
-</script>
+  <div class="footer">
+    <span class="only-pre">Open source at public release</span>
+    <span class="only-public">Open source · <a href="https://github.com/mtangoz/grill">GitHub</a></span>
+    <span>Made at <a href="https://hold.quest">Hold</a></span>
+  </div>
+</main>

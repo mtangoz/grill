@@ -1,10 +1,10 @@
 # 🔥 Grill
 
-**A second opinion on your decisions, from an AI that isn't Claude.**
+**A second opinion on your decisions, from a different AI company than the one you think with.**
 
 **Setup guide:** [mtangoz.github.io/grill](https://mtangoz.github.io/grill)
 
-Say **"grill this"** in any Claude chat. Claude writes up your decision, and you check it. Then an outside judge, a model from a different company, argues the strongest case against it. It names the cheapest test that would settle each doubt, and gives a verdict.
+Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, Gemini, Grok or Muse. It writes up your decision, and you check it. Then an outside judge, a model from a different company, argues the strongest case against it. It names the cheapest test that would settle each doubt, and gives a verdict.
 
 > **Verdict: 🟠 WEAK.** The plan assumes customers stay at the new price, and nothing in it tests that.
 > **Falsifier:** show the new price to one in ten new signups for two weeks, and compare how many start paying.
@@ -25,6 +25,20 @@ Say **"grill this"** in any Claude chat. Claude writes up your decision, and you
 2. Say *"grill this: …"*. Claude writes the judge's prompt. Tap **Open in ChatGPT**, or paste it into Gemini, then paste the answer back into Claude.
 
 Want it in one step? Use Claude Desktop, above.
+
+### ChatGPT, Copilot, Gemini, Grok or Muse: no install, no key
+
+1. Copy **[the Grill prompt](prompts/grill.md)** into the assistant you think with, and say what you're deciding.
+2. It writes your decision up with you, then gives you a prompt for the judge.
+3. Paste that into an assistant from a **different company**, then paste the answer back.
+
+| You think with | Judge with |
+|---|---|
+| ChatGPT | Claude, Gemini or Grok |
+| Copilot | Gemini, because Copilot can run OpenAI, Anthropic or xAI models |
+| Gemini | Claude, ChatGPT or Grok |
+| Grok or GrokBot | Claude, ChatGPT or Gemini |
+| Muse | Claude, ChatGPT or Gemini |
 
 ### Claude Code
 
@@ -53,7 +67,7 @@ Your log lives in a Google Drive folder or Notion database you choose. Once a mo
 |---|---|
 | Grill | Free |
 | The one-click judge | Your own key's credit: about a cent a grill, so $5 lasts hundreds |
-| The paste route | Free, on your ChatGPT or Gemini account |
+| The copy-and-paste routes | Free, on the assistants you already use |
 
 ## Privacy
 
@@ -76,9 +90,9 @@ Grill's self-improvement runs under the same privacy controls as a grill: masked
 
 Every change must still pass the checks. See [LEARNING.md](LEARNING.md).
 
-## Why not just ask Claude?
+## Why not just ask your own assistant?
 
-Claude helped you think it through, so its critique shares your blind spots. A judge from another company doesn't. Grill keeps Claude models out of the judging, and tells you if a run ever lands on one anyway.
+It helped you think it through, so its critique shares your blind spots. A judge from another company doesn't. In Claude, Grill keeps Claude models out of the judging, and tells you if a run ever lands on one anyway. Everywhere else, the table above picks the judge.
 
 The judge must argue your side before it attacks, quote the words it targets, and give every challenge a test that would settle it. A verdict of "holds" with no challenges is a real answer; it's told a made-up objection is worse than none.
 
@@ -104,6 +118,7 @@ npm run build:extension          # dist/grill.mcpb
 
 - **Layout:**
   - `skills/`: what Claude reads in chat;
+  - `prompts/grill.md`: the same grill for any other assistant, carrying the paste route's judge prompt word for word (a test pins it);
   - `server/`: the Desktop extension's tool;
   - `scripts/judge.mjs`: the judge itself, which also runs on its own (`node scripts/judge.mjs --help`).
 - **Release:** tag `vX.Y.Z` and the release workflow publishes the extension and the skill zips.

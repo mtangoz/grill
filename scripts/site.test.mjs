@@ -17,9 +17,28 @@ describe("site/page.html", () => {
   });
 
   it("links every setup route the README promises", () => {
-    for (const needle of ["releases/latest/download/grill.mcpb", "releases/latest/download/grill-skill.zip", "/plugin install grill@grill", "openrouter.ai/keys"]) {
+    for (const needle of ["releases/latest/download/grill.mcpb", "releases/latest/download/grill-skill.zip", "/plugin install grill@grill", "openrouter.ai/keys", "prompts/grill.md"]) {
       assert.ok(page.includes(needle), `missing ${needle}`);
     }
+  });
+
+  it("names every assistant people start from, and pairs Copilot only with a company it can't run", () => {
+    for (const name of ["Claude", "ChatGPT", "Copilot", "Gemini", "Grok", "Muse"]) {
+      assert.ok(page.includes(`<td>${name}`), `no row for ${name}`);
+    }
+    assert.match(page, /<td>Copilot<\/td><td>Gemini\b(?![^<]*(Claude|ChatGPT|Grok))/);
+  });
+
+  it("while pre-release, shows no link into the private repo and offers an invite instead", () => {
+    // The switch is one class on <main>. Once it is removed, this test has nothing to check.
+    if (!/<main class="prerelease"/.test(page)) return;
+    assert.match(page, /\.prerelease \.only-public \{ display: none; \}/);
+    assert.match(page, /main:not\(\.prerelease\) \.only-pre \{ display: none; \}/);
+    // Drop every element marked only-public (none nests an element of its own tag), and what
+    // is left is the page a visitor sees.
+    const visible = page.replace(/<(\w+)\b[^>]*\bclass="[^"]*\bonly-public\b[^"]*"[^>]*>[\s\S]*?<\/\1>/g, "");
+    assert.doesNotMatch(visible, /github\.com|\/plugin |releases\/latest/);
+    assert.match(visible, /class="[^"]*only-pre[^"]*"[^>]*>[\s\S]*?mailto:hello@hold\.quest/);
   });
 
   it("defines its colours as tokens for light, dark-by-system and dark-by-choice", () => {
@@ -37,6 +56,9 @@ describe("the Pages build", () => {
     assert.match(html, /^<!doctype html>/);
     assert.match(head, /<title>Grill<\/title>/);
     assert.match(head, /<meta property="og:title" content="Grill">/);
+    assert.match(head, /<meta name="color-scheme" content="light dark">/);
+    assert.match(head, /<meta name="theme-color" content="#f7f4ef" media="\(prefers-color-scheme: light\)">/);
+    assert.match(head, /<meta name="theme-color" content="#161513" media="\(prefers-color-scheme: dark\)">/);
     assert.match(head, /--paper:/);
     assert.match(rest, /<body>[\s\S]*id="setup"/);
   });
