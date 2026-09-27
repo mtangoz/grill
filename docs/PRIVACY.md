@@ -68,6 +68,10 @@ The weekly review keeps your decision log where you choose: a Google Drive folde
 
 Claude Desktop may keep local logs of tool calls, including the write-up, on your computer. That is Claude's local logging, not Grill's.
 
+## Reflection and look back
+
+The questions at the end of a grill, and the decision record, stay in your chat or in notes you keep. Grill does not store them and does not send them to the judge. Looking back means you paste those records again. On the one-click route that paste is read on your machine. On the paste route it stays in the assistant you are already talking to. There is no look-back database. The monthly Count in the weekly review is separate: it needs a decision log you keep, and a single grill does not do it.
+
 ## Helping Grill improve
 
 Grill improves under the same privacy controls as a grill: masked text, zero-retention routing, nothing kept, and never a real decision ([LEARNING.md](../LEARNING.md)).

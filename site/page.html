@@ -71,6 +71,14 @@
   .report { font-family: var(--mono); font-size: 0.86rem; line-height: 1.6; border-top: 1px solid var(--ink); padding-top: 14px; margin: 0 0 2.8rem; }
   .report p { margin: 0 0 0.6rem; max-width: 64ch; display: grid; grid-template-columns: 12ch 1fr; gap: 0 1ch; }
   .report .k, .pairs th { color: var(--quiet); }
+  .report h2 { margin-top: 1.3rem; text-transform: none; letter-spacing: -0.01em; font-size: 1.05rem; color: var(--ink); }
+  .report ol, .paste ol { margin: 0 0 0.9rem; padding-left: 1.2rem; font-family: var(--sans); font-size: 0.95rem; color: var(--muted); }
+  .report pre, .paste pre { font-family: var(--mono); font-size: 0.82rem; line-height: 1.55; white-space: pre-wrap; background: var(--code-bg); padding: 12px 14px; border-radius: 8px; margin: 0 0 0.8rem; }
+  .paste { margin: 0 0 2.6rem; }
+  .paste textarea { width: 100%; box-sizing: border-box; min-height: 7rem; font: 0.86rem var(--mono); padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: transparent; color: var(--ink); margin: 0 0 0.8rem; }
+  .paste label { display: block; font-weight: 600; margin: 0.2rem 0 0.35rem; }
+  button.button { border: 0; cursor: pointer; font-family: inherit; }
+  [hidden] { display: none !important; }
 
   h2 { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--quiet); margin: 0 0 0.9rem; }
   .note, .privacy, .pre { font-size: 0.98rem; color: var(--muted); max-width: 36rem; margin: 0 0 1rem; }
@@ -146,11 +154,24 @@
     <div><strong>Any AI</strong><span>works with ChatGPT, Claude, Gemini, Copilot, Grok and Muse</span></div>
   </div>
 
-  <div class="report" aria-label="An example">
+  <div class="report" id="paste-result" aria-label="A paste-route result">
     <p><span class="k">decision</span><span>Take the job in Denver. I’m 80% sure it’s right.</span></p>
     <p><span class="k">result</span><span>shaky · it assumes you’ll love living there, and nothing checks that</span></p>
     <p><span class="k">weak spot</span><span>“we’ll figure out the city once we’re there”</span></p>
     <p><span class="k">quick check</span><span>spend a long weekend there and do the commute at rush hour</span></p>
+    <h2>Before you decide</h2>
+    <ol id="reflect-questions">
+      <li>What do you expect to happen, and by when? Write the prediction you will stand behind.</li>
+      <li>How sure are you now, as a percent? A band is fine. This is your confidence, not the judge.</li>
+      <li>What would prove you wrong? Name the one result you will treat as decisive.</li>
+    </ol>
+    <pre id="sample-record">date: 2026-09-27
+title: Take the job in Denver
+verdict: shaky
+falsifier: spend a long weekend there and do the commute at rush hour
+confidence: 80%
+review: 2026-10-11</pre>
+    <p><span class="k">keep it</span><span>Copy the block. To look back, paste it below and say what happened. This page does not store it.</span></p>
   </div>
 
   <h2 id="how">How it works</h2>
@@ -160,7 +181,33 @@
     <li>It writes a short summary. You check it before anything is shared.</li>
     <li>A second AI, from a different company, looks for the weak spots and suggests a quick way to check each one.</li>
     <li>You get a simple result: solid, solid if…, shaky, or doesn’t hold up.</li>
+    <li>Before you decide, you write what you expect, how sure you are, and what would prove you wrong. The record is yours. Paste it back later to look back. Grill does not store it.</li>
   </ol>
+
+  <h2 id="paste">Paste a judge answer on this page</h2>
+  <p class="note">The copy-and-paste route, with nothing sent and nothing stored. Paste the judge’s answer. The page adds the same footer. Then paste a saved record to look back. This box scores the first record. To score several, paste them into the Grill prompt and say look back.</p>
+  <form class="paste" id="paste-form">
+    <label for="judge-answer">Judge’s answer</label>
+    <textarea id="judge-answer">Judge: Gemini 2.5 Pro by Google
+
+**Verdict:** shaky, it assumes you will love living there, and nothing checks that.
+**Falsifier:** spend a long weekend there and do the commute at rush hour</textarea>
+    <label for="decision-title">Decision title</label>
+    <textarea id="decision-title">Take the job in Denver. I'm 80% sure it's right.</textarea>
+    <p class="cta"><button class="button" type="button" id="show-record">Show the record</button></p>
+    <pre id="made-record" hidden></pre>
+    <label for="saved-records">Saved records</label>
+    <textarea id="saved-records">date: 2026-09-27
+title: Take the job in Denver
+verdict: shaky
+falsifier: spend a long weekend there and do the commute at rush hour
+confidence: 80%
+review: 2026-10-11</textarea>
+    <label for="what-happened">What happened</label>
+    <textarea id="what-happened" placeholder="Leave this empty to be asked. Or: came_true: no / falsifier_fired: yes / happened: The commute was two hours."></textarea>
+    <p class="cta"><button class="button" type="button" id="run-look-back">Look back</button></p>
+    <pre id="look-back-out" hidden></pre>
+  </form>
 
   <h2 id="anywhere">Works with the AI you already use</h2>
   <p class="note">The second opinion comes from a different company than the AI you normally use. That’s the point: it won’t share the same blind spots. Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes check it and warn you.</p>
@@ -177,7 +224,7 @@
   </table>
 
   <h2 id="privacy">Your privacy</h2>
-  <p class="privacy">The free tool has no account and keeps nothing. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions. An account is only for a key we manage. A starter allowance needs no card. Bring your own key and there is no account. We see your email, the assistant and judge you pick, and your key’s usage (cost and model, never the text). We count sign-ups, keys issued, first grills, allowances used up and upgrade clicks. We don’t keep what you decide unless you turn on saving copies of reports on that account, and you can delete them. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</p>
+  <p class="privacy">The free tool has no account and keeps nothing. The reflection at the end of a grill stays in your notes. This page does not store it. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions. An account is only for a key we manage. A starter allowance needs no card. Bring your own key and there is no account. We see your email, the assistant and judge you pick, and your key’s usage (cost and model, never the text). We count sign-ups, keys issued, first grills, allowances used up and upgrade clicks. We don’t keep what you decide unless you turn on saving copies of reports on that account, and you can delete them. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</p>
 
   <section id="pro">
     <h2>Rather not manage a key?</h2>
@@ -199,3 +246,120 @@
     <span>Made at <a href="https://hold.quest">Hold</a></span>
   </div>
 </main>
+<script>
+(function () {
+  function iso(d) { return d.toISOString().slice(0, 10); }
+  function plus(d, n) {
+    var x = new Date(d.getTime());
+    x.setUTCDate(x.getUTCDate() + n);
+    return x;
+  }
+  function one(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
+  function show(id, text) {
+    var el = document.getElementById(id);
+    el.hidden = false;
+    el.textContent = text;
+  }
+  function questions() {
+    return Array.prototype.map.call(document.querySelectorAll("#reflect-questions li"), function (li, i) {
+      return (i + 1) + ". " + li.textContent;
+    }).join("\n");
+  }
+  function confidence(text) {
+    var m = String(text || "").match(/(\d{1,3})\s*(?:%|percent)\s+sure/i);
+    return m && Number(m[1]) <= 100 ? Number(m[1]) + "%" : "";
+  }
+  function titleOf(text) {
+    var cut = one(text).replace(/\.\s+I(?:'|\u2019)m[\s\S]*$/, "");
+    return cut || "this decision";
+  }
+  function verdictOf(text) {
+    var m = String(text || "").match(/\*\*Verdict:\*\*\s*([^\n,]+)/i) || String(text || "").match(/\*\*Verdict:\s*([^*\n,]+)/i);
+    var word = m ? one(m[1]).toLowerCase() : "";
+    if (word.indexOf("doesn") === 0 || word.indexOf("does not hold") === 0) return "doesn't hold up";
+    if (word.indexOf("solid if") === 0) return "solid if";
+    if (word.indexOf("solid") === 0) return "solid";
+    if (word.indexOf("shaky") === 0) return "shaky";
+    return word || "unknown";
+  }
+  function falsifierOf(text) {
+    var m = String(text || "").match(/\*\*Falsifier:\*\*\s*(.+)/i);
+    return m ? one(m[1]) : "none named";
+  }
+  function yn(raw) {
+    var s = one(raw).toLowerCase();
+    if (!s) return "";
+    if (s === "yes" || s === "y" || s.indexOf("yes") === 0) return "yes";
+    if (s === "no" || s === "n" || s.indexOf("no") === 0) return "no";
+    if (s.indexOf("not yet") !== -1) return "not yet";
+    return "";
+  }
+  document.getElementById("show-record").addEventListener("click", function () {
+    var now = new Date();
+    var answer = document.getElementById("judge-answer").value;
+    var subject = document.getElementById("decision-title").value;
+    var block = [
+      "date: " + iso(now),
+      "title: " + titleOf(subject),
+      "verdict: " + verdictOf(answer),
+      "falsifier: " + falsifierOf(answer),
+      "confidence: " + confidence(subject),
+      "review: " + iso(plus(now, 14))
+    ].join("\n");
+    show("made-record", "Before you decide\n\n" + questions() + "\n\nThese stay in your notes. Grill does not store them and does not send them to the judge.\n\n" + block + "\n\nCopy the block. To look back, paste it below. Nothing is stored.");
+    document.getElementById("saved-records").value = block;
+  });
+  document.getElementById("run-look-back").addEventListener("click", function () {
+    var records = [];
+    var current = null;
+    document.getElementById("saved-records").value.split(/\n/).forEach(function (raw) {
+      var m = raw.trim().match(/^(date|title|verdict|falsifier|confidence|review)\s*:\s*(.*)$/i);
+      if (!m) return;
+      var key = m[1].toLowerCase();
+      if (key === "date") {
+        if (current && current.title) records.push(current);
+        current = { date: m[2].trim() };
+      } else if (current) current[key] = m[2].trim();
+    });
+    if (current && current.title) records.push(current);
+    var happened = document.getElementById("what-happened").value;
+    if (!records.length) {
+      show("look-back-out", "No decision record was in that paste. Nothing is stored either way.");
+      return;
+    }
+    var came = yn((happened.match(/came_true\s*:\s*(.+)/i) || [])[1] || "");
+    var fired = yn((happened.match(/falsifier_fired\s*:\s*(.+)/i) || [])[1] || "");
+    var what = one((happened.match(/happened\s*:\s*(.+)/i) || [])[1] || "");
+    if (!one(happened) || !came) {
+      var ask = ["Look back", "", "Nothing is stored. For each decision, say what actually happened.", ""];
+      records.forEach(function (r) {
+        ask.push(r.title);
+        ask.push("Verdict then: " + (r.verdict || "unknown") + ".");
+        ask.push("Did the prediction come true: yes, no, or not yet?");
+        ask.push("");
+      });
+      show("look-back-out", ask.join("\n"));
+      return;
+    }
+    var record = records[0];
+    var word = one(record.verdict).toLowerCase();
+    var doubt = word === "shaky" || word.indexOf("doesn") === 0 || word.indexOf("does not") === 0;
+    var line = record.title + ". Verdict then: " + record.verdict + ". ";
+    if (came === "not yet") line += "Not back yet, so this call is not scored. ";
+    else if (came === "no" && doubt) line += "It did not come true, and the verdict had doubted it. The doubt matched what happened. ";
+    else if (came === "yes" && doubt) line += "It came true, and the verdict had doubted it. You were righter than the doubt. ";
+    else if (came === "yes") line += "It came true, and the verdict had let it stand. The call and the verdict agreed. ";
+    else line += "It did not come true, and the verdict had let it stand. The outcome was harder than the verdict. ";
+    if (fired === "yes" && came === "yes") line += "You marked it true, and the falsifier fired. Those two disagree. ";
+    else if (fired === "yes") line += "The falsifier fired. ";
+    if (what) line += "What happened: " + what;
+    var hits = came === "yes" ? 1 : 0;
+    var pattern = "1 call back, " + hits + " came true. ";
+    var pct = parseInt(record.confidence, 10);
+    if (!isNaN(pct) && pct >= 70 && came === "no") pattern += "Your confidence ran hot: you were surer than the calls turned out. ";
+    else if (!isNaN(pct) && pct <= 40 && came === "yes") pattern += "Your confidence ran cold: the calls came true more often than your confidence said. ";
+    pattern += "Fewer than four calls are back. Read the direction, not a score.";
+    show("look-back-out", "Look back\n\nNothing is stored. This reading stays in the browser.\n\n" + line + "\n\nPattern\n\n" + pattern);
+  });
+})();
+</script>

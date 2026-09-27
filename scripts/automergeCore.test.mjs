@@ -495,7 +495,7 @@ describe("risk tiers", () => {
 describe("the workflow contract", () => {
   const yaml = readFileSync(join(ROOT, ".github/workflows/automerge.yml"), "utf8");
   const apply = readFileSync(join(ROOT, "scripts/automerge.mjs"), "utf8");
-  const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    const readme = readFileSync(join(ROOT, "CONTRIBUTING.md"), "utf8");
 
   it("listens to pull_request with the write scopes, and checks out the base commit only", () => {
     assert.match(yaml, /on:\n {2}pull_request:\n/);

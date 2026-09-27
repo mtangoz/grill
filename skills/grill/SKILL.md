@@ -1,6 +1,6 @@
 ---
 name: grill
-description: Grill a decision, plan or forecast. An outside AI judge, a model from a different company than Claude, argues the strongest case for and against it, names the cheapest test that would settle each challenge, and gives a verdict. Use when the user says grill, stress-test, pressure-test, poke holes in, red-team or challenge something they decided or plan to decide, or when the weekly review marks a decision for grilling.
+description: Grill a decision, plan or forecast. An outside AI judge, a model from a different company than Claude, argues the strongest case for and against it, names the cheapest test that would settle each challenge, and gives a verdict. Use when the user says grill, stress-test, pressure-test, poke holes in, red-team or challenge something they decided or plan to decide, when the weekly review marks a decision for grilling, or when they say look back or paste a decision record to score.
 ---
 
 # Grill a decision
@@ -70,9 +70,14 @@ On the paste route, the company check above is the first line you show. A result
 - **Verdict first,** with its one-line reason. On the paste route it comes after the company-check line.
 - **The top challenges by severity,** each with its falsifier. Quote the judge; don't soften it or argue it into agreement.
 - **Degradation:** if the report carries a warning banner (a clipped subject, a failed provider, a judge from an excluded family), say so plainly. "The judge found nothing" and "the judge couldn't see it" must never read the same.
-- **Next steps:** ask which falsifier they'll adopt and whether their confidence moved. A changed confidence is a new, dated call; the original stays on the record.
-- **Recording:** if they keep a decision log, record the verdict and the falsifier they adopt.
+- **Next steps:** the report's own "Before you decide" section, when the tool included one. Show it. Do not add a second copy, and do not send it to the judge.
+- **Paste route:** after the company-check line, the verdict and the challenges, add the section in `reflection.md`. Fill the decision record from the judge. Leave confidence empty if they never gave one.
+- **Recording:** the record block is theirs to copy anywhere. If they also keep a decision log, they can file the longer template from the weekly review. Grill does not store the block.
 - **Your own view:** only if asked, labelled "same-model critique".
+
+## 6. Look back
+
+When they paste one or more decision record blocks and say "look back" or "grill look back", follow `reflection.md`. If the `grill_look_back` tool is available, call it and relay the result. It needs no key and stores nothing. Without the tool, ask what happened and score the calls in the chat, using the same rules. Do not tell them they need an account, a decision log, or a connected inbox for this. The monthly Count is only the weekly review, and only when that log has enough calls.
 
 ## 5. Offer to share a signal (opt-in, every time)
 

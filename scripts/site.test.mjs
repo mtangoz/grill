@@ -67,18 +67,35 @@ describe("site/page.html", () => {
 
   it("says Desktop and Claude Code enforce a different company, and the paste routes warn", () => {
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    const why = readFileSync(join(ROOT, "docs/WHY.md"), "utf8");
     for (const text of [page, readme]) {
       assert.match(text, /Claude Desktop and Claude Code enforce that in code/);
       assert.match(text, /copy-and-paste routes check it and warn you/);
     }
-    assert.match(readme, /## Why not just ask your own assistant\?/);
+    assert.match(why, /^# Why not just ask your own assistant\?$/m);
   });
 
   it("says the website counts visits anonymously, and the tool does not", () => {
     const sentence = "This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you.";
     assert.ok(page.includes(sentence));
     assert.ok(readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8").includes(sentence));
-    assert.ok(readFileSync(join(ROOT, "README.md"), "utf8").includes(sentence));
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    assert.match(readme, /docs\/PRIVACY\.md/);
+    assert.doesNotMatch(readme, /saving copies/);
+  });
+
+  it("keeps the README short enough for a directory listing", () => {
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    assert.match(readme, /about a few cents/);
+    assert.match(readme, /docs\/WEEKLY-REVIEW\.md/);
+    assert.match(readme, /docs\/PRIVACY\.md/);
+    assert.doesNotMatch(readme, /\$9 a month|UPSTASH_|STRIPE_|GRILL_PRO_BILLING|Gmail|Google Calendar|Google Drive|Notion/);
+    assert.doesNotMatch(readme, /bet on how many/);
+    assert.ok(readFileSync(join(ROOT, "docs/pro-development.md"), "utf8").includes("UPSTASH_REDIS_REST_URL"));
+    assert.ok(readFileSync(join(ROOT, "docs/TROUBLESHOOTING.md"), "utf8").includes("Still grilling"));
+    assert.ok(readFileSync(join(ROOT, "LEARNING.md"), "utf8").includes("Quality checks on one grill"));
+    assert.match(page, /Before you decide/);
+    assert.match(page, /id="paste-result"/);
   });
 
   it("defines its colours as tokens for light, dark-by-system and dark-by-choice", () => {
