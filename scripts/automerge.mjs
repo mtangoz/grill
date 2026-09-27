@@ -71,7 +71,7 @@ function main() {
     "GET",
     `repos/${repo}/pulls/${prNumber}`,
     "--jq",
-    "{draft, base: .base.ref, head: .head.repo.full_name, author: .user.login, labels: [.labels[].name]}",
+    "{draft, base: .base.ref, head: .head.repo.full_name, author: .user.login, labels: [.labels[].name], autoMerge: (.auto_merge != null)}",
   ]);
   if (pr.base !== "main") {
     console.log(`Base branch is ${pr.base}. Nothing to do.`);
@@ -133,7 +133,9 @@ function main() {
         allow: (text) => /already enabled/i.test(text),
       });
     }
-    if (actions.disableAutoMerge) {
+    // Only a pull request with auto-merge on has anything to disable. On a draft, GitHub refuses
+    // the call outright ("Can't disable auto-merge for this pull request"), which failed the job.
+    if (actions.disableAutoMerge && pr.autoMerge !== false) {
       ghRaw(["pr", "merge", prNumber, "--repo", repo, "--disable-auto"], {
         allow: (text) => /not enabled/i.test(text),
       });
