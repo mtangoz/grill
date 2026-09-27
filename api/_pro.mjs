@@ -8,9 +8,10 @@
  *   4. switches that key off or on when their subscription changes.
  * The buyer's write-ups still go straight from their Claude to the router, using that key.
  *
- * There is no database. Stripe is the record: each key's hash is stored on the Stripe customer
- * as its own metadata entry, so two browser tabs racing each other both leave a tracked key
- * (never an orphan the cancel path can't reach).
+ * Stripe is the billing record. Each key's hash is stored on the Stripe customer as its own
+ * metadata entry, so two browser tabs racing each other both leave a tracked key (never an
+ * orphan the cancel path can't reach). Pro accounts, which exist only for people on Pro,
+ * live in api/_account.mjs. They store the hash again, never the key.
  *
  * Files in api/ whose names start with "_" are not deployed as functions; api/checkout.js,
  * api/welcome.js and api/stripe-webhook.js import this one. Nothing here is shipped in the
@@ -124,11 +125,26 @@ function clients(env, fetchImpl) {
     },
     router: {
       create: (body) => call(`${ROUTER_API}/keys`, { method: "POST", headers: routerAuth(), body: JSON.stringify(body) }, "router: create key"),
+      get: (hash) => call(`${ROUTER_API}/keys/${encodeURIComponent(hash)}`, { headers: routerAuth() }, "router: read key"),
       update: (hash, body) =>
         call(`${ROUTER_API}/keys/${encodeURIComponent(hash)}`, { method: "PATCH", headers: routerAuth(), body: JSON.stringify(body) }, "router: update key"),
       remove: (hash) => call(`${ROUTER_API}/keys/${encodeURIComponent(hash)}`, { method: "DELETE", headers: routerAuth() }, "router: delete key"),
     },
   };
+}
+
+/** Stripe and router calls. Account code uses the same clients, so the two can't drift. */
+export function proClients(env, fetchImpl) {
+  return clients(env, fetchImpl);
+}
+
+export function isStripeCustomerId(id) {
+  return typeof id === "string" && CUSTOMER_RE.test(id);
+}
+
+/** Metadata key for one key hash. Stripe keys are at most 40 characters. */
+export function keyMetadataField(hash) {
+  return `${KEY_FIELD_PREFIX}${String(hash).slice(0, 24)}`;
 }
 
 /**
@@ -188,44 +204,79 @@ export async function checkSession(sessionId, { env, fetch: fetchImpl, now = Dat
 }
 
 /**
- * Create the buyer's key, record it on their Stripe customer, and return it. The key string is
- * returned exactly once and never stored or logged anywhere.
- * @returns {Promise<{state: string, key?: string, limitUsd?: number}>}
+ * Create one spending-capped key. The raw key is returned to the caller and stored nowhere.
+ * The monthly reset is set afterwards when creation didn't already carry it.
+ * @returns {Promise<{key: string, hash: string, limitUsd: number}>}
  */
-export async function issueKey(sessionId, { env, fetch: fetchImpl, now = Date.now() }) {
-  const checked = await checkSession(sessionId, { env, fetch: fetchImpl, now });
-  if (checked.state !== "ready") return checked;
-  const { stripe, router } = clients(env, fetchImpl);
+export async function createCappedKey({ env, fetch: fetchImpl, name }) {
+  const { router } = clients(env, fetchImpl);
   const limit = limitUsd(env);
-  // Created with documented fields only; the monthly reset is set by the documented update below
-  // whenever the new key doesn't already carry it.
-  const created = await router.create({ name: `grill-pro-${checked.customerId}`, limit });
+  const created = await router.create({ name, limit });
   const key = created.body?.key;
   const data = created.body?.data;
   if (!created.ok || typeof key !== "string" || !key || typeof data?.hash !== "string" || !data.hash) {
     throw new UpstreamError(`the router didn't create a key (${created.status})`);
   }
   const hash = data.hash;
-  const undo = async () => {
-    await router.remove(hash).catch(() => {});
-  };
   if (data.limit_reset !== "monthly") {
     const fixed = await router.update(hash, { limit_reset: "monthly" });
     if (!fixed.ok) {
-      await undo();
+      await router.remove(hash).catch(() => {});
       throw new UpstreamError(`the router didn't accept a monthly reset (${fixed.status})`);
     }
   }
+  return { key, hash, limitUsd: limit };
+}
+
+/** Switch every listed key off. A key the router has already forgotten is fine. */
+export async function disableManagedKeys(hashes, { env, fetch: fetchImpl }) {
+  const { router } = clients(env, fetchImpl);
+  await setKeys(router, hashes, true);
+}
+
+/** Delete a key we couldn't record. Failure here is swallowed by the caller. */
+export async function removeManagedKey(hash, { env, fetch: fetchImpl }) {
+  const { router } = clients(env, fetchImpl);
+  await router.remove(hash);
+}
+
+/** Usage and cap for one key, from the management API. Null when the router has forgotten it. */
+export async function readManagedKey(hash, { env, fetch: fetchImpl }) {
+  const { router } = clients(env, fetchImpl);
+  const r = await router.get(hash);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new UpstreamError(`the router didn't return the key (${r.status})`);
+  const d = r.body?.data ?? {};
+  const usage = Number(d.usage_monthly ?? d.usage ?? 0);
+  const limit = Number(d.limit);
+  return {
+    hash: typeof d.hash === "string" ? d.hash : hash,
+    disabled: Boolean(d.disabled),
+    limitUsd: Number.isFinite(limit) ? limit : null,
+    usageUsd: Number.isFinite(usage) ? usage : 0,
+  };
+}
+
+/**
+ * Create the buyer's key, record it on their Stripe customer, and return it. The key string is
+ * returned exactly once and never stored or logged anywhere.
+ * @returns {Promise<{state: string, key?: string, hash?: string, limitUsd?: number, customerId?: string}>}
+ */
+export async function issueKey(sessionId, { env, fetch: fetchImpl, now = Date.now() }) {
+  const checked = await checkSession(sessionId, { env, fetch: fetchImpl, now });
+  if (checked.state !== "ready") return checked;
+  const { stripe } = clients(env, fetchImpl);
+  const made = await createCappedKey({ env, fetch: fetchImpl, name: `grill-pro-${checked.customerId}` });
   const saved = await stripe.post(`/v1/customers/${checked.customerId}`, {
-    [`metadata[${KEY_FIELD_PREFIX}${hash.slice(0, 24)}]`]: hash,
+    [`metadata[${keyMetadataField(made.hash)}]`]: made.hash,
     "metadata[grill_issued_at]": new Date(now).toISOString(), // outside the key prefix on purpose
   });
   if (!saved.ok) {
     // An unrecorded key is one the cancel path could never switch off, so it doesn't survive.
-    await undo();
+    await removeManagedKey(made.hash, { env, fetch: fetchImpl }).catch(() => {});
     throw new UpstreamError(`couldn't record the key on the customer (${saved.status})`);
   }
-  return { state: "issued", key, limitUsd: limit };
+  return { state: "issued", key: made.key, hash: made.hash, limitUsd: made.limitUsd, customerId: checked.customerId };
 }
 
 /**
@@ -302,10 +353,10 @@ export const WELCOME_HEADERS = {
     "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 };
 
-const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+export const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 
 /** The subscription-management link, only if it's Stripe's own customer-portal address. */
-function portalUrl(env) {
+export function portalUrl(env) {
   const u = typeof env.GRILL_PORTAL_URL === "string" ? env.GRILL_PORTAL_URL.trim() : "";
   return /^https:\/\/billing\.stripe\.com\/[A-Za-z0-9/_-]+$/.test(u) ? u : "";
 }
@@ -325,11 +376,20 @@ const STYLE = `
   ol { padding-left: 1.25rem; } li { margin: 0.4rem 0; }
   .key { display: flex; gap: 8px; margin: 1.2rem 0; flex-wrap: wrap; }
   .key input { flex: 1 1 16rem; min-width: 0; font: 0.9rem var(--mono); padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--code-bg); color: var(--ink); }
-  button { font: 600 0.95rem var(--sans); padding: 10px 18px; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); cursor: pointer; }
+  button, .button { font: 600 0.95rem var(--sans); padding: 10px 18px; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); cursor: pointer; text-decoration: none; display: inline-block; }
   .small { font-size: 0.9rem; color: var(--quiet); }
+  label { display: block; font-weight: 600; margin: 1rem 0 0.35rem; }
+  input[type="email"], input[type="text"], textarea, select { width: 100%; box-sizing: border-box; font: 0.95rem var(--sans); padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: transparent; color: var(--ink); }
+  textarea, pre.config { font-family: var(--mono); font-size: 0.82rem; white-space: pre-wrap; }
+  textarea { min-height: 7rem; }
+  pre.config { background: var(--code-bg); padding: 12px; border-radius: 8px; }
+  fieldset { border: 1px solid var(--rule); border-radius: 8px; margin: 1rem 0; }
+  .choice { font-weight: 400; margin: 0.35rem 0; }
+  .banner { border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; margin: 1rem 0; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 1rem 0; }
   :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }`;
 
-function page(title, inner) {
+export function page(title, inner) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex"><title>${esc(title)}</title><style>${STYLE}</style></head>
@@ -367,6 +427,7 @@ ${help}`,
 <li><a href="${DOWNLOAD_URL}">Download Grill for Claude Desktop</a> and double-click it.</li>
 <li>When Claude asks for a “Model router key”, paste this key.</li>
 <li>In any chat, say “grill this” and tell it what you’re deciding.</li>
+<li>Or open <a href="/pro">your Pro account</a> to pick a judge and copy a config for the assistant you use. Paste this key there if it asks. We don't keep a copy.</li>
 </ol>
 <p class="small">Your key includes up to ${dollars} of AI time a month, and a typical check costs about a cent. The allowance resets each month.</p>
 ${manage}${help}
@@ -377,7 +438,7 @@ ${manage}${help}
       return page(
         "Key already shown · Grill Pro",
         `<h1>Your key has already been shown.</h1>
-<p>For your safety, we only show each key once. Lost it? Email <a href="mailto:${CONTACT}">${CONTACT}</a> from the address you paid with, and we’ll send you a new one.</p>
+<p>For your safety, we only show each key once. Lost it? <a href="/pro">Sign in</a> and rotate it, or email <a href="mailto:${CONTACT}">${CONTACT}</a> from the address you paid with.</p>
 ${manage}`,
       );
     case "unpaid":

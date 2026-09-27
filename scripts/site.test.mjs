@@ -53,6 +53,7 @@ describe("site/page.html", () => {
       "https://grillyour.ai/checkout?plan=year",
       "https://grillyour.ai/checkout?plan=month",
       "https://grillyour.ai/checkout?plan=year",
+      "/pro",
       "/terms/",
     ]);
   });

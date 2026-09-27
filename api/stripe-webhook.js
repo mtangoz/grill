@@ -1,5 +1,6 @@
 // Stripe calls this when a Grill Pro subscription changes. Signed with STRIPE_WEBHOOK_SECRET;
 // anything unsigned, stale or tampered with is refused before it's parsed.
+import { syncAccountSubscription } from "./_account.mjs";
 import { handleEvent, verifyStripeSignature } from "./_pro.mjs";
 
 export async function POST(request) {
@@ -15,7 +16,10 @@ export async function POST(request) {
   }
   try {
     const outcome = await handleEvent(event, { env: process.env, fetch: globalThis.fetch });
-    return Response.json({ received: true, ...outcome });
+    // The key switch above is the part that must happen. The account record follows it,
+    // and a failure there is retried: switching a key off twice changes nothing.
+    const account = await syncAccountSubscription(event, { env: process.env, fetch: globalThis.fetch });
+    return Response.json({ received: true, ...outcome, account: account.action });
   } catch (e) {
     // A 500 makes Stripe retry, which is safe: switching a key on or off twice changes nothing.
     console.error(`[grill-pro] webhook ${event?.type}: ${e.message}`);

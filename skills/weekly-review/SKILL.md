@@ -126,7 +126,7 @@ End with **three reflection prompts written for this user's actual week**, never
 
 ## Delivery
 
-- The note goes in the chat. If the user asked for email delivery and an email connector can send, send it **only to the user's own address**.
+- The note goes in the chat. If the user asked for email delivery and an email connector can send, send it **only to the user's own address**. Grill's server does not send this note and does not store it.
 - **Keep it short.** The user picks one style:
   - **Skim, about 30 seconds:** a one-line summary, then what to confirm, what's waiting and anything due. Bullets, about 120 words.
   - **Briefing, about 2 minutes:** one short piece in tight prose, under 300 words, facts first.
