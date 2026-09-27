@@ -160,3 +160,14 @@ describe("the any-assistant prompt", () => {
     assert.match(prompt, /^\| Copilot [^\n]*\| Gemini \|$/m);
   });
 });
+
+describe("Glama listing files", () => {
+  it("glama.json names the maintainer who can claim the listing, and the image starts the server", () => {
+    const glama = json("glama.json");
+    assert.equal(glama.$schema, "https://glama.ai/mcp/schemas/server.json");
+    assert.deepEqual(glama.maintainers, ["mtangoz"]);
+    const docker = readFileSync(join(ROOT, "Dockerfile"), "utf8");
+    assert.match(docker, /ENTRYPOINT \["node", "server\/index\.mjs"\]/);
+    assert.match(docker, /^USER node$/m);
+  });
+});
