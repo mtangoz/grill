@@ -1,0 +1,26 @@
+{
+  "id": "gen-fixture-holds-over-serious",
+  "model": "openai/gpt-5.6-sol",
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "message": {
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+              "name": "report_challenge",
+              "arguments": "{\"steelman\":\"Moving everything in one weekend avoids six weeks of running two systems side by side, and the migration tool already moved a test copy cleanly.\",\"counter_steelman\":\"A staged migration exposes the largest accounts to the new system one batch at a time, so a failure costs one batch, not the whole customer base.\",\"challenges\":[{\"kind\":\"evidence-mismatch\",\"severity\":\"serious\",\"target\":\"the tool finished the test copy in under three hours\",\"challenge\":\"The test copy held only the smallest accounts, so its run time says little about the largest ones.\",\"what_would_have_to_be_true\":\"Run time grows no faster than data size for the largest accounts.\",\"falsifier\":\"Copy the three largest accounts to a scratch instance and time it.\",\"confidence\":\"high\"}],\"verdict\":\"holds\",\"verdict_reason\":\"The plan is sensible and the test run went well.\",\"strongest_objection\":\"Time a copy of the largest accounts before the weekend.\"}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "cost": 0.0118,
+    "include": true
+  }
+}

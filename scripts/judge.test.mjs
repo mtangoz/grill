@@ -96,6 +96,27 @@ describe("a usable tool call", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("a verdict kinder than its own challenges", () => {
+  it("keeps the judge's 'holds' but warns, in the report, that a serious challenge stands under it", async () => {
+    const env = envFor({ JUDGE_FIXTURE: join(FIXTURES, "holds-over-serious-response.json") });
+
+    const { code, stdout } = await runCli(["--text", "Move every customer to the new database in one weekend.", "--json"], env);
+
+    assert.equal(code, 0);
+    const result = JSON.parse(stdout);
+    assert.equal(result.verdict, "holds", "reported, never overwritten");
+    assert.equal(result.verdictCoherent, false);
+    assert.match(result.verdictNote, /1 SERIOUS challenge/);
+    assert.deepEqual(result.degraded, [], "a kind verdict is a warning, not a blind run");
+
+    const { stdout: report } = await runCli(["--text", "Move every customer to the new database in one weekend."], env);
+    assert.match(report, /\*\*Verdict: solid\*\*/);
+    assert.match(report, /Verdict does not match the surviving challenges\.\*\* the judge returned "holds" while filing 1 SERIOUS/);
+    assert.doesNotMatch(report, /DEGRADED RUN/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("a response with no tool call", () => {
   it("walks the whole chain and ends degraded rather than crashing or hanging", async () => {
     const env = envFor({ JUDGE_FIXTURE: join(FIXTURES, "no-tool-call-response.json") });

@@ -88,7 +88,9 @@ const CHECK_NOTE = checkEnabled()
 const DESCRIPTION = [
   "Send a decision, plan or forecast to an outside AI judge: a model from a different company than Claude.",
   "It writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict (solid, solid if, shaky, or doesn't hold up).",
-  "Before calling: write the subject, meaning the decision, the options, the reasons, the prediction and confidence exactly as the user gave them, and the strongest case against. Show it to the user, and call only after they approve, because it leaves their machine for a model router (zero-data-retention endpoints only).",
+  "Before calling: write the subject, meaning the decision, every option on the table, the reasons, the prediction and confidence exactly as the user gave them, and the strongest case against.",
+  "Write it as a clerk, not an advocate: a write-up that leans toward the decision gets a kinder verdict than it should, and one written by whoever helped reach it leans unless you stop it. Give the case against the same depth as the reasons and don't answer it, include the facts that cut against the decision, and leave out words that grade (clearly, strong, safe) and any recommendation of your own.",
+  "Show it to the user, and call only after they approve, because it leaves their machine for a model router (zero-data-retention endpoints only).",
   CHECK_NOTE,
   "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default.",
   "Costs about a cent on the user's own key, or on a Grill Pro key, and usually takes 1–3 minutes. If the result is a job id, call grill_result with it.",
@@ -106,7 +108,7 @@ const TOOLS = [
         question: {
           type: "string",
           description:
-            "Optional. One neutral question, at most 600 characters, that never names a preferred answer. For a forecast, ask whether the confidence is too high, too low or about right.",
+            "Optional. One neutral question, at most 600 characters, that never names a preferred answer: it names every option, carries none of the subject's reasons, and is not a yes-or-no question whose easy answer is the choice already made. For a forecast, ask whether the confidence is too high, too low or about right.",
         },
         author: {
           type: "string",
@@ -282,7 +284,7 @@ async function handle(msg) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "grill", title: "Grill", version: VERSION },
           instructions:
-            "Grill sends a decision to an outside AI judge from a different company than Claude. Show the user the subject and get their OK before calling grill. If grill returns a job id, call grill_result until the report arrives. Relay the verdict first, then the challenges with their falsifiers, quoting the judge rather than agreeing with it.",
+            "Grill sends a decision to an outside AI judge from a different company than Claude. Write the subject as a clerk, not an advocate, and show the user the subject and get their OK before calling grill. If grill returns a job id, call grill_result until the report arrives. Relay the verdict first, then the challenges with their falsifiers, quoting the judge rather than agreeing with it, softening it or adding reassurance of your own.",
         },
       });
       return;

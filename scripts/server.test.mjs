@@ -95,6 +95,19 @@ describe("the MCP handshake", () => {
     await c.close();
   });
 
+  it("tells Claude, before every call, to write the subject as a clerk and keep the question from leaning", async () => {
+    // With the extension alone there is no skill: this text is all Claude reads about framing.
+    const c = await initialized({});
+    const res = await c.request("tools/list", {});
+    const grill = res.result.tools.find((t) => t.name === "grill");
+    assert.match(grill.description, /clerk, not an advocate/);
+    assert.match(grill.description, /kinder verdict than it should/);
+    assert.match(grill.description, /don't answer it/);
+    assert.match(grill.inputSchema.properties.question.description, /names every option/);
+    assert.match(grill.inputSchema.properties.question.description, /easy answer is the choice already made/);
+    await c.close();
+  });
+
   it("answers ping, refuses unknown methods, and reports parse errors", async () => {
     const c = await initialized({});
     assert.deepEqual((await c.request("ping", {})).result, {});

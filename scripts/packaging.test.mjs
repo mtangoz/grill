@@ -140,6 +140,28 @@ describe("the skills", () => {
     assert.ok(text.includes("{THE APPROVED SUBJECT}"));
     assert.ok(text.includes("{THE NEUTRAL QUESTION}"));
   });
+
+  // A grill comes back kinder than it should when the write-up leans toward the decision and
+  // the judge is told that a missed flaw is the cheap mistake. These pin the guards against it.
+  it("the paste-route judge is told who wrote the write-up, prices both mistakes, and runs the swap test", () => {
+    const text = readFileSync(join(ROOT, "skills/grill/paste-prompt.md"), "utf8");
+    assert.match(text, /The side that made this decision wrote it up/);
+    assert.match(text, /tell them what you'd tell a stranger/);
+    assert.match(text, /Both mistakes cost the reader/);
+    assert.doesNotMatch(text, /worse than a missed one/);
+    assert.match(text, /Then swap sides/);
+    assert.match(text, /rules out a plain "solid"/);
+  });
+
+  it("the grill skill writes the subject as a clerk and relays the verdict without softening it", () => {
+    const text = readFileSync(join(ROOT, "skills/grill/SKILL.md"), "utf8");
+    assert.match(text, /Write as a clerk, not an advocate/);
+    assert.match(text, /State it and stop: don't answer it/);
+    assert.match(text, /name every option, not only the chosen one/);
+    assert.match(text, /\*\*The swap test\.\*\*/);
+    assert.match(text, /never shorten it to "solid"/);
+    assert.match(text, /no "overall, the judge agrees with you"/);
+  });
 });
 
 describe("the any-assistant prompt", () => {
@@ -170,6 +192,12 @@ describe("the any-assistant prompt", () => {
       assert.match(text, /only Gemini counts as a different company/, `${name} missing the Copilot rule`);
       assert.match(text, /ChatGPT, Gemini or Grok/, `${name} does not name assistants to paste into`);
     }
+  });
+
+  it("writes the subject as a clerk, not an advocate, in any assistant too", () => {
+    assert.match(prompt, /Write the subject as a clerk, not an advocate/);
+    assert.match(prompt, /Don't answer it;/);
+    assert.match(prompt, /names every option/);
   });
 
   it("names the assistants people start from, and pairs Copilot only with a company it can't run", () => {
