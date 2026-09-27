@@ -1,0 +1,43 @@
+{
+  "authors": ["mtangoz", "cursor[bot]", "cursoragent"],
+  "maxChangedLines": 300,
+  "maxFiles": 15,
+  "blockingLabels": ["do-not-merge", "needs-review"],
+  "automergeLabel": "automerge",
+  "safePaths": [
+    "README.md",
+    "LEARNING.md",
+    "docs/**",
+    "evals/cases/**",
+    "site/page.html",
+    ".github/ISSUE_TEMPLATE/**"
+  ],
+  "additionsOnly": ["evals/cases/**"],
+  "denyPaths": [
+    "api/**",
+    "scripts/judge*.mjs",
+    "scripts/checkCore*",
+    "prompts/**",
+    "manifest.json",
+    "**/manifest.json",
+    "server.json",
+    "**/server.json",
+    ".claude-plugin/**",
+    ".mcp.json",
+    "**/.mcp.json",
+    "**/package.json",
+    "**/package-lock.json",
+    "**/npm-shrinkwrap.json",
+    "**/yarn.lock",
+    "**/pnpm-lock.yaml",
+    "**/bun.lock",
+    "**/bun.lockb",
+    ".github/workflows/**",
+    ".github/automerge.json",
+    "SECURITY.md",
+    "docs/PRIVACY.md",
+    "site/terms.html"
+  ],
+  "denySubstrings": ["stripe", "auth", "key", "secret"],
+  "denyPageBasenames": ["terms", "privacy"]
+}

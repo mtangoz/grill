@@ -1,0 +1,42 @@
+name: automerge
+
+# Same-repository pull requests get the write token this job needs.
+# The job checks out the base commit only. It reads the changed-file list from
+# the API and runs the classifier from that base commit. It does not check out
+# the pull request head and it does not run that branch's scripts.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the base commit only
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Classify and arm or disarm auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ ! -f scripts/automerge.mjs ]; then
+            echo "Base commit has no scripts/automerge.mjs yet. Auto-merge stays off."
+            exit 0
+          fi
+          node scripts/automerge.mjs
