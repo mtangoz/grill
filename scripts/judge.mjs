@@ -50,9 +50,9 @@
  * ENVIRONMENT
  *   OPENROUTER_API_KEY    required unless --dry-run, or JUDGE_FIXTURE is set.
  *   JUDGE_MODEL           optional comma-separated chain override. An override that does
- *                         not lead with an OpenRouter Auto Router slug is reported in the
- *                         run rather than silently honoured — losing the router (being
- *                         "shadowed") pins this judge to one vendor with nothing saying so.
+ *                         not lead with an OpenRouter Auto Router slug is an informational
+ *                         note in the report, not a degraded run: the review is valid, and
+ *                         the note says the pin replaced the Auto Router.
  *   JUDGE_TIMEOUT_MS      per-attempt timeout override, in ms (1000-720000; default 600000).
  *                         The whole-chain walk deadline is derived from this as 1.5x it.
  *   JUDGE_FIXTURE         path to a saved OpenRouter response JSON; replayed for every
@@ -387,11 +387,12 @@ if (chainChoice.source === "env-empty") {
 const modelChain = chainChoice.chain;
 const primaryModel = chainChoice.primary;
 
+const notes = [];
 if (chainChoice.shadowed) {
   // Not a degradation — the review is complete and valid, it was just judged by a model
-  // chosen out of sight. Loud anyway, because a stale pin is invisible from the output
-  // otherwise.
-  degraded.push(
+  // chosen out of sight. It has to stay off `degraded`: that list is the "NO review"
+  // banner, and a deliberate pin would make every such run look invalid.
+  notes.push(
     `JUDGE_MODEL pins \`${modelChain.join(">")}\`, which SHADOWS the default's Auto Router — the per-request model choice is off and this judge is pinned to one vendor`,
   );
 }
@@ -469,6 +470,7 @@ if (opts.dryRun) {
   );
   console.log(`[judge] prompt: ${promptChars} chars`);
   for (const d of degraded) console.log(`[judge] DEGRADED: ${d}`);
+  for (const note of notes) console.log(`[judge] note: ${note}`);
   console.log("\n--- payload (truncated to 20k chars for display) ---");
   console.log(JSON.stringify(bodyFor(primaryModel), null, 2).slice(0, 20000));
   process.exit(0);
@@ -701,6 +703,7 @@ const result = {
   rejected: validation.rejected,
   capped: validation.capped,
   degraded,
+  notes,
   servedModel,
   requestedChain: modelChain,
   declaredAuthor: opts.author,
@@ -778,4 +781,5 @@ console.log(opts.json ? JSON.stringify(result, null, 2) : report);
 // because the run completed and a provider being unreachable is not a failure of the
 // arguments this script was given.
 for (const d of degraded) console.error(`[judge] DEGRADED: ${d}`);
+for (const note of notes) console.error(`[judge] note: ${note}`);
 process.exit(0);
