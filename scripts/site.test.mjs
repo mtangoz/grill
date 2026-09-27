@@ -96,6 +96,8 @@ describe("site/page.html", () => {
     assert.ok(readFileSync(join(ROOT, "LEARNING.md"), "utf8").includes("Quality checks on one grill"));
     assert.match(page, /Before you decide/);
     assert.match(page, /id="paste-result"/);
+    assert.match(page, /\.button \{[^}]*white-space:\s*nowrap/);
+    assert.match(page, /\.report p:not\(\.cta\)/);
     assert.match(page, /grill-record/);
     assert.match(page, /version: 1/);
     assert.ok(readFileSync(join(ROOT, "docs/DECISION-RECORD.md"), "utf8").includes("version: 1"));
