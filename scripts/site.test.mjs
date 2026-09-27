@@ -47,8 +47,15 @@ describe("site/page.html", () => {
     assert.match(pro, /Early access: 50% off Pro for life/);
     assert.match(pro, /\$4\.50 a month/);
     assert.match(pro, /\$45 a year/);
+    assert.match(pro, /starter-amount">\$0\.50</);
+    assert.match(pro, /No card/);
+    assert.match(pro, /does not refill/);
+    assert.match(pro, /unlimited checks/);
+    assert.match(page, /main:not\(\[data-billing="subscription"\]\) \.paywall \{ display: none; \}/);
+    assert.doesNotMatch(page, /<main[^>]*\bdata-billing\b/);
     const buy = [...pro.matchAll(/<a[^>]*href="([^"]+)"[^>]*>/g)].map((m) => m[1]);
     assert.deepEqual(buy, [
+      "/pro",
       "https://grillyour.ai/checkout?plan=month",
       "https://grillyour.ai/checkout?plan=year",
       "https://grillyour.ai/checkout?plan=month",
@@ -82,7 +89,16 @@ describe("the terms page", () => {
     assert.match(page, /Grill Pro is \$9 a month/);
     assert.match(terms, /cancel anytime/);
     assert.match(terms, /within 30 days of your first payment/);
+    assert.match(terms, /\$0\.50 of judge spend/);
+    assert.match(terms, /No card/);
+    assert.match(terms, /mailto:support@grillyour\.ai/);
+    assert.doesNotMatch(terms, /hello@/);
+    assert.doesNotMatch(page, /hello@/);
+    assert.doesNotMatch(readFileSync(join(ROOT, "README.md"), "utf8"), /hello@/);
+    assert.doesNotMatch(readFileSync(join(ROOT, "SECURITY.md"), "utf8"), /hello@/);
+    assert.doesNotMatch(readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8"), /hello@/);
     assert.ok(!terms.includes("—"), "no em dashes");
+    assert.ok(!page.includes("—"), "no em dashes");
   });
 });
 
@@ -118,6 +134,7 @@ describe("the site build", () => {
   it("the early-access offer is on only when GRILL_PRO_COUPON is set at build time", () => {
     const build = (coupon) => {
       const env = { ...process.env };
+      delete env.GRILL_PRO_BILLING;
       if (coupon) env.GRILL_PRO_COUPON = coupon;
       else delete env.GRILL_PRO_COUPON;
       execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env });
@@ -131,5 +148,24 @@ describe("the site build", () => {
     // A value that isn't a coupon id is the same as unset: full price, no offer.
     const junk = build("not a coupon");
     assert.doesNotMatch(junk, /<main id="top" data-offer>/);
+  });
+
+  it("the paywall is on only when GRILL_PRO_BILLING=subscription at build time", () => {
+    const build = (extra) => {
+      const env = { ...process.env, ...extra };
+      delete env.GRILL_PRO_COUPON;
+      execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env });
+      return readFileSync(join(ROOT, "_site/index.html"), "utf8");
+    };
+    const off = build({ GRILL_PRO_BILLING: "" });
+    assert.match(off, /<main id="top">/);
+    assert.doesNotMatch(off, /<main[^>]*data-billing/);
+    assert.match(off, /starter-amount">\$0\.50</);
+    const on = build({ GRILL_PRO_BILLING: "subscription" });
+    assert.match(on, /<main id="top" data-billing="subscription">/);
+    const ignored = build({ GRILL_PRO_BILLING: "yes" });
+    assert.doesNotMatch(ignored, /<main[^>]*data-billing/);
+    const custom = build({ GRILL_STARTER_ALLOWANCE_USD: "1.25" });
+    assert.match(custom, /starter-amount">\$1\.25</);
   });
 });

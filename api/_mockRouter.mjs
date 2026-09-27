@@ -18,7 +18,7 @@ export function createMockManagement() {
       const body = JSON.parse(init.body || "{}");
       const hash = randomBytes(32).toString("hex");
       const key = `sk-or-v1-test-${hash.slice(0, 12)}`;
-      const data = { hash, name: body.name, limit: body.limit, limit_reset: null, usage_monthly: 0, disabled: false };
+      const data = { hash, name: body.name, limit: body.limit, limit_reset: null, usage: 0, usage_monthly: 0, disabled: false };
       keys.set(hash, data);
       return Response.json({ key, data: { ...data } });
     }
@@ -41,7 +41,9 @@ export function createMockManagement() {
   fetchImpl.noteUsage = (hash, usd) => {
     const data = keys.get(hash);
     if (!data) return;
-    data.usage_monthly = Math.round((Number(data.usage_monthly) + Number(usd)) * 10000) / 10000;
+    const next = Math.round((Number(data.usage_monthly) + Number(usd)) * 10000) / 10000;
+    data.usage_monthly = next;
+    data.usage = Math.round((Number(data.usage) + Number(usd)) * 10000) / 10000;
   };
   fetchImpl.keys = keys;
   return fetchImpl;

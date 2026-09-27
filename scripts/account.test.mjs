@@ -17,6 +17,7 @@ import {
   handleProTry,
   judgeAllowed,
   memoryStore,
+  readUsageReport,
   redisStore,
   renderSetupConfig,
   signPayload,
@@ -24,6 +25,7 @@ import {
   stripeStore,
   syncAccountSubscription,
   testModeEnabled,
+  usageReport,
 } from "../api/_account.mjs";
 
 const NOW = Date.UTC(2026, 8, 26, 20, 0, 0);
@@ -103,7 +105,7 @@ describe("the account flow", () => {
   it("signs in, simulates a purchase, sets up, grills, rotates and cancels", { timeout: 30000 }, async () => {
     const store = memoryStore();
     const fetch = createMockManagement();
-    const d = deps(store, fetch);
+    const d = deps(store, fetch, { ...ENV, GRILL_PRO_BILLING: "subscription" });
     const email = "pro@example.com";
 
     const sent = await post(handleProAuth, "/pro/auth", { email }, "", d);
@@ -163,7 +165,7 @@ describe("the account flow", () => {
     const home = await handlePro(new Request("https://grillyour.ai/pro", { headers: { cookie } }), d);
     const homeHtml = await body(home);
     assert.match(homeHtml, /Signed in as pro@example.com/);
-    assert.match(homeHtml, /Used \$0\.01 of \$3 this month/);
+    assert.match(homeHtml, /Used \$0\.01 of \$3\. That is this month/);
 
     const rotated = await post(handlePro, "/pro", { action: "rotate" }, cookie, d);
     const rotatedHtml = await body(rotated);
@@ -189,7 +191,7 @@ describe("the account flow", () => {
   it("refuses a simulated purchase and the sample grill when test mode is off", async () => {
     const store = memoryStore();
     const fetch = createMockManagement();
-    const env = { GRILL_SESSION_SECRET: ENV.GRILL_SESSION_SECRET, OPENROUTER_MANAGEMENT_KEY: "mgmt_test" };
+    const env = { GRILL_SESSION_SECRET: ENV.GRILL_SESSION_SECRET, OPENROUTER_MANAGEMENT_KEY: "mgmt_test", GRILL_PRO_BILLING: "subscription" };
     const d = deps(store, fetch, env);
     const started = await startMagicLink("off@example.com", d);
     const session = signPayload({ t: "s", sub: started.account.id, exp: Math.floor(NOW / 1000) + 3600 }, env.GRILL_SESSION_SECRET);
@@ -238,7 +240,7 @@ describe("report history", () => {
   it("shows a report only to the owner, and only after they turn saving on", { timeout: 30000 }, async () => {
     const store = memoryStore();
     const fetch = createMockManagement();
-    const d = deps(store, fetch);
+    const d = deps(store, fetch, { ...ENV, GRILL_PRO_BILLING: "subscription" });
     const owner = await signedIn("owner@example.com", d);
     const other = await signedIn("other@example.com", d);
 
@@ -298,6 +300,136 @@ describe("report history", () => {
   });
 });
 
+describe("the starter allowance", () => {
+  async function signedIn(email, d) {
+    const sent = await post(handleProAuth, "/pro/auth", { email }, "", d);
+    const link = (await body(sent)).match(/id="magic" href="([^"]+)"/)?.[1];
+    const token = new URL(link, "https://grillyour.ai").searchParams.get("token");
+    const authed = await handleProAuth(new Request(`https://grillyour.ai/pro/auth?token=${encodeURIComponent(token)}`), d);
+    return cookieFrom(authed);
+  }
+
+  it("gives one capped key with no card, and does not mint a second", async () => {
+    const store = memoryStore();
+    const fetch = createMockManagement();
+    const d = deps(store, fetch);
+    const cookie = await signedIn("starter@example.com", d);
+    const home = await body(await handlePro(new Request("https://grillyour.ai/pro", { headers: { cookie } }), d));
+    assert.match(home, /Get a starter key/);
+    assert.match(home, /\$0\.50/);
+    assert.doesNotMatch(home, /Simulate purchase/);
+
+    const issued = await post(handlePro, "/pro", { action: "starter" }, cookie, d);
+    assert.equal(issued.status, 200);
+    const key = (await body(issued)).match(/id="k"[^>]*value="([^"]+)"/)?.[1];
+    assert.ok(key?.startsWith("sk-or-v1-test-"));
+    const row = [...fetch.keys.values()][0];
+    assert.equal(row.limit, 0.5);
+    assert.equal(row.limit_reset, null);
+    assert.equal(fetch.keys.size, 1);
+
+    const again = await post(handlePro, "/pro", { action: "starter" }, cookie, d);
+    assert.equal(again.status, 400);
+    assert.match(await body(again), /already has its starter key/);
+    assert.equal(fetch.keys.size, 1);
+    const account = await store.getByEmail("starter@example.com");
+    assert.equal(account.plan, "starter");
+    assert.equal(account.starterIssued, true);
+    assert.equal(account.subscription, "none");
+
+    const report = await readUsageReport(store);
+    assert.equal(report.accountCreated, 1);
+    assert.equal(report.keyIssued, 1);
+    assert.equal(report.activation, 0);
+  });
+
+  it("rotates only the remainder, and stops at three keys an hour", async () => {
+    const store = memoryStore();
+    const fetch = createMockManagement();
+    const d = deps(store, fetch);
+    const cookie = await signedIn("rotate@example.com", d);
+    const issued = await post(handlePro, "/pro", { action: "starter" }, cookie, d);
+    const first = [...fetch.keys.values()][0];
+    fetch.noteUsage(first.hash, 0.2);
+    const rotated = await post(handlePro, "/pro", { action: "rotate" }, cookie, d);
+    assert.equal(rotated.status, 200, await rotated.clone().text());
+    const live = [...fetch.keys.values()].filter((row) => !row.disabled);
+    assert.equal(live.length, 1);
+    assert.equal(live[0].limit, 0.3);
+    assert.equal(live[0].limit_reset, null);
+
+    const third = await post(handlePro, "/pro", { action: "rotate" }, cookie, d);
+    assert.equal(third.status, 200, await third.clone().text());
+    const blocked = await post(handlePro, "/pro", { action: "rotate" }, cookie, d);
+    assert.equal(blocked.status, 429);
+    assert.match(await body(blocked), /too many new keys/);
+    const still = [...fetch.keys.values()].filter((row) => !row.disabled);
+    assert.equal(still.length, 1, "a refused rotation leaves the current key on");
+  });
+
+  it("refuses to rotate once the allowance is spent, and does not refill it", async () => {
+    const store = memoryStore();
+    const fetch = createMockManagement();
+    const d = deps(store, fetch);
+    const cookie = await signedIn("spent@example.com", d);
+    await post(handlePro, "/pro", { action: "starter" }, cookie, d);
+    const first = [...fetch.keys.values()][0];
+    fetch.noteUsage(first.hash, 0.5);
+    const refused = await post(handlePro, "/pro", { action: "rotate" }, cookie, d);
+    assert.equal(refused.status, 400);
+    assert.match(await body(refused), /used up/);
+    assert.equal([...fetch.keys.values()].filter((row) => !row.disabled).length, 1);
+    assert.equal(fetch.keys.size, 1);
+  });
+
+  it("counts activation, depletion and an upgrade click, and still stores no decision text", { timeout: 30000 }, async () => {
+    const store = memoryStore();
+    const fetch = createMockManagement();
+    const env = { ...ENV, GRILL_STARTER_ALLOWANCE_USD: "0.50" };
+    const d = deps(store, fetch, env);
+    const cookie = await signedIn("events@example.com", d);
+    const issued = await post(handlePro, "/pro", { action: "starter" }, cookie, d);
+    const key = (await body(issued)).match(/id="k"[^>]*value="([^"]+)"/)?.[1];
+    await post(handlePro, "/pro", { action: "setup", assistant: "claude-desktop", judge: "google/gemini-2.5-pro", key }, cookie, d);
+    const grilled = await post(
+      handleProTry,
+      "/pro/try",
+      { key, subject: "We're moving our launch to March. I'm 70% sure it gets us more signups." },
+      cookie,
+      d,
+    );
+    assert.equal(grilled.status, 200, await grilled.clone().text());
+    assert.ok(!JSON.stringify(store.dump()).includes("Steelman"));
+
+    const hash = [...fetch.keys.keys()][0];
+    fetch.noteUsage(hash, 0.5);
+    const home = await body(await handlePro(new Request("https://grillyour.ai/pro", { headers: { cookie } }), d));
+    assert.match(home, /does not refill/);
+    const upgraded = await post(handlePro, "/pro", { action: "upgrade" }, cookie, d);
+    assert.equal(upgraded.status, 200);
+    assert.match(await body(upgraded), /Paid plans aren't on/);
+
+    const report = await readUsageReport(store);
+    assert.equal(report.accountCreated, 1);
+    assert.equal(report.keyIssued, 1);
+    assert.equal(report.activation, 1);
+    assert.equal(report.depletion, 1);
+    assert.equal(report.upgradeClicked, 1);
+    assert.deepEqual(usageReport({ first_grill: "2", allowance_exhausted: -3, account_created: "nope" }), {
+      accountCreated: 0,
+      keyIssued: 0,
+      activation: 2,
+      depletion: 0,
+      upgradeClicked: 0,
+    });
+    const paid = await post(handlePro, "/pro", { action: "purchase" }, cookie, d);
+    assert.equal(paid.status, 400);
+    const paidHtml = await body(paid);
+    assert.match(paidHtml, /Paid plans are off/);
+    assert.doesNotMatch(paidHtml, /Stripe/);
+  });
+});
+
 describe("redis and stripe stores", () => {
   it("round-trips an account and a single-use nonce through the Redis REST API", async () => {
     const db = new Map();
@@ -317,6 +449,11 @@ describe("redis and stripe stores", () => {
         db.delete(key);
         return Response.json({ result: v });
       }
+      if (cmd === "INCR") {
+        const n = Number(db.get(key) || 0) + 1;
+        db.set(key, String(n));
+        return Response.json({ result: n });
+      }
       return Response.json({ result: null }, { status: 400 });
     };
     const env = { ...ENV, GRILL_PRO_TEST_MODE: "", UPSTASH_REDIS_REST_URL: "https://example.upstash.io", UPSTASH_REDIS_REST_TOKEN: "tok" };
@@ -327,6 +464,8 @@ describe("redis and stripe stores", () => {
     assert.equal(await consumeMagicLink(started.token, deps(store, fetch, env)), null);
     const saved = [...db.values()].join("\n");
     assert.ok(!saved.includes(started.token), "the raw magic token is not stored");
+    assert.equal(db.get("grill:metric:account_created"), "1");
+    assert.equal((await readUsageReport(store)).activation, 0);
   });
 
   it("keeps the account on the Stripe customer, including the key hash and not the key", async () => {

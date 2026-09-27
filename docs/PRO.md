@@ -1,6 +1,6 @@
 # Grill Pro accounts
 
-The free tool has no account, no sign-in and no server of its own. This file is only about Pro: the optional subscription for people who don't want to manage an OpenRouter key.
+The free tool has no account, no sign-in and no server of its own. Bring your own key and checks stay free and unlimited on your own credit. This file is about a key Grill manages: a free starter allowance, and the optional paid subscription for when billing is turned on.
 
 ## Why a magic link
 
@@ -30,6 +30,8 @@ See the table in the README. The new ones are:
 | `GRILL_PRO_ORIGIN` | Optional. Use `https://grillyour.ai` so email links don't follow a preview URL. |
 | `GRILL_PRO_TEST_MODE` | Only on a laptop or a non-production preview. Value `1`. |
 | `GRILL_PRO_STORE` | Optional file path for test mode. |
+| `GRILL_STARTER_ALLOWANCE_USD` | Optional. Dollars of judge spend on a starter key. Default 0.50. One-time, not a monthly refill, and not a count of grills. |
+| `GRILL_PRO_BILLING` | Optional. `subscription` or unset/`off`. Default off. Also a site-build switch, like `GRILL_PRO_COUPON`. |
 
 Stripe, when you connect it (the code already calls it; it waits on these):
 
@@ -41,8 +43,8 @@ Stripe, when you connect it (the code already calls it; it waits on these):
 | `GRILL_PRO_PRICE_YEAR` | Recurring price, $90 a year. |
 | `GRILL_PRO_COUPON` | Optional. Coupon id, 50% off, duration `forever`. Also set it for the site build, or the page won't mention the offer. |
 | `GRILL_PORTAL_URL` | Customer portal link, `https://billing.stripe.com/…`. |
-| `OPENROUTER_MANAGEMENT_KEY` | OpenRouter management key for the Grill account. Keys are created with a monthly dollar cap (`GRILL_PRO_KEY_LIMIT`, default 3). |
-| `GRILL_PRO_KEY_LIMIT` | Optional. Dollars per key per month, above 0 and at most 50. |
+| `OPENROUTER_MANAGEMENT_KEY` | OpenRouter management key for the Grill account. Paid keys get a monthly dollar cap (`GRILL_PRO_KEY_LIMIT`, default 3). Starter keys get `GRILL_STARTER_ALLOWANCE_USD` (default 0.50) with no monthly reset. |
+| `GRILL_PRO_KEY_LIMIT` | Optional. Dollars per paid key per month, above 0 and at most 50. |
 
 Checkout already sends people to `https://grillyour.ai/welcome?session_id={CHECKOUT_SESSION_ID}`. If they're signed in, that page attaches the new key's hash to the account. The key is still shown only on that page.
 
@@ -53,9 +55,25 @@ GRILL_PRO_TEST_MODE=1 GRILL_SESSION_SECRET=replace-me-with-a-long-string \
   node scripts/pro-dev-server.mjs
 ```
 
-Open `http://127.0.0.1:4173/pro`. Sign in (the link is on the page), simulate a purchase, pick an assistant and a judge from a different company, copy the config, run a sample grill, rotate, cancel.
+Open `http://127.0.0.1:4173/pro`. Sign in (the link is on the page), get a starter key (no card), pick an assistant and a judge from a different company, copy the config, and run a sample grill. With `GRILL_PRO_BILLING=subscription`, the same page can simulate a purchase, rotate a paid key, and cancel. The dev server does not turn billing on by itself.
 
 The dev server mocks OpenRouter's key API. The sample grill runs Grill's own judge against a loopback stand-in, with the managed key as the bearer token and the chosen judge model. It does not call the real router. That sample endpoint answers 404 unless test mode is on. In production, write-ups still go from the assistant straight to the router.
+
+## Starter allowance
+
+Any signed-in account can get one managed key without paying, while `GRILL_PRO_BILLING` is off or unset. The cap is dollars of judge spend on the OpenRouter key (`limit`, and no `limit_reset`). Default $0.50. One starter key per verified email. Asking again does not mint another, and revoking one does not refill it. Rotating reads what is left, switches the old key off, and creates a new key for that remainder only. If usage can't be read, or nothing is left, rotation is refused.
+
+Key creation is limited to three per account per hour. The slot is taken before the router is called, so a failed attempt still counts.
+
+Paid subscription code stays. Checkout, the simulated purchase, and the $9 copy are shown only when `GRILL_PRO_BILLING=subscription`. Rebuild the site with that variable or the paywall stays hidden.
+
+## Usage counts
+
+These are counts, with no decision text: `account_created`, `key_issued`, `first_grill`, `allowance_exhausted`, `upgrade_clicked`. On Redis they are `INCR grill:metric:<name>`. A file store keeps the same numbers. A Stripe-only account store keeps them in memory, so they do not survive a cold start.
+
+Activation is `first_grill` (signed up, then a grill). Depletion is `allowance_exhausted`. `usageReport` / `readUsageReport` is what a weekly job reads. The installed extension does not phone home, so a first grill or an empty allowance is recorded the next time the server reads key usage (cost only), which is when the person opens the account. In test mode the sample grill records it immediately.
+
+Account and key pages do not load Vercel Analytics. The raw key can be on those pages, and their content security policy does not allow a third-party script. The public site still counts anonymous page views.
 
 ## Reports
 

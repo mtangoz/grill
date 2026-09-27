@@ -29,9 +29,10 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 export const STRIPE_API = "https://api.stripe.com";
 export const ROUTER_API = "https://openrouter.ai/api/v1";
 export const DEFAULT_LIMIT_USD = 3;
+export const DEFAULT_STARTER_USD = 0.5;
 export const LINK_TTL_SECONDS = 24 * 60 * 60;
 export const SIGNATURE_TOLERANCE_SECONDS = 300;
-export const CONTACT = "hello@hold.quest";
+export const CONTACT = "support@grillyour.ai";
 export const DOWNLOAD_URL = "https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb";
 export const SITE_URL = "https://grillyour.ai";
 export const COUPON_ENV = "GRILL_PRO_COUPON";
@@ -53,10 +54,26 @@ const CUSTOMER_RE = /^cus_[A-Za-z0-9]{6,64}$/;
 /** Something upstream (Stripe or the router) failed; the caller shows "try again", never a key. */
 export class UpstreamError extends Error {}
 
-/** The monthly allowance per key, in dollars. GRILL_PRO_KEY_LIMIT overrides it, within reason. */
+/** The monthly allowance per paid key, in dollars. GRILL_PRO_KEY_LIMIT overrides it, within reason. */
 export function limitUsd(env = {}) {
   const n = Number(env.GRILL_PRO_KEY_LIMIT);
   return Number.isFinite(n) && n > 0 && n <= 50 ? n : DEFAULT_LIMIT_USD;
+}
+
+/**
+ * Dollars of judge spend on a free starter key. It does not refill.
+ * GRILL_STARTER_ALLOWANCE_USD overrides it. A bad value keeps the default.
+ */
+export function starterAllowanceUsd(env = {}) {
+  const raw = env.GRILL_STARTER_ALLOWANCE_USD;
+  if (raw == null || String(raw).trim() === "") return DEFAULT_STARTER_USD;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 && n <= 50 ? Math.round(n * 100) / 100 : DEFAULT_STARTER_USD;
+}
+
+/** "subscription" shows the paywall. Anything else, including unset, is off. */
+export function billingMode(env = {}) {
+  return String(env.GRILL_PRO_BILLING ?? "").trim() === "subscription" ? "subscription" : "off";
 }
 
 /**
@@ -205,27 +222,27 @@ export async function checkSession(sessionId, { env, fetch: fetchImpl, now = Dat
 
 /**
  * Create one spending-capped key. The raw key is returned to the caller and stored nowhere.
- * The monthly reset is set afterwards when creation didn't already carry it.
+ * Paid keys ask for a monthly reset. A starter key passes reset null, so the cap is the whole allowance.
  * @returns {Promise<{key: string, hash: string, limitUsd: number}>}
  */
-export async function createCappedKey({ env, fetch: fetchImpl, name }) {
+export async function createCappedKey({ env, fetch: fetchImpl, name, limit, reset = "monthly" }) {
   const { router } = clients(env, fetchImpl);
-  const limit = limitUsd(env);
-  const created = await router.create({ name, limit });
+  const cap = Number.isFinite(limit) && limit > 0 && limit <= 50 ? limit : limitUsd(env);
+  const created = await router.create({ name, limit: cap });
   const key = created.body?.key;
   const data = created.body?.data;
   if (!created.ok || typeof key !== "string" || !key || typeof data?.hash !== "string" || !data.hash) {
     throw new UpstreamError(`the router didn't create a key (${created.status})`);
   }
   const hash = data.hash;
-  if (data.limit_reset !== "monthly") {
+  if (reset === "monthly" && data.limit_reset !== "monthly") {
     const fixed = await router.update(hash, { limit_reset: "monthly" });
     if (!fixed.ok) {
       await router.remove(hash).catch(() => {});
       throw new UpstreamError(`the router didn't accept a monthly reset (${fixed.status})`);
     }
   }
-  return { key, hash, limitUsd: limit };
+  return { key, hash, limitUsd: cap };
 }
 
 /** Switch every listed key off. A key the router has already forgotten is fine. */
@@ -247,13 +264,15 @@ export async function readManagedKey(hash, { env, fetch: fetchImpl }) {
   if (r.status === 404) return null;
   if (!r.ok) throw new UpstreamError(`the router didn't return the key (${r.status})`);
   const d = r.body?.data ?? {};
-  const usage = Number(d.usage_monthly ?? d.usage ?? 0);
+  const monthly = Number(d.usage_monthly ?? d.usage ?? 0);
+  const total = Number(d.usage ?? d.usage_monthly ?? 0);
   const limit = Number(d.limit);
   return {
     hash: typeof d.hash === "string" ? d.hash : hash,
     disabled: Boolean(d.disabled),
     limitUsd: Number.isFinite(limit) ? limit : null,
-    usageUsd: Number.isFinite(usage) ? usage : 0,
+    usageUsd: Number.isFinite(monthly) ? monthly : 0,
+    usageTotalUsd: Number.isFinite(total) ? total : 0,
   };
 }
 
@@ -487,7 +506,15 @@ export function renderCheckoutError(state) {
     return page(
       "Pro isn’t ready · Grill",
       `<h1>Grill Pro isn’t taking payment yet.</h1>
-<p>The free ways to use Grill are on <a href="${SITE_URL}/#setup">the site</a>. Questions? Email <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>`,
+<p>The free ways to use Grill are on <a href="${SITE_URL}/#setup">the site</a>. A starter key needs no card: <a href="${SITE_URL}/pro">sign in</a>. Questions? Email <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>`,
+    );
+  }
+  if (state === "billing-off") {
+    return page(
+      "No card needed · Grill",
+      `<h1>Paid plans are off.</h1>
+<p>Sign in and get a starter key. No card. Bring your own key if you want unlimited checks. That stays free. Questions? Email <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>
+<p><a href="${SITE_URL}/pro">Get a starter key</a></p>`,
     );
   }
   return page(

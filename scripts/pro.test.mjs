@@ -13,8 +13,11 @@ import {
   handleEvent,
   issueKey,
   keyHashes,
+  billingMode,
+  createCappedKey,
   limitUsd,
   priceId,
+  starterAllowanceUsd,
   renderCheckoutError,
   renderWelcome,
   ROUTER_API,
@@ -243,6 +246,28 @@ describe("issuing a key", () => {
     for (const bad of ["0", "-1", "abc", "500"]) assert.equal(limitUsd({ GRILL_PRO_KEY_LIMIT: bad }), 3, bad);
   });
 
+  it("a starter allowance defaults to $0.50, and billing defaults to off", () => {
+    assert.equal(starterAllowanceUsd({}), 0.5);
+    assert.equal(starterAllowanceUsd({ GRILL_STARTER_ALLOWANCE_USD: "" }), 0.5);
+    assert.equal(starterAllowanceUsd({ GRILL_STARTER_ALLOWANCE_USD: "  " }), 0.5);
+    assert.equal(starterAllowanceUsd({ GRILL_STARTER_ALLOWANCE_USD: "1.25" }), 1.25);
+    assert.equal(starterAllowanceUsd({ GRILL_STARTER_ALLOWANCE_USD: "1.234" }), 1.23);
+    for (const bad of ["0", "-1", "abc", "500"]) assert.equal(starterAllowanceUsd({ GRILL_STARTER_ALLOWANCE_USD: bad }), 0.5, bad);
+    assert.equal(billingMode({}), "off");
+    assert.equal(billingMode({ GRILL_PRO_BILLING: "off" }), "off");
+    assert.equal(billingMode({ GRILL_PRO_BILLING: "Subscription" }), "off");
+    assert.equal(billingMode({ GRILL_PRO_BILLING: " subscription " }), "subscription");
+    assert.equal(billingMode({ GRILL_PRO_BILLING: "subscription" }), "subscription");
+  });
+
+  it("a starter key is a one-time cap and does not ask for a monthly reset", async () => {
+    const f = fakeFetch([[`POST ${ROUTER_API}/keys`, { body: { key: KEY, data: { hash: HASH, limit: 0.5, limit_reset: null } } }]]);
+    const out = await createCappedKey({ env: ENV, fetch: f, name: "grill-pro-acct", limit: 0.5, reset: null });
+    assert.deepEqual(out, { key: KEY, hash: HASH, limitUsd: 0.5 });
+    assert.deepEqual(JSON.parse(f.calls[0].init.body), { name: "grill-pro-acct", limit: 0.5 });
+    assert.equal(f.calls.length, 1, "no monthly PATCH");
+  });
+
   it("reads key hashes from the customer's metadata, and nothing else", () => {
     assert.deepEqual(keyHashes({ [FIELD]: HASH, grill_issued_at: "2026-09-26", other: "x" }), [HASH]);
     assert.deepEqual(keyHashes(null), []);
@@ -432,7 +457,11 @@ describe("the endpoints", () => {
     const saved = { fetch: globalThis.fetch, env: { ...process.env } };
     process.env.STRIPE_SECRET_KEY = "sk_test_endpoint";
     process.env.GRILL_PRO_PRICE_MONTH = "price_month1234";
+    process.env.GRILL_PRO_BILLING = "subscription";
     delete process.env.GRILL_PRO_COUPON;
+    delete process.env.GRILL_PRO_TEST_MODE;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
     let calls = 0;
     globalThis.fetch = async () => {
       calls += 1;
@@ -448,6 +477,13 @@ describe("the endpoints", () => {
       assert.equal(bad.status, 400);
       assert.match(await bad.text(), /doesn’t look right/);
       assert.equal(calls, 1, "the bad plan made no Stripe call");
+      delete process.env.GRILL_PRO_BILLING;
+      const off = await GET(new Request("https://grillyour.ai/checkout?plan=month"));
+      assert.equal(off.status, 200);
+      const offHtml = await off.text();
+      assert.match(offHtml, /Paid plans are off/);
+      assert.match(offHtml, /support@grillyour\.ai/);
+      assert.equal(calls, 1, "billing off does not call Stripe");
     } finally {
       globalThis.fetch = saved.fetch;
       for (const [k, v] of Object.entries(saved.env)) {

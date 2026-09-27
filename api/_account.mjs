@@ -27,18 +27,69 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   UpstreamError,
+  billingMode,
   createCappedKey,
   disableManagedKeys,
   esc,
   isStripeCustomerId,
   keyMetadataField,
+  limitUsd,
   page,
   portalUrl,
   proClients,
   readManagedKey,
   removeManagedKey,
+  starterAllowanceUsd,
 } from "./_pro.mjs";
 import { startFakeOpenRouter } from "../scripts/fixtures/fake-openrouter.mjs";
+
+export const USAGE_EVENTS = Object.freeze([
+  "account_created",
+  "key_issued",
+  "first_grill",
+  "allowance_exhausted",
+  "upgrade_clicked",
+]);
+const ISSUE_WINDOW_MS = 60 * 60 * 1000;
+const ISSUE_MAX_PER_HOUR = 3;
+
+export function emptyMetrics() {
+  return Object.fromEntries(USAGE_EVENTS.map((name) => [name, 0]));
+}
+
+/** Activation is a sign-up that then ran a grill. Depletion is an allowance that ran out. */
+export function usageReport(metrics = {}) {
+  const n = (name) => {
+    const v = Number(metrics[name]);
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  };
+  return {
+    accountCreated: n("account_created"),
+    keyIssued: n("key_issued"),
+    activation: n("first_grill"),
+    depletion: n("allowance_exhausted"),
+    upgradeClicked: n("upgrade_clicked"),
+  };
+}
+
+export async function recordUsageEvent(store, name) {
+  if (!USAGE_EVENTS.includes(name) || typeof store?.incrementMetric !== "function") return;
+  try {
+    await store.incrementMetric(name);
+  } catch (e) {
+    console.error(`[grill-pro] metric: ${e.message}`);
+  }
+}
+
+export async function readUsageReport(store) {
+  if (typeof store?.readMetrics !== "function") return usageReport();
+  try {
+    return usageReport(await store.readMetrics());
+  } catch (e) {
+    console.error(`[grill-pro] metric: ${e.message}`);
+    return usageReport();
+  }
+}
 
 const JUDGE = fileURLToPath(new URL("../scripts/judge.mjs", import.meta.url));
 const USABLE_FIXTURE = fileURLToPath(new URL("../scripts/fixtures/usable-response.json", import.meta.url));
@@ -218,6 +269,11 @@ function blankAccount(email) {
     keys: [],
     activeHash: null,
     lastLinkAt: 0,
+    plan: null,
+    starterIssued: false,
+    issueTimes: [],
+    firstGrillAt: null,
+    exhaustedAt: null,
     saveReports: false,
     reports: [],
   };
@@ -234,6 +290,7 @@ export function memoryStore() {
   const byEmail = new Map();
   const byStripe = new Map();
   const nonces = new Map();
+  const metrics = emptyMetrics();
   const api = {
     kind: "memory",
     async getById(id) {
@@ -265,8 +322,14 @@ export function memoryStore() {
       nonces.delete(hash);
       return exp > now;
     },
+    async incrementMetric(name) {
+      if (Object.hasOwn(metrics, name)) metrics[name] += 1;
+    },
+    async readMetrics() {
+      return { ...metrics };
+    },
     dump() {
-      return structuredClone({ accounts: Object.fromEntries(accounts), nonces: Object.fromEntries(nonces) });
+      return structuredClone({ accounts: Object.fromEntries(accounts), nonces: Object.fromEntries(nonces), metrics });
     },
   };
   return api;
@@ -279,6 +342,11 @@ export function fileStore(path) {
       const parsed = JSON.parse(readFileSync(path, "utf8"));
       for (const account of Object.values(parsed.accounts ?? {})) mem.put(account);
       for (const [hash, exp] of Object.entries(parsed.nonces ?? {})) mem.putNonce(hash, exp);
+      for (const [name, n] of Object.entries(parsed.metrics ?? {})) {
+        if (USAGE_EVENTS.includes(name)) {
+          for (let i = 0; i < Number(n); i++) mem.incrementMetric(name);
+        }
+      }
     } catch {
       // A missing file is an empty store.
     }
@@ -319,6 +387,13 @@ export function fileStore(path) {
       const ok = await mem.takeNonce(hash, now);
       await save();
       return ok;
+    },
+    async incrementMetric(name) {
+      await mem.incrementMetric(name);
+      await save();
+    },
+    async readMetrics() {
+      return mem.readMetrics();
     },
     dump: () => mem.dump(),
   };
@@ -379,6 +454,15 @@ export function redisStore(env, fetchImpl) {
       const hit = await cmd(["GETDEL", key]);
       return hit != null;
     },
+    async incrementMetric(name) {
+      if (!USAGE_EVENTS.includes(name)) return;
+      await cmd(["INCR", `grill:metric:${name}`]);
+    },
+    async readMetrics() {
+      const out = emptyMetrics();
+      for (const name of USAGE_EVENTS) out[name] = Number(await cmd(["GET", `grill:metric:${name}`])) || 0;
+      return out;
+    },
   };
 }
 
@@ -407,6 +491,14 @@ function accountFromStripeCustomer(customer) {
     keys,
     activeHash: active,
     lastLinkAt: Number(md.grill_link_at) || 0,
+    plan: md.grill_plan === "starter" || md.grill_plan === "pro" ? md.grill_plan : null,
+    starterIssued: md.grill_starter === "1",
+    issueTimes: String(md.grill_issues || "")
+      .split(",")
+      .map((t) => Number(t))
+      .filter((t) => Number.isFinite(t) && t > 0),
+    firstGrillAt: md.grill_first_grill || null,
+    exhaustedAt: md.grill_exhausted || null,
   };
 }
 
@@ -419,6 +511,11 @@ export function stripeStore(env, fetchImpl) {
       "metadata[grill_judge]": account.judgeModel || "",
       "metadata[grill_active]": account.activeHash || "",
       "metadata[grill_link_at]": String(account.lastLinkAt || 0),
+      "metadata[grill_plan]": account.plan || "",
+      "metadata[grill_starter]": account.starterIssued ? "1" : "",
+      "metadata[grill_issues]": (account.issueTimes || []).slice(-ISSUE_MAX_PER_HOUR).join(","),
+      "metadata[grill_first_grill]": account.firstGrillAt || "",
+      "metadata[grill_exhausted]": account.exhaustedAt || "",
       ...extra,
     };
     for (const k of account.keys) {
@@ -431,6 +528,13 @@ export function stripeStore(env, fetchImpl) {
   };
   return {
     kind: "stripe",
+    _metrics: emptyMetrics(),
+    async incrementMetric(name) {
+      if (Object.hasOwn(this._metrics, name)) this._metrics[name] += 1;
+    },
+    async readMetrics() {
+      return { ...this._metrics };
+    },
     async getById(id) {
       if (!isStripeCustomerId(id)) return null;
       const c = await stripe.get(`/v1/customers/${id}`);
@@ -533,12 +637,56 @@ function dollars(n) {
   return Number.isInteger(v) ? `$${v}` : `$${v.toFixed(2)}`;
 }
 
+/** Counts a first grill and a used-up allowance from cost only. Never from decision text. */
+async function observeUsage(account, live, deps) {
+  if (!live || live.disabled) return;
+  const spent = account.plan === "starter" ? Number(live.usageTotalUsd) : Number(live.usageUsd);
+  if (!Number.isFinite(spent) || spent <= 0) return;
+  const nowIso = new Date(deps.now ?? Date.now()).toISOString();
+  let changed = false;
+  if (!account.firstGrillAt) {
+    account.firstGrillAt = nowIso;
+    changed = true;
+    await recordUsageEvent(deps.store, "first_grill");
+  }
+  const limit = Number.isFinite(Number(live.limitUsd))
+    ? Number(live.limitUsd)
+    : account.plan === "starter"
+      ? starterAllowanceUsd(deps.env)
+      : limitUsd(deps.env);
+  if (spent >= limit && !account.exhaustedAt) {
+    account.exhaustedAt = nowIso;
+    changed = true;
+    await recordUsageEvent(deps.store, "allowance_exhausted");
+  }
+  if (changed) await deps.store.put(account);
+}
+
+class KeyRateError extends Error {
+  constructor() {
+    super("too many keys");
+    this.code = "rate-limit";
+  }
+}
+
+/** Three key creations per account per hour. The slot is taken before the router is called. */
+function takeIssueSlot(account, now) {
+  const recent = (account.issueTimes || []).filter((t) => now - t < ISSUE_WINDOW_MS);
+  if (recent.length >= ISSUE_MAX_PER_HOUR) {
+    account.issueTimes = recent;
+    return false;
+  }
+  recent.push(now);
+  account.issueTimes = recent;
+  return true;
+}
+
 function signInPage(env, { error = "" } = {}) {
   return page(
     "Sign in · Grill Pro",
     `${testBanner(env)}
 <h1>Sign in to Grill Pro</h1>
-<p>Grill Pro is the only part of Grill with an account. The free tool never asks you to sign in, and it has no account.</p>
+<p>An account is only for a key we manage. A starter key needs no card. Bring your own key and there is no account. The free tool never asks you to sign in.</p>
 <p>We'll email you a link. It works once, for 20 minutes. We don't use a password.</p>
 ${error ? `<p><strong>${esc(error)}</strong></p>` : ""}
 <form method="post" action="/pro/auth">
@@ -752,33 +900,55 @@ async function dashboard(account, deps) {
       const live = await readManagedKey(record.hash, deps);
       if (!live) usage = `<p>The router no longer has this key.</p>`;
       else if (live.disabled || record.disabled) usage = `<p>This key is switched off.</p>`;
-      else usage = `<p>Used ${esc(dollars(live.usageUsd))} of ${esc(dollars(live.limitUsd ?? 3))} this month. That is cost and model, never the text of a check.</p>`;
+      else {
+        await observeUsage(account, live, deps);
+        const spent = account.plan === "starter" ? live.usageTotalUsd : live.usageUsd;
+        const period = account.plan === "starter" ? "It does not refill." : "That is this month.";
+        usage = `<p>Used ${esc(dollars(spent))} of ${esc(dollars(live.limitUsd ?? (account.plan === "starter" ? starterAllowanceUsd(env) : 3)))}. ${period} That is cost and model, never the text of a check.</p>`;
+      }
     } catch {
       usage = `<p>Usage isn't available right now. Your key is unchanged.</p>`;
     }
   } else if (account.keys?.some((k) => k.disabled)) {
     usage = `<p>This key is switched off.</p>`;
   }
+  const billing = billingMode(env);
   const sub =
     account.subscription === "active"
       ? "Pro is on."
-      : account.subscription === "canceled"
-        ? "Pro is cancelled. The key is off."
-        : "Pro isn't on for this account yet.";
+      : account.plan === "starter"
+        ? `Starter allowance is on. No card. It is ${dollars(starterAllowanceUsd(env))} of judge spend, and it does not refill.`
+        : account.subscription === "canceled"
+          ? "Pro is cancelled. The key is off."
+          : billing === "subscription"
+            ? "Pro isn't on for this account yet."
+            : "No key yet. A starter key needs no card.";
   const assistant = assistantById(account.assistant);
   const judge = judgeById(account.judgeModel);
   const setupLine = assistant && judge ? `${assistant.label}, judged by ${judge.label}.` : "You haven't picked an assistant yet.";
   const portal = portalUrl(env);
-  const purchase = testModeEnabled(env) && account.subscription !== "active"
-    ? `<form method="post" action="/pro"><input type="hidden" name="action" value="purchase"><button type="submit">Simulate purchase</button></form>`
-    : account.subscription !== "active"
-      ? `<p><a class="button" href="/checkout?plan=month">Subscribe</a></p><p class="small">Checkout uses Stripe. Until those price ids are set, this link explains that payment isn't ready.</p>`
+  const hasKey = Boolean(activeRecord(account));
+  const starter =
+    !hasKey && account.subscription !== "active" && !account.starterIssued
+      ? `<form method="post" action="/pro"><input type="hidden" name="action" value="starter"><button type="submit">Get a starter key</button></form>
+<p class="small">No card. ${esc(dollars(starterAllowanceUsd(env)))} of judge spend, once, for this email. Bring your own key if you want unlimited checks. That stays free, and it has no account.</p>`
       : "";
-  const manage = account.subscription === "active"
+  const purchase =
+    billing === "subscription" && account.subscription !== "active"
+      ? testModeEnabled(env)
+        ? `<form method="post" action="/pro"><input type="hidden" name="action" value="purchase"><button type="submit">Simulate purchase</button></form>`
+        : `<p><a class="button" href="/checkout?plan=month">Subscribe</a></p><p class="small">Checkout uses Stripe. Until those price ids are set, this link explains that payment isn't ready.</p>`
+      : "";
+  const upgrade =
+    account.subscription === "active"
+      ? ""
+      : `<form method="post" action="/pro"><input type="hidden" name="action" value="upgrade"><button type="submit">Upgrade</button></form>`;
+  const entitled = account.subscription === "active" || account.plan === "starter";
+  const manage = entitled
     ? `<div class="row">
 <form method="post" action="/pro"><input type="hidden" name="action" value="rotate"><button type="submit">Rotate key</button></form>
 <form method="post" action="/pro"><input type="hidden" name="action" value="revoke"><button type="submit">Revoke key</button></form>
-${testModeEnabled(env) ? `<form method="post" action="/pro"><input type="hidden" name="action" value="cancel"><button type="submit">Cancel Pro</button></form>` : ""}
+${testModeEnabled(env) && account.subscription === "active" ? `<form method="post" action="/pro"><input type="hidden" name="action" value="cancel"><button type="submit">Cancel Pro</button></form>` : ""}
 </div>
 ${portal ? `<p class="small">Cancel the subscription itself here: <a href="${esc(portal)}">your subscription</a>. The key keeps working until the period you've paid for, then the webhook switches it off.</p>` : testModeEnabled(env) ? `<p class="small">In test mode, Cancel Pro switches the key off now. With Stripe, it stays on until the end of the period you've paid for.</p>` : ""}`
     : "";
@@ -789,10 +959,12 @@ ${portal ? `<p class="small">Cancel the subscription itself here: <a href="${esc
 <p>Signed in as ${esc(account.email)}. ${esc(sub)}</p>
 ${usage}
 <p>${esc(setupLine)} <a href="/pro?view=setup">Set up</a> · <a href="/pro/reports">Reports</a></p>
+${starter}
 ${purchase}
+${upgrade}
 ${manage}
 <form method="post" action="/pro"><input type="hidden" name="action" value="signout"><button type="submit">Sign out</button></form>
-<p class="small">This account is only for Pro. The free tool has no account and doesn't know you're here.</p>`,
+<p class="small">An account is only for a key we manage. Bring your own key and there is no account. We count sign-ups, keys, first grills, allowances used up and upgrade clicks. Never the text of a decision.</p>`,
   );
 }
 
@@ -835,17 +1007,21 @@ export async function startMagicLink(email, deps) {
   const secret = sessionSecret(deps.env);
   const store = deps.store;
   let account = await store.getByEmail(email);
+  let created = false;
   if (!account && store.kind === "stripe") {
     const { stripe } = proClients(deps.env, deps.fetch);
-    const created = await stripe.post("/v1/customers", { email, "metadata[grill_sub]": "none" });
-    if (!created.ok || !isStripeCustomerId(created.body?.id)) throw new UpstreamError(`couldn't start the account (${created.status})`);
-    account = accountFromStripeCustomer({ ...created.body, email, metadata: { grill_sub: "none" } });
+    const made = await stripe.post("/v1/customers", { email, "metadata[grill_sub]": "none" });
+    if (!made.ok || !isStripeCustomerId(made.body?.id)) throw new UpstreamError(`couldn't start the account (${made.status})`);
+    account = accountFromStripeCustomer({ ...made.body, email, metadata: { grill_sub: "none" } });
     await store.put(account);
+    created = true;
   }
   if (!account) {
     account = blankAccount(email);
     await store.put(account);
+    created = true;
   }
+  if (created) await recordUsageEvent(store, "account_created");
   if (now - (account.lastLinkAt || 0) < LINK_COOLDOWN_MS) return { throttled: true, account };
   const nonce = randomBytes(16).toString("hex");
   const nonceHash = createHash("sha256").update(nonce).digest("hex");
@@ -883,11 +1059,25 @@ export async function consumeMagicLink(token, deps) {
   return { account, session: signPayload({ t: "s", sub: account.id, exp: Math.floor(now / 1000) + SESSION_TTL_SECONDS }, secret) };
 }
 
-export async function issueManagedKey(account, deps) {
-  const made = await createCappedKey({ env: deps.env, fetch: deps.fetch, name: `grill-pro-${account.id}` });
+export async function issueManagedKey(account, deps, { limit, reset = "monthly", plan } = {}) {
+  const now = deps.now ?? Date.now();
+  if (!takeIssueSlot(account, now)) {
+    await deps.store.put(account);
+    throw new KeyRateError();
+  }
+  if (plan) account.plan = plan;
+  await deps.store.put(account);
+  const made = await createCappedKey({
+    env: deps.env,
+    fetch: deps.fetch,
+    name: `grill-pro-${account.id}`,
+    limit,
+    reset,
+  });
   try {
-  await rememberKey(account, made, deps.store);
-  await mirrorHashes(account, deps);
+    await rememberKey(account, made, deps.store);
+    await mirrorHashes(account, deps);
+    await recordUsageEvent(deps.store, "key_issued");
   } catch (e) {
     await removeManagedKey(made.hash, deps).catch(() => {});
     throw e;
@@ -1051,7 +1241,38 @@ export async function handlePro(request, deps) {
   const account = await loadSession(request, store, secret, now);
   if (!account) return html(401, signInPage(env, { error: "Sign in first." }));
   try {
+    if (action === "starter") {
+      if (account.subscription === "active" && activeRecord(account)) {
+        return html(200, await dashboard(account, bound));
+      }
+      if (account.starterIssued) {
+        return html(400, page("Starter key already issued · Grill Pro", `${testBanner(env)}<h1>This email already has its starter key.</h1><p>It does not refill. Bring your own key for unlimited checks. That stays free, and it has no account.</p><p><a href="/pro">Back</a></p>`));
+      }
+      account.starterIssued = true;
+      account.plan = "starter";
+      try {
+        const made = await issueManagedKey(account, bound, { limit: starterAllowanceUsd(env), reset: null, plan: "starter" });
+        return html(200, keyPage(account, env, made.key, "Here's your starter key."));
+      } catch (e) {
+        if (!activeRecord(account)) {
+          account.starterIssued = false;
+          account.plan = null;
+          await store.put(account);
+        }
+        throw e;
+      }
+    }
+    if (action === "upgrade") {
+      if (billingMode(env) === "subscription") {
+        return new Response(null, { status: 303, headers: { Location: "/checkout?plan=month", "Cache-Control": "no-store" } });
+      }
+      await recordUsageEvent(store, "upgrade_clicked");
+      return html(200, page("Paid plans are off · Grill Pro", `${testBanner(env)}<h1>Paid plans aren't on.</h1><p>The starter allowance is the free key. No card. Bring your own key if you want unlimited checks. That stays free, and it has no account.</p><p><a href="/pro">Back</a></p>`));
+    }
     if (action === "purchase") {
+      if (billingMode(env) !== "subscription") {
+        return html(400, page("Paid plans are off · Grill Pro", `${testBanner(env)}<h1>Paid plans are off.</h1><p>Get a starter key instead. No card. <a href="/pro">Back</a></p>`));
+      }
       if (!testModeEnabled(env)) {
         return html(400, page("Use checkout · Grill Pro", `<h1>Purchases go through Stripe.</h1><p><a href="/checkout?plan=month">Continue to checkout</a>. Test mode is how you simulate this before Stripe is connected, and it is off here.</p>`));
       }
@@ -1059,7 +1280,8 @@ export async function handlePro(request, deps) {
         return html(200, await dashboard(account, bound));
       }
       account.subscription = "active";
-      const made = await issueManagedKey(account, bound);
+      account.plan = "pro";
+      const made = await issueManagedKey(account, bound, { plan: "pro" });
       return html(200, keyPage(account, env, made.key, "You're in. Here's your key."));
     }
     if (action === "setup") {
@@ -1080,22 +1302,65 @@ export async function handlePro(request, deps) {
       return html(200, configPage(account, env, { key: pasted && record ? pasted : "" }));
     }
     if (action === "rotate") {
-      if (account.subscription !== "active") {
-        return html(400, page("Pro isn't on · Grill Pro", `<h1>There's no active Pro subscription to rotate.</h1><p><a href="/pro">Back</a></p>`));
+      const starter = account.plan === "starter";
+      if (account.subscription !== "active" && !starter) {
+        return html(400, page("No key to rotate · Grill Pro", `<h1>There's no key on this account to rotate.</h1><p><a href="/pro">Back</a></p>`));
+      }
+      let starterLimit = null;
+      if (starter) {
+        const record = activeRecord(account);
+        if (!record) {
+          return html(400, page("Starter allowance used · Grill Pro", `${testBanner(env)}<h1>This email already used its starter key.</h1><p>Rotating does not mint a new allowance.</p><p><a href="/pro">Back</a></p>`));
+        }
+        let live = null;
+        try {
+          live = await readManagedKey(record.hash, bound);
+        } catch {
+          live = null;
+        }
+        const cap = Number(live?.limitUsd);
+        const spent = Number(live?.usageTotalUsd);
+        if (!live || !Number.isFinite(cap) || !Number.isFinite(spent)) {
+          return html(400, page("Couldn't read the key · Grill Pro", `${testBanner(env)}<h1>We couldn't read what's left, so the key was not rotated.</h1><p><a href="/pro">Back</a></p>`));
+        }
+        starterLimit = Math.round((cap - spent) * 100) / 100;
+        if (!(starterLimit > 0)) {
+          return html(400, page("Starter allowance used · Grill Pro", `${testBanner(env)}<h1>The starter allowance is used up.</h1><p>A new key would not refill it.</p><p><a href="/pro">Back</a></p>`));
+        }
       }
       const previous = account.keys.filter((k) => !k.disabled).map((k) => k.hash);
+      const backupKeys = account.keys.map((k) => ({ ...k }));
+      const backupActive = account.activeHash;
       for (const k of account.keys) k.disabled = true;
       account.activeHash = null;
       await store.put(account);
-      if (previous.length) await disableManagedKeys(previous, bound);
-      const made = await issueManagedKey(account, bound);
-      return html(200, keyPage(account, env, made.key, "Here's your new key."));
+      try {
+        if (previous.length) await disableManagedKeys(previous, bound);
+        const made = starter
+          ? await issueManagedKey(account, bound, { limit: starterLimit, reset: null, plan: "starter" })
+          : await issueManagedKey(account, bound, { plan: "pro" });
+        return html(200, keyPage(account, env, made.key, "Here's your new key."));
+      } catch (e) {
+        if (starter && !activeRecord(account)) {
+          account.keys = backupKeys;
+          account.activeHash = backupActive;
+          await store.put(account);
+          if (previous.length) {
+            const { router } = proClients(env, deps.fetch);
+            for (const h of previous) await router.update(h, { disabled: false }).catch(() => {});
+          }
+        }
+        throw e;
+      }
     }
     if (action === "revoke") {
       await disableActive(account, bound);
-      return html(200, page("Key switched off · Grill Pro", `${testBanner(env)}<h1>Your key is switched off.</h1><p>It can't be used now. If Pro is still on, you can rotate it to get a new one.</p><p><a href="/pro">Back to your account</a></p>`));
+      return html(200, page("Key switched off · Grill Pro", `${testBanner(env)}<h1>Your key is switched off.</h1><p>It can't be used now. If allowance is left, you can rotate it to get a new one. A starter allowance does not refill.</p><p><a href="/pro">Back to your account</a></p>`));
     }
     if (action === "cancel") {
+      if (account.subscription !== "active") {
+        return html(400, page("No paid plan · Grill Pro", `${testBanner(env)}<h1>There's no paid subscription to cancel.</h1><p><a href="/pro">Back</a></p>`));
+      }
       if (!testModeEnabled(env)) {
         const portal = portalUrl(env);
         return html(400, page("Cancel in Stripe · Grill Pro", `<h1>Cancel from your subscription page.</h1><p>${portal ? `<a href="${esc(portal)}">Your subscription</a>` : "The billing portal isn't configured yet."} Your key keeps working until the period you've paid for. The webhook switches it off after that.</p>`));
@@ -1107,6 +1372,9 @@ export async function handlePro(request, deps) {
     }
     return html(400, await dashboard(account, bound));
   } catch (e) {
+    if (e?.code === "rate-limit") {
+      return html(429, page("Slow down · Grill Pro", `${testBanner(env)}<h1>That's too many new keys.</h1><p>You can create three keys an hour. Wait, then try again.</p><p><a href="/pro">Back</a></p>`));
+    }
     console.error(`[grill-pro] account: ${e.message}`);
     return html(503, page("Something went wrong · Grill Pro", `<h1>Something went wrong on our side.</h1><p>Nothing new was left switched on if we could help it. <a href="/pro">Try again</a>.</p>`));
   }
@@ -1317,7 +1585,8 @@ export async function handleProTry(request, deps) {
   const key = form.get("key") || "";
   const subject = (form.get("subject") || "").trim();
   const record = activeRecord(account);
-  if (!record || record.disabled || account.subscription !== "active") {
+  const entitled = account.subscription === "active" || account.plan === "starter";
+  if (!record || record.disabled || !entitled) {
     return html(400, page("No key · Grill Pro", `<h1>There's no working key on this account.</h1><p><a href="/pro">Back</a></p>`));
   }
   if (!checksMatch(record.check, key)) {
@@ -1334,6 +1603,14 @@ export async function handleProTry(request, deps) {
   const result = await runSampleGrill({ key, model: account.judgeModel, author, subject });
   if (typeof deps.fetch?.noteUsage === "function" && result.code === 0) {
     deps.fetch.noteUsage(record.hash, result.costUsd || 0.0123);
+  }
+  if (result.code === 0) {
+    try {
+      const live = await readManagedKey(record.hash, { env: deps.env, fetch: deps.fetch });
+      if (live) await observeUsage(account, live, { ...deps, store, now });
+    } catch (e) {
+      console.error(`[grill-pro] usage: ${e.message}`);
+    }
   }
   if (result.code !== 0 || !result.report) {
     return html(502, page("The sample didn't finish · Grill Pro", `<h1>The sample grill didn't finish.</h1><pre class="config">${esc(result.stderr.slice(0, 500))}</pre>`));
