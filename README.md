@@ -118,7 +118,7 @@ node --test scripts/*.test.mjs   # no network, no key
 npm run build:extension          # dist/grill.mcpb
 ```
 
-Low-risk pull requests merge themselves once checks are green. Rules and the opt-out labels are in [docs/AUTOMERGE.md](docs/AUTOMERGE.md).
+Low-risk pull requests merge themselves once checks are green. Medium and high risk pull requests from the same authors are grilled. Rules and the opt-out labels are in [docs/PR-AUTOMATION.md](docs/PR-AUTOMATION.md).
 
 - **Layout:**
   - `skills/`: what Claude reads in chat;

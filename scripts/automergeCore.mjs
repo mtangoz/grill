@@ -7,15 +7,25 @@ const BOT_LOGIN = "github-actions[bot]";
 
 const CONFIG_KEYS = [
   "authors",
+  "authorFamilies",
   "maxChangedLines",
   "maxFiles",
+  "highChangedLines",
+  "grillSkipChangedLines",
+  "grillSkipDiffChars",
+  "diffCharBudget",
   "blockingLabels",
   "automergeLabel",
+  "needsReviewLabel",
+  "grillSolidLabel",
   "safePaths",
   "additionsOnly",
   "denyPaths",
   "denySubstrings",
   "denyPageBasenames",
+  "highPaths",
+  "highSubstrings",
+  "highPageBasenames",
 ];
 
 function expectStringArray(value, name) {
@@ -30,6 +40,32 @@ function expectPositiveInt(value, name) {
   return value;
 }
 
+function expectLabel(value, name) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) {
+    throw new Error(`${name} must be a simple label name`);
+  }
+  return value;
+}
+
+function expectAuthorFamilies(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("authorFamilies must be an object");
+  const out = {};
+  const seen = new Map();
+  for (const [login, family] of Object.entries(value)) {
+    if (!/^[A-Za-z0-9-]+(\[bot\])?$/.test(login)) throw new Error(`authorFamilies key is not a GitHub login: ${login}`);
+    if (typeof family !== "string") throw new Error(`authorFamilies.${login} must be a string`);
+    const normalized = family.trim().toLowerCase();
+    if (normalized !== "" && !/^[a-z0-9][a-z0-9._-]*$/.test(normalized)) {
+      throw new Error(`authorFamilies.${login} is not a model family`);
+    }
+    const fold = login.toLowerCase();
+    if (seen.has(fold)) throw new Error(`authorFamilies lists ${login} twice`);
+    seen.set(fold, login);
+    out[login] = normalized;
+  }
+  return Object.freeze(out);
+}
+
 /** Validate `.github/automerge.json`. Throws if the policy file is unusable. */
 export function loadConfig(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("automerge config must be an object");
@@ -41,21 +77,48 @@ export function loadConfig(raw) {
   for (const author of authors) {
     if (!/^[A-Za-z0-9-]+(\[bot\])?$/.test(author)) throw new Error(`author is not a GitHub login: ${author}`);
   }
-  const automergeLabel = raw.automergeLabel;
-  if (typeof automergeLabel !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(automergeLabel)) {
-    throw new Error("automergeLabel must be a simple label name");
+  const automergeLabel = expectLabel(raw.automergeLabel, "automergeLabel");
+  const needsReviewLabel = expectLabel(raw.needsReviewLabel, "needsReviewLabel");
+  const grillSolidLabel = expectLabel(raw.grillSolidLabel, "grillSolidLabel");
+  const blockingLabels = expectStringArray(raw.blockingLabels, "blockingLabels");
+  if (!blockingLabels.some((label) => sameText(label, needsReviewLabel))) {
+    throw new Error("needsReviewLabel must be one of blockingLabels, so a shaky grill blocks auto-merge");
+  }
+  if (blockingLabels.some((label) => sameText(label, grillSolidLabel)) || sameText(grillSolidLabel, automergeLabel)) {
+    throw new Error("grillSolidLabel must not block auto-merge and must not be the automerge label");
+  }
+  const maxChangedLines = expectPositiveInt(raw.maxChangedLines, "maxChangedLines");
+  const highChangedLines = expectPositiveInt(raw.highChangedLines, "highChangedLines");
+  const grillSkipChangedLines = expectPositiveInt(raw.grillSkipChangedLines, "grillSkipChangedLines");
+  if (grillSkipChangedLines <= highChangedLines) {
+    throw new Error("grillSkipChangedLines must be greater than highChangedLines");
+  }
+  const diffCharBudget = expectPositiveInt(raw.diffCharBudget, "diffCharBudget");
+  const grillSkipDiffChars = expectPositiveInt(raw.grillSkipDiffChars, "grillSkipDiffChars");
+  if (grillSkipDiffChars <= diffCharBudget) {
+    throw new Error("grillSkipDiffChars must be greater than diffCharBudget");
   }
   return Object.freeze({
     authors,
-    maxChangedLines: expectPositiveInt(raw.maxChangedLines, "maxChangedLines"),
+    authorFamilies: expectAuthorFamilies(raw.authorFamilies),
+    maxChangedLines,
     maxFiles: expectPositiveInt(raw.maxFiles, "maxFiles"),
-    blockingLabels: expectStringArray(raw.blockingLabels, "blockingLabels"),
+    highChangedLines,
+    grillSkipChangedLines,
+    grillSkipDiffChars,
+    diffCharBudget,
+    blockingLabels,
     automergeLabel,
+    needsReviewLabel,
+    grillSolidLabel,
     safePaths: expectStringArray(raw.safePaths, "safePaths"),
     additionsOnly: expectStringArray(raw.additionsOnly, "additionsOnly"),
     denyPaths: expectStringArray(raw.denyPaths, "denyPaths"),
     denySubstrings: expectStringArray(raw.denySubstrings, "denySubstrings"),
     denyPageBasenames: expectStringArray(raw.denyPageBasenames, "denyPageBasenames").map((name) => name.toLowerCase()),
+    highPaths: expectStringArray(raw.highPaths, "highPaths"),
+    highSubstrings: expectStringArray(raw.highSubstrings, "highSubstrings"),
+    highPageBasenames: expectStringArray(raw.highPageBasenames, "highPageBasenames").map((name) => name.toLowerCase()),
   });
 }
 
@@ -106,12 +169,12 @@ function substringHit(filePath, config) {
   return config.denySubstrings.find((needle) => lower.includes(needle.toLowerCase())) ?? null;
 }
 
-function isTermsOrPrivacyPage(filePath, config) {
+function isNamedPage(filePath, basenames) {
   const parts = filePath.split("/");
   const base = parts[parts.length - 1];
   const stem = base.replace(/\.[^.]+$/, "").toLowerCase();
-  if (config.denyPageBasenames.includes(stem)) return true;
-  return parts.slice(0, -1).some((part) => config.denyPageBasenames.includes(part.toLowerCase()));
+  if (basenames.includes(stem)) return true;
+  return parts.slice(0, -1).some((part) => basenames.includes(part.toLowerCase()));
 }
 
 /**
@@ -127,7 +190,7 @@ function pathProblem(filePath, status, config) {
   for (const pattern of config.denyPaths) {
     if (matchGlob(pattern, filePath)) return `${filePath} is denied because it matches ${pattern}.`;
   }
-  if (isTermsOrPrivacyPage(filePath, config)) return `${filePath} is denied because it is a terms or privacy page.`;
+  if (isNamedPage(filePath, config.denyPageBasenames)) return `${filePath} is denied because it is a terms or privacy page.`;
   for (const pattern of config.additionsOnly) {
     if (matchGlob(pattern, filePath)) {
       if (status !== "added") {
@@ -144,6 +207,30 @@ function pathProblem(filePath, status, config) {
 
 function sameText(a, b) {
   return String(a).toLowerCase() === String(b).toLowerCase();
+}
+
+/**
+ * Model family passed to `judge.mjs --author` for this login.
+ * An empty string means omit `--author`, which keeps the default Auto Router
+ * exclusion (Anthropic). Unknown logins also get the default.
+ */
+export function authorFamily(author, config) {
+  const login = typeof author === "string" ? author : "";
+  const match = Object.keys(config.authorFamilies).find((key) => sameText(key, login));
+  return match === undefined ? "" : config.authorFamilies[match];
+}
+
+/** Why this path is high risk, or null. Independent of the low-risk denylist. */
+function highPathMessage(filePath, config) {
+  if (!isNormalRelative(filePath)) return null;
+  const lower = filePath.toLowerCase();
+  const needle = config.highSubstrings.find((item) => lower.includes(item.toLowerCase()));
+  if (needle) return `${filePath} is high risk because the path contains "${needle}".`;
+  for (const pattern of config.highPaths) {
+    if (matchGlob(pattern, filePath)) return `${filePath} is high risk because it matches ${pattern}.`;
+  }
+  if (isNamedPage(filePath, config.highPageBasenames)) return `${filePath} is high risk because it is a terms or privacy page.`;
+  return null;
 }
 
 /**
@@ -174,6 +261,8 @@ export function classify(pr, config) {
   const files = Array.isArray(pr?.files) ? pr.files : null;
   let changedLines = 0;
   const paths = [];
+  const highReasons = [];
+  let lineCountKnown = false;
   if (!files) {
     failures.push({ rule: "files", message: "The changed-file list is missing, so this pull request is not treated as low risk." });
   } else {
@@ -197,22 +286,38 @@ export function classify(pr, config) {
       for (const filePath of touched) {
         const problem = pathProblem(filePath, status, config);
         if (problem) failures.push({ rule: "path", message: problem });
+        const high = highPathMessage(filePath, config);
+        if (high) highReasons.push({ rule: "high-path", message: high });
       }
     }
     if (missingLineCount) {
       failures.push({ rule: "size-lines", message: "A changed file is missing a line count, so the diff is over the cap." });
-    } else if (changedLines > config.maxChangedLines) {
-      failures.push({
-        rule: "size-lines",
-        message: `It changes ${changedLines} lines, above the ${config.maxChangedLines} line cap.`,
-      });
+    } else {
+      lineCountKnown = true;
+      if (changedLines > config.maxChangedLines) {
+        failures.push({
+          rule: "size-lines",
+          message: `It changes ${changedLines} lines, above the ${config.maxChangedLines} line cap.`,
+        });
+      }
+      if (changedLines > config.highChangedLines) {
+        highReasons.push({
+          rule: "high-size",
+          message: `It changes ${changedLines} lines, above the ${config.highChangedLines} line high-risk mark.`,
+        });
+      }
     }
   }
 
+  const tier = highReasons.length > 0 ? "high" : failures.length === 0 ? "low" : "medium";
   return {
-    lowRisk: failures.length === 0,
+    lowRisk: tier === "low",
+    tier,
     failures,
+    highReasons,
+    enormous: lineCountKnown && changedLines > config.grillSkipChangedLines,
     author,
+    authorFamily: authorFamily(author, config),
     files: files ? files.length : 0,
     changedLines: files ? changedLines : 0,
     paths,
@@ -234,8 +339,9 @@ export function commentBody(result) {
       "Add the do-not-merge label to stop it, or needs-review to ask for a review.",
     ].join("\n\n");
   }
-  const shown = result.failures.slice(0, 30).map((failure) => `- ${failure.message}`);
-  const extra = result.failures.length - shown.length;
+  const reasons = result.failures.length > 0 ? result.failures : (result.highReasons ?? []);
+  const shown = reasons.slice(0, 30).map((failure) => `- ${failure.message}`);
+  const extra = reasons.length - shown.length;
   if (extra > 0) shown.push(`- and ${extra} more.`);
   return [
     COMMENT_MARKER,
@@ -260,11 +366,11 @@ export function actionsFor(result) {
  * Keep a single bot comment. Identical text is left alone so a re-run does not notify again.
  * @param {Array<{id: number, body: string, userLogin: string}>} comments
  */
-export function commentPlan(comments, body, botLogin = BOT_LOGIN) {
+export function commentPlan(comments, body, botLogin = BOT_LOGIN, marker = COMMENT_MARKER) {
   const matches = [];
   for (const comment of comments ?? []) {
     if (!comment || typeof comment.body !== "string" || comment.userLogin !== botLogin) continue;
-    if (!comment.body.includes(COMMENT_MARKER)) continue;
+    if (!comment.body.includes(marker)) continue;
     matches.push(comment);
   }
   if (matches.length === 0) return { create: body, updateId: null, deleteIds: [] };

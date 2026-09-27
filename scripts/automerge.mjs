@@ -98,7 +98,7 @@ function main() {
     config,
   );
   const actions = actionsFor(result);
-  console.log(result.lowRisk ? "low risk" : "not low risk");
+  console.log(result.lowRisk ? "low risk" : `not low risk (${result.tier})`);
   for (const failure of result.failures) console.log(`- ${failure.message}`);
 
   const sameRepo = pr.head === repo;

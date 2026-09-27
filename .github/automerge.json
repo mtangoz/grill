@@ -1,9 +1,23 @@
 {
   "authors": ["mtangoz", "cursor[bot]", "cursoragent", "claude[bot]", "chatgpt-codex-connector[bot]"],
+  "authorFamilyNote": "authorFamilies is the login-to-judge exclusion map. The value is passed to scripts/judge.mjs as --author, which replaces the default exclusion rather than adding to it. An empty string omits --author and keeps the default Auto Router exclusion of Anthropic models (anthropic/* and */claude-*). claude[bot] (Claude Code) excludes Anthropic. chatgpt-codex-connector[bot] (Codex) excludes OpenAI. mtangoz, cursor[bot], and cursoragent use that default. A login with no entry also uses the default.",
+  "authorFamilies": {
+    "mtangoz": "",
+    "cursor[bot]": "",
+    "cursoragent": "",
+    "claude[bot]": "anthropic",
+    "chatgpt-codex-connector[bot]": "openai"
+  },
   "maxChangedLines": 300,
   "maxFiles": 15,
+  "highChangedLines": 800,
+  "grillSkipChangedLines": 4000,
+  "grillSkipDiffChars": 500000,
+  "diffCharBudget": 24000,
   "blockingLabels": ["do-not-merge", "needs-review"],
   "automergeLabel": "automerge",
+  "needsReviewLabel": "needs-review",
+  "grillSolidLabel": "grill-solid",
   "safePaths": [
     "README.md",
     "LEARNING.md",
@@ -39,5 +53,22 @@
     "site/terms.html"
   ],
   "denySubstrings": ["stripe", "auth", "key", "secret"],
-  "denyPageBasenames": ["terms", "privacy"]
+  "denyPageBasenames": ["terms", "privacy"],
+  "highPaths": [
+    "api/**",
+    "scripts/judge*",
+    "scripts/checkCore*",
+    "prompts/**",
+    "manifest.json",
+    "**/manifest.json",
+    "server.json",
+    "**/server.json",
+    ".claude-plugin/**",
+    ".github/workflows/**",
+    "SECURITY.md",
+    "docs/PRIVACY.md",
+    "site/terms.html"
+  ],
+  "highSubstrings": ["stripe", "auth", "key", "secret", "payment"],
+  "highPageBasenames": ["terms", "privacy"]
 }

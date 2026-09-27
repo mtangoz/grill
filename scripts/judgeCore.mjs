@@ -488,6 +488,30 @@ export function redactSensitive(text) {
   return { text: out, masked, secrets };
 }
 
+/**
+ * Replace secret-shaped strings with `[redacted]`, then mask contact details.
+ * `redactSensitive` detects secrets and leaves them in the text, because the judge
+ * refuses to send rather than shipping a trimmed key. A pull-request write-up cannot
+ * refuse the whole diff, so this strips the secret before anything is saved or sent.
+ * Returns text that `redactSensitive` will accept (no secret labels left).
+ */
+export function stripSecrets(text) {
+  let out = typeof text === "string" ? text : "";
+  let stripped = 0;
+  const replace = (rx) => {
+    const flags = rx.flags.includes("g") ? rx.flags : `${rx.flags}g`;
+    const global = new RegExp(rx.source, flags);
+    out = out.replace(global, () => {
+      stripped += 1;
+      return "[redacted]";
+    });
+  };
+  replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/);
+  for (const [, rx] of SECRET_PATTERNS) replace(rx);
+  const masked = redactSensitive(out);
+  return { text: masked.text, stripped, masked: masked.masked, secrets: masked.secrets };
+}
+
 /** "2 email addresses, 1 phone number", or "" when nothing was masked. */
 export function describeMasked(masked = {}) {
   const parts = [];
@@ -943,7 +967,7 @@ const KIND_LABEL = Object.freeze({
 
 // What a person reads. The keys above (holds, holds-with-conditions, weak, refuted) stay
 // the tool's own words; these are the same four the website uses.
-const VERDICT_BADGE = Object.freeze({
+export const VERDICT_BADGE = Object.freeze({
   holds: "solid",
   "holds-with-conditions": "solid if",
   weak: "shaky",

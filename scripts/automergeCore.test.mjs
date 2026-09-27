@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import {
   COMMENT_MARKER,
   actionsFor,
+  authorFamily,
   classify,
   commentBody,
   commentPlan,
@@ -399,6 +400,94 @@ describe("path globs", () => {
   });
 });
 
+describe("risk tiers", () => {
+  it("marks a safe change low, and records the author exclusion family", () => {
+    const page = classify(pull(), config);
+    assert.equal(page.tier, "low");
+    assert.equal(page.lowRisk, true);
+    assert.equal(page.enormous, false);
+    assert.equal(page.authorFamily, "");
+    assert.equal(authorFamily("mtangoz", config), "");
+    assert.equal(authorFamily("cursor[bot]", config), "");
+    assert.equal(authorFamily("cursoragent", config), "");
+    assert.equal(authorFamily("claude[bot]", config), "anthropic");
+    assert.equal(authorFamily("Claude[bot]", config), "anthropic");
+    assert.equal(authorFamily("chatgpt-codex-connector[bot]", config), "openai");
+    assert.equal(authorFamily("someone-else", config), "");
+    assert.match(rawConfig.authorFamilyNote, /claude\[bot\].*Anthropic/);
+    assert.match(rawConfig.authorFamilyNote, /chatgpt-codex-connector\[bot\].*OpenAI/);
+    assert.match(rawConfig.authorFamilyNote, /empty string omits --author/);
+  });
+
+  it("marks everything that is not low and not high as medium", () => {
+    const cases = [
+      pull({ files: [file("package.json")] }),
+      pull({ files: [file(".mcp.json")] }),
+      pull({ files: [file(".github/automerge.json")] }),
+      pull({ files: [file("scripts/automerge.mjs")] }),
+      pull({ files: [file("scripts/grillPr.mjs")] }),
+      pull({ draft: true }),
+      pull({ author: "octocat" }),
+      pull({ labels: ["needs-review"] }),
+      pull({ files: [file("README.md", { additions: 400, deletions: 0 })] }),
+      pull({ files: [file("README.md", { additions: 800, deletions: 0 })] }),
+    ];
+    for (const pr of cases) {
+      const result = classify(pr, config);
+      assert.equal(result.tier, "medium", JSON.stringify(pr.files ?? pr));
+      assert.equal(result.lowRisk, false);
+      assert.equal(result.enormous, false);
+    }
+  });
+
+  it("marks product, auth, judge, policy, workflow, and oversized diffs high", () => {
+    const paths = [
+      "api/_pro.mjs",
+      "scripts/judge.mjs",
+      "scripts/judgeCore.mjs",
+      "scripts/checkCore.mjs",
+      "prompts/grill.md",
+      "manifest.json",
+      "server.json",
+      ".claude-plugin/plugin.json",
+      ".github/workflows/ci.yml",
+      ".github/workflows/grill-pr.yml",
+      "SECURITY.md",
+      "docs/PRIVACY.md",
+      "site/terms.html",
+      "site/privacy.html",
+      "docs/stripe.md",
+      "docs/payments.md",
+      "docs/api-key.md",
+      "docs/author-guide.md",
+    ];
+    for (const path of paths) {
+      const result = classify(pull({ files: [file(path)] }), config);
+      assert.equal(result.tier, "high", path);
+      assert.equal(result.lowRisk, false, path);
+    }
+    const oversized = classify(pull({ files: [file("README.md", { additions: 801, deletions: 0 })] }), config);
+    assert.equal(oversized.tier, "high");
+    assert.equal(oversized.enormous, false);
+    const huge = classify(pull({ files: [file("README.md", { additions: 4001, deletions: 0 })] }), config);
+    assert.equal(huge.tier, "high");
+    assert.equal(huge.enormous, true);
+    const renamed = classify(pull({
+      files: [file("docs/note.md", { previousPath: "api/old.mjs", status: "renamed", additions: 1, deletions: 1 })],
+    }), config);
+    assert.equal(renamed.tier, "high");
+  });
+
+  it("keeps a payments path that would otherwise be safe from auto-merge", () => {
+    const result = classify(pull({ files: [file("docs/payments.md")] }), config);
+    assert.equal(result.tier, "high");
+    assert.equal(result.lowRisk, false);
+    assert.equal(result.failures.length, 0);
+    assert.match(commentBody(result), /payments\.md/);
+    assert.equal(actionsFor(result).enableAutoMerge, false);
+  });
+});
+
 describe("the workflow contract", () => {
   const yaml = readFileSync(join(ROOT, ".github/workflows/automerge.yml"), "utf8");
   const apply = readFileSync(join(ROOT, "scripts/automerge.mjs"), "utf8");
@@ -427,6 +516,7 @@ describe("the workflow contract", () => {
     assert.match(apply, /previous_filename/);
     assert.doesNotMatch(apply, /patch/);
     assert.doesNotMatch(apply, /shell:\s*true/);
-    assert.match(readme, /docs\/AUTOMERGE\.md/);
+    assert.match(readme, /docs\/PR-AUTOMATION\.md/);
+    assert.doesNotMatch(readme, /docs\/AUTOMERGE\.md/);
   });
 });

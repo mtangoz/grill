@@ -1,0 +1,46 @@
+name: grill
+
+# Same-repository pull requests only. Forks cannot read secrets, and a draft
+# is not ready to grill. The job checks out the base commit and runs the judge
+# from that commit. It fetches the title, body, file list, and diff from the
+# API. It does not check out the pull request head and it does not run that
+# branch's scripts.
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: grill-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  grill:
+    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the base commit only
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Grill medium and high risk pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GRILL_CI_OPENROUTER_KEY: ${{ secrets.GRILL_CI_OPENROUTER_KEY }}
+        run: |
+          if [ ! -f scripts/grillPr.mjs ]; then
+            echo "Base commit has no scripts/grillPr.mjs yet. Grill CI stays quiet."
+            exit 0
+          fi
+          node scripts/grillPr.mjs
