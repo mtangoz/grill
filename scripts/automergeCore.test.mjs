@@ -418,12 +418,15 @@ describe("risk tiers", () => {
     assert.equal(config.alternateJudgeModel, undefined);
     assert.equal(rawConfig.defaultJudgeModel, undefined);
     assert.equal(rawConfig.alternateJudgeModel, undefined);
-    assert.ok(config.alwaysExcludedVendors.includes("x-ai"));
+    assert.equal(config.alwaysExcludedVendors, undefined);
+    assert.equal(rawConfig.alwaysExcludedVendors, undefined);
     assert.match(rawConfig.authorFamilyNote, /claude\[bot\].*Anthropic/);
     assert.match(rawConfig.authorFamilyNote, /chatgpt-codex-connector\[bot\].*OpenAI/);
     assert.match(rawConfig.authorFamilyNote, /Written-by-model/);
     assert.match(rawConfig.authorFamilyNote, /openrouter\/auto/);
-    assert.match(rawConfig.authorFamilyNote, /x-ai/);
+    assert.match(rawConfig.authorFamilyNote, /mtangoz/);
+    assert.match(rawConfig.authorFamilyNote, /independence isn't verified/);
+    assert.doesNotMatch(rawConfig.authorFamilyNote, /x-ai/);
   });
 
   it("marks everything that is not low and not high as medium", () => {

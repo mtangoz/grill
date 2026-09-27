@@ -32,8 +32,8 @@ jobs:
           fetch-depth: 1
 
       # The judge is OpenRouter's Auto Router (openrouter/auto). grillPr.mjs passes
-      # --author for the author's company, or x-ai when that company is unknown.
-      # x-ai is excluded on every run. No vendor's model is pinned.
+      # --author for the company that wrote the pull request, or --author none when
+      # that company is unknown, so nothing is excluded. No model is pinned.
       - name: Grill medium and high risk pull requests
         env:
           GH_TOKEN: ${{ github.token }}

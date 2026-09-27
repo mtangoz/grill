@@ -92,25 +92,26 @@ The judge runs with `OPENROUTER_API_KEY` set from the repository secret `GRILL_C
 
 ### Who is excluded from judging
 
-Grill CI does not pin a judge model. It asks OpenRouter's Auto Router, `openrouter/auto`, and tells that router which company to keep out with `--author`, the same switch `scripts/judge.mjs` uses. `x-ai` is excluded on every run. The login map is `authorFamilies` in `.github/automerge.json`.
+Grill CI does not pin a judge model. It asks OpenRouter's Auto Router, `openrouter/auto`, and tells that router which one company to keep out. The excluded company is only the company of the model that wrote the pull request. The login map is `authorFamilies` in `.github/automerge.json`.
 
 | Author | Writing model | Excluded |
 | --- | --- | --- |
-| `claude[bot]` | Anthropic | Anthropic, passed as `--author`. `x-ai` is still excluded after the run. |
-| `chatgpt-codex-connector[bot]` | OpenAI | OpenAI, passed as `--author`. `x-ai` is still excluded after the run. |
-| `mtangoz`, `cursor[bot]`, `cursoragent`, or any other login, with no `Written-by-model` line | Not known | `x-ai` only. `--author` is `x-ai`, so Anthropic is not excluded by default. |
+| `claude[bot]` | Anthropic | Anthropic only. A Grok or other non-Anthropic judge is fine. |
+| `chatgpt-codex-connector[bot]` | OpenAI | OpenAI only. |
+| `mtangoz`, `cursor[bot]`, `cursoragent`, or any other login, with a `Written-by-model` line | The vendor in that line | That vendor only. |
+| A login that does not name a company, and no `Written-by-model` line | Unknown | Nothing. `--author none` excludes nothing, and does not fall back to excluding Anthropic. |
 
-A login that does not name a vendor can say which model wrote the pull request with one line in the body:
+A login that does not name a vendor can say which model wrote the pull request with one line in the body. The line is honoured for every such author, including `mtangoz`, `cursor[bot]`, and `cursoragent`:
 
 ```
 Written-by-model: anthropic/claude-opus-4
 ```
 
-That vendor is then excluded, the same way a known login is. A `Written-by-model` line does not override `claude[bot]` or `chatgpt-codex-connector[bot]`.
+That vendor is then excluded. A `Written-by-model` line does not override `claude[bot]` or `chatgpt-codex-connector[bot]`, because those logins already name the writing company.
 
-`--author` names one family, and it replaces judge.mjs's default Anthropic exclusion. When the author company is known, that company is the family passed to `--author`, and `x-ai` is still on the post-run exclusion list. When the author company is unknown, `--author` is `x-ai`, so the router does not exclude Anthropic by default. The comment still says the author vendor is unknown.
+`--author` names one family, and it replaces judge.mjs's default Anthropic exclusion. When the author company is known, that company is the family passed to `--author`. When it is unknown, Grill CI passes `--author none`, which excludes nothing.
 
-After the run, Grill CI reads the model that actually answered. The comment shows `Author model vendor: X, judge: Y (different company ✓)`, including when the author is unknown. If that vendor is one of the excluded companies, the comment is marked NOT decorrelated, the pull request gets `needs-review`, and the job fails. A failed check is not treated as already grilled, so a later run tries again.
+After the run, Grill CI reads the model that actually answered. When a company was excluded, the comment shows `Author model vendor: X, judge: Y (different company ✓)`. If that vendor is the excluded company, the comment is marked NOT decorrelated, the pull request gets `needs-review`, and the job fails. A failed check is not treated as already grilled, so a later run tries again. When the author model is unknown, the comment says so, independence isn't verified, and it suggests adding a `Written-by-model` line. That case does not fail the job.
 
 ### What Grill CI writes
 

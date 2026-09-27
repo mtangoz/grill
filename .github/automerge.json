@@ -1,6 +1,6 @@
 {
   "authors": ["mtangoz", "cursor[bot]", "cursoragent", "claude[bot]", "chatgpt-codex-connector[bot]"],
-  "authorFamilyNote": "authorFamilies names the company that wrote the pull request, when the GitHub login is enough to know. claude[bot] (Claude Code) is anthropic, so Grill CI excludes Anthropic. chatgpt-codex-connector[bot] (Codex) is openai, so Grill CI excludes OpenAI. An empty string means the login does not name a writing model: mtangoz, cursor[bot], cursoragent, and any other login. Those pull requests exclude nothing beyond x-ai unless the body contains a line 'Written-by-model: <vendor>/<model>', in which case that vendor is excluded too. The judge is always OpenRouter's Auto Router (openrouter/auto); Grill CI does not pin a vendor's model. alwaysExcludedVendors always includes x-ai, on every pull request. After the run, Grill CI checks the served model's vendor. If that vendor was excluded, the comment is marked NOT decorrelated, the pull request gets needs-review, and the job fails.",
+  "authorFamilyNote": "authorFamilies names the company that wrote the pull request, when the GitHub login is enough to know. claude[bot] (Claude Code) is anthropic, so Grill CI excludes Anthropic. chatgpt-codex-connector[bot] (Codex) is openai, so Grill CI excludes OpenAI. An empty string means the login does not name a writing model: mtangoz, cursor[bot], cursoragent, and any other login. A line 'Written-by-model: <vendor>/<model>' is honoured for every such author and excludes that vendor. With no such line, nothing is excluded. The judge is always OpenRouter's Auto Router (openrouter/auto); Grill CI does not pin a model. After the run, Grill CI checks the served model's vendor. If that vendor was excluded, the comment is marked NOT decorrelated, the pull request gets needs-review, and the job fails. When the author model is unknown, the comment says so, independence isn't verified, and it suggests adding a Written-by-model line.",
   "authorFamilies": {
     "mtangoz": "",
     "cursor[bot]": "",
@@ -8,7 +8,6 @@
     "claude[bot]": "anthropic",
     "chatgpt-codex-connector[bot]": "openai"
   },
-  "alwaysExcludedVendors": ["x-ai"],
   "maxChangedLines": 300,
   "maxFiles": 15,
   "highChangedLines": 800,

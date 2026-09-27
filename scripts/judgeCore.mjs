@@ -51,6 +51,13 @@ export const CONFIDENCES = Object.freeze(["high", "medium", "low"]);
 export const AUTHOR_MODEL_FAMILY = "anthropic";
 
 /**
+ * `--author none`. The caller knows there is no author family to exclude.
+ * Nothing is excluded, and the run does not fall back to excluding Anthropic.
+ * Omitting `--author` is different: that still excludes Anthropic.
+ */
+export const NO_AUTHOR_FAMILY = "none";
+
+/**
  * Matches the author family's model ids under every spelling a router is known to use:
  * the plain catalog prefix (`anthropic/...`), a `claude-...` slug served under some other
  * provider's namespace, and the dot-separated forms some hosting providers use
@@ -83,6 +90,7 @@ function familyRx(family) {
  * passing anything else REPLACES it rather than adding to it, because the rule being
  * enforced is "not the author", not "never this one family" — a judge from the default
  * excluded family is a perfectly good judge of work that family did not write.
+ * Passing NO_AUTHOR_FAMILY ("none") excludes nothing. It does not fall back to Anthropic.
  *
  * Returns `{served, decorrelated, reason, note}`. `reason` is one of "unattributable" (no
  * model name came back at all — an unverified judge is not a verified-independent one),
@@ -99,6 +107,14 @@ export function decorrelationOf(servedModel, author) {
     };
   }
   const declared = String(author ?? "").trim().toLowerCase();
+  if (declared === NO_AUTHOR_FAMILY) {
+    return {
+      served,
+      decorrelated: true,
+      reason: "decorrelated",
+      note: `served by \`${served}\`. No author family was declared, so this run does not verify independence from the model that wrote the subject`,
+    };
+  }
   const isDefault = declared === "" || declared === AUTHOR_MODEL_FAMILY;
   const rx = isDefault ? AUTHOR_FAMILY_RX : familyRx(declared);
   if (rx && rx.test(served)) {
@@ -147,13 +163,18 @@ export const AUTHOR_FAMILY_PATTERNS = Object.freeze(["anthropic/*", "*/claude-*"
  *
  * `author` replaces the default exclusion rather than adding to it, for the same reason
  * `decorrelationOf` replaces rather than stacks: see that function's docblock.
+ * NO_AUTHOR_FAMILY sends an empty exclusion list. Omitting `author` still excludes Anthropic.
  */
 export function autoRouterPlugin(primaryModel, author) {
   const id = AUTO_ROUTER_PLUGIN_IDS[String(primaryModel ?? "").trim().toLowerCase()];
   if (!id) return null;
   const declared = String(author ?? "").trim().toLowerCase();
   const excluded_models =
-    declared === "" || declared === AUTHOR_MODEL_FAMILY ? [...AUTHOR_FAMILY_PATTERNS] : [`${declared}/*`];
+    declared === NO_AUTHOR_FAMILY
+      ? []
+      : declared === "" || declared === AUTHOR_MODEL_FAMILY
+        ? [...AUTHOR_FAMILY_PATTERNS]
+        : [`${declared}/*`];
   return { id, excluded_models };
 }
 
@@ -1102,13 +1123,19 @@ export function renderJudgeReport(result) {
   // cases with opposite meanings. Naming the family makes a forgotten `--author` visible in
   // the artefact instead of silent. The family excluded IS the declared author — it
   // replaces the default rather than stacking on it, so this names one family, never a list.
-  const excludedFrom = declaredAuthor || "anthropic";
+  // `--author none` is the explicit no-family path. It must not read as "decorrelated
+  // from anthropic" or "decorrelated from none".
+  const declared = String(declaredAuthor ?? "").trim().toLowerCase();
+  const noAuthorFamily = declared === NO_AUTHOR_FAMILY;
+  const excludedFrom = noAuthorFamily ? "" : declared || "anthropic";
   meta.push(
     `judge: ${servedModel ? `\`${servedModel}\`` : "_unattributable_"}${
       decorrelated === false
         ? " — **NOT decorrelated from the author**"
         : decorrelated === true
-          ? ` (decorrelated from ${excludedFrom})`
+          ? noAuthorFamily
+            ? " (no author family declared, so independence is not verified)"
+            : ` (decorrelated from ${excludedFrom})`
           : ""
     }`,
   );

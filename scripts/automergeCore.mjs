@@ -26,7 +26,6 @@ const CONFIG_KEYS = [
   "highPaths",
   "highSubstrings",
   "highPageBasenames",
-  "alwaysExcludedVendors",
 ];
 
 function expectStringArray(value, name) {
@@ -99,10 +98,6 @@ export function loadConfig(raw) {
   if (grillSkipDiffChars <= diffCharBudget) {
     throw new Error("grillSkipDiffChars must be greater than diffCharBudget");
   }
-  const alwaysExcludedVendors = expectStringArray(raw.alwaysExcludedVendors, "alwaysExcludedVendors").map((vendor) => vendor.toLowerCase());
-  if (!alwaysExcludedVendors.includes("x-ai")) {
-    throw new Error("alwaysExcludedVendors must include x-ai");
-  }
   return Object.freeze({
     authors,
     authorFamilies: expectAuthorFamilies(raw.authorFamilies),
@@ -124,7 +119,6 @@ export function loadConfig(raw) {
     highPaths: expectStringArray(raw.highPaths, "highPaths"),
     highSubstrings: expectStringArray(raw.highSubstrings, "highSubstrings"),
     highPageBasenames: expectStringArray(raw.highPageBasenames, "highPageBasenames").map((name) => name.toLowerCase()),
-    alwaysExcludedVendors,
   });
 }
 
@@ -218,8 +212,8 @@ function sameText(a, b) {
 /**
  * Vendor this login is known to write with, or "" when the login does not say.
  * Claude Code is Anthropic. Codex is OpenAI. Cursor logins and mtangoz are "".
- * Grill CI treats "" as an unknown writing model and pins a Google judge unless
- * the pull request body names one with Written-by-model.
+ * Grill CI treats "" as an unknown writing model unless the pull request body
+ * names one with Written-by-model. With neither, nothing is excluded.
  */
 export function authorFamily(author, config) {
   const login = typeof author === "string" ? author : "";

@@ -3,7 +3,7 @@
 // out the base commit and passes in text it fetched from the API.
 
 import { authorFamily } from "./automergeCore.mjs";
-import { budgetText, stripSecrets, VERDICT_BADGE } from "./judgeCore.mjs";
+import { budgetText, NO_AUTHOR_FAMILY, stripSecrets, VERDICT_BADGE } from "./judgeCore.mjs";
 
 export const GRILL_MARKER = "<!-- grill-ci -->";
 export const GRILL_QUESTION =
@@ -61,33 +61,25 @@ export function writtenByModel(body) {
 export const GRILL_CI_JUDGE_MODEL = "openrouter/auto";
 
 /**
- * Who wrote the pull request, and which companies the Auto Router must not use.
- * A known login vendor wins over the body. An unknown login uses a
- * Written-by-model line when the body has one. x-ai is always excluded.
- *
- * The router exclusion is `--author`, the same switch judge.mjs already uses:
- * it replaces the default Anthropic exclusion with one family. When the author
- * company is known, that family is the one excluded. When it is not, `--author
- * x-ai` keeps the router from falling back to excluding Anthropic. The comment
- * still says the author vendor is unknown, and any other served company is fine.
+ * Who wrote the pull request, and which one company the Auto Router must not use.
+ * A known login vendor wins over the body, so a pull request description cannot
+ * clear Claude or Codex. Every other author, including mtangoz, cursor[bot], and
+ * cursoragent, is excluded only when the body has a Written-by-model line.
+ * With no company to exclude, `--author none` tells the judge to exclude nothing.
+ * That does not fall back to excluding Anthropic, and x-ai is not excluded on its own.
  */
 export function judgePlan({ author = "", body = "", config }) {
   const loginVendor = authorFamily(author, config);
   const declared = loginVendor ? null : writtenByModel(body);
   const authorVendor = loginVendor || declared?.vendor || "unknown";
-  const excluded = new Set(
-    (config.alwaysExcludedVendors ?? []).map((vendor) => String(vendor).trim().toLowerCase()).filter(Boolean),
-  );
-  excluded.add("x-ai");
-  if (authorVendor !== "unknown") excluded.add(authorVendor);
-  const routerAuthor = authorVendor === "unknown" ? "x-ai" : authorVendor;
+  const excludedVendors = authorVendor === "unknown" ? [] : [authorVendor];
   return {
     ok: true,
     authorVendor,
     declared: declared?.slug ?? "",
     judgeModel: GRILL_CI_JUDGE_MODEL,
-    excludedVendors: [...excluded].sort(),
-    authorArgs: ["--author", routerAuthor],
+    excludedVendors,
+    authorArgs: ["--author", authorVendor === "unknown" ? NO_AUTHOR_FAMILY : authorVendor],
   };
 }
 
@@ -96,24 +88,40 @@ export function actionableDegraded(degraded) {
   return (Array.isArray(degraded) ? degraded : []).filter((note) => !/SHADOWS the default's Auto Router/.test(String(note)));
 }
 
+const UNKNOWN_AUTHOR_LINE =
+  "The author model is unknown, so independence isn't verified. Add a Written-by-model: <vendor>/<model> line to the pull request body.";
+
 /**
  * Did a different company actually answer? `verifiable` is false when the
- * response named no model. Any served company that was not excluded counts,
- * including when the author is unknown: the line still names that company.
+ * response named no model. The job fails only when the served company's
+ * vendor is one that was excluded. An unknown author excludes nothing, so
+ * any served company passes, and the comment says independence isn't verified.
  */
 export function companyCheck({ servedModel, authorVendor = "unknown", excludedVendors = [] } = {}) {
   const judgeVendor = vendorOfModel(servedModel);
-  const excluded = new Set([...excludedVendors, "x-ai"].map((vendor) => String(vendor).trim().toLowerCase()).filter(Boolean));
-  const verifiable = judgeVendor !== "";
-  const decorrelated = verifiable && !excluded.has(judgeVendor);
+  const shownAuthor = authorVendor || "unknown";
   const shownJudge = judgeVendor || "unknown";
+  const verifiable = judgeVendor !== "";
+  if (shownAuthor === "unknown") {
+    return {
+      authorVendor: "unknown",
+      judgeVendor: shownJudge,
+      verifiable,
+      decorrelated: verifiable,
+      line: verifiable
+        ? `Author model vendor: unknown, judge: ${shownJudge}. ${UNKNOWN_AUTHOR_LINE}`
+        : `Author model vendor: unknown, judge: unknown (${NOT_DECORRELATED}). ${UNKNOWN_AUTHOR_LINE}`,
+    };
+  }
+  const excluded = new Set(excludedVendors.map((vendor) => String(vendor).trim().toLowerCase()).filter(Boolean));
+  const decorrelated = verifiable && !excluded.has(judgeVendor);
   const mark = decorrelated ? "different company ✓" : NOT_DECORRELATED;
   return {
-    authorVendor: authorVendor || "unknown",
+    authorVendor: shownAuthor,
     judgeVendor: shownJudge,
     verifiable,
     decorrelated,
-    line: `Author model vendor: ${authorVendor || "unknown"}, judge: ${shownJudge} (${mark})`,
+    line: `Author model vendor: ${shownAuthor}, judge: ${shownJudge} (${mark})`,
   };
 }
 
