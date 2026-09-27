@@ -43,7 +43,7 @@ Show the subject and question, and say where they will go before sending anythin
 **If you have the `grill` tool** (from the Grill extension in Claude Desktop, or the plugin in Claude Code):
 1. Call it with `subject` and `question`. If the subject came from another assistant, add `author`, for example `openai`, so that family is excluded too.
 2. If it returns a job id, call `grill_result` with it until the report arrives. It usually takes 1–3 minutes; tell the user it's working.
-3. If it says Grill isn't set up, relay its steps. Never ask the user to paste their key into the chat.
+3. If it says Grill isn't set up, relay its steps. Never ask the user to paste their key into the chat. A Grill Pro key goes in the same settings field as their own key. If Grill's settings name a judge model, the tool already uses it. That judge has to be a different company from the assistant they think with. If they name one from the same company, say so and don't treat it as the outside judge.
 
 **If you don't have the tool** (claude.ai on the web or phone, or no extension yet), use the paste route:
 1. Fill in `paste-prompt.md` from this skill's folder with the approved subject and question.
@@ -53,6 +53,7 @@ Show the subject and question, and say where they will go before sending anythin
 2. Give it back as one block they can copy. If it is under 6,000 characters, also give an "Open in ChatGPT" link: `https://chatgpt.com/?q=` followed by the URL-encoded prompt. For Gemini or any other assistant, they paste it themselves.
 3. Ask them to paste the judge's answer back here. That answer is the outside judge's; your own view is not.
 4. Mention once that Claude Desktop with the Grill extension does this in one step: https://github.com/mtangoz/grill#set-up
+5. If they have a Grill Pro setup that names a judge, paste into that assistant, and only if it is a different company from you. Do not put their managed key in the prompt.
 
 ## 4. Relay the result
 

@@ -186,7 +186,7 @@ describe("issuing a key", () => {
   it("creates one capped, monthly-reset key named for the customer, records it, and returns it once", async () => {
     const f = fakeFetch([sessionRoute(paidSession()), customerRoute(), createRoute(), saveRoute()]);
     const out = await issueKey(SESSION, { env: ENV, fetch: f, now: NOW });
-    assert.deepEqual(out, { state: "issued", key: KEY, limitUsd: 3 });
+    assert.deepEqual(out, { state: "issued", key: KEY, hash: HASH, limitUsd: 3, customerId: CUSTOMER });
 
     const create = f.calls.find((c) => c.method === "POST" && c.url === `${ROUTER_API}/keys`);
     assert.deepEqual(JSON.parse(create.init.body), { name: `grill-pro-${CUSTOMER}`, limit: 3 });
@@ -385,7 +385,10 @@ describe("the endpoints", () => {
       const sig = createHmac("sha256", "whsec_endpoint_test").update(`${t}.${body}`).digest("hex");
       const ok = await POST(new Request("https://grillyour.ai/api/stripe-webhook", { method: "POST", body, headers: { "stripe-signature": `t=${t},v1=${sig}` } }));
       assert.equal(ok.status, 200);
-      assert.deepEqual(await ok.json(), { received: true, action: "ignored" });
+      const payload = await ok.json();
+      assert.equal(payload.received, true);
+      assert.equal(payload.action, "ignored");
+      assert.ok(payload.account === "no-store" || payload.account === "ignored");
     } finally {
       globalThis.fetch = saved.fetch;
       if (saved.secret === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
@@ -417,6 +420,9 @@ describe("the endpoints", () => {
       rewrites: [
         { source: "/welcome", destination: "/api/welcome" },
         { source: "/checkout", destination: "/api/checkout" },
+        { source: "/pro", destination: "/api/pro" },
+        { source: "/pro/auth", destination: "/api/pro-auth" },
+        { source: "/pro/try", destination: "/api/pro-try" },
       ],
     });
   });

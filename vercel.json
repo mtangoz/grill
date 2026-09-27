@@ -3,6 +3,9 @@
   "outputDirectory": "_site",
   "rewrites": [
     { "source": "/welcome", "destination": "/api/welcome" },
-    { "source": "/checkout", "destination": "/api/checkout" }
+    { "source": "/checkout", "destination": "/api/checkout" },
+    { "source": "/pro", "destination": "/api/pro" },
+    { "source": "/pro/auth", "destination": "/api/pro-auth" },
+    { "source": "/pro/try", "destination": "/api/pro-try" }
   ]
 }

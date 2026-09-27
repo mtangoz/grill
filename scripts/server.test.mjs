@@ -265,3 +265,60 @@ describe("the Jev quality check setting", () => {
     assert.equal(onByDefault.fake.seen.decisions.length, 1, "on by default stays on");
   });
 });
+
+describe("a managed key and a chosen judge", () => {
+  it("sends the key and the judge model, treats an unfilled box as unset, and refuses the author's own company", async () => {
+    const usable = readFileSync(USABLE, "utf8");
+    const listen = () =>
+      new Promise((resolve) => {
+        const seen = [];
+        const fake = createServer((req, res) => {
+          let raw = "";
+          req.on("data", (d) => (raw += d));
+          req.on("end", () => {
+            seen.push({ auth: req.headers.authorization, body: JSON.parse(raw) });
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(usable);
+          });
+        });
+        fake.listen(0, "127.0.0.1", () => resolve({ fake, seen, url: `http://127.0.0.1:${fake.address().port}/api/v1/chat/completions` }));
+      });
+
+    const pinned = await listen();
+    const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_MODEL: "google/gemini-2.5-pro", JUDGE_OPENROUTER_URL: pinned.url, GRILL_CHECK: "false" });
+    const res = await c.request("tools/call", { name: "grill", arguments: { subject: "We will raise prices 20% in Q4." } });
+    assert.equal(res.result.isError, false, textOf(res));
+    assert.equal(pinned.seen[0].auth, `Bearer ${KEY}`);
+    assert.equal(pinned.seen[0].body.model, "google/gemini-2.5-pro");
+    await c.close();
+    pinned.fake.close();
+
+    const blank = await listen();
+    const unset = await initialized({
+      GRILL_API_KEY: KEY,
+      JUDGE_MODEL: "${user_config.judge_model}",
+      JUDGE_OPENROUTER_URL: blank.url,
+      GRILL_CHECK: "false",
+    });
+    const def = await unset.request("tools/call", { name: "grill", arguments: { subject: "We will raise prices 20% in Q4." } });
+    assert.equal(def.result.isError, false, textOf(def));
+    assert.equal(blank.seen[0].body.model, "openrouter/auto", "an unfilled judge box keeps the default chain");
+    await unset.close();
+    blank.fake.close();
+
+    const blocked = await initialized({ GRILL_API_KEY: KEY, JUDGE_MODEL: "anthropic/claude-sonnet-4.5", JUDGE_FIXTURE: USABLE });
+    const no = await blocked.request("tools/call", { name: "grill", arguments: { subject: "We will raise prices 20% in Q4." } });
+    assert.equal(no.result.isError, true);
+    assert.match(textOf(no), /different company/);
+    await blocked.close();
+
+    const other = await initialized({ GRILL_API_KEY: KEY, JUDGE_MODEL: "openai/gpt-5.6-sol", JUDGE_FIXTURE: USABLE });
+    const still = await other.request("tools/call", {
+      name: "grill",
+      arguments: { subject: "We will raise prices 20% in Q4.", author: "openai" },
+    });
+    assert.equal(still.result.isError, true);
+    assert.match(textOf(still), /openai/);
+    await other.close();
+  });
+});

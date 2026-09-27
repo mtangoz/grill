@@ -1,6 +1,6 @@
 # Privacy: who can see your decision
 
-**Short version:** Grill has no account, and never sees a decision. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. The only server is the small one that sells Grill Pro, and it never handles a write-up. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
+**Short version:** The free tool has no account, and Grill never sees a decision. Grill Pro is the only part with an account. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. The only server is the small one for Grill Pro accounts and billing, and it never handles a write-up. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
 
 ## Who sees what
 
@@ -15,7 +15,7 @@
 | **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them. With Pro, also your billing details and your key's usage, as below | There is nowhere for anything else to go |
 | **This website** | An anonymous count of page views. No cookie, and nothing that identifies you | Vercel Web Analytics, on the website only. The Grill tool never loads it |
 | **Stripe**, Grill Pro only | Your email, card and billing address | Stripe's own privacy policy. Grill never sees your card |
-| **Grill's Pro server**, Grill Pro only | Your checkout and your subscription's status | It runs only when you buy and when your subscription changes. Write-ups never pass through it |
+| **Grill's Pro server**, Grill Pro only | Your email, sign-in, checkout and subscription status, and which assistant and judge you picked | It runs when you sign in, when you buy, and when your subscription changes. Write-ups never pass through it. A developer test mode can run a sample grill on a laptop, and that mode cannot be turned on in production |
 | **Grill's router account**, Grill Pro only | Your key's usage: cost, model and time of each check, never the text | Logging is off and every request is zero-retention, account-wide |
 
 ## What Grill enforces in code
@@ -42,10 +42,13 @@ Pro changes who pays for the AI, not where your write-up goes.
 - **Your write-ups still go straight** from your Claude to the router, using your Pro key. They never pass through Grill's server.
 - **Your Pro key comes from Grill's router account.** That account is set to zero-data-retention endpoints only, with logging off, for every key.
 - **What Grill keeps for Pro:**
-  - your email and subscription, in Stripe;
-  - a record of which key is yours, stored on your Stripe customer;
+  - your email, so we can send a sign-in link;
+  - your subscription, in Stripe once billing is connected;
+  - which assistant and judge you picked;
+  - a hash of your key, on the account and on your Stripe customer when you have one. Not the key itself;
   - each key's usage in the router account (cost, model and time of each check, never the text).
-- **The key is shown to you once** and stored nowhere. If you lose it, we switch it off and give you a new one.
+- **The key is shown when it is created or rotated**, then dropped. If you lose it, sign in and rotate it. We switch the old one off.
+- **The free tool is unchanged.** No account, no sign-in, no tracking in the tool you install.
 
 ## Your key
 

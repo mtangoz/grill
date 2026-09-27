@@ -26,7 +26,8 @@
       ],
       "env": {
         "GRILL_API_KEY": "${user_config.openrouter_api_key}",
-        "GRILL_CHECK": "${user_config.jev_quality_check}"
+        "GRILL_CHECK": "${user_config.jev_quality_check}",
+        "JUDGE_MODEL": "${user_config.judge_model}"
       }
     }
   },
@@ -64,7 +65,7 @@
     "openrouter_api_key": {
       "type": "string",
       "title": "Model router key (OpenRouter)",
-      "description": "Create one at https://openrouter.ai/keys and add a few dollars of credit; a grill costs about a cent. It is masked, stored securely, and sent only to OpenRouter. Have Grill Pro? Paste your Pro key here instead.",
+      "description": "Create one at https://openrouter.ai/keys and add a few dollars of credit; a grill costs about a cent. It is masked, stored securely, and sent only to OpenRouter. Have Grill Pro? Paste your managed key here instead. It is the same field.",
       "sensitive": true,
       "required": true
     },
@@ -73,6 +74,11 @@
       "title": "Quality check with Jev",
       "description": "Score every grill with Jev, a zero-retention decision model reached through the same model router: are the falsifiers real tests, does the verdict fit the challenges? It sees the masked write-up and the report. About $0.0002 a grill. Claude tells you before each grill, and you can skip it for one. Turn off to send the write-up to the judge only.",
       "default": true
+    },
+    "judge_model": {
+      "type": "string",
+      "title": "Judge model (optional)",
+      "description": "An OpenRouter model from a different company than the assistant you think with, such as google/gemini-2.5-pro. Leave blank to use Grill's default, which picks per request and keeps the author's company out. Grill Pro setup gives you one. An empty box is the same as blank."
     }
   }
 }

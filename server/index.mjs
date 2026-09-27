@@ -74,7 +74,7 @@ const SETUP_TEXT = [
   "1. Create one at https://openrouter.ai/keys. Sign in, and add a few dollars of credit; a grill costs about a cent.",
   "2. Paste it into Grill's settings where you installed it (Claude Desktop: Settings → Extensions → Grill).",
   `Step-by-step: ${SETUP_URL}`,
-  "Have Grill Pro? Paste the key from your welcome page there instead.",
+  "Have Grill Pro? Sign in at https://grillyour.ai/pro and paste the managed key into the same place. You can also set the judge model there.",
   "Until then, the grill skill can write the subject as a prompt for you to paste into ChatGPT or Gemini instead.",
 ].join("\n");
 
@@ -90,7 +90,8 @@ const DESCRIPTION = [
   "It writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict (solid, solid if, shaky, or doesn't hold up).",
   "Before calling: write the subject, meaning the decision, the options, the reasons, the prediction and confidence exactly as the user gave them, and the strongest case against. Show it to the user, and call only after they approve, because it leaves their machine for a model router (zero-data-retention endpoints only).",
   CHECK_NOTE,
-  "Costs about a cent on the user's own key and usually takes 1–3 minutes. If the result is a job id, call grill_result with it.",
+  "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default.",
+  "Costs about a cent on the user's own key, or on a Grill Pro key, and usually takes 1–3 minutes. If the result is a job id, call grill_result with it.",
 ].join(" ");
 
 const TOOLS = [
@@ -139,6 +140,23 @@ const TOOLS = [
 
 const jobs = new Map();
 
+/** The judge model from settings. An empty install-dialog placeholder is the same as unset. */
+function configuredJudgeModel(env = process.env) {
+  const raw = typeof env.JUDGE_MODEL === "string" ? env.JUDGE_MODEL.trim() : "";
+  if (!raw || raw.startsWith("${")) return "";
+  return raw;
+}
+
+/** Same company rule as api/_account.mjs. Empty means Grill's default chain, which is allowed. */
+function judgePinConflicts(model, author) {
+  const primary = String(model).split(",")[0].trim().toLowerCase();
+  if (!primary || primary.startsWith("openrouter/")) return false;
+  const pin = /(^|[/.])claude[-.\d]/.test(primary) ? "anthropic" : primary.split("/")[0] === "x-ai" ? "xai" : primary.split("/")[0];
+  const declared = String(author || "anthropic").trim().toLowerCase();
+  const family = declared === "x-ai" || declared === "xai" ? "xai" : declared === "claude" ? "anthropic" : declared;
+  return pin === family;
+}
+
 function startJob({ subject, question, author, skipCheck }) {
   const id = randomUUID().slice(0, 8);
   const dir = mkdtempSync(join(tmpdir(), "grill-"));
@@ -148,6 +166,9 @@ function startJob({ subject, question, author, skipCheck }) {
   if (checkEnabled() && !skipCheck) args.push("--check");
   const env = { ...process.env, OPENROUTER_API_KEY: resolveApiKey() };
   delete env.JUDGE_CHECK; // the setting above decides, never an inherited variable
+  const model = configuredJudgeModel(env);
+  if (model) env.JUDGE_MODEL = model;
+  else delete env.JUDGE_MODEL;
   const child = spawn(process.execPath, args, {
     env,
     stdio: ["pipe", "pipe", "pipe"],
@@ -225,6 +246,13 @@ async function callTool(name, args = {}, onTick) {
     if (question.length > MAX_QUESTION_CHARS) return text(`The question is over ${MAX_QUESTION_CHARS} characters; shorten it.`, true);
     if (author && !AUTHOR_RE.test(author)) return text("author must be a lowercase model-family name, like openai.", true);
     if (!resolveApiKey()) return text(SETUP_TEXT, true);
+    const judgeModel = configuredJudgeModel();
+    if (judgeModel && judgePinConflicts(judgeModel, author)) {
+      return text(
+        `Grill's judge model is set to ${judgeModel}, the same company as the assistant that wrote this${author ? ` (${author})` : ""}. Pick a judge from a different company, or clear the judge model to use Grill's default.`,
+        true,
+      );
+    }
     const job = startJob({ subject, question, author, skipCheck });
     return (await waitFor(job, waitMs(), onTick)) ? outcomeOf(job) : pending(job);
   }
