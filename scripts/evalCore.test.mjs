@@ -309,13 +309,13 @@ describe("renderSummary — never subject text beyond the case id", () => {
 describe("every committed case under evals/cases/ parses and has the fields its kind requires", () => {
   const files = readdirSync(CASES_DIR).filter((f) => f.endsWith(".json")).sort();
 
-  it("finds the full committed set: 6 flawed, 3 sound, 3 loaded", () => {
+  it("finds the full committed set: 7 flawed, 4 sound, 4 loaded", () => {
     const byKind = { flawed: 0, sound: 0, loaded: 0 };
     for (const f of files) {
       const c = JSON.parse(readFileSync(join(CASES_DIR, f), "utf8"));
       byKind[c.kind] = (byKind[c.kind] ?? 0) + 1;
     }
-    assert.deepEqual(byKind, { flawed: 6, sound: 3, loaded: 3 });
+    assert.deepEqual(byKind, { flawed: 7, sound: 4, loaded: 4 });
   });
 
   for (const f of files) {

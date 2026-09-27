@@ -139,7 +139,7 @@ export function buildCheckRequest({ subject = "", question = "", result = null, 
   questions.verdict_fits = {
     type: "noul",
     instructions:
-      "Is the verdict in state.verdict (explained in state.verdict_reason) consistent with the weight of the challenges in state.challenges, where one fatal challenge refutes and many minor ones do not? Verdicts, mildest first: holds, holds-with-conditions, weak, refuted. Severities, worst first: fatal, serious, moderate, minor. state.challenges holds at most the five most damaging challenges.",
+      "Is the verdict in state.verdict (explained in state.verdict_reason) consistent with the weight of the challenges in state.challenges, where one fatal challenge refutes, one serious challenge rules out a plain holds, and many minor ones do not? Verdicts, mildest first: holds, holds-with-conditions, weak, refuted. Severities, worst first: fatal, serious, moderate, minor. state.challenges holds at most the five most damaging challenges.",
     criteria: {
       "true": "The verdict fits the weight of the challenges.",
       "false": "The verdict is harsher or softer than the challenges support.",

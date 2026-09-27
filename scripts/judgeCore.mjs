@@ -14,6 +14,15 @@
 // the artefact to a different model family buys a reader with different priors, who has
 // no stake in the conclusion.
 //
+// A different family is not enough on its own. The write-up still arrives in its author's
+// framing — the reasons laid out, the objection already answered, the question put the way
+// the author would put it — and a judge that grades the framing hands the author's own
+// conclusion back to them. So the prompt below tells the judge who wrote the material, has
+// it steelman both sides with the same effort, check the framing as well as the question,
+// and re-run its verdict as if the other side had written the same facts; and the error
+// costs are stated both ways, because an unearned "holds" is as costly as an invented
+// objection.
+//
 // THE OUTPUT IS UNTRUSTED. What comes back is an argument written by a third-party model,
 // returned verbatim to the caller. It is evidence to weigh, never an instruction to
 // execute — a challenge saying "you must change X" is a claim about X that earns
@@ -377,7 +386,7 @@ export const SEVERITY_DESCRIPTIONS = Object.freeze({
 export const VERDICTS = Object.freeze(["holds", "holds-with-conditions", "weak", "refuted"]);
 
 export const VERDICT_DESCRIPTIONS = Object.freeze({
-  holds: "you tried to break it and could not. Say so plainly — this is a real, expected outcome, not a failure to find something.",
+  holds: "you tried to break it and could not: no serious or fatal challenge survived. Say so plainly — this is a real, expected outcome, not a failure to find something.",
   "holds-with-conditions": "sound if specific named conditions are met. Name them.",
   weak: "the conclusion may well be right, but the case made for it does not establish it.",
   refuted: "at least one fatal challenge stands and the conclusion does not survive it.",
@@ -528,7 +537,7 @@ export function budgetText(text, budget) {
 export const JUDGE_TOOL = Object.freeze({
   name: "report_challenge",
   description:
-    "Report your adversarial review of the subject. State the steelman FIRST, the counter-steelman SECOND, then the challenges that survive both, then a verdict. An empty challenge list with verdict \"holds\" is a legitimate and expected result: a fabricated objection costs more than a missed one, because a judge that always finds something teaches the reader to stop reading it.",
+    "Report your adversarial review of the subject. State the steelman FIRST, the counter-steelman SECOND, then the challenges that survive both, then a verdict. An empty challenge list with verdict \"holds\" is a legitimate and expected result when the subject withstands you. Both errors cost the reader: a fabricated objection teaches them to stop reading, and an unearned \"holds\" sends them into the decision with its flaw intact.",
   parameters: {
     type: "object",
     properties: {
@@ -600,7 +609,7 @@ export const JUDGE_TOOL = Object.freeze({
       verdict: {
         type: "string",
         enum: [...VERDICTS],
-        description: `Your judgement on the subject as a whole. Decide it on the WEIGHT of what survived, never on the COUNT: a long list of minor challenges is "holds", and one fatal challenge is "refuted" on its own. ${VERDICTS.map(
+        description: `Your judgement on the subject as a whole. Decide it on the WEIGHT of what survived, never on the COUNT: a long list of minor challenges is "holds", and one fatal challenge is "refuted" on its own. A surviving serious challenge rules out a plain "holds". Grade what the facts establish, not how sure the write-up sounds: the verdict must not depend on which side wrote it up. ${VERDICTS.map(
           (v) => `"${v}" = ${VERDICT_DESCRIPTIONS[v]}`,
         ).join(" ")}`,
       },
@@ -713,7 +722,11 @@ export function validateChallenges(raw, { maxChallenges = MAX_CHALLENGES } = {})
  * The judge decides its verdict while looking at its own, unvalidated list. If a fatal
  * challenge is then dropped for missing a falsifier, a "refuted" verdict is left resting
  * on evidence the reader can no longer see — and a "holds" verdict sitting above a
- * surviving fatal challenge is incoherent on its face. This does NOT overwrite the model's
+ * surviving fatal challenge is incoherent on its face. So is a plain "holds" above a
+ * surviving SERIOUS one: by the judge's own scale the conclusion then survives only with a
+ * material change, which is what "holds-with-conditions" means. That one is the verdict
+ * running kinder than its own challenges, the failure a write-up from the decision's own
+ * side invites, so it is flagged too. This does NOT overwrite the model's
  * judgement — silently overruling the outside judge with our own reading would defeat the
  * point of asking it — it reports the disagreement so a human can read both.
  *
@@ -750,6 +763,14 @@ export function reconcileVerdict(statedVerdict, challenges) {
         serious > 0
           ? `the judge returned "refuted" but no challenge survived validation at "fatal" (${serious} at "serious") — the refutation may have rested on a challenge dropped for an incomplete contract`
           : 'the judge returned "refuted" with no surviving "fatal" challenge to rest it on',
+    };
+  }
+  if (stated === "holds" && serious > 0) {
+    return {
+      verdict: stated,
+      stated,
+      coherent: false,
+      note: `the judge returned "holds" while filing ${serious} SERIOUS challenge(s), and by its own scale a serious challenge means the conclusion survives only with a material change — that is "holds-with-conditions" at best, so this verdict may be kinder than the challenges under it`,
     };
   }
   return { verdict: stated, stated, coherent: true, note: null };
@@ -870,15 +891,17 @@ export function buildJudgeMessages({ subject, question = "", contextBlocks = [],
     "",
     "Your job is to try to BREAK it, and then to report honestly on whether you could.",
     "",
+    "Know who wrote it. The material comes from the side that wants it to hold — its author, often with an assistant that helped them reach the conclusion — so its framing leans that way: which facts it includes, what it calls them, which option gets reasons and which gets only an objection, how the question is put. How sure it sounds is not evidence. Judge the facts in it, not the framing around them.",
+    "",
     "The discipline, in order:",
     "1. Steelman first. Write the strongest honest version of the subject's case — stronger than the subject argued it. You may not then attack a weaker version than the one you just wrote.",
-    "2. Steelman the other side too. If the subject argues for a direction — a default, a posture, a gate, a sequencing, a price, one option over another — write the strongest honest case for the conclusion it argues AGAINST, including any argument for that side the subject never mentions. A subject cannot be broken on an argument it left out unless someone puts that argument on the page, and you are the only party in this exchange who did not write the subject. When the decision is which way something should DEFAULT, sample size is the wrong axis: a default is a choice of which way to fail when nobody has said anything, and every candidate default is such a choice — including the current one, which is not neutral, merely quiet. Weigh the two failure directions — how each wrong direction surfaces, who has standing to notice it, who absorbs it, how it recovers — before you weigh how much evidence there is.",
-    "3. Check the question before you answer it. If the question put to you presupposes its answer, hands you the alternative it prefers, or asks on the wrong axis, say so as a loaded-framing challenge, then answer the question that should have been asked as well as the one that was.",
+    "2. Steelman the other side too, with the same effort. If the subject argues for a direction — a default, a posture, a gate, a sequencing, a price, one option over another — write the strongest honest case for the conclusion it argues AGAINST, including any argument for that side the subject never mentions. A subject cannot be broken on an argument it left out unless someone puts that argument on the page, and you are the only party in this exchange who did not write the subject. When the decision is which way something should DEFAULT, sample size is the wrong axis: a default is a choice of which way to fail when nobody has said anything, and every candidate default is such a choice — including the current one, which is not neutral, merely quiet. Weigh the two failure directions — how each wrong direction surfaces, who has standing to notice it, who absorbs it, how it recovers — before you weigh how much evidence there is. Writing the steelman first was an order of work, not a head start.",
+    "3. Check the question and the framing before you answer. If the question put to you presupposes its answer, hands you the alternative it prefers, or asks on the wrong axis, say so as a loaded-framing challenge, then answer the question that should have been asked as well as the one that was. A question can presuppose while sounding neutral: by asking how or when instead of whether, or by carrying the write-up's own reasons inside it. The write-up can lean the same way: a case against that it states only to answer, evidence it grades instead of shows. Discount that framing, and file it as loaded-framing when it hides something that bears on the verdict.",
     "4. Attack what is actually there. Every challenge must quote the words it targets — from the subject, or for loaded-framing, from the question. If you cannot quote it, the subject did not say it and you are arguing with yourself.",
     "5. Make every challenge settleable. Name the premise that has to hold, and name the cheapest concrete thing that would settle it either way.",
-    "6. Judge the whole on weight, not on count. One fatal challenge refutes; ten minor ones do not.",
+    "6. Judge the whole on weight, not on count. One fatal challenge refutes; ten minor ones do not. Then swap sides: had someone who chose the other way written up the same facts, would your verdict be the same? If not, the framing is deciding it — decide again from the facts.",
     "",
-    'Finding nothing is a real result. "holds" with an empty challenge list is a legitimate answer and you should return it when the subject withstands you. A fabricated objection is worse than a missed one: a judge that always finds something teaches its reader to stop reading it. Do not pad, do not hedge, and do not soften a fatal problem into a moderate one to seem balanced.',
+    'Finding nothing is a real result. "holds" with an empty challenge list is a legitimate answer and you should return it when the subject withstands you — when it withstands you, not when it merely sounds sure of itself. Both errors cost the reader: a fabricated objection teaches them to stop reading you, and an unearned "holds" sends them into the decision with its flaw intact and a stamp saying it was checked. Do not pad, do not hedge, do not soften a fatal or serious problem into a milder one to seem balanced or to keep a kinder verdict, and do not round a verdict up to match the write-up\'s confidence.',
     "",
     "You are not being asked to be agreeable, and you are not being asked to be harsh. You are being asked to be right.",
   ].join("\n");
@@ -915,7 +938,7 @@ export function buildJudgeMessages({ subject, question = "", contextBlocks = [],
       question,
       "",
       "Answer this specifically. If the subject cannot settle it, say that is your finding.",
-      "The question is itself part of what you are judging: if it is loaded, say so (discipline step 3) and answer the better question too.",
+      "The question is itself part of what you are judging, and it was written by the same side as the subject: if it is loaded, say so (discipline step 3) and answer the better question too.",
       "",
     );
   }

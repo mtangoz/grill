@@ -87,7 +87,7 @@ Details, including two router settings to check: [docs/PRIVACY.md](docs/PRIVACY.
 ## How Grill gets better
 
 Grill's self-improvement runs under the same privacy controls as a grill: masked text, zero-retention routing, nothing kept. It never sees a real decision:
-- **Weekly:** 12 synthetic decisions with planted flaws check that the judge still catches them.
+- **Weekly:** 15 synthetic decisions with planted flaws check that the judge still catches them.
 - **Monthly:** a report counts the choices people opt to share after a grill: was it worth engaging, and did the verdict match what happened.
 
 Every change must still pass the checks. See [LEARNING.md](LEARNING.md).
@@ -96,10 +96,14 @@ Every change must still pass the checks. See [LEARNING.md](LEARNING.md).
 
 It helped you think it through, so its critique shares your blind spots. A judge from another company doesn't. In Claude, Grill keeps Claude models out of the judging, and tells you if a run ever lands on one anyway. Everywhere else, the table above picks the judge.
 
-The judge must argue your side before it attacks, quote the words it targets, and give every challenge a test that would settle it. A verdict of "solid" with no challenges is a real answer; it's told a made-up objection is worse than none.
+The judge must argue your side before it attacks, quote the words it targets, and give every challenge a test that would settle it. A verdict of "solid" with no challenges is a real answer when it's earned. It's told that a made-up objection and an unearned "solid" both cost you.
+
+A different company isn't enough on its own. The write-up still comes from your side of the decision, and a judge that grades the framing hands your own conclusion back to you. So:
+- **Claude writes the write-up as a clerk, not an advocate.** Every option gets the same depth. The case against goes in at full strength, and nobody answers it. The question names every option and doesn't lean toward one.
+- **The judge is told who wrote it.** It judges the facts, not the framing. It argues the other side with the same effort, then checks whether its verdict would change if the other side had written up the same facts.
 
 **Quality checks:**
-- **Local, always on:** Grill checks every quote a challenge attacks against your write-up, and flags any it can't find.
+- **Local, always on:** Grill checks every quote a challenge attacks against your write-up, and flags any it can't find. It also flags a "solid" given over a serious challenge.
 - **Jev, on by default:** a decision model from TypeSafe, on a zero-retention endpoint, scores whether each falsifier is a real test and whether the verdict fits. Claude tells you before each grill that Jev will see the masked write-up. Skip it for one grill by saying so, or switch it off in Grill's settings. It adds about $0.0002 a grill.
 
 ## If something's off
