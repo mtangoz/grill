@@ -73,3 +73,7 @@ Grill improves under the same privacy controls as a grill: masked text, zero-ret
 - **After a grill,** Claude may offer a link that pre-fills a public GitHub issue with a few choices: the kind of decision, the judge's model family, the verdict, whether it was worth engaging, and where you used Grill.
 - **The form has no text boxes.** Grill's monthly report discards any issue edited to contain anything else.
 - **You open the link and submit it yourself, or you don't.** It's off unless you choose it, every time.
+
+## Contact
+
+Questions about this policy: [support@grillyour.ai](mailto:support@grillyour.ai).

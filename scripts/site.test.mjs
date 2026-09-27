@@ -76,6 +76,16 @@ describe("site/page.html", () => {
     assert.ok(existsSync(join(ROOT, "docs/pro-development.md")));
   });
 
+  it("uses support@grillyour.ai as the contact address, and keeps the Hold link", () => {
+    for (const f of ["README.md", "SECURITY.md", "docs/PRIVACY.md", "docs/pro-development.md", "site/terms.html", "site/page.html", "manifest.json", "server.json", "api/_pro.mjs", ".claude-plugin/plugin.json"]) {
+      const text = readFileSync(join(ROOT, f), "utf8");
+      assert.ok(text.includes("support@grillyour.ai"), `${f} has no support address`);
+      assert.ok(!text.includes("hello@"), `${f} still names another contact address`);
+    }
+    assert.match(page, /Made at <a href="https:\/\/hold\.quest">Hold<\/a>/);
+    assert.match(readFileSync(join(ROOT, "site/terms.html"), "utf8"), /Made at <a href="https:\/\/hold\.quest">Hold<\/a>/);
+  });
+
   it("defines its colours as tokens for light, dark-by-system and dark-by-choice", () => {
     assert.match(page, /:root \{[\s\S]*--paper:/);
     assert.match(page, /@media \(prefers-color-scheme: dark\)[\s\S]*:root:not\(\[data-theme="light"\]\)/);

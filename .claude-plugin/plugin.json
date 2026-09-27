@@ -4,7 +4,8 @@
   "license": "MIT",
   "description": "Grill your decisions: an outside AI judge, from a different company than your chat assistant, argues the strongest case against a decision or forecast and names the tests that would settle it. Includes a weekly decision review. Bring your own OpenRouter key and connections.",
   "author": {
-    "name": "Grill"
+    "name": "Grill",
+    "email": "support@grillyour.ai"
   },
   "homepage": "https://github.com/mtangoz/grill",
   "repository": "https://github.com/mtangoz/grill",

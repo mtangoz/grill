@@ -5,6 +5,11 @@
   "description": "A second opinion on your decisions, from a different AI company.",
   "version": "0.1.0",
   "websiteUrl": "https://grillyour.ai",
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "contactEmail": "support@grillyour.ai"
+    }
+  },
   "repository": {
     "url": "https://github.com/mtangoz/grill",
     "source": "github",

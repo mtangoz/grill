@@ -18,7 +18,7 @@ Set these on the Vercel project. `GRILL_PRO_COUPON` has to be available when the
 | `UPSTASH_REDIS_REST_URL` | Production account store. From the Vercel Marketplace: Upstash Redis. |
 | `UPSTASH_REDIS_REST_TOKEN` | Token for that Redis database. The Marketplace sets it with the URL. |
 | `RESEND_API_KEY` | Sends the sign-in email. Not needed for test mode, which shows the link on the page. |
-| `GRILL_PRO_EMAIL_FROM` | The From address Resend is allowed to use, such as `Grill <hello@hold.quest>`. |
+| `GRILL_PRO_EMAIL_FROM` | The From address Resend is allowed to use, such as `Grill <support@grillyour.ai>`. |
 | `GRILL_PRO_ORIGIN` | Optional. Public origin for links in email, `https://grillyour.ai`. If unset, the link uses the request's own origin. |
 | `GRILL_PRO_TEST_MODE` | Set to `1` to simulate a purchase and show sign-in links on the page. Ignored when `NODE_ENV` or `VERCEL_ENV` is `production`. |
 | `GRILL_PRO_STORE` | Optional. File path for the test-mode account file. Default is a file in the system temp directory. |
