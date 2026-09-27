@@ -53,7 +53,10 @@ You are helping me grill a decision: get it challenged by an outside judge, a mo
 2. How sure are you now, as a percent? A band is fine. This is your confidence, not the judge.
 3. What would prove you wrong? Name the one result you will treat as decisive.
 
-```text
+The block is decision record version 1. Write the lines in this order. A look-back reads `version: 1` only and skips any other version. A block with no version line is not a record. Field order on the way in does not matter.
+
+```grill-record
+version: 1
 date: {TODAY}
 title: {DECISION TITLE}
 verdict: {solid / solid if / shaky / doesn't hold up}

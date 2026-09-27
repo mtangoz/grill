@@ -165,12 +165,16 @@
       <li>How sure are you now, as a percent? A band is fine. This is your confidence, not the judge.</li>
       <li>What would prove you wrong? Name the one result you will treat as decisive.</li>
     </ol>
-    <pre id="sample-record">date: 2026-09-27
+    <pre id="sample-record">```grill-record
+version: 1
+date: 2026-09-27
 title: Take the job in Denver
 verdict: shaky
 falsifier: spend a long weekend there and do the commute at rush hour
 confidence: 80%
-review: 2026-10-11</pre>
+review: 2026-10-11
+```</pre>
+    <p class="cta"><button class="button" type="button" id="copy-sample">Copy the record</button></p>
     <p><span class="k">keep it</span><span>Copy the block. To look back, paste it below and say what happened. This page does not store it.</span></p>
   </div>
 
@@ -196,13 +200,18 @@ review: 2026-10-11</pre>
     <textarea id="decision-title">Take the job in Denver. I'm 80% sure it's right.</textarea>
     <p class="cta"><button class="button" type="button" id="show-record">Show the record</button></p>
     <pre id="made-record" hidden></pre>
+    <pre id="made-block" hidden></pre>
+    <p class="cta"><button class="button" type="button" id="copy-made" hidden>Copy the record</button></p>
     <label for="saved-records">Saved records</label>
-    <textarea id="saved-records">date: 2026-09-27
+    <textarea id="saved-records">```grill-record
+version: 1
+date: 2026-09-27
 title: Take the job in Denver
 verdict: shaky
 falsifier: spend a long weekend there and do the commute at rush hour
 confidence: 80%
-review: 2026-10-11</textarea>
+review: 2026-10-11
+```</textarea>
     <label for="what-happened">What happened</label>
     <textarea id="what-happened" placeholder="Leave this empty to be asked. Or: came_true: no / falsifier_fired: yes / happened: The commute was two hours."></textarea>
     <p class="cta"><button class="button" type="button" id="run-look-back">Look back</button></p>
@@ -224,7 +233,7 @@ review: 2026-10-11</textarea>
   </table>
 
   <h2 id="privacy">Your privacy</h2>
-  <p class="privacy">The free tool has no account and keeps nothing. The reflection at the end of a grill stays in your notes. This page does not store it. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions. An account is only for a key we manage. A starter allowance needs no card. Bring your own key and there is no account. We see your email, the assistant and judge you pick, and your key’s usage (cost and model, never the text). We count sign-ups, keys issued, first grills, allowances used up and upgrade clicks. We don’t keep what you decide unless you turn on saving copies of reports on that account, and you can delete them. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</p>
+  <p class="privacy">The free tool has no account and keeps nothing. The reflection at the end of a grill stays in your notes. This page does not store it. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions. An account is only for a key we manage. A starter allowance needs no card. Bring your own key and there is no account. We see your email, the assistant and judge you pick, and your key’s usage (cost and model, never the text). We count sign-ups, keys issued, first grills, allowances used up and upgrade clicks. We don’t keep what you decide unless you turn on saving copies of reports on that account, and you can delete them. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. The same count can record that a decision record was shown or copied, that a look-back started or finished, and how many records were pasted. It never includes the words of a decision. The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</p>
 
   <section id="pro">
     <h2>Rather not manage a key?</h2>
@@ -294,37 +303,106 @@ review: 2026-10-11</textarea>
     if (s.indexOf("not yet") !== -1) return "not yet";
     return "";
   }
+  function track(name, records) {
+    var count = Number(records);
+    if (!Number.isInteger(count) || count < 0) count = 0;
+    if (typeof window.va !== "function") return;
+    window.va("event", { name: name, data: { records: count } });
+  }
+  function versionedCount(text) {
+    var n = 0;
+    String(text || "").split(/\n/).forEach(function (raw) {
+      if (/^version\s*:\s*1\s*$/i.test(raw.trim())) n += 1;
+    });
+    return n;
+  }
+  function recordFence(fields) {
+    return [
+      "```grill-record",
+      "version: 1",
+      "date: " + fields.date,
+      "title: " + fields.title,
+      "verdict: " + fields.verdict,
+      "falsifier: " + fields.falsifier,
+      "confidence: " + fields.confidence,
+      "review: " + fields.review,
+      "```"
+    ].join("\n");
+  }
+  function parseSiteRecords(text) {
+    var records = [];
+    var current = null;
+    function finish() {
+      if (current && current.version === "1" && current.date && current.title) records.push(current);
+      current = null;
+    }
+    String(text || "").split(/\n/).forEach(function (raw) {
+      var line = raw.trim();
+      if (!line || line === "---") return;
+      if (line.indexOf("```") === 0) { finish(); return; }
+      var m = line.match(/^(version|date|title|verdict|falsifier|confidence|review)\s*:\s*(.*)$/i);
+      if (!m) return;
+      var key = m[1].toLowerCase();
+      if (key === "version") {
+        if (current && current.version) finish();
+        current = current || {};
+        current.version = one(m[2]);
+      } else {
+        current = current || {};
+        current[key] = one(m[2]);
+      }
+    });
+    finish();
+    return records;
+  }
+  function copyBlock(id, count) {
+    var text = document.getElementById(id).textContent;
+    var done = function () { track("reflection_record_copied", count); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done);
+    else done();
+  }
+  window.addEventListener("load", function () {
+    track("reflection_record_shown", versionedCount(document.getElementById("sample-record").textContent));
+  });
+  document.getElementById("copy-sample").addEventListener("click", function () {
+    copyBlock("sample-record", versionedCount(document.getElementById("sample-record").textContent));
+  });
+  document.getElementById("copy-made").addEventListener("click", function () {
+    copyBlock("made-block", versionedCount(document.getElementById("made-block").textContent));
+  });
   document.getElementById("show-record").addEventListener("click", function () {
     var now = new Date();
     var answer = document.getElementById("judge-answer").value;
     var subject = document.getElementById("decision-title").value;
-    var block = [
-      "date: " + iso(now),
-      "title: " + titleOf(subject),
-      "verdict: " + verdictOf(answer),
-      "falsifier: " + falsifierOf(answer),
-      "confidence: " + confidence(subject),
-      "review: " + iso(plus(now, 14))
-    ].join("\n");
-    show("made-record", "Before you decide\n\n" + questions() + "\n\nThese stay in your notes. Grill does not store them and does not send them to the judge.\n\n" + block + "\n\nCopy the block. To look back, paste it below. Nothing is stored.");
+    var block = recordFence({
+      date: iso(now),
+      title: titleOf(subject),
+      verdict: verdictOf(answer),
+      falsifier: falsifierOf(answer),
+      confidence: confidence(subject),
+      review: iso(plus(now, 14))
+    });
+    show("made-record", "Before you decide\n\n" + questions() + "\n\nThese stay in your notes. Grill does not store them and does not send them to the judge.\n\nCopy the block. To look back, paste it below. Nothing is stored.");
+    show("made-block", block);
+    document.getElementById("copy-made").hidden = false;
     document.getElementById("saved-records").value = block;
+    track("reflection_record_shown", 1);
   });
   document.getElementById("run-look-back").addEventListener("click", function () {
-    var records = [];
-    var current = null;
-    document.getElementById("saved-records").value.split(/\n/).forEach(function (raw) {
-      var m = raw.trim().match(/^(date|title|verdict|falsifier|confidence|review)\s*:\s*(.*)$/i);
-      if (!m) return;
-      var key = m[1].toLowerCase();
-      if (key === "date") {
-        if (current && current.title) records.push(current);
-        current = { date: m[2].trim() };
-      } else if (current) current[key] = m[2].trim();
-    });
-    if (current && current.title) records.push(current);
+    var pasted = document.getElementById("saved-records").value;
+    var records = parseSiteRecords(pasted);
+    track("reflection_lookback_started", records.length);
     var happened = document.getElementById("what-happened").value;
     if (!records.length) {
-      show("look-back-out", "No decision record was in that paste. Nothing is stored either way.");
+      var other = [];
+      String(pasted).split(/\n/).forEach(function (raw) {
+        var m = raw.trim().match(/^version\s*:\s*(\S+)/i);
+        if (!m || m[1] === "1" || other.indexOf(m[1]) !== -1) return;
+        other.push(m[1]);
+      });
+      show("look-back-out", other.length
+        ? "That paste uses record version " + other.join(", ") + ". This Grill reads version 1 only. Nothing is stored."
+        : "No decision record was in that paste. Nothing is stored either way.");
       return;
     }
     var came = yn((happened.match(/came_true\s*:\s*(.+)/i) || [])[1] || "");
@@ -359,6 +437,7 @@ review: 2026-10-11</textarea>
     if (!isNaN(pct) && pct >= 70 && came === "no") pattern += "Your confidence ran hot: you were surer than the calls turned out. ";
     else if (!isNaN(pct) && pct <= 40 && came === "yes") pattern += "Your confidence ran cold: the calls came true more often than your confidence said. ";
     pattern += "Fewer than four calls are back. Read the direction, not a score.";
+    if (came === "yes" || came === "no") track("reflection_lookback_completed", records.length);
     show("look-back-out", "Look back\n\nNothing is stored. This reading stays in the browser.\n\n" + line + "\n\nPattern\n\n" + pattern);
   });
 })();

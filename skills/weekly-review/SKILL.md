@@ -124,7 +124,7 @@ End with **three reflection prompts written for this user's actual week**, never
 
 **On the first review of each month,** also run The Count: read `the-count.md` in this skill's folder. The Count needs the log, and it stays silent when fewer than four calls are due. Do not offer it on a single grill or on the paste route.
 
-If the user has no log, they can still look back. A grill ends with a compact decision record. They paste one or more of those blocks and say what happened. Follow the grill skill's look-back. That needs no connector, no account, and nothing stored here. Do not tell them to connect Gmail, Calendar, Drive or Notion just to look back.
+If the user has no log, they can still look back. A grill ends with a version 1 decision record (`grill-record`). They paste one or more of those blocks and say what happened. Follow the grill skill's look-back. Do not invent a second format. That needs no connector, no account, and nothing stored here. Do not tell them to connect Gmail, Calendar, Drive or Notion just to look back.
 
 ## Delivery
 

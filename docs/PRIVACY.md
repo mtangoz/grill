@@ -13,7 +13,7 @@
 | **The app you paste into**, paste route | The approved write-up | That app's settings. Use its private mode, for example a Temporary Chat in ChatGPT |
 | **Jev (TypeSafe)**, quality check, on by default | The masked write-up and the judge's report | A zero-data-retention endpoint, checked weekly; the check is dropped if any other endpoint answers |
 | **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them. With Pro, also your billing details and your key's usage, as below | There is nowhere for anything else to go |
-| **This website** | An anonymous count of page views. No cookie, and nothing that identifies you | Vercel Web Analytics, on the website only. The Grill tool never loads it |
+| **This website** | An anonymous count of page views, plus whether a decision record was shown or copied, whether a look-back started or finished, and how many records were pasted. No cookie, nothing that identifies you, and never the words of a decision | Vercel Web Analytics, on the website only. The Grill tool never loads it |
 | **Stripe**, Grill Pro only | Your email, card and billing address | Stripe's own privacy policy. Grill never sees your card |
 | **Grill's Pro server**, managed keys only | Your email, sign-in, and (when paid plans are on) checkout and subscription status, which assistant and judge you picked, counts of sign-ups, keys issued, first grills, allowances used up and upgrade clicks, and, only if you turn it on, copies of reports you choose to keep | It runs when you sign in, when a key is issued, and when a subscription changes. Write-ups do not pass through it. The counts are numbers only, never decision text. Saving report copies is off until you turn it on, and you can delete them. A developer test mode can run a sample grill on a laptop, and that mode cannot be turned on in production |
 | **Grill's router account**, Grill Pro only | Your key's usage: cost, model and time of each check, never the text | Logging is off and every request is zero-retention, account-wide |
@@ -71,6 +71,8 @@ Claude Desktop may keep local logs of tool calls, including the write-up, on you
 ## Reflection and look back
 
 The questions at the end of a grill, and the decision record, stay in your chat or in notes you keep. Grill does not store them and does not send them to the judge. Looking back means you paste those records again. On the one-click route that paste is read on your machine. On the paste route it stays in the assistant you are already talking to. There is no look-back database. The monthly Count in the weekly review is separate: it needs a decision log you keep, and a single grill does not do it.
+
+On this website, the anonymous visit count can also record that a decision record was shown or copied, that a look-back started or finished, and how many records were pasted. Those events are numbers only. They never include the title, the falsifier, the verdict, or what happened. The Grill tool you install does not send them.
 
 ## Helping Grill improve
 

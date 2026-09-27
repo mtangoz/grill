@@ -16,7 +16,10 @@ These stay in your notes. Grill does not store them and does not send them to th
 
 The falsifier line is the judge's sharpest check. The confidence line is what you said before the verdict, when you said one. Change the confidence if the verdict moved you, and keep the earlier number beside it. A change is a new call.
 
-```text
+The block is decision record version 1. Write the lines in this order, inside a fence tagged `grill-record`. The field list is [docs/DECISION-RECORD.md](../../docs/DECISION-RECORD.md). A look-back reads `version: 1` only and skips any other version. A block with no version line is not a record.
+
+```grill-record
+version: 1
 date: {TODAY}
 title: {DECISION TITLE}
 verdict: {solid / solid if / shaky / doesn't hold up}
@@ -30,6 +33,7 @@ To look back, paste one or more blocks back into this chat and say "look back". 
 
 ## How to fill the block
 
+- **version** is `1`. Do not leave it off, and do not invent a second format.
 - **date** is today. **review** is 14 days later, unless the user names a check-in.
 - **title** is the decision, in a few words.
 - **verdict** is the judge's plain-word verdict. Do not upgrade or soften it.

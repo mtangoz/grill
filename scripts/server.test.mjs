@@ -330,12 +330,15 @@ describe("a managed key and a chosen judge", () => {
 
 describe("grill_look_back", () => {
   const records = [
+    "```grill-record",
+    "version: 1",
     "date: 2026-09-01",
     "title: Move the launch to March",
     "verdict: shaky",
     "falsifier: show the new price to one in ten",
     "confidence: 70%",
     "review: 2026-09-15",
+    "```",
   ].join("\n");
 
   it("asks, then scores, with no key and no judge", async () => {

@@ -96,6 +96,27 @@ describe("site/page.html", () => {
     assert.ok(readFileSync(join(ROOT, "LEARNING.md"), "utf8").includes("Quality checks on one grill"));
     assert.match(page, /Before you decide/);
     assert.match(page, /id="paste-result"/);
+    assert.match(page, /grill-record/);
+    assert.match(page, /version: 1/);
+    assert.ok(readFileSync(join(ROOT, "docs/DECISION-RECORD.md"), "utf8").includes("version: 1"));
+  });
+
+  it("counts reflection use as a number of records and never the words", () => {
+    assert.match(page, /reflection_record_shown/);
+    assert.match(page, /reflection_record_copied/);
+    assert.match(page, /reflection_lookback_started/);
+    assert.match(page, /reflection_lookback_completed/);
+    assert.match(page, /window\.va\("event", \{ name: name, data: \{ records: count \} \}\)/);
+    assert.match(page, /It never includes the words of a decision/);
+    assert.doesNotMatch(page, /window\.va\([^)]*(judge-answer|saved-records|what-happened|decision-title)/);
+    for (const file of ["server/index.mjs", "scripts/reflection.mjs"]) {
+      const source = readFileSync(join(ROOT, file), "utf8");
+      assert.ok(!source.includes("window.va"), `${file} must not send website analytics`);
+      assert.ok(!source.includes("reflection_record_"), `${file} must not name website reflection events`);
+    }
+    const privacy = readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8");
+    assert.match(privacy, /how many records were pasted/);
+    assert.match(privacy, /never include the title, the falsifier, the verdict, or what happened/);
   });
 
   it("defines its colours as tokens for light, dark-by-system and dark-by-choice", () => {

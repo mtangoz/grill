@@ -17,7 +17,7 @@ Your log lives where you choose: a Google Drive folder, a Notion database, or no
 
 ## Look back, with no log
 
-Every grill ends with a decision record you can copy. Paste one or more of those blocks back and say **look back**. Grill asks what happened, scores the calls, and says what the pattern is. That works on the paste route and in the MCP tool `grill_look_back`. Nothing is stored, and no connector is required.
+Every grill ends with a version 1 decision record you can copy. The block is specified in [DECISION-RECORD.md](DECISION-RECORD.md). Paste one or more of those blocks back and say **look back**. Grill asks what happened, scores the calls, and says what the pattern is. That works on the paste route and in the MCP tool `grill_look_back`. Nothing is stored, and no connector is required.
 
 ## The monthly Count
 

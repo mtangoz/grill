@@ -43,6 +43,8 @@ describe("the reflection footer", () => {
     assert.equal(report.slice(0, footerAt).trimEnd(), JUDGE.trimEnd());
     for (const question of BEFORE_YOU_DECIDE_QUESTIONS) assert.ok(report.includes(question));
     assert.match(report, /Grill does not store them and does not send them to the judge/);
+    assert.match(report, /```grill-record/);
+    assert.match(report, /^version: 1$/m);
     assert.match(report, /^date: 2026-09-27$/m);
     assert.match(report, /^title: Move the launch to March$/m);
     assert.match(report, /^verdict: shaky$/m);
@@ -76,7 +78,8 @@ describe("the reflection footer", () => {
 
 describe("look back", () => {
   const records = [
-    "```text",
+    "```grill-record",
+    "version: 1",
     "date: 2026-09-01",
     "title: Move the launch to March",
     "verdict: shaky",
@@ -84,6 +87,7 @@ describe("look back", () => {
     "confidence: 70%",
     "review: 2026-09-15",
     "```",
+    "version: 1",
     "date: 2026-09-02",
     "title: Hire before the pilot",
     "verdict: solid",
@@ -133,12 +137,14 @@ describe("look back", () => {
 
   it("says confidence ran hot when the numbers were surer than the results", () => {
     const hot = [
+      "version: 1",
       "date: 2026-09-01",
       "title: First call",
       "verdict: solid",
       "falsifier: a",
       "confidence: 90%",
       "review: 2026-09-15",
+      "version: 1",
       "date: 2026-09-02",
       "title: Second call",
       "verdict: solid",
@@ -155,7 +161,7 @@ describe("look back", () => {
   });
 
   it("flags a call marked true when the falsifier fired", () => {
-    const one = "date: 2026-09-01\ntitle: Raise prices\nverdict: solid if\nfalsifier: churn stays under 4%\nconfidence: 55%\nreview: 2026-10-01\n";
+    const one = "version: 1\ndate: 2026-09-01\ntitle: Raise prices\nverdict: solid if\nfalsifier: churn stays under 4%\nconfidence: 55%\nreview: 2026-10-01\n";
     const out = lookBack({
       records: one,
       happened: "came_true: yes\nfalsifier_fired: yes\nhappened: Churn hit 6% and revenue rose.",
@@ -168,6 +174,32 @@ describe("look back", () => {
     assert.match(out, /No decision record/);
     assert.match(out, /^date: 2026-09-27$/m);
     assert.equal(parseRecords(out).length, 1);
+  });
+
+  it("reads version 1 in any field order and skips every other version", () => {
+    const shuffled = "review: 2026-10-01\nconfidence: 55%\nverdict: shaky\ntitle: Raise prices\ndate: 2026-09-01\nversion: 1\n";
+    const parsed = parseRecords(shuffled);
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0].title, "Raise prices");
+    assert.equal(parsed[0].version, "1");
+    const mixed = [
+      "version: 2",
+      "date: 2026-09-01",
+      "title: A later record",
+      "verdict: solid",
+      "falsifier: later",
+      "confidence: 10%",
+      "review: 2026-10-01",
+      "date: 2026-09-02",
+      "title: An old unversioned note",
+      "verdict: shaky",
+    ].join("\n");
+    assert.equal(parseRecords(mixed).length, 0);
+    const skipped = lookBack({ records: mixed, happened: "came_true: yes" });
+    assert.match(skipped, /record version 2/);
+    assert.match(skipped, /version 1 only/);
+    assert.doesNotMatch(skipped, /A later record/);
+    assert.doesNotMatch(skipped, /## Pattern/);
   });
 });
 
@@ -190,9 +222,10 @@ describe("every route carries the footer and the look-back, and the judge prompt
       for (const question of BEFORE_YOU_DECIDE_QUESTIONS) {
         assert.ok(text.includes(question), `${name} is missing a reflection question`);
       }
-      for (const key of ["date:", "title:", "verdict:", "falsifier:", "confidence:", "review:"]) {
+      for (const key of ["version: 1", "date:", "title:", "verdict:", "falsifier:", "confidence:", "review:"]) {
         assert.ok(text.includes(key), `${name} is missing the record field ${key}`);
       }
+      assert.match(text, /grill-record/, `${name} is missing the record fence`);
       assert.match(text, /look back/i, `${name} has no look-back`);
       assert.match(text, /does not store|keeps nothing|stores nothing|Nothing is stored/i, `${name} does not say nothing is stored`);
     }

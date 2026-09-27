@@ -8,6 +8,11 @@
  * A decision log is optional. The weekly review's monthly Count needs one. This does not.
  */
 export const REVIEW_DAYS = 14;
+/** Writers emit this. Readers accept only this version, so a later version can be added beside it. */
+export const RECORD_VERSION = "1";
+export const RECORD_FENCE = "grill-record";
+/** Fixed write order. `version` is first so a paste can be told apart from any other notes. */
+export const RECORD_FIELDS = ["version", "date", "title", "verdict", "falsifier", "confidence", "review"];
 export const RECORD_KEYS = ["date", "title", "verdict", "falsifier", "confidence", "review"];
 
 export const BEFORE_YOU_DECIDE_QUESTIONS = [
@@ -139,9 +144,22 @@ export function falsifierFromReport(report) {
   return match ? oneLine(match[1]) : "";
 }
 
+/**
+ * The portable record. Same text a person copies today and a later store would keep unchanged.
+ * Specified in docs/DECISION-RECORD.md.
+ */
 export function recordBlock(fields) {
-  const lines = RECORD_KEYS.map((key) => `${key}: ${oneLine(fields[key] ?? "")}`);
-  return ["```text", ...lines, "```"].join("\n");
+  const values = {
+    version: RECORD_VERSION,
+    date: oneLine(fields.date ?? ""),
+    title: oneLine(fields.title ?? ""),
+    verdict: plainVerdict(fields.verdict),
+    falsifier: oneLine(fields.falsifier ?? ""),
+    confidence: oneLine(fields.confidence ?? ""),
+    review: oneLine(fields.review ?? ""),
+  };
+  const lines = RECORD_FIELDS.map((key) => `${key}: ${values[key]}`);
+  return ["```" + RECORD_FENCE, ...lines, "```"].join("\n");
 }
 
 export function reflectionFooter({
@@ -199,33 +217,60 @@ export function appendReflection(report, { subject = "", now = new Date(), route
 }
 
 function takeRecord(current) {
-  if (!current?.date || !current?.title) return null;
-  const record = {};
+  if (!current) return null;
+  if (oneLine(current.version) !== RECORD_VERSION) return null;
+  if (!oneLine(current.date) || !oneLine(current.title)) return null;
+  const record = { version: RECORD_VERSION };
   for (const key of RECORD_KEYS) record[key] = oneLine(current[key] ?? "");
   return record;
 }
 
-/** Pull compact decision records out of a paste. Fences and blank lines are ignored. */
+const RECORD_LINE = /^(version|date|title|verdict|falsifier|confidence|review)\s*:\s*(.*)$/i;
+
+/**
+ * Read version 1 records out of a paste. Field order does not matter. Any other version is
+ * skipped whole, so it cannot be scored as if it were version 1. A fence, or the next
+ * `version:` line, ends the block in progress.
+ */
 export function parseRecords(text) {
   const records = [];
   let current = null;
+  const finish = () => {
+    const done = takeRecord(current);
+    if (done) records.push(done);
+    current = null;
+  };
   for (const raw of String(text || "").split(/\r?\n/)) {
     const line = raw.trim();
-    if (!line || line.startsWith("```") || line === "---") continue;
-    const match = line.match(/^(date|title|verdict|falsifier|confidence|review)\s*:\s*(.*)$/i);
+    if (!line || line === "---") continue;
+    if (line.startsWith("```")) {
+      finish();
+      continue;
+    }
+    const match = line.match(RECORD_LINE);
     if (!match) continue;
     const key = match[1].toLowerCase();
-    if (key === "date") {
-      const done = takeRecord(current);
-      if (done) records.push(done);
-      current = { date: match[2] };
-    } else if (current) {
+    if (key === "version") {
+      if (current?.version) finish();
+      current = { ...(current ?? {}), version: oneLine(match[2]) };
+    } else {
+      current ??= {};
       current[key] = match[2];
     }
   }
-  const done = takeRecord(current);
-  if (done) records.push(done);
+  finish();
   return records;
+}
+
+/** Versions present in a paste that this reader will not score. */
+export function unsupportedRecordVersions(text) {
+  const found = [];
+  for (const raw of String(text || "").split(/\r?\n/)) {
+    const match = raw.trim().match(/^version\s*:\s*(\S+)/i);
+    if (!match || match[1] === RECORD_VERSION || found.includes(match[1])) continue;
+    found.push(match[1]);
+  }
+  return found;
 }
 
 function yn(raw) {
@@ -407,6 +452,15 @@ export function lookBack({ records = "", happened = "" } = {}) {
   const parsed = parseRecords(records).slice(0, 30);
   const trimmed = parseRecords(records);
   if (!parsed.length) {
+    const other = unsupportedRecordVersions(records);
+    if (other.length) {
+      return [
+        "## Look back",
+        "",
+        `That paste uses record version ${other.join(", ")}. This Grill reads version 1 only. Nothing is stored.`,
+        "",
+      ].join("\n");
+    }
     return [
       "## Look back",
       "",
