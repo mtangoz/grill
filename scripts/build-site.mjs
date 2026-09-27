@@ -11,7 +11,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { couponId } from "../api/_pro.mjs";
+import { billingMode, couponId, starterAllowanceUsd } from "../api/_pro.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "_site");
@@ -61,13 +61,17 @@ const pageBody = page.slice(cut + "</style>".length);
 const doc = (head, title, body) =>
   `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${body}\n${ANALYTICS}\n</body>\n</html>\n`;
 
-// The offer is the same switch as checkout: GRILL_PRO_COUPON set means 50% off is on the page.
-// Unset strips the attribute even if the source had it, so a redeploy is what ends early access.
-let homeBody = pageBody.replace('<main id="top" data-offer>', '<main id="top">');
-if (couponId(process.env)) {
-  if (!homeBody.includes('<main id="top">')) throw new Error('site/page.html must contain <main id="top">');
-  homeBody = homeBody.replace('<main id="top">', '<main id="top" data-offer>');
-}
+// The offer and the paywall are build-time switches, the same variables checkout reads.
+// GRILL_PRO_COUPON set means 50% off is on the page. GRILL_PRO_BILLING=subscription shows
+// the paid plans. Unset strips those attributes even if the source had them.
+let homeBody = pageBody.replace(/<main id="top"(?: data-offer)?>/, '<main id="top">');
+if (!homeBody.includes('<main id="top">')) throw new Error('site/page.html must contain <main id="top">');
+const mainAttrs = ['id="top"'];
+if (couponId(process.env)) mainAttrs.push("data-offer");
+if (billingMode(process.env) === "subscription") mainAttrs.push('data-billing="subscription"');
+homeBody = homeBody.replace('<main id="top">', `<main ${mainAttrs.join(" ")}>`);
+const starterLabel = `$${starterAllowanceUsd(process.env).toFixed(2)}`;
+homeBody = homeBody.replace(/(<span class="starter-amount">)[^<]*/, (match, open) => open + starterLabel);
 
 mkdirSync(OUT, { recursive: true });
 writeFileSync(join(OUT, "index.html"), doc(headFor({ description: DESCRIPTION, url: SITE_URL }), pageHead, homeBody));

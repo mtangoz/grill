@@ -83,7 +83,7 @@ const routes = {
 function staticPage(path) {
   const html = readFileSync(path, "utf8").replace(
     "<body>",
-    `<body><p style="max-width:44rem;margin:0 auto;padding:12px 20px 0;font:600 0.95rem system-ui">Test mode: <a href="/pro">open Grill Pro</a> to simulate a purchase without Stripe.</p>`,
+    `<body><p style="max-width:44rem;margin:0 auto;padding:12px 20px 0;font:600 0.95rem system-ui">Test mode: <a href="/pro">open Grill Pro</a> to get a starter key without a card.</p>`,
   );
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }

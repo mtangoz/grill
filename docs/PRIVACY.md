@@ -1,6 +1,6 @@
 # Privacy: who can see your decision
 
-**Short version:** The free tool has no account, and Grill never sees a decision. Grill Pro is the only part with an account. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. The only server is the small one for Grill Pro accounts and billing, and it never handles a write-up. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
+**Short version:** The free tool has no account, and Grill never sees a decision. An account is only for a key we manage (a free starter allowance, or Pro when paid plans are on). Bring your own key and there is no account. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. The only server is the small one for Grill Pro accounts and billing, and it never handles a write-up. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
 
 ## Who sees what
 
@@ -15,7 +15,7 @@
 | **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them. With Pro, also your billing details and your key's usage, as below | There is nowhere for anything else to go |
 | **This website** | An anonymous count of page views. No cookie, and nothing that identifies you | Vercel Web Analytics, on the website only. The Grill tool never loads it |
 | **Stripe**, Grill Pro only | Your email, card and billing address | Stripe's own privacy policy. Grill never sees your card |
-| **Grill's Pro server**, Grill Pro only | Your email, sign-in, checkout and subscription status, which assistant and judge you picked, and, only if you turn it on, copies of reports you choose to keep | It runs when you sign in, when you buy, and when your subscription changes. Write-ups do not pass through it. Saving report copies is off until you turn it on, and you can delete them. A developer test mode can run a sample grill on a laptop, and that mode cannot be turned on in production |
+| **Grill's Pro server**, managed keys only | Your email, sign-in, and (when paid plans are on) checkout and subscription status, which assistant and judge you picked, counts of sign-ups, keys issued, first grills, allowances used up and upgrade clicks, and, only if you turn it on, copies of reports you choose to keep | It runs when you sign in, when a key is issued, and when a subscription changes. Write-ups do not pass through it. The counts are numbers only, never decision text. Saving report copies is off until you turn it on, and you can delete them. A developer test mode can run a sample grill on a laptop, and that mode cannot be turned on in production |
 | **Grill's router account**, Grill Pro only | Your key's usage: cost, model and time of each check, never the text | Logging is off and every request is zero-retention, account-wide |
 
 ## What Grill enforces in code
@@ -41,15 +41,16 @@ Both are off by default. Keep them off:
 Pro changes who pays for the AI, not where your write-up goes.
 - **Your write-ups still go straight** from your Claude to the router, using your Pro key. They never pass through Grill's server.
 - **Your Pro key comes from Grill's router account.** That account is set to zero-data-retention endpoints only, with logging off, for every key.
-- **What Grill keeps for Pro:**
+- **What Grill keeps for a managed key** (a free starter allowance, or Pro once paid plans are on):
   - your email, so we can send a sign-in link;
   - your subscription, in Stripe once billing is connected;
   - which assistant and judge you picked;
   - a hash of your key, on the account and on your Stripe customer when you have one. Not the key itself;
-  - each key's usage in the router account (cost, model and time of each check, never the text);
+  - each key's usage in the router account (cost, model and time of each check, never the text). A starter key's cap is a dollar allowance of judge spend. It does not refill;
+  - counts only: accounts created, keys issued, first grills, allowances used up, and upgrade clicks. No decision text. A weekly look at activation (signed up, then a first grill) and depletion (the allowance ran out) reads these counts. They live on the account store. The account pages do not load website analytics, because those pages can show a raw key;
   - copies of reports, only if you turn saving on at your account's Reports page. Off until you do. You can delete any copy or all of them, and turn saving off. The text stays on the account store, never on your Stripe customer. Grill does not email a verdict or a weekly note today, so nothing is saved until a report exists and saving is on. In test mode, a sample grill is saved the same way.
-- **The key is shown when it is created or rotated**, then dropped. If you lose it, sign in and rotate it. We switch the old one off.
-- **The free tool is unchanged.** No account, no sign-in, no tracking in the tool you install.
+- **The key is shown when it is created or rotated**, then dropped. If you lose it, sign in and rotate it. We switch the old one off. Rotating a starter key keeps whatever allowance is left. It does not reset the cap.
+- **Bring your own key and there is no account.** The free tool is unchanged: no sign-in, no tracking in the tool you install, and checks are unlimited on your own credit.
 
 ## Your key
 
