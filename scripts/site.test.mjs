@@ -65,6 +65,15 @@ describe("site/page.html", () => {
     ]);
   });
 
+  it("says Desktop and Claude Code enforce a different company, and the paste routes warn", () => {
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    for (const text of [page, readme]) {
+      assert.match(text, /Claude Desktop and Claude Code enforce that in code/);
+      assert.match(text, /copy-and-paste routes check it and warn you/);
+    }
+    assert.match(readme, /## Why not just ask your own assistant\?/);
+  });
+
   it("says the website counts visits anonymously, and the tool does not", () => {
     const sentence = "This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you.";
     assert.ok(page.includes(sentence));

@@ -151,6 +151,25 @@ describe("the any-assistant prompt", () => {
     const judge = paste.slice(rules[0] + 1, rules.at(-1)).join("\n").trim();
     assert.ok(judge.length > 1000, "could not find the judge prompt between paste-prompt.md's rules");
     assert.ok(prompt.includes(judge), "prompts/grill.md no longer contains paste-prompt.md's judge prompt");
+    assert.match(judge, /^Judge: <model name> by <company>$/m);
+    assert.match(judge, /Begin your answer with one line, and nothing before it/);
+    assert.match(judge, /^\*\*Verdict:\*\* solid \/ solid if \/ shaky \/ doesn't hold up, and one sentence why\.$/m);
+  });
+
+  it("the home assistant notes its maker and warns when the judge is not a different company", () => {
+    const skill = readFileSync(join(ROOT, "skills/grill/SKILL.md"), "utf8");
+    for (const [name, text] of [
+      ["prompts/grill.md", prompt],
+      ["skills/grill/SKILL.md", skill],
+    ]) {
+      assert.match(text, /your own maker/i, `${name} does not note the assistant's maker`);
+      assert.match(text, /Judge: <model name> by <company>/, `${name} does not read the Judge line`);
+      assert.match(text, /NOT independent/, `${name} missing the same-company warning`);
+      assert.match(text, /this verdict is unverified/, `${name} missing the missing-line warning`);
+      assert.match(text, /Different company from your assistant ✓/, `${name} missing the different-company line`);
+      assert.match(text, /only Gemini counts as a different company/, `${name} missing the Copilot rule`);
+      assert.match(text, /ChatGPT, Gemini or Grok/, `${name} does not name assistants to paste into`);
+    }
   });
 
   it("names the assistants people start from, and pairs Copilot only with a company it can't run", () => {
