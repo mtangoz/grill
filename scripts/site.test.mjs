@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -63,6 +63,17 @@ describe("site/page.html", () => {
     assert.ok(page.includes(sentence));
     assert.ok(readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8").includes(sentence));
     assert.ok(readFileSync(join(ROOT, "README.md"), "utf8").includes(sentence));
+  });
+
+  it("keeps the README on the free routes, with a privacy policy and the parked Pro setup linked", () => {
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    assert.match(readme, /^## Privacy Policy$/m);
+    assert.match(readme, /support@grillyour\.ai/);
+    assert.match(readme, /https:\/\/grillyour\.ai\/#privacy/);
+    assert.match(readme, /https:\/\/grillyour\.ai\/terms\//);
+    assert.match(readme, /docs\/pro-development\.md/);
+    assert.doesNotMatch(readme, /\$9 a month|\$90 a year/);
+    assert.ok(existsSync(join(ROOT, "docs/pro-development.md")));
   });
 
   it("defines its colours as tokens for light, dark-by-system and dark-by-choice", () => {

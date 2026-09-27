@@ -49,8 +49,9 @@
     "judge"
   ],
   "privacy_policies": [
-    "https://openrouter.ai/privacy",
-    "https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md"
+    "https://github.com/mtangoz/grill/blob/main/README.md#privacy-policy",
+    "https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md",
+    "https://openrouter.ai/privacy"
   ],
   "compatibility": {
     "platforms": [

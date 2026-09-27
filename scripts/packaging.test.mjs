@@ -84,6 +84,38 @@ describe("the manifests agree", () => {
   it("the extension declares exactly the tools the server serves, and a privacy policy", () => {
     assert.deepEqual(manifest.tools.map((t) => t.name), ["grill", "grill_result"]);
     assert.ok(manifest.privacy_policies.some((u) => u.includes("openrouter.ai")));
+    assert.ok(manifest.privacy_policies.some((u) => u.includes("README.md#privacy-policy")));
+    assert.ok(manifest.privacy_policies.some((u) => u.includes("docs/PRIVACY.md")));
+  });
+});
+
+describe("the registry and Glama listing", () => {
+  const server = json("server.json");
+  const glama = json("glama.json");
+
+  it("server.json points at the published v0.1.0 mcpb and its release checksum", () => {
+    assert.equal(server.$schema, "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json");
+    assert.equal(server.name, "io.github.mtangoz/grill");
+    assert.equal(server.version, "0.1.0");
+    assert.ok(server.description.length >= 1 && server.description.length <= 100);
+    assert.equal(server.repository.url, "https://github.com/mtangoz/grill");
+    assert.equal(server.repository.source, "github");
+    const pkg = server.packages[0];
+    assert.equal(pkg.registryType, "mcpb");
+    assert.equal(pkg.identifier, "https://github.com/mtangoz/grill/releases/download/v0.1.0/grill.mcpb");
+    assert.match(pkg.identifier, /mcp/i);
+    assert.equal(pkg.fileSha256, "de55a661493c44a2f476595ec5bc2e25aba78405f7e6f69b1b55e6665fa97b57");
+    assert.match(pkg.fileSha256, /^[a-f0-9]{64}$/);
+    assert.equal(pkg.transport.type, "stdio");
+    assert.equal(pkg.registryBaseUrl, undefined);
+  });
+
+  it("glama.json names the maintainer who can claim the listing, and the image starts the server", () => {
+    assert.equal(glama.$schema, "https://glama.ai/mcp/schemas/server.json");
+    assert.deepEqual(glama.maintainers, ["mtangoz"]);
+    const docker = readFileSync(join(ROOT, "Dockerfile"), "utf8");
+    assert.match(docker, /ENTRYPOINT \["node", "server\/index\.mjs"\]/);
+    assert.match(docker, /^USER node$/m);
   });
 });
 

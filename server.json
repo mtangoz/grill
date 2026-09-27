@@ -1,0 +1,33 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.mtangoz/grill",
+  "title": "Grill",
+  "description": "A second opinion on your decisions, from a different AI company.",
+  "version": "0.1.0",
+  "websiteUrl": "https://grillyour.ai",
+  "repository": {
+    "url": "https://github.com/mtangoz/grill",
+    "source": "github",
+    "id": "1389543389"
+  },
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/mtangoz/grill/releases/download/v0.1.0/grill.mcpb",
+      "version": "0.1.0",
+      "fileSha256": "de55a661493c44a2f476595ec5bc2e25aba78405f7e6f69b1b55e6665fa97b57",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "GRILL_API_KEY",
+          "description": "OpenRouter key. The server lists its tools without one. A grill needs it.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

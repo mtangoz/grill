@@ -561,7 +561,7 @@ function missingSetupPage(env) {
   return page(
     "Pro accounts aren't configured · Grill",
     `<h1>Grill Pro accounts aren't configured yet.</h1>
-<p>The free tool is unchanged, and it still has no account. To turn Pro accounts on, set <code>GRILL_SESSION_SECRET</code> and a place to keep the account. The README lists each variable.</p>
+<p>The free tool is unchanged, and it still has no account. To turn Pro accounts on, set <code>GRILL_SESSION_SECRET</code> and a place to keep the account. <a href="https://github.com/mtangoz/grill/blob/main/docs/pro-development.md">The Pro development notes</a> list each variable.</p>
 <p class="small">${esc(setupHint(env))}</p>`,
   );
 }
