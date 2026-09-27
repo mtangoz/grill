@@ -75,12 +75,11 @@ describe("who the judge is allowed to be", () => {
     return judgePlan({ author, body, config });
   }
 
-  it("excludes Anthropic for Claude Code and pins a Google judge", () => {
+  it("excludes Anthropic for Claude Code and asks the Auto Router, not a pinned model", () => {
     const claude = plan("claude[bot]", "Written-by-model: openai/gpt-5.6-sol");
     assert.equal(claude.ok, true);
     assert.equal(claude.authorVendor, "anthropic");
-    assert.equal(claude.judgeModel, "google/gemini-2.5-pro");
-    assert.equal(claude.judgeVendor, "google");
+    assert.equal(claude.judgeModel, "openrouter/auto");
     assert.deepEqual(claude.authorArgs, ["--author", "anthropic"]);
     assert.ok(claude.excludedVendors.includes("anthropic"));
     assert.ok(claude.excludedVendors.includes("x-ai"));
@@ -88,27 +87,23 @@ describe("who the judge is allowed to be", () => {
     assert.equal(plan("Claude[bot]").authorVendor, "anthropic");
   });
 
-  it("excludes OpenAI for Codex and pins a Google judge", () => {
+  it("excludes OpenAI for Codex and asks the Auto Router", () => {
     const codex = plan("chatgpt-codex-connector[bot]");
     assert.equal(codex.authorVendor, "openai");
-    assert.equal(codex.judgeModel, "google/gemini-2.5-pro");
+    assert.equal(codex.judgeModel, "openrouter/auto");
     assert.deepEqual(codex.authorArgs, ["--author", "openai"]);
     assert.ok(codex.excludedVendors.includes("openai"));
     assert.ok(codex.excludedVendors.includes("x-ai"));
     assert.equal(codex.excludedVendors.includes("google"), false);
   });
 
-  it("pins Gemini for Cursor, mtangoz, and an unknown login when the body names no model", () => {
+  it("excludes only x-ai when the author company is unknown, and still uses the Auto Router", () => {
     for (const author of ["mtangoz", "cursor[bot]", "cursoragent", "Cursor[bot]", "octocat", ""]) {
       const row = plan(author, "No model line here.");
       assert.equal(row.authorVendor, "unknown", author);
-      assert.equal(row.judgeModel, "google/gemini-2.5-pro", author);
-      assert.equal(row.judgeVendor, "google", author);
-      assert.deepEqual(row.authorArgs, [], author);
-      assert.equal(row.requireJudgeVendor, "google", author);
-      assert.ok(row.excludedVendors.includes("x-ai"), author);
-      assert.equal(row.excludedVendors.includes("anthropic"), false, author);
-      assert.equal(row.excludedVendors.includes("openai"), false, author);
+      assert.equal(row.judgeModel, "openrouter/auto", author);
+      assert.deepEqual(row.authorArgs, ["--author", "x-ai"], author);
+      assert.deepEqual(row.excludedVendors, ["x-ai"], author);
     }
   });
 
@@ -116,25 +111,28 @@ describe("who the judge is allowed to be", () => {
     const anthropic = plan("mtangoz", "Summary\n\nWritten-by-model: anthropic/claude-opus-4\n");
     assert.equal(anthropic.authorVendor, "anthropic");
     assert.equal(anthropic.declared, "anthropic/claude-opus-4");
-    assert.equal(anthropic.judgeVendor, "google");
+    assert.equal(anthropic.judgeModel, "openrouter/auto");
+    assert.deepEqual(anthropic.authorArgs, ["--author", "anthropic"]);
     assert.ok(anthropic.excludedVendors.includes("anthropic"));
     assert.ok(anthropic.excludedVendors.includes("x-ai"));
 
     const openai = plan("cursoragent", "Written-by-model: OpenAI/gpt-5.6-sol");
     assert.equal(openai.authorVendor, "openai");
-    assert.equal(openai.judgeModel, "google/gemini-2.5-pro");
+    assert.equal(openai.judgeModel, "openrouter/auto");
+    assert.deepEqual(openai.authorArgs, ["--author", "openai"]);
     assert.ok(openai.excludedVendors.includes("openai"));
 
     const google = plan("cursor[bot]", "> Written-by-model: google/gemini-2.5-pro");
     assert.equal(google.authorVendor, "google");
-    assert.equal(google.judgeModel, "openai/gpt-5.6-sol");
-    assert.equal(google.judgeVendor, "openai");
+    assert.equal(google.judgeModel, "openrouter/auto");
+    assert.deepEqual(google.authorArgs, ["--author", "google"]);
     assert.ok(google.excludedVendors.includes("google"));
     assert.ok(google.excludedVendors.includes("x-ai"));
 
     const grok = plan("mtangoz", "Written-by-model: x-ai/grok-4");
     assert.equal(grok.authorVendor, "x-ai");
-    assert.equal(grok.judgeModel, "google/gemini-2.5-pro");
+    assert.equal(grok.judgeModel, "openrouter/auto");
+    assert.deepEqual(grok.authorArgs, ["--author", "x-ai"]);
     assert.ok(grok.excludedVendors.includes("x-ai"));
 
     assert.equal(writtenByModel("see Written-by-model: openai/gpt-5.6-sol inline"), null);
@@ -149,7 +147,6 @@ describe("the post-run company check", () => {
       servedModel: "google/gemini-2.5-pro",
       authorVendor: claude.authorVendor,
       excludedVendors: claude.excludedVendors,
-      requireJudgeVendor: claude.requireJudgeVendor,
     });
     assert.equal(ok.decorrelated, true);
     assert.equal(ok.line, "Author model vendor: anthropic, judge: google (different company ✓)");
@@ -172,38 +169,44 @@ describe("the post-run company check", () => {
     assert.deepEqual(failed.labels, { add: ["needs-review"], remove: ["grill-solid"] });
   });
 
-  it("rejects x-ai for every mapping, and requires Gemini when the author vendor is unknown", () => {
+  it("rejects x-ai for every mapping, and shows whatever other company answered an unknown author", () => {
     const unknown = judgePlan({ author: "mtangoz", body: "", config });
     const gemini = companyCheck({
       servedModel: "google/gemini-2.5-pro",
       authorVendor: unknown.authorVendor,
       excludedVendors: unknown.excludedVendors,
-      requireJudgeVendor: unknown.requireJudgeVendor,
     });
+    assert.equal(gemini.decorrelated, true);
     assert.equal(gemini.line, "Author model vendor: unknown, judge: google (different company ✓)");
     const openai = companyCheck({
       servedModel: "openai/gpt-5.6-sol",
       authorVendor: unknown.authorVendor,
       excludedVendors: unknown.excludedVendors,
-      requireJudgeVendor: unknown.requireJudgeVendor,
     });
-    assert.equal(openai.decorrelated, false);
-    assert.equal(reviewOutcome({ check: openai, badge: "shaky" }).failJob, true);
+    assert.equal(openai.decorrelated, true);
+    assert.equal(openai.line, "Author model vendor: unknown, judge: openai (different company ✓)");
+    assert.equal(reviewOutcome({ check: openai, badge: "shaky" }).failJob, false);
+    const anthropic = companyCheck({
+      servedModel: "anthropic/claude-opus-4",
+      authorVendor: unknown.authorVendor,
+      excludedVendors: unknown.excludedVendors,
+    });
+    assert.equal(anthropic.decorrelated, true);
+    assert.match(anthropic.line, /judge: anthropic \(different company ✓\)/);
     const grok = companyCheck({
       servedModel: "x-ai/grok-4",
       authorVendor: unknown.authorVendor,
       excludedVendors: unknown.excludedVendors,
-      requireJudgeVendor: unknown.requireJudgeVendor,
     });
     assert.equal(grok.decorrelated, false);
     assert.match(grok.line, /judge: x-ai \(NOT decorrelated\)/);
+    assert.equal(reviewOutcome({ check: grok, badge: "solid" }).failJob, true);
 
     const codex = judgePlan({ author: "chatgpt-codex-connector[bot]", body: "", config });
     const codexGrok = companyCheck({
       servedModel: "x-ai/grok-4",
       authorVendor: codex.authorVendor,
       excludedVendors: codex.excludedVendors,
-      requireJudgeVendor: codex.requireJudgeVendor,
     });
     assert.equal(codexGrok.decorrelated, false);
     assert.equal(reviewOutcome({ check: codexGrok, badge: "solid" }).labels.add[0], "needs-review");
@@ -213,7 +216,6 @@ describe("the post-run company check", () => {
       servedModel: "openai/gpt-5.6-sol",
       authorVendor: writtenGoogle.authorVendor,
       excludedVendors: writtenGoogle.excludedVendors,
-      requireJudgeVendor: writtenGoogle.requireJudgeVendor,
     });
     assert.equal(otherCompany.line, "Author model vendor: google, judge: openai (different company ✓)");
     const stillGoogle = companyCheck({
@@ -395,6 +397,12 @@ describe("the grill workflow contract", () => {
     assert.match(runner, /companyCheck/);
     assert.match(runner, /reviewOutcome/);
     assert.match(runner, /env\.JUDGE_MODEL = plan\.judgeModel/);
+    assert.doesNotMatch(runner, /gemini-2\.5-pro|gpt-5\.6-sol/);
+    const core = readFileSync(join(ROOT, "scripts/grillPrCore.mjs"), "utf8");
+    assert.match(core, /openrouter\/auto/);
+    assert.doesNotMatch(core, /gemini-2\.5-pro|gpt-5\.6-sol|defaultJudgeModel|alternateJudgeModel/);
+    assert.doesNotMatch(yaml, /gemini-2\.5-pro|gpt-5\.6-sol/);
+    assert.match(yaml, /openrouter\/auto/);
     assert.match(runner, /OPENROUTER_API_KEY = process\.env\.GRILL_CI_OPENROUTER_KEY/);
     assert.match(runner, /scripts\/judge\.mjs/);
     assert.doesNotMatch(runner, /--check/);

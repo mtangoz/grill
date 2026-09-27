@@ -347,7 +347,6 @@ function main() {
     servedModel: judged.servedModel,
     authorVendor: plan.authorVendor,
     excludedVendors: plan.excludedVendors,
-    requireJudgeVendor: plan.requireJudgeVendor,
   });
   const outcome = reviewOutcome({
     check,

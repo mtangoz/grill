@@ -92,13 +92,13 @@ The judge runs with `OPENROUTER_API_KEY` set from the repository secret `GRILL_C
 
 ### Who is excluded from judging
 
-The judge has to be a different company from the model that wrote the pull request. `x-ai` is excluded on every run. The map is `authorFamilies` in `.github/automerge.json`.
+Grill CI does not pin a judge model. It asks OpenRouter's Auto Router, `openrouter/auto`, and tells that router which company to keep out with `--author`, the same switch `scripts/judge.mjs` uses. `x-ai` is excluded on every run. The login map is `authorFamilies` in `.github/automerge.json`.
 
-| Author | Writing model | Judge |
+| Author | Writing model | Excluded |
 | --- | --- | --- |
-| `claude[bot]` | Anthropic | `google/gemini-2.5-pro`. Anthropic is excluded. |
-| `chatgpt-codex-connector[bot]` | OpenAI | `google/gemini-2.5-pro`. OpenAI is excluded. |
-| `mtangoz`, `cursor[bot]`, `cursoragent`, or any other login | Not known from the login | `google/gemini-2.5-pro`, which is neither Anthropic nor OpenAI |
+| `claude[bot]` | Anthropic | Anthropic, passed as `--author`. `x-ai` is still excluded after the run. |
+| `chatgpt-codex-connector[bot]` | OpenAI | OpenAI, passed as `--author`. `x-ai` is still excluded after the run. |
+| `mtangoz`, `cursor[bot]`, `cursoragent`, or any other login, with no `Written-by-model` line | Not known | `x-ai` only. `--author` is `x-ai`, so Anthropic is not excluded by default. |
 
 A login that does not name a vendor can say which model wrote the pull request with one line in the body:
 
@@ -106,9 +106,11 @@ A login that does not name a vendor can say which model wrote the pull request w
 Written-by-model: anthropic/claude-opus-4
 ```
 
-That vendor is then excluded. If the line names Google, the judge is `openai/gpt-5.6-sol` instead, because the default judge is Google. A `Written-by-model` line does not override `claude[bot]` or `chatgpt-codex-connector[bot]`.
+That vendor is then excluded, the same way a known login is. A `Written-by-model` line does not override `claude[bot]` or `chatgpt-codex-connector[bot]`.
 
-After the run, Grill CI reads the model that actually answered. The comment shows `Author model vendor: X, judge: Y (different company ✓)`. If that vendor is one of the excluded companies, the comment is marked NOT decorrelated, the pull request gets `needs-review`, and the job fails. A failed check is not treated as already grilled, so a later run tries again.
+`--author` names one family, and it replaces judge.mjs's default Anthropic exclusion. When the author company is known, that company is the family passed to `--author`, and `x-ai` is still on the post-run exclusion list. When the author company is unknown, `--author` is `x-ai`, so the router does not exclude Anthropic by default. The comment still says the author vendor is unknown.
+
+After the run, Grill CI reads the model that actually answered. The comment shows `Author model vendor: X, judge: Y (different company ✓)`, including when the author is unknown. If that vendor is one of the excluded companies, the comment is marked NOT decorrelated, the pull request gets `needs-review`, and the job fails. A failed check is not treated as already grilled, so a later run tries again.
 
 ### What Grill CI writes
 

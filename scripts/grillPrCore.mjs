@@ -33,7 +33,7 @@ export function alreadyGrilled(comments, sha, botLogin = "github-actions[bot]") 
   return false;
 }
 
-/** Vendor of an OpenRouter slug (`google/gemini-2.5-pro` → `google`), or "". */
+/** Vendor of an OpenRouter slug (`vendor/model` → `vendor`), or "". */
 export function vendorOfModel(slug) {
   const text = String(slug ?? "").trim().toLowerCase();
   const slash = text.indexOf("/");
@@ -57,11 +57,19 @@ export function writtenByModel(body) {
   return null;
 }
 
+/** The only model Grill CI requests. OpenRouter picks the judge per run. */
+export const GRILL_CI_JUDGE_MODEL = "openrouter/auto";
+
 /**
- * Who wrote the pull request, which companies the judge must not be, and which
- * model to request. A known login vendor wins over the body. An unknown login
- * uses a Written-by-model line when the body has one, and otherwise pins the
- * default Google judge. x-ai is always excluded.
+ * Who wrote the pull request, and which companies the Auto Router must not use.
+ * A known login vendor wins over the body. An unknown login uses a
+ * Written-by-model line when the body has one. x-ai is always excluded.
+ *
+ * The router exclusion is `--author`, the same switch judge.mjs already uses:
+ * it replaces the default Anthropic exclusion with one family. When the author
+ * company is known, that family is the one excluded. When it is not, `--author
+ * x-ai` keeps the router from falling back to excluding Anthropic. The comment
+ * still says the author vendor is unknown, and any other served company is fine.
  */
 export function judgePlan({ author = "", body = "", config }) {
   const loginVendor = authorFamily(author, config);
@@ -72,28 +80,14 @@ export function judgePlan({ author = "", body = "", config }) {
   );
   excluded.add("x-ai");
   if (authorVendor !== "unknown") excluded.add(authorVendor);
-  const judgeModel = [config.defaultJudgeModel, config.alternateJudgeModel].find((slug) => {
-    const vendor = vendorOfModel(slug);
-    return vendor && !excluded.has(vendor);
-  });
-  if (!judgeModel) {
-    return {
-      ok: false,
-      authorVendor,
-      excludedVendors: [...excluded].sort(),
-      reason: "no judge model is from a different company",
-    };
-  }
-  const judgeVendor = vendorOfModel(judgeModel);
+  const routerAuthor = authorVendor === "unknown" ? "x-ai" : authorVendor;
   return {
     ok: true,
     authorVendor,
     declared: declared?.slug ?? "",
-    judgeModel,
-    judgeVendor,
+    judgeModel: GRILL_CI_JUDGE_MODEL,
     excludedVendors: [...excluded].sort(),
-    authorArgs: authorVendor === "unknown" ? [] : ["--author", authorVendor],
-    requireJudgeVendor: authorVendor === "unknown" ? judgeVendor : "",
+    authorArgs: ["--author", routerAuthor],
   };
 }
 
@@ -104,15 +98,14 @@ export function actionableDegraded(degraded) {
 
 /**
  * Did a different company actually answer? `verifiable` is false when the
- * response named no model. An unknown author must be answered by the pinned
- * judge's company, because any other company might be the one that wrote it.
+ * response named no model. Any served company that was not excluded counts,
+ * including when the author is unknown: the line still names that company.
  */
-export function companyCheck({ servedModel, authorVendor = "unknown", excludedVendors = [], requireJudgeVendor = "" } = {}) {
+export function companyCheck({ servedModel, authorVendor = "unknown", excludedVendors = [] } = {}) {
   const judgeVendor = vendorOfModel(servedModel);
   const excluded = new Set([...excludedVendors, "x-ai"].map((vendor) => String(vendor).trim().toLowerCase()).filter(Boolean));
-  const required = String(requireJudgeVendor ?? "").trim().toLowerCase();
   const verifiable = judgeVendor !== "";
-  const decorrelated = verifiable && !excluded.has(judgeVendor) && (!required || judgeVendor === required);
+  const decorrelated = verifiable && !excluded.has(judgeVendor);
   const shownJudge = judgeVendor || "unknown";
   const mark = decorrelated ? "different company ✓" : NOT_DECORRELATED;
   return {
