@@ -1,0 +1,11 @@
+{
+  "id": "one-sided-writeup-database-cutover",
+  "kind": "flawed",
+  "subject": "Harborline, a 30-person invoicing startup with 1,900 business customers, is deciding how to move from its self-hosted database to a managed database service in March: one weekend cutover for every customer, or a staged migration in batches over six weeks. The team recommends the single weekend, and the case for it is strong. A staged migration means running two systems side by side for six weeks, which the two platform engineers say would take most of their quarter. The managed service's migration tool copied a test set of 40 customers in under three hours with no errors. And one clean cutover is simpler to explain to customers than a rolling one. Prediction, offered at 85% confidence: the cutover finishes inside the weekend with no customer-visible downtime after 9am Monday. The strongest case against: the 40 test customers were among the smallest accounts, and the largest customers' invoice histories are roughly fifty times bigger than anything in the test. But this concern is overstated, because the migration tool clearly scales linearly with data size, so even the largest accounts will copy in a few hours each, and with parallel workers the full run fits comfortably inside the weekend.",
+  "question": "Should Harborline migrate all 1,900 customers to the managed database in a single weekend?",
+  "expect": {
+    "must_target": ["clearly scales linearly", "this concern is overstated", "fits comfortably inside the weekend"],
+    "verdict_not": ["holds"]
+  },
+  "why": "The write-up answers its own case against with an unsupported claim ('clearly scales linearly') drawn from a test of the 40 smallest accounts, so the single-weekend timing rests on an assumption its evidence cannot carry."
+}

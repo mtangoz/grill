@@ -1,6 +1,6 @@
 name: eval
 
-# The judge's self-improvement measurement loop: run the 12 synthetic cases under evals/cases/
+# The judge's self-improvement measurement loop: run the synthetic cases under evals/cases/
 # through the real judge CLI and score the result against evals/thresholds.json. Never touches
 # a real user's decision — see evals/README.md.
 on:

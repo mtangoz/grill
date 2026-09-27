@@ -118,7 +118,7 @@ describe("buildCheckRequest — the exact request shape", () => {
   it("always asks verdict_fits, on weight rather than count", () => {
     const q = buildCheckRequest({ subject: "s", result: result(1) }).questions.verdict_fits;
     assert.equal(q.type, "noul");
-    assert.match(q.instructions, /one fatal challenge refutes and many minor ones do not/);
+    assert.match(q.instructions, /one fatal challenge refutes, one serious challenge rules out a plain holds, and many minor ones do not/);
     assert.deepEqual(Object.keys(q.criteria).sort(), ["false", "true"]);
   });
 

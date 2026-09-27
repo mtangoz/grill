@@ -10,7 +10,7 @@
 // decision — that is enforced by what calls it (eval.mjs only ever reads evals/cases/*.json),
 // not by anything in here, but it is why renderSummary is careful never to echo case content
 // beyond a case's id: a report meant to be posted to a public GitHub issue must stay safe to
-// post even if it were one day pointed at something less synthetic than these 12 cases.
+// post even if it were one day pointed at something less synthetic than these cases.
 //
 // Zero dependencies. Node >= 20. ESM throughout.
 
@@ -223,7 +223,7 @@ function tally(list, pick) {
  *
  * `informational` does the same for the quality metrics (grounding, and the Jev scores), with
  * the counts behind each rate. They are NEVER gated: they are not in CHECKS, so no threshold,
- * even one set by mistake in thresholds.json, can turn them into a regression. Twelve cases
+ * even one set by mistake in thresholds.json, can turn them into a regression. Fifteen cases
  * scored by a second stochastic model is a signal to read, not a bar to hold a release to.
  */
 export function summarize(scores, thresholds) {
