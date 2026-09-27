@@ -10,6 +10,7 @@ import {
   ACCOUNT_SCOPED_STATUSES,
   AUTHOR_FAMILY_PATTERNS,
   AUTHOR_MODEL_FAMILY,
+  NO_AUTHOR_FAMILY,
   AUTO_ROUTER_PLUGIN_IDS,
   autoRouterPlugin,
   budgetText,
@@ -717,6 +718,27 @@ describe("the Auto Router request shape", () => {
 
   it("declaring the default family explicitly keeps the default exclusion set", () => {
     assert.deepEqual(autoRouterPlugin("openrouter/auto", "anthropic").excluded_models, ["anthropic/*", "*/claude-*"]);
+  });
+
+  it("excludes nothing when the caller declares no author family, and does not fall back to Anthropic", () => {
+    assert.equal(NO_AUTHOR_FAMILY, "none");
+    assert.deepEqual(autoRouterPlugin("openrouter/auto", "none").excluded_models, []);
+    assert.deepEqual(autoRouterPlugin("openrouter/auto", " NONE ").excluded_models, []);
+    for (const slug of ["anthropic/claude-opus-5", "openai/gpt-5.6-sol", "x-ai/grok-4", "google/gemini-3-pro"]) {
+      const d = decorrelationOf(slug, "none");
+      assert.equal(d.decorrelated, true, slug);
+      assert.equal(d.reason, "decorrelated");
+    }
+    const md = renderJudgeReport({
+      verdict: "holds",
+      challenges: [],
+      servedModel: "anthropic/claude-opus-5",
+      declaredAuthor: "none",
+      decorrelated: true,
+    });
+    assert.match(md, /no author family declared, so independence is not verified/);
+    assert.equal(md.includes("decorrelated from anthropic"), false);
+    assert.equal(md.includes("decorrelated from none"), false);
   });
 });
 

@@ -30,9 +30,11 @@
  *   --author <family>  the model family that WROTE THE SUBJECT, e.g. `openai`. REPLACES
  *                      the default judge exclusion (Anthropic) rather than adding to it,
  *                      so the judge is never from the subject's own family. Omitted = the
- *                      default: Anthropic models are excluded from serving as judge. Use
- *                      this when the subject was drafted by some other assistant — it is
- *                      "who wrote this subject", not "which assistant am I".
+ *                      default: Anthropic models are excluded from serving as judge.
+ *                      `--author none` means there is no author family: nothing is excluded,
+ *                      and that does not fall back to excluding Anthropic. Use a family when
+ *                      the subject was drafted by some other assistant — it is "who wrote
+ *                      this subject", not "which assistant am I".
  *   --out <path>       also write the markdown report to a file.
  *   --max <n>          ceiling on challenges shown (default 10).
  *   --dry-run          print what would be sent and exit. No key needed, no network call.
@@ -103,6 +105,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import {
   autoRouterPlugin,
   budgetText,
+  NO_AUTHOR_FAMILY,
   redactSensitive,
   CONTEXT_BUDGET,
   DEFAULT_CHAIN,
@@ -445,18 +448,22 @@ if (opts.dryRun) {
   console.log(`[judge] context: ${contextBlocks.length ? contextBlocks.map((c) => c.label).join(", ") : "(none)"}`);
   console.log(`[judge] question: ${opts.question || "(none — open review)"}`);
   console.log(`[judge] chain: ${modelChain.join(" > ")} · ${chainChoice.source === "env" ? "PINNED by JUDGE_MODEL" : "default"}`);
+  const noAuthorFamily = opts.author === NO_AUTHOR_FAMILY;
+  const routerNote = !autoPlugin
+    ? `off — primary "${primaryModel}" is a concrete slug`
+    : noAuthorFamily
+      ? `plugin "${autoPlugin.id}" · excluding nothing (no author family — this does not fall back to excluding Anthropic)`
+      : `plugin "${autoPlugin.id}" · excluding ${autoPlugin.excluded_models.join(", ")} (${
+          opts.author
+            ? `the declared author family \`${opts.author}\`, IN PLACE OF the default — a judge from the subject's own family buys nothing`
+            : "the default excluded family — a same-family judge buys nothing"
+        })`;
+  console.log(`[judge] auto-router: ${routerNote}`);
   console.log(
-    `[judge] auto-router: ${
-      autoPlugin
-        ? `plugin "${autoPlugin.id}" · excluding ${autoPlugin.excluded_models.join(", ")} (${
-            opts.author
-              ? `the declared author family \`${opts.author}\`, IN PLACE OF the default — a judge from the subject's own family buys nothing`
-              : "the default excluded family — a same-family judge buys nothing"
-          })`
-        : `off — primary "${primaryModel}" is a concrete slug`
+    `[judge] declared author: ${
+      noAuthorFamily ? "none — no author family, nothing excluded" : opts.author || "(omitted — Anthropic excluded by default)"
     }`,
   );
-  console.log(`[judge] declared author: ${opts.author || "(none — default exclusion only)"}`);
   console.log("[judge] data policy: zero-data-retention endpoints only, on every request (not configurable)");
   console.log(`[judge] chain walk: ${walksChain ? `ON — up to ${attemptChain.length} request(s)` : "off — one request"}`);
   console.log(

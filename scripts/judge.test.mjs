@@ -255,6 +255,25 @@ describe("a served model from the excluded author family", () => {
     assert.equal(result.decorrelated, false);
     assert.ok(result.degraded.some((d) => /NOT AN INDEPENDENT REVIEW/.test(d)));
   });
+
+  it("excludes nothing for --author none, including an Anthropic answer", async () => {
+    const env = envFor({
+      JUDGE_FIXTURE: join(FIXTURES, "anthropic-served-response.json"),
+      JUDGE_MODEL: "openrouter/auto",
+    });
+    const { code, stdout, stderr } = await runCli(["--text", "a claim", "--author", "none", "--json"], env);
+    assert.equal(code, 0, stderr);
+    const result = JSON.parse(stdout);
+    assert.equal(result.decorrelated, true);
+    assert.equal(result.declaredAuthor, "none");
+    assert.equal(result.degraded.some((d) => /NOT AN INDEPENDENT REVIEW|author-family|anthropic/.test(d)), false);
+
+    const dry = await runCli(["--text", "a claim", "--author", "none", "--dry-run"], envFor({ JUDGE_MODEL: "openrouter/auto" }));
+    assert.equal(dry.code, 0);
+    assert.match(dry.stdout, /excluding nothing/);
+    assert.match(dry.stdout, /"excluded_models": \[\]/);
+    assert.doesNotMatch(dry.stdout, /anthropic\/\*/);
+  });
 });
 
 // ---------------------------------------------------------------------------
