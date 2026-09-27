@@ -1,5 +1,5 @@
 {
-  "authors": ["mtangoz", "cursor[bot]", "cursoragent"],
+  "authors": ["mtangoz", "cursor[bot]", "cursoragent", "claude[bot]"],
   "maxChangedLines": 300,
   "maxFiles": 15,
   "blockingLabels": ["do-not-merge", "needs-review"],

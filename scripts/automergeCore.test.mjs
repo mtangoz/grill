@@ -38,8 +38,8 @@ function rules(result) {
 }
 
 describe("the shipped policy", () => {
-  it("allowlists mtangoz and the Cursor agent accounts that open pull requests", () => {
-    assert.deepEqual(config.authors, ["mtangoz", "cursor[bot]", "cursoragent"]);
+  it("allowlists mtangoz, the Cursor agent accounts, and the Claude Code app bot", () => {
+    assert.deepEqual(config.authors, ["mtangoz", "cursor[bot]", "cursoragent", "claude[bot]"]);
     assert.equal(config.maxChangedLines, 300);
     assert.equal(config.maxFiles, 15);
     assert.deepEqual(config.blockingLabels, ["do-not-merge", "needs-review"]);
@@ -85,6 +85,13 @@ describe("a safe copy change passes", () => {
     assert.equal(classify(pull({ author: "cursor[bot]" }), config).lowRisk, true);
     assert.equal(classify(pull({ author: "cursoragent" }), config).lowRisk, true);
     assert.equal(classify(pull({ author: "Cursor[bot]" }), config).lowRisk, true);
+  });
+
+  it("passes a pull request opened by claude[bot]", () => {
+    const result = classify(pull({ author: "claude[bot]" }), config);
+    assert.equal(result.lowRisk, true);
+    assert.deepEqual(result.failures, []);
+    assert.equal(classify(pull({ author: "Claude[bot]" }), config).lowRisk, true);
   });
 
   it("passes exactly 300 lines and exactly 15 files", () => {

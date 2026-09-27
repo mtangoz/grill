@@ -11,7 +11,7 @@ A follow-up push runs the check again. If the pull request no longer qualifies, 
 Every rule has to hold.
 
 - It is not a draft.
-- The author is listed in `.github/automerge.json`. The list is `mtangoz`, `cursor[bot]` (the Cursor GitHub App, which opens automation and service-account pull requests), and `cursoragent` (the Cursor cloud agent account, when it is the pull request author).
+- The author is listed in `.github/automerge.json`. The list is `mtangoz`, `cursor[bot]` (the Cursor GitHub App, which opens automation and service-account pull requests), `cursoragent` (the Cursor cloud agent account, when it is the pull request author), and `claude[bot]` (the Claude GitHub App at `github.com/apps/claude`, which is the login `anthropics/claude-code-action` uses). A pull request Claude Code opens under `mtangoz` is already covered by that login.
 - It has neither the `do-not-merge` label nor the `needs-review` label.
 - Every changed path is on the safe list below, and no blocked path is touched. A rename counts the old path and the new path.
 - The diff is at most 300 changed lines and at most 15 files. Additions and deletions both count.
