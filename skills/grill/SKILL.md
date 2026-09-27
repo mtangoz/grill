@@ -57,21 +57,30 @@ Show the subject and question, and say where they will go before sending anythin
 2. If it returns a job id, call `grill_result` with it until the report arrives. It usually takes 1–3 minutes; tell the user it's working.
 3. If it says Grill isn't set up, relay its steps. Never ask the user to paste their key into the chat. A Grill Pro key goes in the same settings field as their own key. If Grill's settings name a judge model, the tool already uses it. That judge has to be a different company from the assistant they think with. If they name one from the same company, say so and don't treat it as the outside judge.
 
-**If you don't have the tool** (claude.ai on the web or phone, or no extension yet), use the paste route:
-1. Fill in `paste-prompt.md` from this skill's folder with the approved subject and question.
+**If you don't have the tool** (claude.ai on the web or phone, or no extension yet), use the paste route. Claude Desktop and Claude Code enforce a different company in code. This route cannot, so you check it and warn.
+1. Before you write the judge prompt, note your own maker in one line: "Your assistant: Claude by Anthropic."
+2. Fill in `paste-prompt.md` from this skill's folder with the approved subject and question.
    - Mask what the one-click route masks: email addresses become [email], phone numbers [phone], card numbers [card number].
    - Never include a key or token.
    - Suggest they turn on the app's private mode first, for example a Temporary Chat in ChatGPT.
-2. Give it back as one block they can copy. If it is under 6,000 characters, also give an "Open in ChatGPT" link: `https://chatgpt.com/?q=` followed by the URL-encoded prompt. For Gemini or any other assistant, they paste it themselves.
-3. Ask them to paste the judge's answer back here. That answer is the outside judge's; your own view is not.
-4. Mention once that Claude Desktop with the Grill extension does this in one step: https://github.com/mtangoz/grill#set-up
-5. If they have a Grill Pro setup that names a judge, paste into that assistant, and only if it is a different company from you. Do not put their managed key in the prompt.
+3. Give it back as one block they can copy. If it is under 6,000 characters, also give an "Open in ChatGPT" link: `https://chatgpt.com/?q=` followed by the URL-encoded prompt. For Gemini or any other assistant, they paste it themselves. Name the assistants they can paste it into: ChatGPT, Gemini or Grok.
+4. Ask them to paste the judge's answer back here. Your own view is not the judge.
+5. Mention once that Claude Desktop with the Grill extension does this in one step: https://github.com/mtangoz/grill#set-up
+6. If they have a Grill Pro setup that names a judge, paste into that assistant, and only if it is a different company from you. Do not put their managed key in the prompt.
+
+When they paste the judge's answer back, compare companies before you relay the verdict. Read the opening line. It should be `Judge: <model name> by <company>`. Compare it with the maker you noted. Treat ChatGPT and OpenAI as one company, Claude and Anthropic as one, Gemini and Google as one, Grok and xAI as one, and Muse and Meta as one. Copilot can run OpenAI, Anthropic or xAI models, so only Gemini counts as a different company (a line that names Gemini or Google). You are Claude, so the assistants to paste into instead are ChatGPT, Gemini or Grok. If you cannot tell the company, treat the line as missing.
+
+- If the companies differ, the first line you show is `Judge: X by Y. Different company from your assistant ✓`, with X and Y from the judge's line.
+- If the companies match, the first line you show is `Warning: this verdict is NOT independent. The judge is the same company as your assistant. Paste the judge prompt into ChatGPT, Gemini or Grok instead.`
+- If the Judge line is missing, the first line you show is `Warning: this verdict is unverified. The answer has no Judge line, so this is not a confirmed outside judge. Paste the judge prompt into ChatGPT, Gemini or Grok instead.`
 
 ## 4. Relay the result
 
+On the paste route, the company check above is the first line you show. A result from the `grill` tool already enforced a different company in code; relay that report as written, and do not look for a Judge line.
+
 You're the model the user has been thinking with, so the way you relay the verdict can undo it.
 - **Plain words, the same ones the website uses.** Say solid, solid if…, shaky or doesn't hold up for the four verdicts (holds, holds-with-conditions, weak, refuted). Call a challenge a weak spot and a falsifier a quick check. Change the words, never the substance.
-- **Verdict first,** with its one-line reason. "Solid if" always comes with its conditions; never shorten it to "solid". If the report says the verdict doesn't match the challenges, say that too.
+- **Verdict first,** with its one-line reason. "Solid if" always comes with its conditions; never shorten it to "solid". If the report says the verdict doesn't match the challenges, say that too. On the paste route the verdict comes after the company-check line.
 - **The top challenges by severity,** each with its falsifier. Quote the judge; don't soften it or argue it into agreement. Add nothing that takes the edge off: no "overall, the judge agrees with you", no rebuttal beside a challenge, and no leading with the steelman when the verdict is shaky or doesn't hold up.
 - **Degradation:** if the report carries a warning banner (a clipped subject, a failed provider, a judge from an excluded family), say so plainly. "The judge found nothing" and "the judge couldn't see it" must never read the same.
 - **Pushback:** if the user disputes a challenge, don't settle it for them, or for the judge. Its quick check settles it.

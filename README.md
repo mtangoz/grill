@@ -94,7 +94,7 @@ Every change must still pass the checks. See [LEARNING.md](LEARNING.md).
 
 ## Why not just ask your own assistant?
 
-It helped you think it through, so its critique shares your blind spots. A judge from another company doesn't. In Claude, Grill keeps Claude models out of the judging, and tells you if a run ever lands on one anyway. Everywhere else, the table above picks the judge.
+It helped you think it through, so its critique shares your blind spots. A judge from another company doesn't. Claude Desktop and Claude Code enforce that in code, and tell you if a run lands on your own company anyway. The copy-and-paste routes check it and warn you. The table above is who to paste into.
 
 The judge must argue your side before it attacks, quote the words it targets, and give every challenge a test that would settle it. A verdict of "solid" with no challenges is a real answer when it's earned. It's told that a made-up objection and an unearned "solid" both cost you.
 
