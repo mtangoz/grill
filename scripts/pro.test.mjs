@@ -423,6 +423,7 @@ describe("the endpoints", () => {
         { source: "/pro", destination: "/api/pro" },
         { source: "/pro/auth", destination: "/api/pro-auth" },
         { source: "/pro/try", destination: "/api/pro-try" },
+        { source: "/pro/reports", destination: "/api/pro-reports" },
       ],
     });
   });

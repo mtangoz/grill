@@ -57,6 +57,14 @@ Open `http://127.0.0.1:4173/pro`. Sign in (the link is on the page), simulate a 
 
 The dev server mocks OpenRouter's key API. The sample grill runs Grill's own judge against a loopback stand-in, with the managed key as the bearer token and the chosen judge model. It does not call the real router. That sample endpoint answers 404 unless test mode is on. In production, write-ups still go from the assistant straight to the router.
 
+## Reports
+
+Grill does not email a verdict or a weekly note. A grill stays in the assistant that ran it. The weekly review stays in the user's chat, or in an email their own mail connector sends if they ask it to. The only email this server sends is the sign-in link.
+
+`/pro/reports` is the history page for when a report does exist. Saving is off until the signed-in user turns it on. A copy is kept on their account only, and they can delete any one or all of them. Turning saving off stops new copies and leaves the ones already there until they delete them. Report text is never written onto a Stripe customer. If the account store is the Stripe customer itself, saving stays off.
+
+`rememberReport` is the hook a future emailed report would call. It saves only when that account has saving turned on. In test mode, a sample grill is saved the same way, labelled as a test-mode sample, so the page can be tried before any email exists.
+
 ## Setup
 
 The signed-in user picks the assistant they think with and a judge. The judge has to be a different company. Copilot can run OpenAI, Anthropic or xAI, so those three are refused as its judge; Gemini or DeepSeek is the default safe pick.

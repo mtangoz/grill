@@ -17,6 +17,7 @@ import { createMockManagement } from "../api/_mockRouter.mjs";
 import { GET as proGet, POST as proPost } from "../api/pro.js";
 import { GET as authGet, POST as authPost } from "../api/pro-auth.js";
 import { GET as tryGet, POST as tryPost } from "../api/pro-try.js";
+import { GET as reportsGet, POST as reportsPost } from "../api/pro-reports.js";
 import { GET as welcomeGet, POST as welcomePost } from "../api/welcome.js";
 import { GET as checkoutGet } from "../api/checkout.js";
 import { POST as webhookPost } from "../api/stripe-webhook.js";
@@ -71,6 +72,8 @@ const routes = {
   "POST /pro/auth": authPost,
   "GET /pro/try": tryGet,
   "POST /pro/try": tryPost,
+  "GET /pro/reports": reportsGet,
+  "POST /pro/reports": reportsPost,
   "GET /welcome": welcomeGet,
   "POST /welcome": welcomePost,
   "GET /checkout": checkoutGet,

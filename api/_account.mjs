@@ -218,6 +218,8 @@ function blankAccount(email) {
     keys: [],
     activeHash: null,
     lastLinkAt: 0,
+    saveReports: false,
+    reports: [],
   };
 }
 
@@ -720,6 +722,7 @@ function configPage(account, env, { key = "", report = "" } = {}) {
 <p>The judge is filled in. ${key ? "The key is filled in on this page only. We still don't store it." : "Paste your key over PASTE_YOUR_KEY, or rotate it if you don't have it."}</p>
 <pre class="config" id="config">${esc(config)}</pre>
 ${report ? `<h2>Sample grill</h2><pre class="config">${esc(report)}</pre>` : ""}
+<p class="small"><a href="/pro/reports">Reports</a> keeps a copy only if you turn saving on. It is off until you do.</p>
 ${tryForm}
 <p class="small"><a href="/pro">Back to your account</a></p>`,
   );
@@ -785,7 +788,7 @@ ${portal ? `<p class="small">Cancel the subscription itself here: <a href="${esc
 <h1>Grill Pro</h1>
 <p>Signed in as ${esc(account.email)}. ${esc(sub)}</p>
 ${usage}
-<p>${esc(setupLine)} <a href="/pro?view=setup">Set up</a></p>
+<p>${esc(setupLine)} <a href="/pro?view=setup">Set up</a> · <a href="/pro/reports">Reports</a></p>
 ${purchase}
 ${manage}
 <form method="post" action="/pro"><input type="hidden" name="action" value="signout"><button type="submit">Sign out</button></form>
@@ -1114,6 +1117,138 @@ function redact(text, key) {
   return String(text).split(key).join("[key]");
 }
 
+export const REPORT_BODY_MAX = 20000;
+export const REPORT_KEEP = 30;
+const REPORT_KINDS = new Set(["grill", "weekly", "sample"]);
+
+/**
+ * Keep a copy of a report on the account. Saving is off until the owner turns it on.
+ * The caller persists the account. This does not write to Stripe.
+ */
+export function rememberReport(account, { kind, title, body, at } = {}) {
+  if (!account?.saveReports) return { saved: false, reason: "off" };
+  const text = String(body ?? "").slice(0, REPORT_BODY_MAX);
+  if (!text.trim()) return { saved: false, reason: "empty" };
+  const report = {
+    id: `rpt_${randomBytes(8).toString("hex")}`,
+    kind: REPORT_KINDS.has(kind) ? kind : "grill",
+    title: String(title ?? "").trim().slice(0, 200) || "Report",
+    body: text,
+    createdAt: at || new Date().toISOString(),
+  };
+  const prior = Array.isArray(account.reports) ? account.reports : [];
+  account.reports = [report, ...prior].slice(0, REPORT_KEEP);
+  return { saved: true, report, dropped: prior.length >= REPORT_KEEP };
+}
+
+function reportKindLabel(kind) {
+  if (kind === "weekly") return "Weekly review";
+  if (kind === "sample") return "Test-mode sample";
+  return "Grill";
+}
+
+function reportsIntro(account, stripe) {
+  const facts = `<p>Grill does not email you a verdict or a weekly note. A grill stays in the assistant you ran it in. The weekly review stays in your chat, or in an email your own mail connector sends if you ask it to. This page is where a copy would be, if you choose to keep one.</p>
+<p>Saving is off until you turn it on. A saved copy is the text of the report, kept with this account, and only while you are signed in as ${esc(account.email)}. You can delete any copy, or all of them. Turning saving off stops new copies. It does not delete the ones already here. Report text is never written onto a Stripe customer.</p>`;
+  if (stripe) {
+    return `${facts}<p class="banner">This account is stored on your Stripe customer. Report text does not fit there, so saving stays off until the account store is set.</p>`;
+  }
+  return facts;
+}
+
+function reportsPage(account, env, { stripe = false, error = "" } = {}) {
+  const reports = Array.isArray(account.reports) ? account.reports : [];
+  const saving = account.saveReports === true && !stripe;
+  const toggle = stripe
+    ? ""
+    : saving
+      ? `<form method="post" action="/pro/reports"><input type="hidden" name="action" value="save-off"><button type="submit">Stop saving copies</button></form>`
+      : `<form method="post" action="/pro/reports"><input type="hidden" name="action" value="save-on"><button type="submit">Save copies here</button></form>`;
+  const rows = reports
+    .map((r) => {
+      const when = esc(String(r.createdAt || "").slice(0, 10));
+      return `<li><a href="/pro/reports?id=${esc(r.id)}">${esc(r.title)}</a> <span class="small">${esc(reportKindLabel(r.kind))} · ${when}</span>
+<form method="post" action="/pro/reports"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="${esc(r.id)}"><button type="submit">Delete</button></form></li>`;
+    })
+    .join("");
+  const list = reports.length
+    ? `<ul>${rows}</ul><form method="post" action="/pro/reports"><input type="hidden" name="action" value="delete-all"><button type="submit">Delete all</button></form>`
+    : `<p>${saving ? "Nothing is saved yet. A sample grill in test mode is kept here. A verdict or weekly note would be too, once Grill emails one." : "Nothing is saved. Grill keeps none of the text."}</p>`;
+  const state = saving ? "<p>Saving is on.</p>" : "<p>Saving is off.</p>";
+  return page(
+    "Reports · Grill Pro",
+    `${testBanner(env)}
+<h1>Reports</h1>
+${error ? `<p class="banner"><strong>${esc(error)}</strong></p>` : ""}
+${reportsIntro(account, stripe)}
+${state}
+${toggle}
+${list}
+<p class="small"><a href="/pro">Back to your account</a></p>`,
+  );
+}
+
+function reportView(account, env, report) {
+  return page(
+    `${report.title} · Grill Pro`,
+    `${testBanner(env)}
+<h1>${esc(report.title)}</h1>
+<p class="small">${esc(reportKindLabel(report.kind))} · ${esc(String(report.createdAt || "").slice(0, 10))} · only on this account</p>
+<pre class="config">${esc(report.body)}</pre>
+<form method="post" action="/pro/reports"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="${esc(report.id)}"><button type="submit">Delete this report</button></form>
+<p class="small"><a href="/pro/reports">All reports</a></p>`,
+  );
+}
+
+export async function handleProReports(request, deps) {
+  const env = deps.env;
+  const secret = sessionSecret(env);
+  const store = deps.store ?? openStore(env, deps.fetch);
+  if (!secret || !store) return html(503, missingSetupPage(env));
+  const now = deps.now ?? Date.now();
+  const account = await loadSession(request, store, secret, now);
+  if (!account) return html(401, signInPage(env, { error: request.method === "GET" ? "" : "Sign in first." }));
+  const stripe = store.kind === "stripe";
+  const show = (status, error = "") => html(status, reportsPage(account, env, { stripe, error }));
+  if (request.method === "GET") {
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) return show(200);
+    const report = (account.reports ?? []).find((r) => r.id === id);
+    if (!report) return show(404, "That report isn't on this account.");
+    return html(200, reportView(account, env, report));
+  }
+  if (request.method !== "POST") return show(405);
+  const form = new URLSearchParams(await request.text());
+  const action = form.get("action") || "";
+  if (action === "save-on") {
+    if (stripe) return show(400, "Report text is not stored on your Stripe customer. Saving stays off until the account store is set.");
+    account.saveReports = true;
+    if (!Array.isArray(account.reports)) account.reports = [];
+    await store.put(account);
+    return show(200);
+  }
+  if (action === "save-off") {
+    account.saveReports = false;
+    await store.put(account);
+    return show(200);
+  }
+  if (action === "delete") {
+    const id = form.get("id") || "";
+    const prior = Array.isArray(account.reports) ? account.reports : [];
+    const next = prior.filter((r) => r.id !== id);
+    if (next.length === prior.length) return show(404, "That report isn't on this account.");
+    account.reports = next;
+    await store.put(account);
+    return show(200);
+  }
+  if (action === "delete-all") {
+    account.reports = [];
+    await store.put(account);
+    return show(200);
+  }
+  return show(400);
+}
+
 /**
  * Run one sample grill in test mode. The key is used as the bearer token and then dropped.
  * The write-up goes to a loopback stand-in for the router, never to the real network.
@@ -1202,6 +1337,10 @@ export async function handleProTry(request, deps) {
   }
   if (result.code !== 0 || !result.report) {
     return html(502, page("The sample didn't finish · Grill Pro", `<h1>The sample grill didn't finish.</h1><pre class="config">${esc(result.stderr.slice(0, 500))}</pre>`));
+  }
+  if (store.kind !== "stripe") {
+    const kept = rememberReport(account, { kind: "sample", title: "Test-mode sample grill", body: result.report });
+    if (kept.saved) await store.put(account);
   }
   return html(200, configPage(account, deps.env, { key, report: result.report }));
 }

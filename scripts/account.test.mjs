@@ -13,6 +13,7 @@ import {
   fileStore,
   handlePro,
   handleProAuth,
+  handleProReports,
   handleProTry,
   judgeAllowed,
   memoryStore,
@@ -157,6 +158,7 @@ describe("the account flow", () => {
     const grilledHtml = await body(grilled);
     assert.match(grilledHtml, /Verdict|weak/i);
     assert.ok(!grilledHtml.includes("[key]"), "the report had no reason to echo the key");
+    assert.ok(!JSON.stringify(store.dump()).includes("Steelman"), "saving is off, so the sample is not kept");
 
     const home = await handlePro(new Request("https://grillyour.ai/pro", { headers: { cookie } }), d);
     const homeHtml = await body(home);
@@ -221,6 +223,78 @@ describe("the account flow", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("report history", () => {
+  async function signedIn(email, d) {
+    const sent = await post(handleProAuth, "/pro/auth", { email }, "", d);
+    const link = (await body(sent)).match(/id="magic" href="([^"]+)"/)?.[1];
+    const token = new URL(link, "https://grillyour.ai").searchParams.get("token");
+    const authed = await handleProAuth(new Request(`https://grillyour.ai/pro/auth?token=${encodeURIComponent(token)}`), d);
+    return cookieFrom(authed);
+  }
+
+  it("shows a report only to the owner, and only after they turn saving on", { timeout: 30000 }, async () => {
+    const store = memoryStore();
+    const fetch = createMockManagement();
+    const d = deps(store, fetch);
+    const owner = await signedIn("owner@example.com", d);
+    const other = await signedIn("other@example.com", d);
+
+    const hidden = await handleProReports(new Request("https://grillyour.ai/pro/reports"), d);
+    assert.equal(hidden.status, 401);
+
+    const bought = await post(handlePro, "/pro", { action: "purchase" }, owner, d);
+    const key = (await body(bought)).match(/id="k"[^>]*value="([^"]+)"/)?.[1];
+    await post(handlePro, "/pro", { action: "setup", assistant: "chatgpt", judge: "google/gemini-2.5-pro", key }, owner, d);
+
+    const empty = await handleProReports(new Request("https://grillyour.ai/pro/reports", { headers: { cookie: owner } }), d);
+    const emptyHtml = await body(empty);
+    assert.match(emptyHtml, /does not email you a verdict/);
+    assert.match(emptyHtml, /Saving is off/);
+
+    const grilled = await post(handleProTry, "/pro/try", { key, subject: "Move the launch." }, owner, d);
+    assert.equal(grilled.status, 200);
+    assert.match(await body(grilled), /Steelman/);
+    assert.ok(!JSON.stringify(store.dump()).includes("Steelman"));
+
+    const on = await post(handleProReports, "/pro/reports", { action: "save-on" }, owner, d);
+    assert.match(await body(on), /Saving is on/);
+
+    const again = await post(handleProTry, "/pro/try", { key, subject: "Move the launch." }, owner, d);
+    assert.equal(again.status, 200);
+    const listed = await handleProReports(new Request("https://grillyour.ai/pro/reports", { headers: { cookie: owner } }), d);
+    const listedHtml = await body(listed);
+    assert.match(listedHtml, /Test-mode sample grill/);
+    const id = listedHtml.match(/\/pro\/reports\?id=(rpt_[0-9a-f]+)/)?.[1];
+    assert.ok(id);
+
+    const seen = await handleProReports(new Request(`https://grillyour.ai/pro/reports?id=${id}`, { headers: { cookie: owner } }), d);
+    assert.equal(seen.status, 200);
+    assert.match(await body(seen), /Steelman/);
+
+    const stolen = await handleProReports(new Request(`https://grillyour.ai/pro/reports?id=${id}`, { headers: { cookie: other } }), d);
+    assert.equal(stolen.status, 404);
+    const stolenHtml = await body(stolen);
+    assert.match(stolenHtml, /That report isn(?:'|&#39;)t on this account/);
+    assert.ok(!stolenHtml.includes("Steelman"));
+
+    const removed = await post(handleProReports, "/pro/reports", { action: "delete", id }, owner, d);
+    assert.equal(removed.status, 200);
+    assert.ok(!(await body(removed)).includes("Steelman"));
+
+    await post(handleProTry, "/pro/try", { key, subject: "Move the launch again." }, owner, d);
+    const wiped = await post(handleProReports, "/pro/reports", { action: "delete-all" }, owner, d);
+    assert.match(await body(wiped), /Nothing is saved yet/);
+    assert.equal((await store.getByEmail("owner@example.com")).reports.length, 0);
+
+    await post(handleProReports, "/pro/reports", { action: "save-off" }, owner, d);
+    await post(handleProTry, "/pro/try", { key, subject: "Move the launch once more." }, owner, d);
+    const left = await store.getByEmail("owner@example.com");
+    assert.equal(left.saveReports, false);
+    assert.equal(left.reports.length, 0);
+    assert.ok(!JSON.stringify(store.dump()).includes("Steelman"));
   });
 });
 
@@ -299,6 +373,17 @@ describe("redis and stripe stores", () => {
     assert.equal(await consumeMagicLink(started.token, deps(stripe, full, env)), null);
     const meta = JSON.stringify(customers.get("cus_NewAcct1").metadata);
     assert.ok(!meta.includes("sk-or-"));
+    const withReport = await stripe.getByEmail("stripe@example.com");
+    withReport.saveReports = true;
+    withReport.reports = [{ id: "rpt_aaaaaaaaaaaaaaaa", kind: "grill", title: "Secret title", body: "SENTINEL-REPORT-BODY", createdAt: "2026-09-27" }];
+    await stripe.put(withReport);
+    const after = JSON.stringify(customers.get("cus_NewAcct1").metadata);
+    assert.ok(!after.includes("SENTINEL-REPORT-BODY"));
+    assert.ok(!after.includes("Secret title"));
+    assert.ok(!JSON.stringify(await stripe.getById("cus_NewAcct1")).includes("SENTINEL-REPORT-BODY"));
+    const refused = await post(handleProReports, "/pro/reports", { action: "save-on" }, `grill_pro=${encodeURIComponent(consumed.session)}`, deps(stripe, full, env));
+    assert.equal(refused.status, 400);
+    assert.match(await body(refused), /not stored on your Stripe customer/);
     assert.ok(store);
   });
 

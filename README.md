@@ -79,7 +79,7 @@ Your log lives in a Google Drive folder or Notion database you choose. Once a mo
   - a key or token in the write-up stops the run before anything is sent;
   - email addresses, phone numbers and card numbers are masked;
   - the installed code can talk to the model router and nothing else, and uses no third-party packages.
-- **The free tool has no account.** Grill's makers never see your decisions. Grill Pro is the only part with an account (an email link, a managed key, billing). This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you.
+- **The free tool has no account.** Grill's makers never see your decisions. Grill Pro is the only part with an account (an email link, a managed key, billing). Grill does not email a verdict or a weekly note. A signed-in Pro user can turn on saving copies of reports, and can delete them. Saving is off until they do. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you.
 
 Details, including two router settings to check: [docs/PRIVACY.md](docs/PRIVACY.md).
 

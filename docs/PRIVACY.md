@@ -15,7 +15,7 @@
 | **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them. With Pro, also your billing details and your key's usage, as below | There is nowhere for anything else to go |
 | **This website** | An anonymous count of page views. No cookie, and nothing that identifies you | Vercel Web Analytics, on the website only. The Grill tool never loads it |
 | **Stripe**, Grill Pro only | Your email, card and billing address | Stripe's own privacy policy. Grill never sees your card |
-| **Grill's Pro server**, Grill Pro only | Your email, sign-in, checkout and subscription status, and which assistant and judge you picked | It runs when you sign in, when you buy, and when your subscription changes. Write-ups never pass through it. A developer test mode can run a sample grill on a laptop, and that mode cannot be turned on in production |
+| **Grill's Pro server**, Grill Pro only | Your email, sign-in, checkout and subscription status, which assistant and judge you picked, and, only if you turn it on, copies of reports you choose to keep | It runs when you sign in, when you buy, and when your subscription changes. Write-ups do not pass through it. Saving report copies is off until you turn it on, and you can delete them. A developer test mode can run a sample grill on a laptop, and that mode cannot be turned on in production |
 | **Grill's router account**, Grill Pro only | Your key's usage: cost, model and time of each check, never the text | Logging is off and every request is zero-retention, account-wide |
 
 ## What Grill enforces in code
@@ -46,7 +46,8 @@ Pro changes who pays for the AI, not where your write-up goes.
   - your subscription, in Stripe once billing is connected;
   - which assistant and judge you picked;
   - a hash of your key, on the account and on your Stripe customer when you have one. Not the key itself;
-  - each key's usage in the router account (cost, model and time of each check, never the text).
+  - each key's usage in the router account (cost, model and time of each check, never the text);
+  - copies of reports, only if you turn saving on at your account's Reports page. Off until you do. You can delete any copy or all of them, and turn saving off. The text stays on the account store, never on your Stripe customer. Grill does not email a verdict or a weekly note today, so nothing is saved until a report exists and saving is on. In test mode, a sample grill is saved the same way.
 - **The key is shown when it is created or rotated**, then dropped. If you lose it, sign in and rotate it. We switch the old one off.
 - **The free tool is unchanged.** No account, no sign-in, no tracking in the tool you install.
 
