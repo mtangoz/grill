@@ -444,6 +444,33 @@ describe("renderJudgeReport", () => {
     assert.ok(md.includes("treat this as NO review"));
   });
 
+  it("puts a user-pinned chain in the footer, and does not call that run degraded", () => {
+    const note =
+      "JUDGE_MODEL pins `google/gemini-2.5-pro`, which SHADOWS the default's Auto Router — the per-request model choice is off and this judge is pinned to one vendor";
+    const md = renderJudgeReport({ verdict: "holds", challenges: [], notes: [note] });
+    assert.doesNotMatch(md, /DEGRADED RUN/);
+    assert.match(md, /tried to break it and could not/);
+    assert.match(md, /note: JUDGE_MODEL pins `google\/gemini-2.5-pro`/);
+    assert.ok(md.indexOf("**Verdict:") < md.indexOf("SHADOWS the default's Auto Router"));
+  });
+
+  it("keeps a real degradation in the banner when a pin note is also present", () => {
+    const note =
+      "JUDGE_MODEL pins `openai/gpt-5.6-sol`, which SHADOWS the default's Auto Router — the per-request model choice is off and this judge is pinned to one vendor";
+    const md = renderJudgeReport({
+      verdict: "holds",
+      challenges: [],
+      degraded: ["NOT AN INDEPENDENT REVIEW — same family"],
+      notes: [note],
+    });
+    const banner = md.slice(0, md.indexOf("**Verdict:"));
+    assert.match(banner, /DEGRADED RUN/);
+    assert.match(banner, /NOT AN INDEPENDENT REVIEW/);
+    assert.doesNotMatch(banner, /SHADOWS/);
+    assert.match(md, /NOT evidence that none exist/);
+    assert.ok(md.indexOf("**Verdict:") < md.indexOf("note: JUDGE_MODEL pins"));
+  });
+
   it("distinguishes 'nothing found' from 'could not see' on an empty challenge list", () => {
     const clean = renderJudgeReport({ verdict: "holds", challenges: [], degraded: [] });
     assert.ok(clean.includes("tried to break it and could not"));

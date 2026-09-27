@@ -14,6 +14,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startFakeOpenRouter, typesafeAnswer } from "./fixtures/fake-openrouter.mjs";
+import { SUBJECT_BUDGET } from "./judgeCore.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = join(HERE, "judge.mjs");
@@ -131,6 +132,114 @@ describe("a response with no tool call", () => {
     // full: two advances logged (link1->link2, link2->link3), then the last link is never
     // abandoned, whatever it returns.
     assert.equal((stderr.match(/chain advance:/g) ?? []).length, 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("a user-pinned JUDGE_MODEL", () => {
+  const pin = "google/gemini-2.5-pro";
+
+  it("records the pin as a note, and the report does not call the review invalid", async () => {
+    const env = envFor({
+      JUDGE_FIXTURE: join(FIXTURES, "usable-response.json"),
+      JUDGE_MODEL: pin,
+    });
+    const { code, stdout, stderr } = await runCli(["--text", "Ship it.", "--json"], env);
+    assert.equal(code, 0, stderr);
+    const result = JSON.parse(stdout);
+    assert.deepEqual(result.degraded, []);
+    assert.equal(result.verdict, "weak");
+    assert.ok(result.notes.some((note) => /SHADOWS the default's Auto Router/.test(note)));
+    assert.doesNotMatch(stderr, /DEGRADED/);
+    assert.match(stderr, /\[judge\] note: JUDGE_MODEL pins `google\/gemini-2.5-pro`/);
+
+    const { stdout: report, stderr: reportErr } = await runCli(["--text", "Ship it."], env);
+    assert.doesNotMatch(reportErr, /DEGRADED/);
+    assert.doesNotMatch(report, /DEGRADED RUN/);
+    assert.match(report, /\*\*Verdict: shaky\*\*/);
+    assert.match(report, /note: JUDGE_MODEL pins `google\/gemini-2.5-pro`/);
+  });
+
+  it("says nothing about a pin when the chain still leads with the Auto Router", async () => {
+    const env = envFor({
+      JUDGE_FIXTURE: join(FIXTURES, "usable-response.json"),
+      JUDGE_MODEL: "openrouter/auto,openai/gpt-5.6-sol",
+    });
+    const { code, stdout, stderr } = await runCli(["--text", "Ship it.", "--json"], env);
+    assert.equal(code, 0, stderr);
+    const result = JSON.parse(stdout);
+    assert.deepEqual(result.notes, []);
+    assert.deepEqual(result.degraded, []);
+    assert.doesNotMatch(stderr, /SHADOWS|DEGRADED/);
+  });
+
+  it("names the pin on --dry-run without labelling it a degradation", async () => {
+    const { code, stdout } = await runCli(["--text", "a claim", "--dry-run"], envFor({ JUDGE_MODEL: pin }));
+    assert.equal(code, 0);
+    assert.match(stdout, /\[judge\] note: JUDGE_MODEL pins `google\/gemini-2.5-pro`/);
+    assert.match(stdout, /PINNED by JUDGE_MODEL/);
+    assert.doesNotMatch(stdout, /DEGRADED/);
+  });
+
+  it("still degrades a pinned run when --author matches the model that answered", async () => {
+    const env = envFor({
+      JUDGE_FIXTURE: join(FIXTURES, "usable-response.json"),
+      JUDGE_MODEL: "openai/gpt-5.6-sol",
+    });
+    const { code, stdout, stderr } = await runCli(["--text", "a claim", "--author", "openai", "--json"], env);
+    assert.equal(code, 0, stderr);
+    const result = JSON.parse(stdout);
+    assert.ok(result.degraded.some((d) => /NOT AN INDEPENDENT REVIEW/.test(d)));
+    assert.ok(result.notes.some((note) => /SHADOWS the default's Auto Router/.test(note)));
+    assert.match(stderr, /\[judge\] DEGRADED: NOT AN INDEPENDENT REVIEW/);
+    assert.match(stderr, /\[judge\] note: JUDGE_MODEL pins/);
+
+    const { stdout: report } = await runCli(["--text", "a claim", "--author", "openai"], env);
+    const banner = report.slice(0, report.indexOf("**Verdict:"));
+    assert.match(banner, /DEGRADED RUN/);
+    assert.match(banner, /NOT AN INDEPENDENT REVIEW/);
+    assert.doesNotMatch(banner, /SHADOWS/);
+    assert.match(report, /note: JUDGE_MODEL pins `openai\/gpt-5\.6-sol`/);
+  });
+
+  it("still degrades a pinned run when the answer names no model", async () => {
+    const saved = JSON.parse(readFileSync(join(FIXTURES, "usable-response.json"), "utf8"));
+    delete saved.model;
+    const fixture = tmpFile("judge-unattrib-", "response.json", JSON.stringify(saved));
+    const env = envFor({ JUDGE_FIXTURE: fixture, JUDGE_MODEL: pin });
+    const { code, stdout } = await runCli(["--text", "a claim", "--json"], env);
+    assert.equal(code, 0);
+    const result = JSON.parse(stdout);
+    assert.equal(result.servedModel, null);
+    assert.ok(result.degraded.some((d) => /no top-level `model`/.test(d)));
+    assert.ok(result.notes.some((note) => /SHADOWS the default's Auto Router/.test(note)));
+  });
+
+  it("still degrades a pinned run when the chain returns no tool call", async () => {
+    const env = envFor({
+      JUDGE_FIXTURE: join(FIXTURES, "no-tool-call-response.json"),
+      JUDGE_MODEL: pin,
+    });
+    const { code, stdout } = await runCli(["--text", "a claim", "--json"], env);
+    assert.equal(code, 0);
+    const result = JSON.parse(stdout);
+    assert.equal(result.verdict, null);
+    assert.ok(result.degraded.some((d) => /no tool call/.test(d)));
+    assert.ok(result.notes.some((note) => /SHADOWS the default's Auto Router/.test(note)));
+  });
+
+  it("still degrades a pinned run when the subject is clipped", async () => {
+    const env = envFor({
+      JUDGE_FIXTURE: join(FIXTURES, "usable-response.json"),
+      JUDGE_MODEL: pin,
+    });
+    const subject = tmpFile("judge-clip-", "subject.md", "x".repeat(SUBJECT_BUDGET + 1));
+    const { code, stdout } = await runCli(["--file", subject, "--json"], env);
+    assert.equal(code, 0);
+    const result = JSON.parse(stdout);
+    assert.ok(result.degraded.some((d) => /CLIPPED/.test(d)));
+    assert.ok(result.notes.some((note) => /SHADOWS the default's Auto Router/.test(note)));
+    assert.equal(result.degraded.some((d) => /SHADOWS/.test(d)), false);
   });
 });
 

@@ -1021,6 +1021,7 @@ export function renderJudgeReport(result) {
     rejected = [],
     capped = [],
     degraded = [],
+    notes = [],
     servedModel = null,
     requestedChain = [],
     declaredAuthor = "",
@@ -1112,6 +1113,11 @@ export function renderJudgeReport(result) {
     }`,
   );
   if (requestedChain.length > 0) meta.push(`chain asked: \`${requestedChain.join(" > ")}\``);
+  // A pin is a fact about which model ran, not a blind run. The banner above is only for
+  // `degraded`. Putting the pin there made every deliberately pinned chain look invalid.
+  for (const note of Array.isArray(notes) ? notes : []) {
+    if (note) meta.push(`note: ${note}`);
+  }
   if (typeof costUsd === "number") meta.push(`cost: $${costUsd.toFixed(4)}`);
   const maskedLine = describeMasked(result.masked);
   if (maskedLine) meta.push(`masked before sending: ${maskedLine}`);

@@ -135,15 +135,9 @@ function applyLabels(repo, prNumber, labels, plan) {
 }
 
 function headMoved(repo, prNumber, sha) {
-  const latest = ghJson([
-    "api",
-    "--method",
-    "GET",
-    `repos/${repo}/pulls/${prNumber}`,
-    "--jq",
-    ".head.sha",
-  ]);
-  return String(latest || "").toLowerCase() !== sha;
+  // `--jq` prints a string bare, without JSON quotes, so this is text, not JSON.
+  const { stdout } = ghRaw(["api", "--method", "GET", `repos/${repo}/pulls/${prNumber}`, "--jq", ".head.sha"]);
+  return stdout.trim().toLowerCase() !== sha;
 }
 
 function runJudge(subjectPath, plan) {
@@ -353,7 +347,6 @@ function main() {
     servedModel: judged.servedModel,
     authorVendor: plan.authorVendor,
     excludedVendors: plan.excludedVendors,
-    requireJudgeVendor: plan.requireJudgeVendor,
   });
   const outcome = reviewOutcome({
     check,

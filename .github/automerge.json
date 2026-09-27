@@ -1,6 +1,6 @@
 {
   "authors": ["mtangoz", "cursor[bot]", "cursoragent", "claude[bot]", "chatgpt-codex-connector[bot]"],
-  "authorFamilyNote": "authorFamilies names the company that wrote the pull request, when the GitHub login is enough to know. claude[bot] (Claude Code) is anthropic, so Grill CI excludes Anthropic. chatgpt-codex-connector[bot] (Codex) is openai, so Grill CI excludes OpenAI. An empty string means the login does not name a writing model: mtangoz, cursor[bot], cursoragent, and any other login. Those pull requests are judged by defaultJudgeModel (a Google Gemini model, neither Anthropic nor OpenAI) unless the pull request body contains a line 'Written-by-model: <vendor>/<model>', in which case that vendor is excluded and alternateJudgeModel is used when the default judge is that vendor. alwaysExcludedVendors always includes x-ai, on every pull request. After the run, Grill CI checks the served model's vendor. If that vendor was excluded, the comment is marked NOT decorrelated, the pull request gets needs-review, and the job fails.",
+  "authorFamilyNote": "authorFamilies names the company that wrote the pull request, when the GitHub login is enough to know. claude[bot] (Claude Code) is anthropic, so Grill CI excludes Anthropic. chatgpt-codex-connector[bot] (Codex) is openai, so Grill CI excludes OpenAI. An empty string means the login does not name a writing model: mtangoz, cursor[bot], cursoragent, and any other login. Those pull requests exclude nothing beyond x-ai unless the body contains a line 'Written-by-model: <vendor>/<model>', in which case that vendor is excluded too. The judge is always OpenRouter's Auto Router (openrouter/auto); Grill CI does not pin a vendor's model. alwaysExcludedVendors always includes x-ai, on every pull request. After the run, Grill CI checks the served model's vendor. If that vendor was excluded, the comment is marked NOT decorrelated, the pull request gets needs-review, and the job fails.",
   "authorFamilies": {
     "mtangoz": "",
     "cursor[bot]": "",
@@ -9,8 +9,6 @@
     "chatgpt-codex-connector[bot]": "openai"
   },
   "alwaysExcludedVendors": ["x-ai"],
-  "defaultJudgeModel": "google/gemini-2.5-pro",
-  "alternateJudgeModel": "openai/gpt-5.6-sol",
   "maxChangedLines": 300,
   "maxFiles": 15,
   "highChangedLines": 800,

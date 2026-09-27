@@ -27,8 +27,6 @@ const CONFIG_KEYS = [
   "highSubstrings",
   "highPageBasenames",
   "alwaysExcludedVendors",
-  "defaultJudgeModel",
-  "alternateJudgeModel",
 ];
 
 function expectStringArray(value, name) {
@@ -69,17 +67,6 @@ function expectAuthorFamilies(value) {
   return Object.freeze(out);
 }
 
-function expectModelSlug(value, name) {
-  if (typeof value !== "string" || !/^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/i.test(value.trim())) {
-    throw new Error(`${name} must be a vendor/model slug`);
-  }
-  return value.trim().toLowerCase();
-}
-
-function modelVendor(slug) {
-  return String(slug).split("/")[0].toLowerCase();
-}
-
 /** Validate `.github/automerge.json`. Throws if the policy file is unusable. */
 export function loadConfig(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("automerge config must be an object");
@@ -116,16 +103,6 @@ export function loadConfig(raw) {
   if (!alwaysExcludedVendors.includes("x-ai")) {
     throw new Error("alwaysExcludedVendors must include x-ai");
   }
-  const defaultJudgeModel = expectModelSlug(raw.defaultJudgeModel, "defaultJudgeModel");
-  const alternateJudgeModel = expectModelSlug(raw.alternateJudgeModel, "alternateJudgeModel");
-  const defaultVendor = modelVendor(defaultJudgeModel);
-  const alternateVendor = modelVendor(alternateJudgeModel);
-  if (defaultVendor === alternateVendor) throw new Error("defaultJudgeModel and alternateJudgeModel must be different companies");
-  for (const vendor of [defaultVendor, alternateVendor]) {
-    if (alwaysExcludedVendors.includes(vendor)) {
-      throw new Error(`${vendor} is always excluded, so it cannot be a Grill CI judge`);
-    }
-  }
   return Object.freeze({
     authors,
     authorFamilies: expectAuthorFamilies(raw.authorFamilies),
@@ -148,8 +125,6 @@ export function loadConfig(raw) {
     highSubstrings: expectStringArray(raw.highSubstrings, "highSubstrings"),
     highPageBasenames: expectStringArray(raw.highPageBasenames, "highPageBasenames").map((name) => name.toLowerCase()),
     alwaysExcludedVendors,
-    defaultJudgeModel,
-    alternateJudgeModel,
   });
 }
 
