@@ -88,7 +88,7 @@ describe("the MCP handshake", () => {
     const c = await initialized({});
     const res = await c.request("tools/list", {});
     const names = res.result.tools.map((t) => t.name);
-    assert.deepEqual(names, ["grill", "grill_result"]);
+    assert.deepEqual(names, ["grill", "grill_result", "grill_look_back"]);
     const grill = res.result.tools[0];
     assert.deepEqual(grill.inputSchema.required, ["subject"]);
     assert.match(grill.description, /different company than Claude/);
@@ -159,6 +159,11 @@ describe("a grill end to end (fixture, no network)", () => {
     assert.match(report, /^# 🔥 Grill — \(stdin\)/);
     assert.match(report, /Verdict:/);
     assert.match(report, /Which way, and on what grounds\?/);
+    assert.match(report, /## Before you decide/);
+    assert.match(report, /^verdict: shaky$/m);
+    assert.match(report, /Pull the signup curve from the last comparable launch/);
+    assert.match(report, /^confidence: $/m);
+    assert.ok(report.indexOf("**Verdict:") < report.indexOf("## Before you decide"));
     await c.close();
     assert.ok(!c.transcript().includes(KEY), "the key must never be echoed");
   });
@@ -333,5 +338,39 @@ describe("a managed key and a chosen judge", () => {
     assert.equal(still.result.isError, true);
     assert.match(textOf(still), /openai/);
     await other.close();
+  });
+});
+
+describe("grill_look_back", () => {
+  const records = [
+    "```grill-record",
+    "version: 1",
+    "date: 2026-09-01",
+    "title: Move the launch to March",
+    "verdict: shaky",
+    "falsifier: show the new price to one in ten",
+    "confidence: 70%",
+    "review: 2026-09-15",
+    "```",
+  ].join("\n");
+
+  it("asks, then scores, with no key and no judge", async () => {
+    const c = await initialized({});
+    const asked = await c.request("tools/call", { name: "grill_look_back", arguments: { records } });
+    assert.equal(asked.result.isError, false);
+    assert.match(textOf(asked), /Did it come true/);
+    assert.doesNotMatch(textOf(asked), /## Pattern/);
+    const scored = await c.request("tools/call", {
+      name: "grill_look_back",
+      arguments: {
+        records,
+        happened: "title: Move the launch to March\ncame_true: no\nfalsifier_fired: yes\nhappened: Signups stayed flat.",
+      },
+    });
+    assert.match(textOf(scored), /The doubt matched what happened/);
+    assert.match(textOf(scored), /Nothing is stored/);
+    const empty = await c.request("tools/call", { name: "grill_look_back", arguments: { records: "  " } });
+    assert.equal(empty.result.isError, true);
+    await c.close();
   });
 });

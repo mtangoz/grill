@@ -125,7 +125,7 @@ describe("the code users install can talk to one place: OpenRouter", () => {
   const shipped = JSON.parse(build.match(/const FILES = (\[[^\]]+\])/)[1]).filter((f) => f.endsWith(".mjs"));
 
   it("ships the server, the judge and the check's pure core, and nothing else runnable", () => {
-    assert.deepEqual(shipped.sort(), ["scripts/checkCore.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "server/index.mjs"]);
+    assert.deepEqual(shipped.sort(), ["scripts/checkCore.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/reflection.mjs", "server/index.mjs"]);
   });
 
   it("imports only Node built-ins and its own files: no third-party code at all", () => {

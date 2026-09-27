@@ -49,3 +49,5 @@ Answer in exactly this format:
 **The question:** {THE NEUTRAL QUESTION}
 
 ---
+
+The block above is the judge prompt only. After the user pastes the judge's answer back, add the reflection from `reflection.md`. Do not put Before you decide inside the judge prompt.

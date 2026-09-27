@@ -16,6 +16,15 @@ A model router improves every day without reading anyone's prompts: it learns wh
 - the judge's fallback models still exist on the router, and still have zero-retention endpoints; every endpoint serving Jev is zero-retention;
 - the extension manifest still validates against the latest `mcpb` tool.
 
+## Quality checks on one grill
+
+These run on a single grill. They are not the weekly eval loop above.
+
+- **Local, always on:** Grill checks every quote a challenge attacks against your write-up, and flags any it can't find. It also flags a "solid" given over a serious challenge.
+- **Jev, on by default:** a decision model from TypeSafe, on a zero-retention endpoint, scores whether each falsifier is a real test and whether the verdict fits. Claude tells you before each grill that Jev will see the masked write-up. Skip it for one grill by saying so, or switch it off in Grill's settings. It adds about $0.0002 a grill.
+
+The reflection at the end of a report (what you expect, how sure you are, what would prove you wrong) is not sent to the judge and is not a learning signal. Grill does not store it.
+
 ## Why Jev for quality
 
 - **It answers narrow questions with probabilities, not prose:** "is this falsifier a concrete test?", "does this verdict fit these challenges?", "did any challenge find the planted flaw?". It's cheap enough (about $0.0002 a report) to score every eval run.

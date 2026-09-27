@@ -30,6 +30,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { appendReflection, lookBack } from "../scripts/reflection.mjs";
 
 const VERSION = "0.1.0";
 const JUDGE = fileURLToPath(new URL("../scripts/judge.mjs", import.meta.url));
@@ -37,6 +38,7 @@ const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SETUP_URL = "https://github.com/mtangoz/grill#set-up";
 const MAX_SUBJECT_CHARS = 200_000;
 const MAX_QUESTION_CHARS = 600;
+const MAX_PASTE_CHARS = 100_000;
 const AUTHOR_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
 function progressEveryMs() {
@@ -138,6 +140,29 @@ const TOOLS = [
     },
     annotations: { title: "Collect a grill", readOnlyHint: true, openWorldHint: false },
   },
+  {
+    name: "grill_look_back",
+    title: "Look back at a decision record",
+    description:
+      "Score one or more decision records the user pasted, against what actually happened. If they have not said what happened, ask. Stores nothing, sends nothing, and needs no key. The judge's verdict is not revised.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        records: {
+          type: "string",
+          description: "One or more decision record blocks from earlier grills, pasted by the user.",
+        },
+        happened: {
+          type: "string",
+          description:
+            "Optional. What actually happened, including whether each call came true and whether the falsifier fired. Omit it to get the questions first.",
+        },
+      },
+      required: ["records"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Look back", readOnlyHint: true, openWorldHint: false },
+  },
 ];
 
 const jobs = new Map();
@@ -180,7 +205,7 @@ function startJob({ subject, question, author, skipCheck }) {
   child.stderr.on("data", (d) => {
     stderr += d;
   });
-  const job = { id, startedAt: Date.now(), done: false, outcome: null, child };
+  const job = { id, startedAt: Date.now(), done: false, outcome: null, child, subject };
   job.promise = new Promise((resolve) => {
     const finish = (code, error) => {
       if (job.done) return;
@@ -225,7 +250,7 @@ function text(t, isError = false) {
 function outcomeOf(job) {
   jobs.delete(job.id);
   const { code, report, stderr, error } = job.outcome;
-  if (report) return text(report);
+  if (report) return text(appendReflection(report, { subject: job.subject, route: "mcp" }));
   const why = error ?? (stderr.split("\n").filter((l) => l.includes("ERROR")).join("\n") || `the judge exited ${code}`);
   return text(`The grill did not finish: ${why}`, true);
 }
@@ -263,6 +288,15 @@ async function callTool(name, args = {}, onTick) {
     if (!job) return text("No grill is running with that job id. It may already have been collected; start a new one with the grill tool.", true);
     return (await waitFor(job, waitMs(), onTick)) ? outcomeOf(job) : pending(job);
   }
+  if (name === "grill_look_back") {
+    const records = typeof args.records === "string" ? args.records : "";
+    const happened = typeof args.happened === "string" ? args.happened : "";
+    if (!records.trim()) return text("Paste one or more decision records. Grill stores nothing either way.", true);
+    if (records.length > MAX_PASTE_CHARS || happened.length > MAX_PASTE_CHARS) {
+      return text("That paste is too long. Split it under 100,000 characters.", true);
+    }
+    return text(lookBack({ records, happened }));
+  }
   return text(`Unknown tool: ${name}`, true);
 }
 
@@ -284,7 +318,7 @@ async function handle(msg) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "grill", title: "Grill", version: VERSION },
           instructions:
-            "Grill sends a decision to an outside AI judge from a different company than Claude. Write the subject as a clerk, not an advocate, and show the user the subject and get their OK before calling grill. If grill returns a job id, call grill_result until the report arrives. Relay the verdict first, then the challenges with their falsifiers, quoting the judge rather than agreeing with it, softening it or adding reassurance of your own.",
+            "Grill sends a decision to an outside AI judge from a different company than Claude. Write the subject as a clerk, not an advocate, and show the user the subject and get their OK before calling grill. If grill returns a job id, call grill_result until the report arrives. Relay the verdict first, then the challenges with their falsifiers, quoting the judge rather than agreeing with it, softening it or adding reassurance of your own. The report ends with Before you decide and a decision record. Show both. Do not send that section back to the judge. When the user pastes old records and says look back, call grill_look_back. It stores nothing.",
         },
       });
       return;

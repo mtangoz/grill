@@ -20,7 +20,7 @@ Whenever a Stripe customer id is known, key hashes are written onto that custome
 
 ## What you set
 
-See the table in the README. The new ones are:
+Deploy variables, including Stripe, are in [pro-development.md](pro-development.md). The ones this design depends on:
 
 | Variable | Required when |
 |---|---|

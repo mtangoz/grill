@@ -39,6 +39,10 @@
     {
       "name": "grill_result",
       "description": "Collect a grill that was still running."
+    },
+    {
+      "name": "grill_look_back",
+      "description": "Score pasted decision records against what happened. Stores nothing and needs no key."
     }
   ],
   "keywords": [
@@ -65,7 +69,7 @@
     "openrouter_api_key": {
       "type": "string",
       "title": "Model router key (OpenRouter)",
-      "description": "Create one at https://openrouter.ai/keys and add a few dollars of credit; a grill costs about a cent. It is masked, stored securely, and sent only to OpenRouter. Have Grill Pro? Paste your managed key here instead. It is the same field.",
+      "description": "Create one at https://openrouter.ai/keys and add a few dollars of credit; a grill costs about a cent. It is masked, stored securely, and sent only to OpenRouter. Have Grill Pro? Paste your managed key here instead. It is the same field. Or leave it empty if GRILL_API_KEY or OPENROUTER_API_KEY is already set. Grill reads GRILL_API_KEY first.",
       "sensitive": true,
       "required": true
     },

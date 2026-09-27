@@ -82,7 +82,7 @@ describe("the manifests agree", () => {
   });
 
   it("the extension declares exactly the tools the server serves, and a privacy policy", () => {
-    assert.deepEqual(manifest.tools.map((t) => t.name), ["grill", "grill_result"]);
+    assert.deepEqual(manifest.tools.map((t) => t.name), ["grill", "grill_result", "grill_look_back"]);
     assert.ok(manifest.privacy_policies.some((u) => u.includes("openrouter.ai")));
   });
 });
@@ -91,7 +91,7 @@ describe("the extension build", () => {
   it("stages every file the server reaches, keeping the relative layout", () => {
     execFileSync(process.execPath, [join(ROOT, "scripts/build-extension.mjs")], { stdio: "pipe" });
     const staged = join(ROOT, "dist/extension");
-    for (const f of ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "LICENSE"]) {
+    for (const f of ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "scripts/reflection.mjs", "LICENSE"]) {
       assert.ok(existsSync(join(staged, f)), `missing ${f}`);
     }
     const server = readFileSync(join(ROOT, "server/index.mjs"), "utf8");
@@ -123,7 +123,7 @@ describe("the skills", () => {
 
   it("every file a skill points to exists", () => {
     const refs = {
-      grill: ["paste-prompt.md"],
+      grill: ["paste-prompt.md", "reflection.md"],
       "weekly-review": ["the-count.md", "templates/decision-record.md", "templates/weekly-note.md"],
     };
     for (const [skill, files] of Object.entries(refs)) {
@@ -172,6 +172,7 @@ describe("the any-assistant prompt", () => {
     const rules = paste.flatMap((line, i) => (line === "---" ? [i] : []));
     const judge = paste.slice(rules[0] + 1, rules.at(-1)).join("\n").trim();
     assert.ok(judge.length > 1000, "could not find the judge prompt between paste-prompt.md's rules");
+    assert.ok(judge.length < 6000, "the one-tap ChatGPT link needs the judge prompt under 6,000 characters");
     assert.ok(prompt.includes(judge), "prompts/grill.md no longer contains paste-prompt.md's judge prompt");
     assert.match(judge, /^Judge: <model name> by <company>$/m);
     assert.match(judge, /Begin your answer with one line, and nothing before it/);
@@ -205,6 +206,36 @@ describe("the any-assistant prompt", () => {
       assert.ok(prompt.includes(name), `no mention of ${name}`);
     }
     assert.match(prompt, /^\| Copilot [^\n]*\| Gemini \|$/m);
+  });
+});
+
+describe("the registry listing", () => {
+  const server = json("server.json");
+
+  it("server.json names io.github.mtangoz/grill and lists GRILL_API_KEY, mentioning the other accepted name", () => {
+    assert.equal(server.$schema, "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json");
+    assert.equal(server.name, "io.github.mtangoz/grill");
+    assert.equal(server.version, "0.1.0");
+    assert.ok(server.description.length >= 1 && server.description.length <= 100);
+    assert.equal(server.repository.url, "https://github.com/mtangoz/grill");
+    assert.equal(server.repository.source, "github");
+    assert.equal(server.repository.id, "1389543389");
+    const pkg = server.packages[0];
+    assert.equal(pkg.registryType, "mcpb");
+    assert.equal(pkg.identifier, "https://github.com/mtangoz/grill/releases/download/v0.1.0/grill.mcpb");
+    assert.match(pkg.identifier, /mcp/i);
+    assert.equal(pkg.fileSha256, "de55a661493c44a2f476595ec5bc2e25aba78405f7e6f69b1b55e6665fa97b57");
+    assert.match(pkg.fileSha256, /^[a-f0-9]{64}$/);
+    assert.equal(pkg.transport.type, "stdio");
+    assert.equal(pkg.registryBaseUrl, undefined);
+    const env = pkg.environmentVariables[0];
+    assert.equal(env.name, "GRILL_API_KEY");
+    assert.equal(env.isSecret, true);
+    assert.equal(env.isRequired, false);
+    assert.match(env.description, /OPENROUTER_API_KEY/);
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    assert.match(readme, /GRILL_API_KEY/);
+    assert.match(readme, /OPENROUTER_API_KEY/);
   });
 });
 
