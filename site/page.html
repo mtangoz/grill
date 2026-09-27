@@ -78,6 +78,11 @@
   .paste { margin: 0 0 2.6rem; }
   .paste textarea { width: 100%; box-sizing: border-box; min-height: 7rem; font: 0.86rem var(--mono); padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: transparent; color: var(--ink); margin: 0 0 0.8rem; }
   .paste label { display: block; font-weight: 600; margin: 0.2rem 0 0.35rem; }
+  .ask { margin: 0.2rem 0 0.9rem; }
+  .ask-q { font-weight: 600; margin: 0 0 0.4rem; }
+  .ask-choices { display: flex; gap: 8px; }
+  .choice { display: inline-block; width: fit-content; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--ink); background: transparent; color: var(--ink); font: 600 0.95rem/1.2 var(--sans); white-space: nowrap; cursor: pointer; }
+  .choice[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
   button.button { border: 0; cursor: pointer; font-family: var(--sans); }
   [hidden] { display: none !important; }
 
@@ -170,6 +175,7 @@
 version: 1
 date: 2026-09-27
 title: Take the job in Denver
+prediction: I will still want the job after a month in Denver
 verdict: shaky
 falsifier: spend a long weekend there and do the commute at rush hour
 confidence: 80%
@@ -199,6 +205,8 @@ review: 2026-10-11
 **Falsifier:** spend a long weekend there and do the commute at rush hour</textarea>
     <label for="decision-title">Decision title</label>
     <textarea id="decision-title">Take the job in Denver. I'm 80% sure it's right.</textarea>
+    <label for="prediction">What you expect</label>
+    <textarea id="prediction">I will still want the job after a month in Denver.</textarea>
     <p class="cta"><button class="button" type="button" id="show-record">Show the record</button></p>
     <pre id="made-record" hidden></pre>
     <pre id="made-block" hidden></pre>
@@ -208,13 +216,28 @@ review: 2026-10-11
 version: 1
 date: 2026-09-27
 title: Take the job in Denver
+prediction: I will still want the job after a month in Denver
 verdict: shaky
 falsifier: spend a long weekend there and do the commute at rush hour
 confidence: 80%
 review: 2026-10-11
 ```</textarea>
+    <div class="ask" id="came-true-ask">
+      <p class="ask-q" id="came-true-label">Did it come true?</p>
+      <div class="ask-choices" role="group" aria-labelledby="came-true-label">
+        <button type="button" class="choice" data-value="yes" aria-pressed="false">Yes</button>
+        <button type="button" class="choice" data-value="no" aria-pressed="false">No</button>
+      </div>
+    </div>
+    <div class="ask" id="falsifier-ask">
+      <p class="ask-q" id="falsifier-label">Did the thing that would prove you wrong happen?</p>
+      <div class="ask-choices" role="group" aria-labelledby="falsifier-label">
+        <button type="button" class="choice" data-value="yes" aria-pressed="false">Yes</button>
+        <button type="button" class="choice" data-value="no" aria-pressed="false">No</button>
+      </div>
+    </div>
     <label for="what-happened">What happened</label>
-    <textarea id="what-happened" placeholder="Leave this empty to be asked. Or: came_true: no / falsifier_fired: yes / happened: The commute was two hours."></textarea>
+    <textarea id="what-happened" placeholder="One sentence. This page does not store it."></textarea>
     <p class="cta"><button class="button" type="button" id="run-look-back">Look back</button></p>
     <pre id="look-back-out" hidden></pre>
   </form>
@@ -323,6 +346,7 @@ review: 2026-10-11
       "version: 1",
       "date: " + fields.date,
       "title: " + fields.title,
+      "prediction: " + fields.prediction,
       "verdict: " + fields.verdict,
       "falsifier: " + fields.falsifier,
       "confidence: " + fields.confidence,
@@ -341,7 +365,7 @@ review: 2026-10-11
       var line = raw.trim();
       if (!line || line === "---") return;
       if (line.indexOf("```") === 0) { finish(); return; }
-      var m = line.match(/^(version|date|title|verdict|falsifier|confidence|review)\s*:\s*(.*)$/i);
+      var m = line.match(/^(version|date|title|prediction|verdict|falsifier|confidence|review)\s*:\s*(.*)$/i);
       if (!m) return;
       var key = m[1].toLowerCase();
       if (key === "version") {
@@ -378,6 +402,7 @@ review: 2026-10-11
     var block = recordFence({
       date: iso(now),
       title: titleOf(subject),
+      prediction: one(document.getElementById("prediction").value),
       verdict: verdictOf(answer),
       falsifier: falsifierOf(answer),
       confidence: confidence(subject),
@@ -389,11 +414,32 @@ review: 2026-10-11
     document.getElementById("saved-records").value = block;
     track("reflection_record_shown", 1);
   });
+  document.querySelectorAll(".ask-choices").forEach(function (group) {
+    group.addEventListener("click", function (event) {
+      var btn = event.target.closest(".choice");
+      if (!btn || !group.contains(btn)) return;
+      var on = btn.getAttribute("aria-pressed") === "true";
+      group.querySelectorAll(".choice").forEach(function (el) { el.setAttribute("aria-pressed", "false"); });
+      if (!on) btn.setAttribute("aria-pressed", "true");
+    });
+  });
+  function choice(groupId) {
+    var pressed = document.querySelector("#" + groupId + " .choice[aria-pressed='true']");
+    return pressed ? pressed.getAttribute("data-value") : "";
+  }
   document.getElementById("run-look-back").addEventListener("click", function () {
     var pasted = document.getElementById("saved-records").value;
     var records = parseSiteRecords(pasted);
     track("reflection_lookback_started", records.length);
-    var happened = document.getElementById("what-happened").value;
+    var raw = document.getElementById("what-happened").value;
+    var came = choice("came-true-ask");
+    var fired = choice("falsifier-ask");
+    var typedCame = yn((raw.match(/came_true\s*:\s*(.+)/i) || [])[1] || "");
+    var typedFired = yn((raw.match(/falsifier_fired\s*:\s*(.+)/i) || [])[1] || "");
+    var typedWhat = one((raw.match(/happened\s*:\s*(.+)/i) || [])[1] || "");
+    if (!came) came = typedCame;
+    if (!fired) fired = typedFired;
+    var what = typedWhat || (/came_true\s*:|falsifier_fired\s*:|happened\s*:/i.test(raw) ? "" : one(raw));
     if (!records.length) {
       var other = [];
       String(pasted).split(/\n/).forEach(function (raw) {
@@ -406,15 +452,13 @@ review: 2026-10-11
         : "No decision record was in that paste. Nothing is stored either way.");
       return;
     }
-    var came = yn((happened.match(/came_true\s*:\s*(.+)/i) || [])[1] || "");
-    var fired = yn((happened.match(/falsifier_fired\s*:\s*(.+)/i) || [])[1] || "");
-    var what = one((happened.match(/happened\s*:\s*(.+)/i) || [])[1] || "");
-    if (!one(happened) || !came) {
+    if (!came) {
       var ask = ["Look back", "", "Nothing is stored. For each decision, say what actually happened.", ""];
       records.forEach(function (r) {
         ask.push(r.title);
+        if (r.prediction) ask.push("Prediction then: " + r.prediction + ".");
         ask.push("Verdict then: " + (r.verdict || "unknown") + ".");
-        ask.push("Did the prediction come true: yes, no, or not yet?");
+        ask.push("Did it come true? Yes or no.");
         ask.push("");
       });
       show("look-back-out", ask.join("\n"));
@@ -424,6 +468,7 @@ review: 2026-10-11
     var word = one(record.verdict).toLowerCase();
     var doubt = word === "shaky" || word.indexOf("doesn") === 0 || word.indexOf("does not") === 0;
     var line = record.title + ". Verdict then: " + record.verdict + ". ";
+    if (record.prediction) line += "Prediction then: " + record.prediction + ". ";
     if (came === "not yet") line += "Not back yet, so this call is not scored. ";
     else if (came === "no" && doubt) line += "It did not come true, and the verdict had doubted it. The doubt matched what happened. ";
     else if (came === "yes" && doubt) line += "It came true, and the verdict had doubted it. You were righter than the doubt. ";

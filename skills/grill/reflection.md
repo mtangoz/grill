@@ -14,7 +14,7 @@ These stay in your notes. Grill does not store them and does not send them to th
 2. How sure are you now, as a percent? A band is fine. This is your confidence, not the judge.
 3. What would prove you wrong? Name the one result you will treat as decisive.
 
-The falsifier line is the judge's sharpest check. The confidence line is what you said before the verdict, when you said one. Change the confidence if the verdict moved you, and keep the earlier number beside it. A change is a new call.
+The prediction line is what they expect, and by when. Fill it from what they already said, and leave it empty if they have not said. Do not invent one. The falsifier line is the judge's sharpest check. The confidence line is what you said before the verdict, when you said one. Change the confidence if the verdict moved you, and keep the earlier number beside it. A change is a new call.
 
 The block is decision record version 1. Write the lines in this order, inside a fence tagged `grill-record`. The field list is [docs/DECISION-RECORD.md](../../docs/DECISION-RECORD.md). A look-back reads `version: 1` only and skips any other version. A block with no version line is not a record.
 
@@ -22,6 +22,7 @@ The block is decision record version 1. Write the lines in this order, inside a 
 version: 1
 date: {TODAY}
 title: {DECISION TITLE}
+prediction: {what they expect, and by when, or empty}
 verdict: {solid / solid if / shaky / doesn't hold up}
 falsifier: {the judge's first falsifier, or none named}
 confidence: {what the user said, or empty}
@@ -36,6 +37,7 @@ To look back, paste one or more blocks back into this chat and say "look back". 
 - **version** is `1`. Do not leave it off, and do not invent a second format.
 - **date** is today. **review** is 14 days later, unless the user names a check-in.
 - **title** is the decision, in a few words.
+- **prediction** is what they expect, and by when. Leave it empty if they never wrote one. Do not invent one. A record without this line is still version 1.
 - **verdict** is the judge's plain-word verdict. Do not upgrade or soften it.
 - **falsifier** is the judge's first, most severe falsifier. If they adopt a different check, they edit the line.
 - **confidence** is the number or band they gave before the verdict. Leave it empty if they never gave one. Do not invent one.
@@ -45,7 +47,7 @@ To look back, paste one or more blocks back into this chat and say "look back". 
 When the user pastes one or more of these blocks and says "look back" or "grill look back":
 
 - Do not call the judge. Do not send the records anywhere. Nothing is stored.
-- If they have not said what happened, ask, for each record: did the prediction come true (yes, no, or not yet), did the falsifier fire (yes, no, or not yet), and what actually happened, in one sentence.
+- If they have not said what happened, ask two questions and for one sentence: did it come true (yes or no), and did the thing that would prove them wrong happen (yes or no). Read the prediction back when the record has one. A pasted block with `came_true`, `falsifier_fired` and `happened` still counts.
 - When they answer, score only the calls they marked yes or no.
   - A doubted verdict (shaky, or doesn't hold up) that missed: the doubt matched what happened.
   - A doubted verdict that came true: they were righter than the doubt.

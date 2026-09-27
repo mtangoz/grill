@@ -8,6 +8,7 @@ The same text is what a later reader would keep. Do not rewrite it into another 
 version: 1
 date: 2026-09-27
 title: The decision, in a few words
+prediction: what you expected, and by when
 verdict: shaky
 falsifier: the cheapest test that would prove it wrong
 confidence: 70%
@@ -23,6 +24,7 @@ Writers always emit these lines, in this order, inside a fence tagged `grill-rec
 | version | Always `1` for this format. |
 | date | The day the record was written, `YYYY-MM-DD`. |
 | title | The decision, one line. |
+| prediction | What you expect, and by when. One line. Empty when you have not written it. A block written before this line existed still reads: the prediction is then empty. |
 | verdict | One of: `solid`, `solid if`, `shaky`, `doesn't hold up`. |
 | falsifier | The judge's first falsifier, or `none named`. |
 | confidence | What you said, such as `70%` or `50–70%`. Empty when you did not say. A bare percent in the decision itself is not a confidence. |
@@ -34,7 +36,7 @@ Writers always emit these lines, in this order, inside a fence tagged `grill-rec
 - Field order on the way in does not matter. Writers still use the order above.
 - A block with no `version` line is not a record.
 - Any other version is skipped whole. It is not scored as if it were version 1.
-- Empty `confidence` is allowed. `date` and `title` are required.
+- Empty `confidence` is allowed. Empty `prediction` is allowed, and a missing `prediction` line is the same as empty. `date` and `title` are required.
 - The look-back reply is a different block. It uses `title`, `came_true`, `falsifier_fired` and `happened`, inside an ordinary text fence. That reply is not a decision record.
 
 ## What can be added later, without changing this block

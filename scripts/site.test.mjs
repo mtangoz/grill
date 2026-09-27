@@ -100,6 +100,9 @@ describe("site/page.html", () => {
     assert.match(page, /\.report p:not\(\.cta\)/);
     assert.match(page, /grill-record/);
     assert.match(page, /version: 1/);
+    assert.match(page, /prediction:/);
+    assert.match(page, /Did it come true\?/);
+    assert.match(page, /Did the thing that would prove you wrong happen\?/);
     assert.ok(readFileSync(join(ROOT, "docs/DECISION-RECORD.md"), "utf8").includes("version: 1"));
   });
 

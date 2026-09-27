@@ -358,7 +358,7 @@ describe("grill_look_back", () => {
     const c = await initialized({});
     const asked = await c.request("tools/call", { name: "grill_look_back", arguments: { records } });
     assert.equal(asked.result.isError, false);
-    assert.match(textOf(asked), /Did the prediction come true/);
+    assert.match(textOf(asked), /Did it come true/);
     assert.doesNotMatch(textOf(asked), /## Pattern/);
     const scored = await c.request("tools/call", {
       name: "grill_look_back",

@@ -10,6 +10,7 @@ import {
   decisionTitle,
   lookBack,
   parseRecords,
+  predictionFromSubject,
   verdictFromReport,
 } from "./reflection.mjs";
 
@@ -47,6 +48,7 @@ describe("the reflection footer", () => {
     assert.match(report, /^version: 1$/m);
     assert.match(report, /^date: 2026-09-27$/m);
     assert.match(report, /^title: Move the launch to March$/m);
+    assert.match(report, /^prediction: $/m);
     assert.match(report, /^verdict: shaky$/m);
     assert.match(report, /^falsifier: show the new price to one in ten new signups for two weeks$/m);
     assert.match(report, /^confidence: 70%$/m);
@@ -57,13 +59,17 @@ describe("the reflection footer", () => {
 
   it("does not treat a price percent as confidence, and does not invent one", () => {
     assert.equal(confidenceFromSubject("We will raise prices 20% in Q4."), "");
+    assert.equal(predictionFromSubject("We will raise prices 20% in Q4."), "");
     const report = appendReflection(JUDGE, { subject: "We will raise prices 20% in Q4.", now: NOW, route: "paste" });
     assert.match(report, /^confidence: $/m);
+    assert.match(report, /^prediction: $/m);
     assert.match(report, /say "look back"/);
     assert.doesNotMatch(report, /grill_look_back/);
   });
 
   it("keeps a confidence band as a band", () => {
+    assert.equal(predictionFromSubject("Prediction: more signups by June.\nI'm 70% sure."), "more signups by June.");
+    assert.equal(predictionFromSubject("I expect more signups by June"), "more signups by June");
     assert.equal(confidenceFromSubject("Confidence: 50-70%"), "50–70%");
     assert.equal(decisionTitle("## The decision: Take the job in Denver, and see the city later"), "Take the job in Denver, and see the city later");
     assert.equal(verdictFromReport("**Verdict: doesn't hold up**"), "doesn't hold up");
@@ -82,6 +88,7 @@ describe("look back", () => {
     "version: 1",
     "date: 2026-09-01",
     "title: Move the launch to March",
+    "prediction: more signups by June",
     "verdict: shaky",
     "falsifier: show the new price to one in ten new signups",
     "confidence: 70%",
@@ -99,7 +106,9 @@ describe("look back", () => {
   it("asks what happened and does not score when the user has not said", () => {
     const out = lookBack({ records });
     assert.match(out, /^## Look back/);
-    assert.match(out, /Did the prediction come true: yes, no, or not yet\?/);
+    assert.match(out, /Did it come true\?/);
+    assert.match(out, /Did the thing that would prove you wrong happen\?/);
+    assert.match(out, /Prediction then: more signups by June/);
     assert.match(out, /Move the launch to March/);
     assert.match(out, /Hire before the pilot/);
     assert.match(out, /Nothing is stored/);
@@ -120,6 +129,7 @@ describe("look back", () => {
       "happened: Five pilots paid.",
     ].join("\n");
     const out = lookBack({ records, happened });
+    assert.match(out, /Prediction then: more signups by June/);
     assert.match(out, /The doubt matched what happened/);
     assert.match(out, /The falsifier fired/);
     assert.match(out, /Confidence was high, and the call missed/);
@@ -182,6 +192,12 @@ describe("look back", () => {
     assert.equal(parsed.length, 1);
     assert.equal(parsed[0].title, "Raise prices");
     assert.equal(parsed[0].version, "1");
+    assert.equal(parsed[0].prediction, "");
+    const older = "version: 1\ndate: 2026-09-01\ntitle: Raise prices\nverdict: shaky\nfalsifier: a\nconfidence: 70%\nreview: 2026-10-01\n";
+    const kept = parseRecords(older);
+    assert.equal(kept.length, 1);
+    assert.equal(kept[0].title, "Raise prices");
+    assert.equal(kept[0].prediction, "");
     const mixed = [
       "version: 2",
       "date: 2026-09-01",
@@ -222,7 +238,7 @@ describe("every route carries the footer and the look-back, and the judge prompt
       for (const question of BEFORE_YOU_DECIDE_QUESTIONS) {
         assert.ok(text.includes(question), `${name} is missing a reflection question`);
       }
-      for (const key of ["version: 1", "date:", "title:", "verdict:", "falsifier:", "confidence:", "review:"]) {
+      for (const key of ["version: 1", "date:", "title:", "prediction:", "verdict:", "falsifier:", "confidence:", "review:"]) {
         assert.ok(text.includes(key), `${name} is missing the record field ${key}`);
       }
       assert.match(text, /grill-record/, `${name} is missing the record fence`);

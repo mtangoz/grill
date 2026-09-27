@@ -12,8 +12,8 @@ export const REVIEW_DAYS = 14;
 export const RECORD_VERSION = "1";
 export const RECORD_FENCE = "grill-record";
 /** Fixed write order. `version` is first so a paste can be told apart from any other notes. */
-export const RECORD_FIELDS = ["version", "date", "title", "verdict", "falsifier", "confidence", "review"];
-export const RECORD_KEYS = ["date", "title", "verdict", "falsifier", "confidence", "review"];
+export const RECORD_FIELDS = ["version", "date", "title", "prediction", "verdict", "falsifier", "confidence", "review"];
+export const RECORD_KEYS = ["date", "title", "prediction", "verdict", "falsifier", "confidence", "review"];
 
 export const BEFORE_YOU_DECIDE_QUESTIONS = [
   "What do you expect to happen, and by when? Write the prediction you will stand behind.",
@@ -61,12 +61,12 @@ export function addDays(now, days) {
   return date;
 }
 
-function clip(text) {
+function clip(text, max = 80) {
   const clean = oneLine(text).replace(/^#{1,6}\s*/, "").replace(/\*\*/g, "");
-  if (clean.length <= 80) return clean;
-  const cut = clean.slice(0, 80);
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max);
   const space = cut.lastIndexOf(" ");
-  return (space > 40 ? cut.slice(0, space) : cut).replace(/[,:;.\s]+$/, "");
+  return (space > max / 2 ? cut.slice(0, space) : cut).replace(/[,:;.\s]+$/, "");
 }
 
 /** A title for the record. Prefer a line the write-up already labels as the decision. */
@@ -97,6 +97,16 @@ export function confidenceFromSubject(subject) {
     const match = text.match(pattern);
     if (match) return confidenceLabel(match[1]);
   }
+  return "";
+}
+
+/** The prediction the user already wrote. A confidence is not a prediction. Leave it empty rather than invent one. */
+export function predictionFromSubject(subject) {
+  const text = String(subject || "");
+  const labeled = text.match(/^(?:#{1,6}\s*)?(?:\*\*)?prediction(?:\*\*)?\s*:\s*(.+)$/im);
+  if (labeled) return clip(labeled[1], 160);
+  const expect = text.match(/\bI expect\s+([^\n.]+)/i);
+  if (expect) return clip(expect[1], 160);
   return "";
 }
 
@@ -153,6 +163,7 @@ export function recordBlock(fields) {
     version: RECORD_VERSION,
     date: oneLine(fields.date ?? ""),
     title: oneLine(fields.title ?? ""),
+    prediction: oneLine(fields.prediction ?? ""),
     verdict: plainVerdict(fields.verdict),
     falsifier: oneLine(fields.falsifier ?? ""),
     confidence: oneLine(fields.confidence ?? ""),
@@ -167,6 +178,7 @@ export function reflectionFooter({
   verdict,
   falsifier,
   confidence = "",
+  prediction = "",
   date,
   review,
   route = "paste",
@@ -180,11 +192,12 @@ export function reflectionFooter({
     "",
     questions,
     "",
-    "The falsifier line is the judge's sharpest check. The confidence line is what you said before the verdict, when you said one. Change the confidence if the verdict moved you, and keep the earlier number beside it. A change is a new call.",
+    "The prediction line is what you expect, and by when. Fill it in if it is empty. The falsifier line is the judge's sharpest check. The confidence line is what you said before the verdict, when you said one. Change the confidence if the verdict moved you, and keep the earlier number beside it. A change is a new call.",
     "",
     recordBlock({
       date,
       title,
+      prediction,
       verdict: plainVerdict(verdict),
       falsifier: falsifier || "none named",
       confidence,
@@ -209,6 +222,7 @@ export function appendReflection(report, { subject = "", now = new Date(), route
     verdict: verdictFromReport(body) || "unknown",
     falsifier: falsifierFromReport(body) || "none named",
     confidence: confidenceFromSubject(subject),
+    prediction: predictionFromSubject(subject),
     date: isoDate(now),
     review: isoDate(addDays(now, REVIEW_DAYS)),
     route,
@@ -225,7 +239,7 @@ function takeRecord(current) {
   return record;
 }
 
-const RECORD_LINE = /^(version|date|title|verdict|falsifier|confidence|review)\s*:\s*(.*)$/i;
+const RECORD_LINE = /^(version|date|title|prediction|verdict|falsifier|confidence|review)\s*:\s*(.*)$/i;
 
 /**
  * Read version 1 records out of a paste. Field order does not matter. Any other version is
@@ -342,18 +356,21 @@ function questionsFor(records) {
   const lines = [];
   for (const record of records) {
     const confidence = record.confidence ? ` Confidence then: ${record.confidence}.` : " Confidence was not written down.";
+    const prediction = record.prediction ? `Prediction then: ${record.prediction}.` : "";
     lines.push(
       `### ${record.title}`,
       "",
-      `Verdict then: ${plainVerdict(record.verdict)}.${confidence} Review date: ${record.review || "not set"}.`,
+      [prediction, `Verdict then: ${plainVerdict(record.verdict)}.${confidence} Review date: ${record.review || "not set"}.`]
+        .filter(Boolean)
+        .join(" "),
       `Falsifier: ${record.falsifier || "none named"}.`,
-      "- Did the prediction come true: yes, no, or not yet?",
-      "- Did that falsifier fire: yes, no, or not yet?",
-      "- What actually happened, in one sentence?",
+      "- Did it come true? Yes or no.",
+      "- Did the thing that would prove you wrong happen? Yes or no.",
+      "- What happened, in one sentence?",
       "",
     );
   }
-  lines.push("Reply in this shape, one block per decision:", "");
+  lines.push("Answer in words. A pasted block with came_true, falsifier_fired and happened still counts:", "");
   lines.push("```text");
   lines.push(`title: ${records[0].title}`);
   lines.push("came_true: no");
@@ -377,6 +394,7 @@ function callReading(record, outcome) {
   const verdict = plainVerdict(record.verdict);
   const came = outcome.cameTrue;
   const parts = [`**${record.title}.** Verdict then: ${verdict}.`];
+  if (oneLine(record.prediction)) parts.push(`Prediction then: ${record.prediction}.`);
   if (came === "not yet" || !came) {
     parts.push(outcome.happened ? `Not scored yet. ${outcome.happened}` : "Not back yet, so this call is not scored.");
     return parts.join(" ");
@@ -472,6 +490,7 @@ export function lookBack({ records = "", happened = "" } = {}) {
         date: "2026-09-27",
         title: "The decision, in a few words",
         verdict: "shaky",
+        prediction: "what you expected, and by when",
         falsifier: "the cheapest test that would prove it wrong",
         confidence: "70%",
         review: "2026-10-11",
