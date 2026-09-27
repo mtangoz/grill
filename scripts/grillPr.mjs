@@ -13,11 +13,13 @@ import { classify, commentPlan, loadConfig } from "./automergeCore.mjs";
 import {
   GRILL_MARKER,
   GRILL_QUESTION,
+  actionableDegraded,
   alreadyGrilled,
   buildWriteUp,
+  companyCheck,
   formatGrillComment,
-  grillLabels,
-  judgeAuthorArgs,
+  judgePlan,
+  reviewOutcome,
   verdictBadge,
 } from "./grillPrCore.mjs";
 import { stripSecrets } from "./judgeCore.mjs";
@@ -144,7 +146,7 @@ function headMoved(repo, prNumber, sha) {
   return String(latest || "").toLowerCase() !== sha;
 }
 
-function runJudge(subjectPath, family) {
+function runJudge(subjectPath, plan) {
   const args = [
     join(ROOT, "scripts/judge.mjs"),
     "--file",
@@ -152,12 +154,13 @@ function runJudge(subjectPath, family) {
     "--question",
     GRILL_QUESTION,
     "--json",
-    ...judgeAuthorArgs(family),
+    ...plan.authorArgs,
   ];
   const env = { ...process.env };
   for (const key of ["JUDGE_FIXTURE", "JUDGE_OPENROUTER_URL", "JUDGE_DECISIONS_URL", "JUDGE_CHECK", "JUDGE_MODEL"]) {
     delete env[key];
   }
+  env.JUDGE_MODEL = plan.judgeModel;
   env.OPENROUTER_API_KEY = process.env.GRILL_CI_OPENROUTER_KEY;
   env.JUDGE_TIMEOUT_MS = "480000";
   return spawnSync(process.execPath, args, {
@@ -282,6 +285,19 @@ function main() {
     return;
   }
 
+  const plan = judgePlan({ author: pr.author ?? "", body: pr.body ?? "", config });
+  if (!plan.ok) {
+    upsert(repo, prNumber, comments, formatGrillComment({
+      kind: "not-decorrelated",
+      sha,
+      tier: result.tier,
+      reasons,
+      companyLine: `Author model vendor: ${plan.authorVendor}, judge: unknown (NOT decorrelated)`,
+    }));
+    throw new Error(plan.reason || "no judge model is from a different company");
+  }
+  console.log(`Author model vendor: ${plan.authorVendor}. Judge: ${plan.judgeModel}. Excluded: ${plan.excludedVendors.join(", ")}.`);
+
   const writeUp = buildWriteUp({
     title: pr.title ?? "",
     body: pr.body ?? "",
@@ -306,7 +322,7 @@ function main() {
   let child;
   try {
     writeFileSync(subjectPath, writeUp.text, { mode: 0o600 });
-    child = runJudge(subjectPath, result.authorFamily);
+    child = runJudge(subjectPath, plan);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -332,37 +348,45 @@ function main() {
     throw err;
   }
   const badge = verdictBadge(judged.verdict);
+  const notes = actionableDegraded(judged.degraded);
+  const check = companyCheck({
+    servedModel: judged.servedModel,
+    authorVendor: plan.authorVendor,
+    excludedVendors: plan.excludedVendors,
+    requireJudgeVendor: plan.requireJudgeVendor,
+  });
+  const outcome = reviewOutcome({
+    check,
+    badge,
+    degradedNotes: notes,
+    needsReviewLabel: config.needsReviewLabel,
+    grillSolidLabel: config.grillSolidLabel,
+  });
   const shared = {
     sha,
     tier: result.tier,
     reasons,
     servedModel: judged.servedModel,
     costUsd: judged.costUsd,
-    authorFamily: result.authorFamily,
+    companyLine: check.line,
+    verdictReason: judged.verdictReason,
+    challenges: judged.challenges,
+    badge,
   };
-  if (!badge || (Array.isArray(judged.degraded) && judged.degraded.length > 0)) {
-    upsert(repo, prNumber, comments, formatGrillComment({
-      ...shared,
-      kind: "degraded",
-      degraded: judged.degraded,
-    }));
+  if (outcome.failJob) {
+    upsert(repo, prNumber, comments, formatGrillComment({ ...shared, kind: "not-decorrelated" }));
+    applyLabels(repo, prNumber, pr.labels, outcome.labels);
+    throw new Error(`${check.line} The job fails.`);
+  }
+  if (outcome.kind === "degraded") {
+    upsert(repo, prNumber, comments, formatGrillComment({ ...shared, kind: "degraded", degraded: notes }));
     console.log("Degraded judge run. No label change.");
     return;
   }
 
-  applyLabels(repo, prNumber, pr.labels, grillLabels(badge, {
-    needsReviewLabel: config.needsReviewLabel,
-    grillSolidLabel: config.grillSolidLabel,
-  }));
-  upsert(repo, prNumber, comments, formatGrillComment({
-    ...shared,
-    kind: "result",
-    badge,
-    verdict: judged.verdict,
-    verdictReason: judged.verdictReason,
-    challenges: judged.challenges,
-  }));
-  console.log(`Verdict ${badge}. Model ${judged.servedModel || "unavailable"}. Cost ${judged.costUsd ?? "unknown"}.`);
+  applyLabels(repo, prNumber, pr.labels, outcome.labels);
+  upsert(repo, prNumber, comments, formatGrillComment({ ...shared, kind: "result" }));
+  console.log(`${check.line} Verdict ${badge}. Model ${judged.servedModel || "unavailable"}. Cost ${judged.costUsd ?? "unknown"}.`);
 }
 
 try {

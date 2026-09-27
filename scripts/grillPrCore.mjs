@@ -2,12 +2,15 @@
 // comment that comes back. Pure: no network, no git, no token. The runner checks
 // out the base commit and passes in text it fetched from the API.
 
+import { authorFamily } from "./automergeCore.mjs";
 import { budgetText, stripSecrets, VERDICT_BADGE } from "./judgeCore.mjs";
 
 export const GRILL_MARKER = "<!-- grill-ci -->";
 export const GRILL_QUESTION =
   "Should this PR be merged as is? What could break, what's untested, and what's the cheapest check before merging?";
 export const BODY_CHAR_BUDGET = 8000;
+export const NOT_DECORRELATED = "NOT decorrelated";
+const WRITTEN_BY_LINE = /^[ \t>*-]*written-by-model:[ \t]*([a-z0-9][a-z0-9._-]*)\/([a-z0-9][a-z0-9._:-]*)[ \t]*$/i;
 
 const SHA_MARKER = /<!-- grill-ci-sha: ([0-9a-f]{7,64}) -->/;
 
@@ -25,15 +28,112 @@ export function alreadyGrilled(comments, sha, botLogin = "github-actions[bot]") 
     if (!comment || comment.userLogin !== botLogin || typeof comment.body !== "string") continue;
     if (!comment.body.includes(GRILL_MARKER)) continue;
     const found = comment.body.match(SHA_MARKER);
-    if (found && found[1] === want) return true;
+    if (found && found[1] === want && !comment.body.includes(NOT_DECORRELATED)) return true;
   }
   return false;
 }
 
-/** `--author` args for judge.mjs. An empty family omits the flag (default exclusion). */
-export function judgeAuthorArgs(family) {
-  const value = String(family ?? "").trim().toLowerCase();
-  return value ? ["--author", value] : [];
+/** Vendor of an OpenRouter slug (`google/gemini-2.5-pro` → `google`), or "". */
+export function vendorOfModel(slug) {
+  const text = String(slug ?? "").trim().toLowerCase();
+  const slash = text.indexOf("/");
+  if (slash <= 0) return "";
+  return text.slice(0, slash);
+}
+
+/**
+ * A `Written-by-model: vendor/model` line in the pull request body, or null.
+ * Only a whole line counts. The first match wins.
+ */
+export function writtenByModel(body) {
+  const text = typeof body === "string" ? body : "";
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.match(WRITTEN_BY_LINE);
+    if (!match) continue;
+    const vendor = match[1].toLowerCase();
+    const model = match[2].toLowerCase();
+    return { vendor, model, slug: `${vendor}/${model}` };
+  }
+  return null;
+}
+
+/**
+ * Who wrote the pull request, which companies the judge must not be, and which
+ * model to request. A known login vendor wins over the body. An unknown login
+ * uses a Written-by-model line when the body has one, and otherwise pins the
+ * default Google judge. x-ai is always excluded.
+ */
+export function judgePlan({ author = "", body = "", config }) {
+  const loginVendor = authorFamily(author, config);
+  const declared = loginVendor ? null : writtenByModel(body);
+  const authorVendor = loginVendor || declared?.vendor || "unknown";
+  const excluded = new Set(
+    (config.alwaysExcludedVendors ?? []).map((vendor) => String(vendor).trim().toLowerCase()).filter(Boolean),
+  );
+  excluded.add("x-ai");
+  if (authorVendor !== "unknown") excluded.add(authorVendor);
+  const judgeModel = [config.defaultJudgeModel, config.alternateJudgeModel].find((slug) => {
+    const vendor = vendorOfModel(slug);
+    return vendor && !excluded.has(vendor);
+  });
+  if (!judgeModel) {
+    return {
+      ok: false,
+      authorVendor,
+      excludedVendors: [...excluded].sort(),
+      reason: "no judge model is from a different company",
+    };
+  }
+  const judgeVendor = vendorOfModel(judgeModel);
+  return {
+    ok: true,
+    authorVendor,
+    declared: declared?.slug ?? "",
+    judgeModel,
+    judgeVendor,
+    excludedVendors: [...excluded].sort(),
+    authorArgs: authorVendor === "unknown" ? [] : ["--author", authorVendor],
+    requireJudgeVendor: authorVendor === "unknown" ? judgeVendor : "",
+  };
+}
+
+/** Drop the intentional model pin. Any other degraded note still means no review. */
+export function actionableDegraded(degraded) {
+  return (Array.isArray(degraded) ? degraded : []).filter((note) => !/SHADOWS the default's Auto Router/.test(String(note)));
+}
+
+/**
+ * Did a different company actually answer? `verifiable` is false when the
+ * response named no model. An unknown author must be answered by the pinned
+ * judge's company, because any other company might be the one that wrote it.
+ */
+export function companyCheck({ servedModel, authorVendor = "unknown", excludedVendors = [], requireJudgeVendor = "" } = {}) {
+  const judgeVendor = vendorOfModel(servedModel);
+  const excluded = new Set([...excludedVendors, "x-ai"].map((vendor) => String(vendor).trim().toLowerCase()).filter(Boolean));
+  const required = String(requireJudgeVendor ?? "").trim().toLowerCase();
+  const verifiable = judgeVendor !== "";
+  const decorrelated = verifiable && !excluded.has(judgeVendor) && (!required || judgeVendor === required);
+  const shownJudge = judgeVendor || "unknown";
+  const mark = decorrelated ? "different company ✓" : NOT_DECORRELATED;
+  return {
+    authorVendor: authorVendor || "unknown",
+    judgeVendor: shownJudge,
+    verifiable,
+    decorrelated,
+    line: `Author model vendor: ${authorVendor || "unknown"}, judge: ${shownJudge} (${mark})`,
+  };
+}
+
+/** Labels and whether the job fails. A served model from an excluded company fails the job. */
+export function reviewOutcome({ check, badge, degradedNotes = [], needsReviewLabel, grillSolidLabel } = {}) {
+  const labelsFor = (name) => grillLabels(name, { needsReviewLabel, grillSolidLabel });
+  if (check?.verifiable && !check.decorrelated) {
+    return { failJob: true, kind: "not-decorrelated", labels: labelsFor("shaky") };
+  }
+  if (!badge || !check?.decorrelated || degradedNotes.length > 0) {
+    return { failJob: false, kind: "degraded", labels: { add: [], remove: [] } };
+  }
+  return { failJob: false, kind: "result", labels: labelsFor(badge) };
 }
 
 function reasonText(reason) {
@@ -204,22 +304,36 @@ export function formatGrillComment(state = {}) {
       `**Grill CI · ${tier} risk · no review**`,
       "The judge run was degraded, so this is not a review and no label was changed.",
       notes.length ? notes.map((line) => `- ${line}`).join("\n") : "",
+      state.companyLine || "",
+      `Judge model: ${flatten(state.servedModel) || "unavailable"}. Cost: ${formatCost(state.costUsd)}.`,
+    ]);
+  }
+  if (state.kind === "not-decorrelated") {
+    return finish([
+      GRILL_MARKER,
+      stamp,
+      `**Grill CI · ${tier} risk · ${NOT_DECORRELATED}**`,
+      state.companyLine || `Author model vendor: unknown, judge: unknown (${NOT_DECORRELATED})`,
+      "The model that answered is not from a different company than the model that wrote this pull request. This is not an independent review. The job fails, and `needs-review` is added.",
+      reasonBlock(state.reasons),
+      state.verdictReason ? flatten(state.verdictReason) : "",
+      "**What could break, and the cheapest check**",
+      challengeBlock(state.challenges),
       `Judge model: ${flatten(state.servedModel) || "unavailable"}. Cost: ${formatCost(state.costUsd)}.`,
     ]);
   }
 
   const badge = state.badge || verdictBadge(state.verdict) || "unknown";
-  const family = String(state.authorFamily ?? "").trim();
-  const exclusion = family ? `\`--author ${family}\`` : "the default (Anthropic excluded, `--author` omitted)";
   return finish([
     GRILL_MARKER,
     stamp,
     `**Grill CI · ${tier} risk · ${badge}**`,
+    state.companyLine || "",
     reasonBlock(state.reasons),
     state.verdictReason ? flatten(state.verdictReason) : "",
     "**What could break, and the cheapest check**",
     challengeBlock(state.challenges),
-    `Judge model: ${flatten(state.servedModel) || "unavailable"}. Cost: ${formatCost(state.costUsd)}. Exclusion: ${exclusion}.`,
-    "This is advisory. The job passes either way, so it does not block merging unless branch protection requires it. `needs-review` blocks auto-merge. `grill-solid` does not make a pull request low risk. A solid verdict clears `needs-review`. Use `do-not-merge` when a later solid grill should still not merge.",
+    `Judge model: ${flatten(state.servedModel) || "unavailable"}. Cost: ${formatCost(state.costUsd)}.`,
+    "The verdict is advisory. The job fails when the served model is from an excluded company. `needs-review` blocks auto-merge. `grill-solid` does not make a pull request low risk. A solid verdict clears `needs-review`. Use `do-not-merge` when a later solid grill should still not merge.",
   ]);
 }

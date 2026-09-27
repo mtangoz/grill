@@ -26,6 +26,9 @@ const CONFIG_KEYS = [
   "highPaths",
   "highSubstrings",
   "highPageBasenames",
+  "alwaysExcludedVendors",
+  "defaultJudgeModel",
+  "alternateJudgeModel",
 ];
 
 function expectStringArray(value, name) {
@@ -66,6 +69,17 @@ function expectAuthorFamilies(value) {
   return Object.freeze(out);
 }
 
+function expectModelSlug(value, name) {
+  if (typeof value !== "string" || !/^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/i.test(value.trim())) {
+    throw new Error(`${name} must be a vendor/model slug`);
+  }
+  return value.trim().toLowerCase();
+}
+
+function modelVendor(slug) {
+  return String(slug).split("/")[0].toLowerCase();
+}
+
 /** Validate `.github/automerge.json`. Throws if the policy file is unusable. */
 export function loadConfig(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("automerge config must be an object");
@@ -98,6 +112,20 @@ export function loadConfig(raw) {
   if (grillSkipDiffChars <= diffCharBudget) {
     throw new Error("grillSkipDiffChars must be greater than diffCharBudget");
   }
+  const alwaysExcludedVendors = expectStringArray(raw.alwaysExcludedVendors, "alwaysExcludedVendors").map((vendor) => vendor.toLowerCase());
+  if (!alwaysExcludedVendors.includes("x-ai")) {
+    throw new Error("alwaysExcludedVendors must include x-ai");
+  }
+  const defaultJudgeModel = expectModelSlug(raw.defaultJudgeModel, "defaultJudgeModel");
+  const alternateJudgeModel = expectModelSlug(raw.alternateJudgeModel, "alternateJudgeModel");
+  const defaultVendor = modelVendor(defaultJudgeModel);
+  const alternateVendor = modelVendor(alternateJudgeModel);
+  if (defaultVendor === alternateVendor) throw new Error("defaultJudgeModel and alternateJudgeModel must be different companies");
+  for (const vendor of [defaultVendor, alternateVendor]) {
+    if (alwaysExcludedVendors.includes(vendor)) {
+      throw new Error(`${vendor} is always excluded, so it cannot be a Grill CI judge`);
+    }
+  }
   return Object.freeze({
     authors,
     authorFamilies: expectAuthorFamilies(raw.authorFamilies),
@@ -119,6 +147,9 @@ export function loadConfig(raw) {
     highPaths: expectStringArray(raw.highPaths, "highPaths"),
     highSubstrings: expectStringArray(raw.highSubstrings, "highSubstrings"),
     highPageBasenames: expectStringArray(raw.highPageBasenames, "highPageBasenames").map((name) => name.toLowerCase()),
+    alwaysExcludedVendors,
+    defaultJudgeModel,
+    alternateJudgeModel,
   });
 }
 
@@ -210,9 +241,10 @@ function sameText(a, b) {
 }
 
 /**
- * Model family passed to `judge.mjs --author` for this login.
- * An empty string means omit `--author`, which keeps the default Auto Router
- * exclusion (Anthropic). Unknown logins also get the default.
+ * Vendor this login is known to write with, or "" when the login does not say.
+ * Claude Code is Anthropic. Codex is OpenAI. Cursor logins and mtangoz are "".
+ * Grill CI treats "" as an unknown writing model and pins a Google judge unless
+ * the pull request body names one with Written-by-model.
  */
 export function authorFamily(author, config) {
   const login = typeof author === "string" ? author : "";

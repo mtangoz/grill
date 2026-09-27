@@ -414,9 +414,13 @@ describe("risk tiers", () => {
     assert.equal(authorFamily("Claude[bot]", config), "anthropic");
     assert.equal(authorFamily("chatgpt-codex-connector[bot]", config), "openai");
     assert.equal(authorFamily("someone-else", config), "");
+    assert.equal(config.defaultJudgeModel, "google/gemini-2.5-pro");
+    assert.equal(config.alternateJudgeModel, "openai/gpt-5.6-sol");
+    assert.ok(config.alwaysExcludedVendors.includes("x-ai"));
     assert.match(rawConfig.authorFamilyNote, /claude\[bot\].*Anthropic/);
     assert.match(rawConfig.authorFamilyNote, /chatgpt-codex-connector\[bot\].*OpenAI/);
-    assert.match(rawConfig.authorFamilyNote, /empty string omits --author/);
+    assert.match(rawConfig.authorFamilyNote, /Written-by-model/);
+    assert.match(rawConfig.authorFamilyNote, /x-ai/);
   });
 
   it("marks everything that is not low and not high as medium", () => {

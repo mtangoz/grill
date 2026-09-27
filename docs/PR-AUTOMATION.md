@@ -92,17 +92,23 @@ The judge runs with `OPENROUTER_API_KEY` set from the repository secret `GRILL_C
 
 ### Who is excluded from judging
 
-`authorFamilies` in `.github/automerge.json` maps the pull request author to the `--author` flag. That flag replaces the default exclusion. It does not add to it. An empty string omits the flag.
+The judge has to be a different company from the model that wrote the pull request. `x-ai` is excluded on every run. The map is `authorFamilies` in `.github/automerge.json`.
 
-| Author | `--author` | Excluded from the judge |
+| Author | Writing model | Judge |
 | --- | --- | --- |
-| `mtangoz` | omitted | Anthropic (`anthropic/*`, `*/claude-*`), the default |
-| `cursor[bot]` | omitted | Anthropic, the default |
-| `cursoragent` | omitted | Anthropic, the default |
-| `claude[bot]` | `anthropic` | Anthropic |
-| `chatgpt-codex-connector[bot]` | `openai` | OpenAI (`openai/*`) |
+| `claude[bot]` | Anthropic | `google/gemini-2.5-pro`. Anthropic is excluded. |
+| `chatgpt-codex-connector[bot]` | OpenAI | `google/gemini-2.5-pro`. OpenAI is excluded. |
+| `mtangoz`, `cursor[bot]`, `cursoragent`, or any other login | Not known from the login | `google/gemini-2.5-pro`, which is neither Anthropic nor OpenAI |
 
-An allowlisted login with no row uses the same default as `mtangoz`. Cursor agents and `mtangoz` stay on that default so the Auto Router exclusion logic is unchanged.
+A login that does not name a vendor can say which model wrote the pull request with one line in the body:
+
+```
+Written-by-model: anthropic/claude-opus-4
+```
+
+That vendor is then excluded. If the line names Google, the judge is `openai/gpt-5.6-sol` instead, because the default judge is Google. A `Written-by-model` line does not override `claude[bot]` or `chatgpt-codex-connector[bot]`.
+
+After the run, Grill CI reads the model that actually answered. The comment shows `Author model vendor: X, judge: Y (different company ✓)`. If that vendor is one of the excluded companies, the comment is marked NOT decorrelated, the pull request gets `needs-review`, and the job fails. A failed check is not treated as already grilled, so a later run tries again.
 
 ### What Grill CI writes
 
@@ -116,7 +122,7 @@ Labels:
 - `solid` or `solid if` adds `grill-solid` and removes `needs-review`. `grill-solid` does not make the pull request low risk.
 - A low-risk follow-up does not clear labels. Remove `needs-review` yourself if that diff should auto-merge.
 
-The job is advisory. It passes whether the verdict is solid or not. It fails only when the judge run itself errors. It does not block merging unless branch protection is later told to require it.
+The verdict is advisory. The job passes for a solid verdict and for a shaky one. It fails when the judge run errors, and it fails when the model that answered is from an excluded company. It does not block merging unless branch protection is later told to require it. `needs-review` still blocks auto-merge.
 
 ## Repository settings
 
