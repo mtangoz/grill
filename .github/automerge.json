@@ -1,5 +1,5 @@
 {
-  "authors": ["mtangoz", "cursor[bot]", "cursoragent", "claude[bot]"],
+  "authors": ["mtangoz", "cursor[bot]", "cursoragent", "claude[bot]", "chatgpt-codex-connector[bot]"],
   "maxChangedLines": 300,
   "maxFiles": 15,
   "blockingLabels": ["do-not-merge", "needs-review"],

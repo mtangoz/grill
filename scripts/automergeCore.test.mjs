@@ -38,8 +38,8 @@ function rules(result) {
 }
 
 describe("the shipped policy", () => {
-  it("allowlists mtangoz, the Cursor agent accounts, and the Claude Code app bot", () => {
-    assert.deepEqual(config.authors, ["mtangoz", "cursor[bot]", "cursoragent", "claude[bot]"]);
+  it("allowlists mtangoz, the Cursor agent accounts, Claude Code, and the Codex connector", () => {
+    assert.deepEqual(config.authors, ["mtangoz", "cursor[bot]", "cursoragent", "claude[bot]", "chatgpt-codex-connector[bot]"]);
     assert.equal(config.maxChangedLines, 300);
     assert.equal(config.maxFiles, 15);
     assert.deepEqual(config.blockingLabels, ["do-not-merge", "needs-review"]);
@@ -92,6 +92,18 @@ describe("a safe copy change passes", () => {
     assert.equal(result.lowRisk, true);
     assert.deepEqual(result.failures, []);
     assert.equal(classify(pull({ author: "Claude[bot]" }), config).lowRisk, true);
+  });
+
+  it("passes a pull request opened by chatgpt-codex-connector[bot]", () => {
+    const result = classify(pull({ author: "chatgpt-codex-connector[bot]" }), config);
+    assert.equal(result.lowRisk, true);
+    assert.deepEqual(result.failures, []);
+  });
+
+  it("accepts an author that is added only in the config", () => {
+    const extra = loadConfig({ ...rawConfig, authors: [...rawConfig.authors, "future-agent[bot]"] });
+    assert.equal(classify(pull({ author: "future-agent[bot]" }), extra).lowRisk, true);
+    assert.equal(classify(pull({ author: "future-agent[bot]" }), config).lowRisk, false);
   });
 
   it("passes exactly 300 lines and exactly 15 files", () => {
