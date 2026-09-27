@@ -234,6 +234,32 @@ describe("reconcileVerdict — the verdict must rest on challenges the reader ca
   it("accepts a clean 'holds' over an empty list — finding nothing is a real result", () => {
     assertMatchObject(reconcileVerdict("holds", []), { verdict: "holds", coherent: true });
   });
+
+  it("flags a plain 'holds' over a surviving SERIOUS challenge — a verdict kinder than its own challenges", () => {
+    const r = reconcileVerdict("holds", [{ severity: "serious" }, { severity: "minor" }]);
+    assert.equal(r.coherent, false);
+    assert.match(r.note, /1 SERIOUS challenge/);
+    assert.match(r.note, /"holds-with-conditions" at best/);
+    // Reported, never overwritten: the reader sees both.
+    assert.equal(r.verdict, "holds");
+  });
+
+  it("lets a serious challenge sit under 'holds-with-conditions' or a harsher verdict", () => {
+    for (const verdict of ["holds-with-conditions", "weak"]) {
+      assertMatchObject(reconcileVerdict(verdict, [{ severity: "serious" }]), { verdict, coherent: true, note: null });
+    }
+  });
+
+  it("still passes 'holds' over moderate and minor challenges — weight, not count", () => {
+    const many = [...Array(6).fill({ severity: "moderate" }), ...Array(6).fill({ severity: "minor" })];
+    assertMatchObject(reconcileVerdict("holds", many), { verdict: "holds", coherent: true });
+  });
+
+  it("names the fatal challenge first when 'holds' sits over both a fatal and a serious one", () => {
+    const r = reconcileVerdict("holds", [{ severity: "serious" }, { severity: "fatal" }]);
+    assert.equal(r.coherent, false);
+    assert.match(r.note, /FATAL/);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -275,6 +301,18 @@ describe("JUDGE_TOOL — every mandatory field is a refusal point", () => {
     assert.ok(props.verdict.description.includes("WEIGHT"));
   });
 
+  it("prices both errors, so an unearned 'holds' is never the safe answer", () => {
+    assert.match(JUDGE_TOOL.description, /Both errors cost the reader/);
+    assert.match(JUDGE_TOOL.description, /unearned "holds"/);
+    assert.doesNotMatch(JUDGE_TOOL.description, /costs more than a missed one/);
+  });
+
+  it("rules out a plain 'holds' over a serious challenge, and grades facts rather than which side wrote them", () => {
+    assert.match(props.verdict.description, /serious challenge rules out a plain "holds"/);
+    assert.match(props.verdict.description, /must not depend on which side wrote it up/);
+    assert.match(props.verdict.description, /no serious or fatal challenge survived/);
+  });
+
   it("rejects unlisted fields on a challenge, and on the whole call", () => {
     assert.equal(props.challenges.items.additionalProperties, false);
     assert.equal(JUDGE_TOOL.parameters.additionalProperties, false);
@@ -299,6 +337,45 @@ describe("buildJudgeMessages", () => {
   it("says plainly that finding nothing is a real result", () => {
     const [system] = buildJudgeMessages({ subject: "x" });
     assert.ok(system.content.includes("Finding nothing is a real result"));
+  });
+
+  // The positive-bias guards: a write-up from the decision's own side, and a judge told only
+  // that a missed flaw is the cheap error, together hand the author's conclusion back to them.
+  it("tells the judge the material comes from the side that wants it to hold, before the discipline starts", () => {
+    const [system] = buildJudgeMessages({ subject: "x" });
+    const at = (needle) => system.content.indexOf(needle);
+    assert.ok(at("the side that wants it to hold") > -1);
+    assert.ok(at("How sure it sounds is not evidence") > -1);
+    assert.ok(at("the side that wants it to hold") < at("Steelman first"));
+  });
+
+  it("prices both errors instead of calling a missed flaw the cheap one", () => {
+    const [system] = buildJudgeMessages({ subject: "x" });
+    assert.ok(system.content.includes("Both errors cost the reader"));
+    assert.ok(system.content.includes('an unearned "holds"'));
+    assert.ok(!system.content.includes("worse than a missed one"));
+    // The anti-padding half stays: this rebalances, it does not flip.
+    assert.ok(system.content.includes("fabricated objection"));
+    assert.ok(system.content.includes("You are being asked to be right"));
+    // "A serious challenge rules out holds" must not be dodged by filing the problem as moderate.
+    assert.ok(system.content.includes("to keep a kinder verdict"));
+  });
+
+  it("gives the other side the same effort, checks the write-up's framing, and runs the swap test last", () => {
+    const [system] = buildJudgeMessages({ subject: "x" });
+    const at = (needle) => system.content.indexOf(needle);
+    assert.ok(system.content.includes("Steelman the other side too, with the same effort"));
+    assert.ok(system.content.includes("not a head start"));
+    assert.ok(system.content.includes("Check the question and the framing"));
+    assert.ok(system.content.includes("a case against that it states only to answer"));
+    assert.ok(system.content.includes("instead of whether"));
+    assert.ok(at("Judge the whole on weight") < at("swap sides"));
+    assert.ok(system.content.includes("had someone who chose the other way written up the same facts"));
+  });
+
+  it("says the question comes from the same side as the subject", () => {
+    const [, user] = buildJudgeMessages({ subject: "x", question: "which option do these facts support?" });
+    assert.ok(user.content.includes("written by the same side as the subject"));
   });
 
   it("includes context blocks, labelled, and marks them as not-the-subject", () => {
@@ -365,6 +442,33 @@ describe("renderJudgeReport", () => {
     });
     assert.ok(md.indexOf("DEGRADED RUN") < md.indexOf("Verdict"));
     assert.ok(md.includes("treat this as NO review"));
+  });
+
+  it("puts a user-pinned chain in the footer, and does not call that run degraded", () => {
+    const note =
+      "JUDGE_MODEL pins `google/gemini-2.5-pro`, which SHADOWS the default's Auto Router — the per-request model choice is off and this judge is pinned to one vendor";
+    const md = renderJudgeReport({ verdict: "holds", challenges: [], notes: [note] });
+    assert.doesNotMatch(md, /DEGRADED RUN/);
+    assert.match(md, /tried to break it and could not/);
+    assert.match(md, /note: JUDGE_MODEL pins `google\/gemini-2.5-pro`/);
+    assert.ok(md.indexOf("**Verdict:") < md.indexOf("SHADOWS the default's Auto Router"));
+  });
+
+  it("keeps a real degradation in the banner when a pin note is also present", () => {
+    const note =
+      "JUDGE_MODEL pins `openai/gpt-5.6-sol`, which SHADOWS the default's Auto Router — the per-request model choice is off and this judge is pinned to one vendor";
+    const md = renderJudgeReport({
+      verdict: "holds",
+      challenges: [],
+      degraded: ["NOT AN INDEPENDENT REVIEW — same family"],
+      notes: [note],
+    });
+    const banner = md.slice(0, md.indexOf("**Verdict:"));
+    assert.match(banner, /DEGRADED RUN/);
+    assert.match(banner, /NOT AN INDEPENDENT REVIEW/);
+    assert.doesNotMatch(banner, /SHADOWS/);
+    assert.match(md, /NOT evidence that none exist/);
+    assert.ok(md.indexOf("**Verdict:") < md.indexOf("note: JUDGE_MODEL pins"));
   });
 
   it("distinguishes 'nothing found' from 'could not see' on an empty challenge list", () => {

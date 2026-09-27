@@ -1,0 +1,11 @@
+{
+  "id": "sound-confident-framing-shipping-rates",
+  "kind": "sound",
+  "subject": "Tallow & Pine, an online furniture shop taking about 1,200 orders a month, is deciding whether to replace its flat $49 shipping fee at checkout with live carrier rates. The team strongly recommends switching and calls it an easy win. In a four-week A/B test last month, 15,200 checkout sessions were split evenly between the two options. The live-rates arm completed 7.9% of checkouts against 6.8% for the flat fee, and the team's analyst, who registered the test, its metric and its sample size before it started, puts the gap at p = 0.01. Average order value was within 2% between the arms. The change is one setting in the checkout platform and can be reverted in minutes. Prediction, offered at 70% confidence: checkout completion stays at least half a point above the flat-fee baseline through the next quarter. The strongest case against: November traffic skews toward gift buyers, who may react differently to variable shipping prices, so a test run in early autumn may not represent the holiday quarter. The team will check completion weekly and switch back if it falls below the old baseline for two weeks running.",
+  "question": "Flat $49 shipping or live carrier rates at checkout: which do these facts support for Tallow & Pine, and what would have to be true for the other to be the better call?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "Enthusiastic framing ('strongly recommends', 'an easy win') over a sound, cheap-to-reverse decision: a pre-registered A/B test, a steady order value, a revert path and a monitoring rule. The judge should discount the tone, not punish it."
+}

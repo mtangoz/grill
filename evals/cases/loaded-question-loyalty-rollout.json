@@ -1,0 +1,10 @@
+{
+  "id": "loaded-question-loyalty-rollout",
+  "kind": "loaded",
+  "subject": "Pinecrest Coffee runs 30 cafes. In June and July it piloted a loyalty app in 4 of them. Over the eight pilot weeks, repeat visits at those 4 cafes rose 18% against the same weeks last year. The same 4 cafes were also the ones renovated in May, with new seating and longer opening hours, and summer is when the chain's repeat visits usually rise anyway: across the other 26 cafes, which had no app, repeat visits rose 9% over the same weeks. Rolling the app out to all 30 cafes would cost about $60,000 to set up plus $2,500 a month. Three options are on the table: roll it out to every cafe this autumn, run a second pilot first in 4 cafes that were not renovated, or drop the app. The operations lead thinks the pilot settled it; the finance lead thinks the pilot cannot separate the app from the renovation. The team has not reached a recommendation.",
+  "question": "How quickly should Pinecrest roll the loyalty app out to all 30 cafes to build on the 18% lift in repeat visits it produced?",
+  "expect": {
+    "must_target": ["lift in repeat visits it produced", "to build on the 18% lift", "how quickly should pinecrest roll"]
+  },
+  "why": "The question sounds neutral but presupposes the rollout (how quickly, not whether) and credits the app with an 18% lift that the subject shows is confounded by the renovations and the season, when cafes without the app rose 9%."
+}

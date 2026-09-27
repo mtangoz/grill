@@ -9,7 +9,7 @@ A model router improves every day without reading anyone's prompts: it learns wh
 | Loop | Learns from | Runs | Output |
 |---|---|---|---|
 | **1. Model choice** | The router's market data: which models people use for each task type | Continuously, inside the router | The judge Grill gets, inherited free as models improve |
-| **2. Quality** | 12 synthetic decisions in `evals/cases/`, with planted flaws, sound cases and loaded questions. Each report is also scored by **Jev**, TypeSafe's typed decision model, which is a third model family | Weekly, and on every change to the judge (`eval.yml`) | Gated: catch rate, false-alarm rate, loaded-question catches, decorrelation. Watched: quotes grounded, falsifiers concrete, verdicts that fit, and Jev's reading of whether the planted flaw was caught. An issue if a gate falls below its floor |
+| **2. Quality** | 15 synthetic decisions in `evals/cases/`, with planted flaws, sound cases, loaded questions, and write-ups that lean toward their own decision. Each report is also scored by **Jev**, TypeSafe's typed decision model, which is a third model family | Weekly, and on every change to the judge (`eval.yml`) | Gated: catch rate, false-alarm rate, loaded-question catches, decorrelation. Watched: quotes grounded, falsifiers concrete, verdicts that fit, and Jev's reading of whether the planted flaw was caught. An issue if a gate falls below its floor |
 | **3. Usefulness and accuracy** | Opt-in, dropdown-only signals: "worth engaging?" by judge family, and each verdict against its outcome | Monthly (`learn.yml`) | A report with recommendations, such as "exclude judge family X" or "verdicts aren't predicting outcomes" |
 
 **Plus upkeep** (`upstream.yml`, weekly):
@@ -20,7 +20,7 @@ A model router improves every day without reading anyone's prompts: it learns wh
 
 These run on a single grill. They are not the weekly eval loop above.
 
-- **Local, always on:** Grill checks every quote a challenge attacks against your write-up, and flags any it can't find.
+- **Local, always on:** Grill checks every quote a challenge attacks against your write-up, and flags any it can't find. It also flags a "solid" given over a serious challenge.
 - **Jev, on by default:** a decision model from TypeSafe, on a zero-retention endpoint, scores whether each falsifier is a real test and whether the verdict fits. Claude tells you before each grill that Jev will see the masked write-up. Skip it for one grill by saying so, or switch it off in Grill's settings. It adds about $0.0002 a grill.
 
 The reflection at the end of a report (what you expect, how sure you are, what would prove you wrong) is not sent to the judge and is not a learning signal. Grill does not store it.
@@ -38,7 +38,7 @@ The reflection at the end of a report (what you expect, how sure you are, what w
 3. **Gate.**
    - The change must keep the synthetic evals above their floors (`evals/thresholds.json`).
    - A change prompted by a real-world failure also adds a synthetic case that reproduces it, so the evals grow with what's learned.
-   - Evals are a gate, never the goal. Tuning the prompt to the 12 cases would only teach the judge the test.
+   - Evals are a gate, never the goal. Tuning the prompt to the cases would only teach the judge the test.
 4. **Ship.** A tagged release rebuilds the extension, with provenance.
 
 ## What the signals can and can't tell us

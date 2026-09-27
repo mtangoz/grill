@@ -20,13 +20,25 @@ If they set up the one-click route with their own model-router key (not Grill Pr
 
 ## 1. Write the subject
 
+You have usually helped reach this decision, and even when you haven't, a write-up in the user's own terms leans toward it. The judge tends to agree with whatever the write-up leans toward: that is the usual reason a grill comes back kinder than it should. Write as a clerk, not an advocate.
+
 Ask only for what's missing, at most two questions. Then write:
-- **The decision,** and the options that were on the table.
-- **The reasons given,** in the user's words where you have them.
+- **The decision,** and every option that was on the table, including "not now" or "keep things as they are" when that was one.
+- **The reasons given,** in the user's words where you have them. Only reasons the user gave or agreed with; if one started with you, say so.
 - **The prediction and confidence,** exactly as the user gave them. A band stays a band; never invent one. If there's none, ask: "What do you expect to happen, by when, and how sure are you?"
-- **The strongest case against,** written as its best advocate would put it. Use any dissent you know of (a co-founder, a customer); if there's none, make the best case for the main alternative.
+- **The strongest case against,** written as its best advocate would put it, as long and as specific as the reasons for. Use any dissent you know of (a co-founder, a customer); if there's none, make the best case for the main alternative. State it and stop: don't answer it, not even with the user's answer. Their answer goes with their reasons, and the judge weighs both.
+- **The facts that cut against it,** as well as the ones that support it: the number that looks bad, the time it went wrong before, what nobody knows yet.
 - **Every number with its date,** read fresh where you can. The judge builds its case on the figures you give it.
-- **A neutral question,** at most 300 characters, that never names a preferred answer. For a forecast, ask whether the confidence is too high, too low or about right, and for the earliest sign **in either direction**.
+- **A neutral question,** at most 300 characters, that never names a preferred answer:
+  - name every option, not only the chosen one;
+  - keep the reasons out of it: "to win back churned users" inside a question is a reason, not a question;
+  - don't ask a question whose easy answer is the choice already made: "Should we…?", "Does it make sense to…?", or "How fast should we…?" when the real question is whether.
+
+  A good default: "Between A and B, which do these facts support, and what would have to be true for the other to be the better call?" For a forecast, ask whether the confidence is too high, too low or about right, and for the earliest sign **in either direction**.
+
+Then check the framing before you show it:
+- **Report, don't grade.** Cut words that grade the evidence instead of stating it (clearly, obviously, strong, safe, a no-brainer), and any recommendation of your own.
+- **The swap test.** Would someone who chose the other option sign this as a fair account? If not, fix it.
 
 Leave out names of people who aren't needed, and anything personal, health- or HR-related.
 
@@ -66,13 +78,16 @@ When they paste the judge's answer back, compare companies before you relay the 
 
 On the paste route, the company check above is the first line you show. A result from the `grill` tool already enforced a different company in code; relay that report as written, and do not look for a Judge line.
 
+You're the model the user has been thinking with, so the way you relay the verdict can undo it.
 - **Plain words, the same ones the website uses.** Say solid, solid if…, shaky or doesn't hold up for the four verdicts (holds, holds-with-conditions, weak, refuted). Call a challenge a weak spot and a falsifier a quick check. Change the words, never the substance.
-- **Verdict first,** with its one-line reason. On the paste route it comes after the company-check line.
-- **The top challenges by severity,** each with its falsifier. Quote the judge; don't soften it or argue it into agreement.
+- **Verdict first,** with its one-line reason. "Solid if" always comes with its conditions; never shorten it to "solid". If the report says the verdict doesn't match the challenges, say that too. On the paste route the verdict comes after the company-check line.
+- **The top challenges by severity,** each with its falsifier. Quote the judge; don't soften it or argue it into agreement. Add nothing that takes the edge off: no "overall, the judge agrees with you", no rebuttal beside a challenge, and no leading with the steelman when the verdict is shaky or doesn't hold up.
 - **Degradation:** if the report carries a warning banner (a clipped subject, a failed provider, a judge from an excluded family), say so plainly. "The judge found nothing" and "the judge couldn't see it" must never read the same.
-- **Next steps:** the report's own "Before you decide" section, when the tool included one. Show it. Do not add a second copy, and do not send it to the judge.
+- **Pushback:** if the user disputes a challenge, don't settle it for them, or for the judge. Its quick check settles it.
+- **Grilling again:** a second grill of the same decision may add facts, never drop them or soften the framing. Say what changed; the first verdict stays on the record.
+- **Next steps:** the report's own "Before you decide" section, when the tool included one. Show it. Do not add a second copy, and do not send it to the judge. It asks which falsifier they'll adopt and whether their confidence moved. A changed confidence is a new, dated call; the original stays on the record.
 - **Paste route:** after the company-check line, the verdict and the challenges, add the section in `reflection.md`. Fill the decision record from the judge. Leave confidence empty if they never gave one.
-- **Recording:** the record block is theirs to copy anywhere. If they also keep a decision log, they can file the longer template from the weekly review. Grill does not store the block.
+- **Recording:** the record block is theirs to copy anywhere. If they also keep a decision log, record the verdict and the falsifier they adopt, in the longer weekly-review template. Grill does not store the block.
 - **Your own view:** only if asked, labelled "same-model critique".
 
 ## 6. Look back
