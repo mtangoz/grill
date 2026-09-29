@@ -61,17 +61,38 @@ const pageBody = page.slice(cut + "</style>".length);
 const doc = (head, title, body) =>
   `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${body}\n${ANALYTICS}\n</body>\n</html>\n`;
 
-// The offer and the paywall are build-time switches, the same variables checkout reads.
+// The offer, the paywall and the launch-list form are build-time switches.
 // GRILL_PRO_COUPON set means 50% off is on the page. GRILL_PRO_BILLING=subscription shows
-// the paid plans. Unset strips those attributes even if the source had them.
-let homeBody = pageBody.replace(/<main id="top"(?: data-offer)?>/, '<main id="top">');
-if (!homeBody.includes('<main id="top">')) throw new Error('site/page.html must contain <main id="top">');
+// the paid plans. GRILL_PRO_NOTIFY=1 keeps the launch-list form and removes the starter-key
+// button. Unset strips those attributes even if the source had them.
+function notifyOn(env) {
+  const value = typeof env.GRILL_PRO_NOTIFY === "string" ? env.GRILL_PRO_NOTIFY.trim().toLowerCase() : "";
+  return value === "1" || value === "true" || value === "on" || value === "yes";
+}
+
+function stripClass(html, className) {
+  const re = new RegExp(`\\n[ \\t]*<(div|p)\\b[^>]*\\bclass="[^"]*\\b${className}\\b[^"]*"[^>]*>[\\s\\S]*?<\\/\\1>`);
+  const next = html.replace(re, "");
+  if (next === html) throw new Error(`site build could not find .${className}`);
+  return next;
+}
+
+if (!/<main\b[^>]*\bid="top"/.test(pageBody)) throw new Error('site/page.html must contain <main id="top">');
+let homeBody = pageBody;
 const mainAttrs = ['id="top"'];
+if (notifyOn(process.env)) mainAttrs.push("data-notify");
 if (couponId(process.env)) mainAttrs.push("data-offer");
 if (billingMode(process.env) === "subscription") mainAttrs.push('data-billing="subscription"');
-homeBody = homeBody.replace('<main id="top">', `<main ${mainAttrs.join(" ")}>`);
+homeBody = homeBody.replace(/<main\b[^>]*>/, `<main ${mainAttrs.join(" ")}>`);
 const starterLabel = `$${starterAllowanceUsd(process.env).toFixed(2)}`;
 homeBody = homeBody.replace(/(<span class="starter-amount">)[^<]*/, (match, open) => open + starterLabel);
+if (notifyOn(process.env)) {
+  homeBody = stripClass(homeBody, "starter");
+  homeBody = stripClass(homeBody, "accounts-line");
+} else {
+  homeBody = stripClass(homeBody, "notify");
+  homeBody = stripClass(homeBody, "notify-line");
+}
 
 mkdirSync(OUT, { recursive: true });
 writeFileSync(join(OUT, "index.html"), doc(headFor({ description: DESCRIPTION, url: SITE_URL }), pageHead, homeBody));

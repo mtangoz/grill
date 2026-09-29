@@ -113,6 +113,14 @@
   main:not([data-offer]) .offer { display: none; }
   main[data-offer] .no-offer { display: none; }
   main:not([data-billing="subscription"]) .paywall { display: none; }
+  /* The launch-list form replaces the starter-key button while accounts aren't live.
+     The source ships with data-notify. The site build keeps it only when GRILL_PRO_NOTIFY=1. */
+  main[data-notify] .starter, main[data-notify] .accounts-line { display: none; }
+  main:not([data-notify]) .notify, main:not([data-notify]) .notify-line { display: none; }
+  .notify h2 { font-size: 1.15rem; font-weight: 650; letter-spacing: -0.02em; text-transform: none; color: var(--ink); margin: 0 0 0.7rem; }
+  .notify-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 0.8rem; }
+  .notify-row label { font-weight: 600; }
+  .notify input[type="email"] { font: 0.95rem var(--sans); padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: transparent; color: var(--ink); min-width: min(100%, 16rem); }
 
   @media (max-width: 560px) {
     main { padding-top: 1.6rem; }
@@ -125,7 +133,7 @@
   }
 </style>
 
-<main id="top">
+<main id="top" data-notify>
   <div class="top">
     <a class="mark" href="#top">grill</a>
     <nav aria-label="Sections">
@@ -257,11 +265,26 @@ review: 2026-10-11
   </table>
 
   <h2 id="privacy">Your privacy</h2>
-  <p class="privacy">The free tool has no account and keeps nothing. The reflection at the end of a grill stays in your notes. This page does not store it. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions. An account is only for a key we manage. A starter allowance needs no card. Bring your own key and there is no account. We see your email, the assistant and judge you pick, and your key’s usage (cost and model, never the text). We count sign-ups, keys issued, first grills, allowances used up and upgrade clicks. We don’t keep what you decide unless you turn on saving copies of reports on that account, and you can delete them. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. The same count can record that a decision record was shown or copied, that a look-back started or finished, and how many records were pasted. It never includes the words of a decision. The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</p>
+  <p class="privacy">The free tool has no account and keeps nothing. The reflection at the end of a grill stays in your notes. This page does not store it. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions. An account is only for a key we manage. A starter allowance needs no card. Bring your own key and there is no account. We see your email, the assistant and judge you pick, and your key’s usage (cost and model, never the text). We count sign-ups, keys issued, first grills, allowances used up and upgrade clicks. We don’t keep what you decide unless you turn on saving copies of reports on that account, and you can delete them. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. If you join the Pro launch list, we keep your email address, and only that, in Resend until Pro launches, and you can unsubscribe with one click. The same count can record that a decision record was shown or copied, that a look-back started or finished, and how many records were pasted. It never includes the words of a decision. The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</p>
 
   <section id="pro">
-    <h2>Rather not manage a key?</h2>
+    <div class="notify">
+      <h2>Coming later: saved history and look-back reminders</h2>
+      <p class="note">An optional Pro plan will keep your decision records across the assistants you use (Claude, ChatGPT, Gemini, Grok), remind you when a look-back is due, and send a monthly look-back report. The free tool stays free, with no account.</p>
+      <p class="note">Want to hear when it's ready? Leave your email.</p>
+      <form method="post" action="/notify">
+        <input type="hidden" name="via" value="site">
+        <p hidden><label>Leave this blank <input type="text" name="leave_blank" tabindex="-1" autocomplete="off"></label></p>
+        <p class="notify-row">
+          <label for="notify-email">Email</label>
+          <input id="notify-email" type="email" name="email" required autocomplete="email">
+          <button class="button" type="submit">Notify me</button>
+        </p>
+      </form>
+      <p class="small">We'll email you once to confirm, and once when Pro is ready. We store only your email address, in Resend, our email provider. It's never linked to anything you grill. Unsubscribe with one click, or email <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>. <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md#the-pro-launch-list">Privacy</a></p>
+    </div>
     <div class="starter">
+      <h2>Rather not manage a key?</h2>
       <p class="note">A starter key is free. No card. You get <span class="starter-amount">$0.50</span> of judge spend, once, for the email you sign in with. It does not refill. One starter key per email. Bring your own key if you want unlimited checks. That stays free, and it has no account.</p>
       <p class="cta"><a class="button" href="/pro">Get a starter key</a></p>
     </div>
@@ -271,7 +294,8 @@ review: 2026-10-11
       <p class="cta no-offer"><a class="button" href="https://grillyour.ai/checkout?plan=month">Get Pro · $9 a month</a><a href="https://grillyour.ai/checkout?plan=year">or $90 a year</a></p>
       <p class="cta offer"><a class="button" href="https://grillyour.ai/checkout?plan=month">Get Pro · $4.50 a month</a><a href="https://grillyour.ai/checkout?plan=year">or $45 a year</a></p>
     </div>
-    <p class="small">The free ways above stay free. A starter key needs no card. Bring your own key and there is no account, and checks are unlimited on your own credit. <a href="/pro">Sign in</a> · <a href="/terms/">Terms</a></p>
+    <p class="small accounts-line">The free ways above stay free. A starter key needs no card. Bring your own key and there is no account, and checks are unlimited on your own credit. <a href="/pro">Sign in</a> · <a href="/terms/">Terms</a></p>
+    <p class="small notify-line">The free tool stays free, with no account. <a href="/terms/">Terms</a></p>
   </section>
 
   <div class="footer">

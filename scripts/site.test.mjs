@@ -31,7 +31,7 @@ describe("site/page.html", () => {
 
   it("is open: the free routes are on the page, and the invite wall is gone", () => {
     assert.doesNotMatch(page, /prerelease|Ask for an invite|Opening to everyone|only-pre|only-public/);
-    assert.match(page, /<main id="top">/);
+    assert.match(page, /<main id="top" data-notify>/);
     assert.match(page, /github\.com\/mtangoz\/grill#set-up/);
     const setupAt = page.indexOf('id="setup"');
     const proAt = page.indexOf('id="pro"');
@@ -53,14 +53,23 @@ describe("site/page.html", () => {
     assert.match(pro, /unlimited checks/);
     assert.match(page, /main:not\(\[data-billing="subscription"\]\) \.paywall \{ display: none; \}/);
     assert.doesNotMatch(page, /<main[^>]*\bdata-billing\b/);
+    assert.match(pro, /action="\/notify"/);
+    assert.match(pro, /name="via" value="site"/);
+    assert.match(pro, /name="leave_blank"/);
+    assert.match(pro, /Notify me/);
+    assert.match(pro, /Coming later: saved history and look-back reminders/);
+    assert.match(page, /main\[data-notify\] \.starter/);
     const buy = [...pro.matchAll(/<a[^>]*href="([^"]+)"[^>]*>/g)].map((m) => m[1]);
     assert.deepEqual(buy, [
+      "mailto:support@grillyour.ai",
+      "https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md#the-pro-launch-list",
       "/pro",
       "https://grillyour.ai/checkout?plan=month",
       "https://grillyour.ai/checkout?plan=year",
       "https://grillyour.ai/checkout?plan=month",
       "https://grillyour.ai/checkout?plan=year",
       "/pro",
+      "/terms/",
       "/terms/",
     ]);
   });
@@ -77,7 +86,9 @@ describe("site/page.html", () => {
 
   it("says the website counts visits anonymously, and the tool does not", () => {
     const sentence = "This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you.";
+    const launch = "If you join the Pro launch list, we keep your email address, and only that, in Resend until Pro launches, and you can unsubscribe with one click.";
     assert.ok(page.includes(sentence));
+    assert.ok(page.includes(launch));
     assert.ok(readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8").includes(sentence));
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     assert.match(readme, /docs\/PRIVACY\.md/);
@@ -187,6 +198,7 @@ describe("the site build", () => {
     const build = (coupon) => {
       const env = { ...process.env };
       delete env.GRILL_PRO_BILLING;
+      delete env.GRILL_PRO_NOTIFY;
       if (coupon) env.GRILL_PRO_COUPON = coupon;
       else delete env.GRILL_PRO_COUPON;
       execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env });
@@ -206,6 +218,7 @@ describe("the site build", () => {
     const build = (extra) => {
       const env = { ...process.env, ...extra };
       delete env.GRILL_PRO_COUPON;
+      if (!Object.hasOwn(extra, "GRILL_PRO_NOTIFY")) delete env.GRILL_PRO_NOTIFY;
       execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env });
       return readFileSync(join(ROOT, "_site/index.html"), "utf8");
     };
@@ -219,5 +232,31 @@ describe("the site build", () => {
     assert.doesNotMatch(ignored, /<main[^>]*data-billing/);
     const custom = build({ GRILL_STARTER_ALLOWANCE_USD: "1.25" });
     assert.match(custom, /starter-amount">\$1\.25</);
+  });
+
+  it("GRILL_PRO_NOTIFY=1 replaces the starter-key button with the launch-list form", () => {
+    const build = (notify) => {
+      const env = { ...process.env };
+      delete env.GRILL_PRO_COUPON;
+      delete env.GRILL_PRO_BILLING;
+      if (notify) env.GRILL_PRO_NOTIFY = notify;
+      else delete env.GRILL_PRO_NOTIFY;
+      execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env });
+      return readFileSync(join(ROOT, "_site/index.html"), "utf8");
+    };
+    const off = build("");
+    assert.match(off, /<main id="top">/);
+    assert.match(off, /Get a starter key/);
+    assert.doesNotMatch(off, /Notify me/);
+    const on = build("1");
+    assert.match(on, /<main id="top" data-notify>/);
+    assert.match(on, /Notify me/);
+    assert.match(on, /action="\/notify"/);
+    assert.doesNotMatch(on, /Get a starter key/);
+    assert.doesNotMatch(on, /href="\/pro"/);
+    assert.match(readFileSync(join(ROOT, "vercel.json"), "utf8"), /GRILL_PRO_NOTIFY=1 node scripts\/build-site\.mjs/);
+    const ignored = build("yes-please");
+    assert.doesNotMatch(ignored, /<main[^>]*data-notify/);
+    assert.match(ignored, /Get a starter key/);
   });
 });

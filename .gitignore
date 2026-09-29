@@ -8,3 +8,4 @@ evals/results/
 _site/
 .grill-pro-dev.json
 grill-pro-dev.json
+metrics.jsonl

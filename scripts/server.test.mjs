@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
+import { NEWS_UNTIL, NEWS_URL, newsLine, withNews } from "../server/index.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = join(HERE, "..", "server", "index.mjs");
@@ -373,6 +374,102 @@ describe("grill_look_back", () => {
     assert.match(textOf(scored), /Nothing is stored/);
     const empty = await c.request("tools/call", { name: "grill_look_back", arguments: { records: "  " } });
     assert.equal(empty.result.isError, true);
+    assert.doesNotMatch(textOf(asked) + textOf(scored) + textOf(empty), /Grill news/);
+    await c.close();
+  });
+});
+
+describe("the Grill news line", () => {
+  const subject = "We will raise prices 20% in Q4.";
+
+  it("is one statement, once per process, last, and the URL is the fixed constant", async () => {
+    assert.equal(NEWS_UNTIL, "2026-11-13");
+    assert.equal(Date.parse(`${NEWS_UNTIL}T00:00:00.000Z`) - Date.parse("2026-09-29T00:00:00.000Z"), 45 * 24 * 60 * 60 * 1000);
+    assert.equal(NEWS_URL, "https://grillyour.ai/notify?via=tool");
+    assert.deepEqual(newsLine().match(/\?/g), ["?"], "the only question mark is the one in the fixed URL");
+    assert.match(newsLine(), new RegExp(NEWS_URL.replace(/[?]/g, "\\?")));
+    assert.doesNotMatch(newsLine(), /would you like|want to hear\?/i);
+
+    const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false" });
+    const early = await c.request("tools/call", { name: "grill", arguments: { subject: "  " } });
+    assert.equal(early.result.isError, true);
+    assert.doesNotMatch(textOf(early), /Grill news/);
+    const first = await c.request("tools/call", { name: "grill", arguments: { subject } });
+    const report = textOf(first);
+    assert.equal(first.result.isError, false);
+    assert.match(report, /Grill news:/);
+    assert.ok(report.indexOf("**Verdict:") < report.indexOf("## Before you decide"));
+    assert.ok(report.indexOf("## Before you decide") < report.indexOf("Grill news:"));
+    assert.ok(report.indexOf("version: 1") < report.indexOf("Grill news:"));
+    assert.equal((report.match(/Grill news:/g) ?? []).length, 1);
+    const second = await c.request("tools/call", { name: "grill", arguments: { subject } });
+    assert.doesNotMatch(textOf(second), /Grill news/);
+    const looked = await c.request("tools/call", {
+      name: "grill_look_back",
+      arguments: { records: "version: 1\ndate: 2026-09-01\ntitle: Raise prices\nverdict: shaky\nfalsifier: a\nconfidence: 70%\nreview: 2026-10-01\n" },
+    });
+    assert.doesNotMatch(textOf(looked), /Grill news/);
+    await c.close();
+  });
+
+  it("is absent on setup and while a job is still running", async () => {
+    const setup = await initialized({});
+    const missing = await setup.request("tools/call", { name: "grill", arguments: { subject } });
+    assert.match(textOf(missing), /isn't set up yet/);
+    assert.doesNotMatch(textOf(missing), /Grill news/);
+    await setup.close();
+
+    const slow = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_WAIT_MS: "1", GRILL_CHECK: "false" });
+    const pending = await slow.request("tools/call", { name: "grill", arguments: { subject } });
+    assert.match(textOf(pending), /Still grilling/);
+    assert.doesNotMatch(textOf(pending), /Grill news/);
+    await slow.close();
+  });
+
+  it("stays on for an unset value or an unfilled placeholder, and off only when switched off", async () => {
+    for (const on of ["true", "1", "", "${user_config.show_news}", "TRUE", "yes", undefined]) {
+      const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false", ...(on === undefined ? {} : { GRILL_NEWS: on }) });
+      const res = await c.request("tools/call", { name: "grill", arguments: { subject } });
+      assert.match(textOf(res), /Grill news:/, `GRILL_NEWS=${JSON.stringify(on)}`);
+      await c.close();
+    }
+    for (const off of ["false", "0", "off", "no", "FALSE", " Off "]) {
+      const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false", GRILL_NEWS: off });
+      const res = await c.request("tools/call", { name: "grill", arguments: { subject } });
+      assert.equal(res.result.isError, false);
+      assert.doesNotMatch(textOf(res), /Grill news/, `GRILL_NEWS=${JSON.stringify(off)}`);
+      await c.close();
+    }
+  });
+
+  it("stops after NEWS_UNTIL, including when the clock is injected", () => {
+    const open = withNews("# report\n", { now: Date.parse("2026-11-13T23:59:59.999Z"), state: { shown: false } });
+    assert.match(open, /Grill news:/);
+    const shut = withNews("# report\n", { now: Date.parse("2026-11-14T00:00:00.000Z"), state: { shown: false } });
+    assert.equal(shut, "# report\n");
+    const off = withNews("# report\n", { env: { GRILL_NEWS: "off" }, now: Date.parse("2026-09-29T00:00:00.000Z"), state: { shown: false } });
+    assert.equal(off, "# report\n");
+  });
+
+  it("the running server hides the line when GRILL_NOW is past NEWS_UNTIL", async () => {
+    const c = await initialized({
+      GRILL_API_KEY: KEY,
+      JUDGE_FIXTURE: USABLE,
+      GRILL_CHECK: "false",
+      GRILL_NOW: "2026-11-14T00:00:00.000Z",
+    });
+    const res = await c.request("tools/call", { name: "grill", arguments: { subject } });
+    assert.equal(res.result.isError, false, textOf(res));
+    assert.doesNotMatch(textOf(res), /Grill news/);
+    await c.close();
+  });
+
+  it("tells Claude to show a Grill news line once, word for word, at the end", async () => {
+    const c = await initialized({});
+    const known = await c.request("initialize", { protocolVersion: "2025-06-18", capabilities: {} });
+    assert.match(known.result.instructions, /Grill news/);
+    assert.match(known.result.instructions, /word for word/);
+    assert.match(known.result.instructions, /Don't ask about it or repeat it/);
     await c.close();
   });
 });

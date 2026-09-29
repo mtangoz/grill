@@ -22,10 +22,14 @@
  * scripts/checkCore.mjs. That setting is the ONLY switch on this path: JUDGE_CHECK is removed
  * from the judge's environment, so a variable left in the host's shell cannot start a data flow
  * the setting says is off.
+ *
+ * GRILL NEWS. After a finished report, one line, at most once per process, until NEWS_UNTIL.
+ * It is text only: no network call, no file, no email. GRILL_NEWS off hides it. An unset value
+ * or an unfilled ${…} placeholder leaves it on, the same rule as GRILL_CHECK.
  */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -69,6 +73,50 @@ function resolveApiKey(env = process.env) {
 function checkEnabled(env = process.env) {
   const value = typeof env.GRILL_CHECK === "string" ? env.GRILL_CHECK.trim().toLowerCase() : "";
   return !["false", "0", "off", "no"].includes(value);
+}
+
+/** 45 days after 2026-09-29, the release that adds this line. The line stops after this date. */
+export const NEWS_UNTIL = "2026-11-13";
+export const NEWS_URL = "https://grillyour.ai/notify?via=tool";
+const NEWS_END = Date.parse(`${NEWS_UNTIL}T23:59:59.999Z`);
+
+/**
+ * Show the news line? On by default. Only an explicit off turns it off: "false", "0", "off" or
+ * "no". An unset variable, an empty one, or an unfilled `${…}` placeholder stays on.
+ */
+export function newsEnabled(env = process.env) {
+  const value = typeof env.GRILL_NEWS === "string" ? env.GRILL_NEWS.trim().toLowerCase() : "";
+  return !["false", "0", "off", "no"].includes(value);
+}
+
+export function newsOpen(now = Date.now()) {
+  return now <= NEWS_END;
+}
+
+export function newsLine() {
+  return [
+    "---",
+    `Grill news: saved decision history and look-back reminders are coming as an optional Pro plan. The free tool stays free and account-free. To hear when they arrive, leave your email at ${NEWS_URL} (one confirmation, one launch email, unsubscribe anytime). Turn this off in Grill's settings ("Show Grill news"). It stops by itself after ${NEWS_UNTIL}.`,
+  ].join("\n");
+}
+
+/** A test can pass GRILL_NOW as an ISO time. Anything else, including an unfilled placeholder, is the real clock. */
+function nowMs(env = process.env) {
+  const raw = typeof env.GRILL_NOW === "string" ? env.GRILL_NOW.trim() : "";
+  if (raw && !raw.startsWith("${")) {
+    const parsed = Date.parse(raw);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return Date.now();
+}
+
+const newsState = { shown: false };
+
+/** Append the news line once, and only onto a finished report. `state` is per process unless a test passes its own. */
+export function withNews(report, { env = process.env, now = Date.now(), state = newsState } = {}) {
+  if (!report || state.shown || !newsEnabled(env) || !newsOpen(now)) return report;
+  state.shown = true;
+  return `${String(report).replace(/\s*$/, "")}\n\n${newsLine()}\n`;
 }
 
 const SETUP_TEXT = [
@@ -250,7 +298,7 @@ function text(t, isError = false) {
 function outcomeOf(job) {
   jobs.delete(job.id);
   const { code, report, stderr, error } = job.outcome;
-  if (report) return text(appendReflection(report, { subject: job.subject, route: "mcp" }));
+  if (report) return text(withNews(appendReflection(report, { subject: job.subject, route: "mcp" }), { now: nowMs() }));
   const why = error ?? (stderr.split("\n").filter((l) => l.includes("ERROR")).join("\n") || `the judge exited ${code}`);
   return text(`The grill did not finish: ${why}`, true);
 }
@@ -318,7 +366,7 @@ async function handle(msg) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "grill", title: "Grill", version: VERSION },
           instructions:
-            "Grill sends a decision to an outside AI judge from a different company than Claude. Write the subject as a clerk, not an advocate, and show the user the subject and get their OK before calling grill. If grill returns a job id, call grill_result until the report arrives. Relay the verdict first, then the challenges with their falsifiers, quoting the judge rather than agreeing with it, softening it or adding reassurance of your own. The report ends with Before you decide and a decision record. Show both. Do not send that section back to the judge. When the user pastes old records and says look back, call grill_look_back. It stores nothing.",
+            "Grill sends a decision to an outside AI judge from a different company than Claude. Write the subject as a clerk, not an advocate, and show the user the subject and get their OK before calling grill. If grill returns a job id, call grill_result until the report arrives. Relay the verdict first, then the challenges with their falsifiers, quoting the judge rather than agreeing with it, softening it or adding reassurance of your own. The report ends with Before you decide and a decision record. Show both. Do not send that section back to the judge. When the user pastes old records and says look back, call grill_look_back. It stores nothing. If the report ends with a 'Grill news' line, show it once, word for word, at the very end. Don't ask about it or repeat it.",
         },
       });
       return;
@@ -351,21 +399,35 @@ async function handle(msg) {
   }
 }
 
-const rl = createInterface({ input: process.stdin });
-rl.on("line", (line) => {
-  if (!line.trim()) return;
-  let msg;
+function runningAsMain() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  const self = fileURLToPath(import.meta.url);
+  if (entry === self) return true;
   try {
-    msg = JSON.parse(line);
+    return realpathSync(entry) === realpathSync(self);
   } catch {
-    send({ id: null, error: { code: -32700, message: "Parse error" } });
-    return;
+    return false;
   }
-  for (const m of Array.isArray(msg) ? msg : [msg]) {
-    handle(m).catch((e) => console.error(`[grill] ${e?.message ?? e}`));
-  }
-});
-rl.on("close", () => {
-  for (const job of jobs.values()) if (!job.done) job.child.kill();
-  process.exit(0);
-});
+}
+
+if (runningAsMain()) {
+  const rl = createInterface({ input: process.stdin });
+  rl.on("line", (line) => {
+    if (!line.trim()) return;
+    let msg;
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      send({ id: null, error: { code: -32700, message: "Parse error" } });
+      return;
+    }
+    for (const m of Array.isArray(msg) ? msg : [msg]) {
+      handle(m).catch((e) => console.error(`[grill] ${e?.message ?? e}`));
+    }
+  });
+  rl.on("close", () => {
+    for (const job of jobs.values()) if (!job.done) job.child.kill();
+    process.exit(0);
+  });
+}

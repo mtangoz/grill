@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- After a finished grill, the tool can show one Grill news line, at most once a session, about an optional Pro plan (saved history and look-back reminders). It is on unless "Show Grill news" is switched off, or `GRILL_NEWS` is off, and it stops after 2026-11-13. The tool sends nothing and stores nothing. The paste route can show the same news once per conversation, and skips it if you declined the signal offer.
+- The website replaces the "Get a starter key" button with a form to hear when Pro is ready, while accounts aren't live. Joining is double opt-in, confirmed with a button press. The confirmation link is encrypted, so the email address is not in the URL. The list is deleted 60 days after the launch email. Sign-ups are Pro interest and are not counted as users. If Resend or Upstash isn't configured, the page says sign-ups aren't open yet.
 - A grill can carry an optional goal and guardrails, in the user's words. The judge checks a stated goal or guardrail and does not invent one. A trade-off the user names and accepts is not a defect. The decision record stays version 1 and adds `goal`, `guardrails` and `source_app` only when they have a value. The Grill tool does not fill in `source_app`. Look-back asks whether the goal was reached and whether the guardrails held.
 - The default judge is only OpenRouter's Auto Router (`openrouter/auto`). It excludes the author's company and does not pin a fallback model. A transient failure retries that same router, with backoff and a fixed limit. If the model that answers is still the excluded company, the run errors and does not return that verdict. `JUDGE_MODEL` still overrides the chain.
 
