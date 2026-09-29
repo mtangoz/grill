@@ -30,3 +30,5 @@ The public site is `site/page.html`, built by `node scripts/build-site.mjs` into
 ## How a grill stays honest
 
 Why the judge is a different company: [docs/WHY.md](docs/WHY.md). How Grill improves without reading a real decision: [LEARNING.md](LEARNING.md).
+
+What we will and won't do, and how we build: [docs/PRINCIPLES.md](docs/PRINCIPLES.md). Any change to what data leaves the user's machine must update [docs/PRIVACY.md](docs/PRIVACY.md) in the same PR.
