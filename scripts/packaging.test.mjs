@@ -2,6 +2,7 @@
 // server needs, and every file a skill points to exists. Drift here breaks an install, not a test.
 import { describe, it } from "node:test";
 import { buildSmitheryBundle, listTools } from "./build-smithery-bundle.mjs";
+import { stampReleaseDate } from "./releaseDate.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -120,10 +121,12 @@ describe("the manifests agree", () => {
       mkdirSync(stage);
       cpSync(join(ROOT, "manifest.json"), join(stage, "manifest.json"));
       writeFileSync(join(stage, "kept.txt"), "keep\n");
+      mkdirSync(join(stage, "server"));
+      writeFileSync(join(stage, "server/index.mjs"), 'export const RELEASE_DATE = "1999-01-01";\n');
       const src = join(dir, "grill.mcpb");
       const dest = join(dir, "grill-smithery.mcpb");
       execFileSync("zip", ["-r", "-D", "-X", "-q", src, "."], { cwd: stage });
-      await buildSmitheryBundle(src, dest, join(ROOT, "server/index.mjs"));
+      await buildSmitheryBundle(src, dest, join(ROOT, "server/index.mjs"), { releaseDate: "2026-04-02" });
       const unpacked = join(dir, "unpacked");
       mkdirSync(unpacked);
       execFileSync("unzip", ["-q", dest, "-d", unpacked]);
@@ -139,6 +142,7 @@ describe("the manifests agree", () => {
         assert.equal(declared.description, manifest.tools.find((entry) => entry.name === tool.name).description);
       }
       assert.equal(readFileSync(join(unpacked, "kept.txt"), "utf8"), "keep\n");
+      assert.equal(readFileSync(join(unpacked, "server/index.mjs"), "utf8"), 'export const RELEASE_DATE = "2026-04-02";\n');
       assert.equal(JSON.parse(readFileSync(join(ROOT, "manifest.json"), "utf8")).tools[0].inputSchema, undefined);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -146,15 +150,34 @@ describe("the manifests agree", () => {
   });
 });
 
+describe("the release date stamp", () => {
+  const source = 'export const RELEASE_DATE = "2026-09-29";\nconst VERSION = "0.1.1";\n';
+
+  it("rewrites only the constant, and rejects a date that is not a calendar day", () => {
+    assert.equal(stampReleaseDate(source, "2026-04-02"), 'export const RELEASE_DATE = "2026-04-02";\nconst VERSION = "0.1.1";\n');
+    assert.equal(stampReleaseDate(source, "2024-02-29").includes('"2024-02-29"'), true);
+    assert.throws(() => stampReleaseDate(source, "2026-02-29"), /not a calendar day/);
+    assert.throws(() => stampReleaseDate(source, "yesterday"), /YYYY-MM-DD/);
+    assert.throws(() => stampReleaseDate("const VERSION = \"0.1.1\";\n", "2026-04-02"), /not found/);
+  });
+});
+
 describe("the extension build", () => {
   it("stages every file the server reaches, keeping the relative layout", () => {
-    execFileSync(process.execPath, [join(ROOT, "scripts/build-extension.mjs")], { stdio: "pipe" });
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-extension.mjs")], {
+      stdio: "pipe",
+      env: { ...process.env, GRILL_RELEASE_DATE: "2026-04-02" },
+    });
     const staged = join(ROOT, "dist/extension");
     for (const f of ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "scripts/reflection.mjs", "LICENSE"]) {
       assert.ok(existsSync(join(staged, f)), `missing ${f}`);
     }
     const server = readFileSync(join(ROOT, "server/index.mjs"), "utf8");
     assert.match(server, /new URL\("\.\.\/scripts\/judge\.mjs", import\.meta\.url\)/);
+    assert.match(server, /^export const RELEASE_DATE = "2026-09-29";$/m);
+    const stagedServer = readFileSync(join(staged, "server/index.mjs"), "utf8");
+    assert.match(stagedServer, /^export const RELEASE_DATE = "2026-04-02";$/m);
+    assert.doesNotMatch(server, /RELEASE_DATE = "2026-04-02"/);
     // Every staged script's own imports too, not just the judge's: judgeCore imports checkCore,
     // and a module missing one hop down fails at install time just the same.
     for (const f of ["scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs"]) {
@@ -308,6 +331,8 @@ describe("Glama listing files", () => {
     const docker = readFileSync(join(ROOT, "Dockerfile"), "utf8");
     assert.match(docker, /ENTRYPOINT \["node", "server\/index\.mjs"\]/);
     assert.match(docker, /^USER node$/m);
+    assert.match(docker, /stampReleaseDateFile/);
+    assert.match(docker, /rm scripts\/releaseDate\.mjs/);
   });
 });
 

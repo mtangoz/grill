@@ -65,7 +65,7 @@ Pro changes who pays for the AI, not where your write-up goes.
 
 ## The Pro launch list
 
-The website has an opt-in form to hear when Pro is ready. The Grill tool never asks for your email. For a limited time before Pro launches, it can show one line, at most once a session, with a link to that form. Set `GRILL_NEWS=off`, or switch off "Show Grill news" in Grill's settings, to hide it. The line is only text: the tool sends nothing to Grill.
+The website has an opt-in form to hear when Pro is ready. The Grill tool never asks for your email. For a limited time before Pro launches, after a finished grill, it can show one line, at most once a session, with a link to that form. It shows that line only when the day is within 7 days of the release date baked into that build, or on the first 3 days of a month. Outside those windows it shows nothing. Set `GRILL_NEWS=off`, or switch off "Show Grill news" in Grill's settings, to hide it. The line is only text: the tool sends nothing to Grill, and it stops after 2026-11-13.
 
 - **What we keep:** your email address, as a contact in Resend, only after you click the confirmation link. Before that we keep nothing, except a one-way hash of the address for 24 hours to stop repeat sends. Resend keeps its usual delivery log of the confirmation email. The confirmation link is encrypted, so your address can't be read from it.
 - **What we never keep:** anything you grilled, your key, your model-router usage, or which page you came from. We keep a separate count of sign-ups by where the link was (the tool line, the paste route, the website), and that count is not tied to your address.

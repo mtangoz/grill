@@ -8,7 +8,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
-import { NEWS_UNTIL, NEWS_URL, newsLine, withNews } from "../server/index.mjs";
+import {
+  NEWS_MONTH_START_DAYS,
+  NEWS_RELEASE_WINDOW_DAYS,
+  NEWS_UNTIL,
+  NEWS_URL,
+  RELEASE_DATE,
+  newsLine,
+  withNews,
+} from "../server/index.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = join(HERE, "..", "server", "index.mjs");
@@ -381,16 +389,36 @@ describe("grill_look_back", () => {
 
 describe("the Grill news line", () => {
   const subject = "We will raise prices 20% in Q4.";
+  const DAY = 24 * 60 * 60 * 1000;
+  const releaseMs = Date.parse(`${RELEASE_DATE}T00:00:00.000Z`);
+  const IN_WINDOW = `${RELEASE_DATE}T12:00:00.000Z`;
+
+  function at(iso, extra = {}) {
+    return withNews("# report\n", { now: Date.parse(iso), state: { shown: false }, ...extra });
+  }
 
   it("is one statement, once per process, last, and the URL is the fixed constant", async () => {
     assert.equal(NEWS_UNTIL, "2026-11-13");
-    assert.equal(Date.parse(`${NEWS_UNTIL}T00:00:00.000Z`) - Date.parse("2026-09-29T00:00:00.000Z"), 45 * 24 * 60 * 60 * 1000);
+    assert.equal(RELEASE_DATE, "2026-09-29");
+    assert.equal(NEWS_RELEASE_WINDOW_DAYS, 7);
+    assert.equal(NEWS_MONTH_START_DAYS, 3);
+    assert.equal(Date.parse(`${NEWS_UNTIL}T00:00:00.000Z`) - releaseMs, 45 * DAY);
+    const privacy = readFileSync(join(HERE, "..", "docs/PRIVACY.md"), "utf8");
+    assert.match(privacy, /within 7 days of the release date/);
+    assert.match(privacy, /first 3 days of a month/);
+    assert.match(privacy, /at most once a session/);
+    assert.match(privacy, /stops after 2026-11-13/);
+    const skill = readFileSync(join(HERE, "..", "skills/grill/SKILL.md"), "utf8");
+    assert.match(skill, /within 7 days of the release date/);
+    assert.match(skill, /first 3 days of a month/);
+    assert.match(skill, /at most once a session/);
     assert.equal(NEWS_URL, "https://grillyour.ai/notify?via=tool");
     assert.deepEqual(newsLine().match(/\?/g), ["?"], "the only question mark is the one in the fixed URL");
     assert.match(newsLine(), new RegExp(NEWS_URL.replace(/[?]/g, "\\?")));
     assert.doesNotMatch(newsLine(), /would you like|want to hear\?/i);
+    assert.doesNotMatch(readFileSync(SERVER, "utf8"), /\b(writeFile|appendFile|createWriteStream|fetch)\s*\(/);
 
-    const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false" });
+    const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false", GRILL_NOW: IN_WINDOW });
     const early = await c.request("tools/call", { name: "grill", arguments: { subject: "  " } });
     assert.equal(early.result.isError, true);
     assert.doesNotMatch(textOf(early), /Grill news/);
@@ -428,13 +456,19 @@ describe("the Grill news line", () => {
 
   it("stays on for an unset value or an unfilled placeholder, and off only when switched off", async () => {
     for (const on of ["true", "1", "", "${user_config.show_news}", "TRUE", "yes", undefined]) {
-      const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false", ...(on === undefined ? {} : { GRILL_NEWS: on }) });
+      const c = await initialized({
+        GRILL_API_KEY: KEY,
+        JUDGE_FIXTURE: USABLE,
+        GRILL_CHECK: "false",
+        GRILL_NOW: IN_WINDOW,
+        ...(on === undefined ? {} : { GRILL_NEWS: on }),
+      });
       const res = await c.request("tools/call", { name: "grill", arguments: { subject } });
       assert.match(textOf(res), /Grill news:/, `GRILL_NEWS=${JSON.stringify(on)}`);
       await c.close();
     }
     for (const off of ["false", "0", "off", "no", "FALSE", " Off "]) {
-      const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false", GRILL_NEWS: off });
+      const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false", GRILL_NEWS: off, GRILL_NOW: IN_WINDOW });
       const res = await c.request("tools/call", { name: "grill", arguments: { subject } });
       assert.equal(res.result.isError, false);
       assert.doesNotMatch(textOf(res), /Grill news/, `GRILL_NEWS=${JSON.stringify(off)}`);
@@ -442,26 +476,52 @@ describe("the Grill news line", () => {
     }
   });
 
-  it("stops after NEWS_UNTIL, including when the clock is injected", () => {
-    const open = withNews("# report\n", { now: Date.parse("2026-11-13T23:59:59.999Z"), state: { shown: false } });
-    assert.match(open, /Grill news:/);
-    const shut = withNews("# report\n", { now: Date.parse("2026-11-14T00:00:00.000Z"), state: { shown: false } });
-    assert.equal(shut, "# report\n");
-    const off = withNews("# report\n", { env: { GRILL_NEWS: "off" }, now: Date.parse("2026-09-29T00:00:00.000Z"), state: { shown: false } });
-    assert.equal(off, "# report\n");
+  it("shows only inside the release window or the first days of a month, and the clock is injectable", () => {
+    const show = (iso, extra) => assert.match(at(iso, extra), /Grill news:/, iso);
+    const hide = (iso, extra) => assert.equal(at(iso, extra), "# report\n", iso);
+
+    show(`${RELEASE_DATE}T00:00:00.000Z`);
+    show(`${RELEASE_DATE}T23:59:59.999Z`);
+    show(new Date(releaseMs + NEWS_RELEASE_WINDOW_DAYS * DAY).toISOString());
+    show(new Date(releaseMs - NEWS_RELEASE_WINDOW_DAYS * DAY).toISOString());
+    hide(new Date(releaseMs + (NEWS_RELEASE_WINDOW_DAYS + 1) * DAY).toISOString());
+    hide(new Date(releaseMs - (NEWS_RELEASE_WINDOW_DAYS + 1) * DAY).toISOString());
+
+    // November is outside the 2026-09-29 release window, so these pin the month rule on its own.
+    show("2026-11-01T00:00:00.000Z");
+    show("2026-11-03T23:59:59.999Z");
+    hide("2026-11-04T00:00:00.000Z");
+    hide("2026-11-13T23:59:59.999Z");
+
+    // The end date still wins when the day would otherwise qualify.
+    hide("2026-12-01T00:00:00.000Z");
+    hide("2026-12-03T12:00:00.000Z");
+    show("2026-11-13T12:00:00.000Z", { releaseDate: "2026-11-10" });
+    hide("2026-11-14T00:00:00.000Z", { releaseDate: "2026-11-10" });
+
+    hide("2026-11-04T12:00:00.000Z", { releaseDate: "not-a-date" });
+    show("2026-11-02T12:00:00.000Z", { releaseDate: "not-a-date" });
+    hide(IN_WINDOW, { env: { GRILL_NEWS: "off" } });
+
+    const state = { shown: false };
+    assert.equal(withNews("# report\n", { now: Date.parse("2026-11-04T00:00:00.000Z"), state }), "# report\n");
+    assert.equal(state.shown, false, "a skipped window does not use up the one line");
+    assert.match(withNews("# report\n", { now: Date.parse("2026-11-02T00:00:00.000Z"), state }), /Grill news:/);
+    assert.equal(withNews("# report\n", { now: Date.parse("2026-11-02T00:00:00.000Z"), state }), "# report\n");
   });
 
-  it("the running server hides the line when GRILL_NOW is past NEWS_UNTIL", async () => {
-    const c = await initialized({
-      GRILL_API_KEY: KEY,
-      JUDGE_FIXTURE: USABLE,
-      GRILL_CHECK: "false",
-      GRILL_NOW: "2026-11-14T00:00:00.000Z",
-    });
-    const res = await c.request("tools/call", { name: "grill", arguments: { subject } });
-    assert.equal(res.result.isError, false, textOf(res));
-    assert.doesNotMatch(textOf(res), /Grill news/);
-    await c.close();
+  it("the running server follows GRILL_NOW for the window and the end date", async () => {
+    const run = async (now) => {
+      const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false", GRILL_NOW: now });
+      const res = await c.request("tools/call", { name: "grill", arguments: { subject } });
+      const text = textOf(res);
+      assert.equal(res.result.isError, false, text);
+      await c.close();
+      return text;
+    };
+    assert.match(await run("2026-11-02T12:00:00.000Z"), /Grill news:/);
+    assert.doesNotMatch(await run("2026-10-07T12:00:00.000Z"), /Grill news/);
+    assert.doesNotMatch(await run("2026-12-01T12:00:00.000Z"), /Grill news/);
   });
 
   it("tells Claude to show a Grill news line once, word for word, at the end", async () => {
@@ -469,6 +529,7 @@ describe("the Grill news line", () => {
     const known = await c.request("initialize", { protocolVersion: "2025-06-18", capabilities: {} });
     assert.match(known.result.instructions, /Grill news/);
     assert.match(known.result.instructions, /word for word/);
+    assert.match(known.result.instructions, /within 7 days of a release or on the first 3 days of a month/);
     assert.match(known.result.instructions, /Don't ask about it or repeat it/);
     await c.close();
   });

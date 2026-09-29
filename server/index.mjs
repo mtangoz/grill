@@ -23,9 +23,11 @@
  * from the judge's environment, so a variable left in the host's shell cannot start a data flow
  * the setting says is off.
  *
- * GRILL NEWS. After a finished report, one line, at most once per process, until NEWS_UNTIL.
- * It is text only: no network call, no file, no email. GRILL_NEWS off hides it. An unset value
- * or an unfilled ${…} placeholder leaves it on, the same rule as GRILL_CHECK.
+ * GRILL NEWS. After a finished report, one line, at most once per process, until NEWS_UNTIL,
+ * and only within NEWS_RELEASE_WINDOW_DAYS of RELEASE_DATE or on the first NEWS_MONTH_START_DAYS
+ * of a UTC month. Outside those windows it adds nothing. It is text only: no network call, no
+ * file, no email. GRILL_NEWS off hides it. An unset value or an unfilled ${…} placeholder leaves
+ * it on, the same rule as GRILL_CHECK. A test can pass GRILL_NOW as an ISO time.
  */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -79,6 +81,20 @@ function checkEnabled(env = process.env) {
 export const NEWS_UNTIL = "2026-11-13";
 export const NEWS_URL = "https://grillyour.ai/notify?via=tool";
 const NEWS_END = Date.parse(`${NEWS_UNTIL}T23:59:59.999Z`);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * YYYY-MM-DD of this build, UTC. Release and bundle builds rewrite this line in the artifact
+ * (scripts/releaseDate.mjs). A checkout uses the date written here. Reading it takes no network
+ * call and no disk write.
+ */
+export const RELEASE_DATE = "2026-09-29";
+
+/** Show the line when the UTC day is at most this many days before or after RELEASE_DATE. */
+export const NEWS_RELEASE_WINDOW_DAYS = 7;
+
+/** Show the line on UTC day-of-month 1 through this number. */
+export const NEWS_MONTH_START_DAYS = 3;
 
 /**
  * Show the news line? On by default. Only an explicit off turns it off: "false", "0", "off" or
@@ -91,6 +107,45 @@ export function newsEnabled(env = process.env) {
 
 export function newsOpen(now = Date.now()) {
   return now <= NEWS_END;
+}
+
+/** UTC calendar-day index, or NaN when `ms` is not a time. */
+function utcDayIndex(ms) {
+  const date = new Date(ms);
+  if (!Number.isFinite(date.getTime())) return NaN;
+  return Math.floor(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / DAY_MS);
+}
+
+/** UTC day index of a YYYY-MM-DD stamp, or NaN when it is not a real calendar day. */
+function releaseDayIndex(releaseDate) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(releaseDate);
+  if (!match) return NaN;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const ms = Date.UTC(year, month - 1, day);
+  const back = new Date(ms);
+  if (back.getUTCFullYear() !== year || back.getUTCMonth() !== month - 1 || back.getUTCDate() !== day) return NaN;
+  return Math.floor(ms / DAY_MS);
+}
+
+export function inReleaseWindow(now = Date.now(), releaseDate = RELEASE_DATE) {
+  const today = utcDayIndex(now);
+  const release = releaseDayIndex(releaseDate);
+  if (!Number.isFinite(today) || !Number.isFinite(release)) return false;
+  return Math.abs(today - release) <= NEWS_RELEASE_WINDOW_DAYS;
+}
+
+export function inMonthStart(now = Date.now()) {
+  const date = new Date(now);
+  if (!Number.isFinite(date.getTime())) return false;
+  const day = date.getUTCDate();
+  return day >= 1 && day <= NEWS_MONTH_START_DAYS;
+}
+
+/** True on a UTC day inside the release window or the month-start window. The end date is separate. */
+export function newsInWindow(now = Date.now(), releaseDate = RELEASE_DATE) {
+  return inReleaseWindow(now, releaseDate) || inMonthStart(now);
 }
 
 export function newsLine() {
@@ -112,9 +167,13 @@ function nowMs(env = process.env) {
 
 const newsState = { shown: false };
 
-/** Append the news line once, and only onto a finished report. `state` is per process unless a test passes its own. */
-export function withNews(report, { env = process.env, now = Date.now(), state = newsState } = {}) {
-  if (!report || state.shown || !newsEnabled(env) || !newsOpen(now)) return report;
+/**
+ * Append the news line once, and only onto a finished report, and only inside a window before
+ * NEWS_UNTIL. Skipping a window does not use up the one line. `state` is per process unless a
+ * test passes its own. `now` is the clock (tests inject it; the server passes GRILL_NOW).
+ */
+export function withNews(report, { env = process.env, now = Date.now(), state = newsState, releaseDate = RELEASE_DATE } = {}) {
+  if (!report || state.shown || !newsEnabled(env) || !newsOpen(now) || !newsInWindow(now, releaseDate)) return report;
   state.shown = true;
   return `${String(report).replace(/\s*$/, "")}\n\n${newsLine()}\n`;
 }
@@ -366,7 +425,7 @@ async function handle(msg) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "grill", title: "Grill", version: VERSION },
           instructions:
-            "Grill sends a decision to an outside AI judge from a different company than Claude. Write the subject as a clerk, not an advocate, and show the user the subject and get their OK before calling grill. If grill returns a job id, call grill_result until the report arrives. Relay the verdict first, then the challenges with their falsifiers, quoting the judge rather than agreeing with it, softening it or adding reassurance of your own. The report ends with Before you decide and a decision record. Show both. Do not send that section back to the judge. When the user pastes old records and says look back, call grill_look_back. It stores nothing. If the report ends with a 'Grill news' line, show it once, word for word, at the very end. Don't ask about it or repeat it.",
+            "Grill sends a decision to an outside AI judge from a different company than Claude. Write the subject as a clerk, not an advocate, and show the user the subject and get their OK before calling grill. If grill returns a job id, call grill_result until the report arrives. Relay the verdict first, then the challenges with their falsifiers, quoting the judge rather than agreeing with it, softening it or adding reassurance of your own. The report ends with Before you decide and a decision record. Show both. Do not send that section back to the judge. When the user pastes old records and says look back, call grill_look_back. It stores nothing. If the report ends with a 'Grill news' line, show it once, word for word, at the very end. The tool adds it only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it.",
         },
       });
       return;

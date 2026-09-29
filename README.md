@@ -65,7 +65,7 @@ Coming later: an optional Pro plan with saved decision history and look-back rem
 - The free tool has no account and stores nothing. Grill's makers never see your decisions.
 - A key or token in the write-up stops the run. Email addresses, phone numbers and card numbers are masked.
 - The optional quality check (Jev) also sees the masked write-up; the website counts visits without cookies.
-- Grill news line: after a finished grill, at most once a session, a line with a link to hear when an optional Pro plan is ready. The tool sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own.
+- Grill news line: after a finished grill, at most once a session, and only within 7 days of a release or on the first 3 days of a month, a line with a link to hear when an optional Pro plan is ready. The tool sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own.
 
 What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
 
