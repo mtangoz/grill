@@ -478,13 +478,21 @@ export const KIND_DESCRIPTIONS = Object.freeze({
  * thing would be in the world. Its own scale rather than a generic bug-severity one,
  * because a statement like "blocker" tends to mean production breakage, which is not what
  * a flaw in an argument or a plan is.
+ *
+ * Severity is graded against the DECISION (the choice between the options on the table),
+ * not against the finish of the plan. Live evals showed judges from several companies and
+ * cost bands filing "serious" for fixes to a sound plan's details (a sample size, a
+ * monitoring baseline, a review date), because "a material change to its method" read as
+ * any change at all. The comparative test below ("does a rejected option now look as good
+ * or better, or must the chosen one become a different plan?") keeps "serious" for
+ * challenges that reopen the choice, while fixes in place stay "moderate" and still show.
  */
 export const SEVERITIES = Object.freeze(["fatal", "serious", "moderate", "minor"]);
 
 export const SEVERITY_DESCRIPTIONS = Object.freeze({
   fatal: "the conclusion does not survive this. If it stands, the subject is wrong, not merely weaker.",
-  serious: "the conclusion survives only with a material change to its scope, its cost, or its method.",
-  moderate: "a real weakness that needs an answer but does not move the conclusion.",
+  serious: "if the challenge is right, the case no longer shows that the chosen option beats the ones it was weighed against, or the chosen option needs a different scope, cost or approach before anyone acts on it. That includes a test the decision depends on that cannot answer its question and cannot be fixed in place. A flaw in the chosen plan's test, threshold, sample size, comparison, date or monitoring that can be fixed in place, and that makes no rejected option look better, is moderate.",
+  moderate: "a real weakness that needs an answer, and that a named condition, an added check, or a fix to the plan's details would close while the choice between the options stands. The conditions behind a \"holds-with-conditions\" verdict are usually this.",
   minor: "worth knowing, changes nothing.",
 });
 
@@ -501,7 +509,7 @@ export const VERDICTS = Object.freeze(["holds", "holds-with-conditions", "weak",
 export const VERDICT_DESCRIPTIONS = Object.freeze({
   holds: "you tried to break it and could not: no serious or fatal challenge survived. Say so plainly — this is a real, expected outcome, not a failure to find something.",
   "holds-with-conditions": "sound if specific named conditions are met. Name them.",
-  weak: "the conclusion may well be right, but the case made for it does not establish it.",
+  weak: "the conclusion may well be right, but the case made for it does not establish it: a serious challenge stands against a premise the choice rests on. When every surviving challenge is moderate or milder, the verdict is \"holds\" or \"holds-with-conditions\".",
   refuted: "at least one fatal challenge stands and the conclusion does not survive it.",
 });
 
@@ -705,7 +713,7 @@ export const JUDGE_TOOL = Object.freeze({
             severity: {
               type: "string",
               enum: [...SEVERITIES],
-              description: `How badly this damages the subject's conclusion — not how bad the thing is in the world. ${SEVERITIES.map(
+              description: `How badly this damages the subject's conclusion — not how bad the thing is in the world. Grade it against the decision, the choice between the options on the table, not against the finish of the plan. Before you call a challenge serious, ask: if it is right, does a rejected option now look as good or better, or must the chosen one become a different plan? If neither, it is moderate, and it should say how to fix the plan in place. A test or a way back the subject already has, that needs fixing, is moderate; only one that cannot be made to work at all is serious. ${SEVERITIES.map(
                 (s) => `"${s}" = ${SEVERITY_DESCRIPTIONS[s]}`,
               ).join(" ")}`,
             },
@@ -860,8 +868,8 @@ export function validateChallenges(raw, { maxChallenges = MAX_CHALLENGES } = {})
  * challenge is then dropped for missing a falsifier, a "refuted" verdict is left resting
  * on evidence the reader can no longer see — and a "holds" verdict sitting above a
  * surviving fatal challenge is incoherent on its face. So is a plain "holds" above a
- * surviving SERIOUS one: by the judge's own scale the conclusion then survives only with a
- * material change, which is what "holds-with-conditions" means. That one is the verdict
+ * surviving SERIOUS one: by the judge's own scale the case then no longer establishes the
+ * choice as written, which is "holds-with-conditions" at best. That one is the verdict
  * running kinder than its own challenges, the failure a write-up from the decision's own
  * side invites, so it is flagged too. This does NOT overwrite the model's
  * judgement — silently overruling the outside judge with our own reading would defeat the
@@ -907,7 +915,7 @@ export function reconcileVerdict(statedVerdict, challenges) {
       verdict: stated,
       stated,
       coherent: false,
-      note: `the judge returned "holds" while filing ${serious} SERIOUS challenge(s), and by its own scale a serious challenge means the conclusion survives only with a material change — that is "holds-with-conditions" at best, so this verdict may be kinder than the challenges under it`,
+      note: `the judge returned "holds" while filing ${serious} SERIOUS challenge(s), and by its own scale a serious challenge means the case no longer establishes the choice as written — that is "holds-with-conditions" at best, so this verdict may be kinder than the challenges under it`,
     };
   }
   return { verdict: stated, stated, coherent: true, note: null };
@@ -1038,7 +1046,9 @@ export function buildJudgeMessages({ subject, question = "", contextBlocks = [],
     "5. Make every challenge settleable. Name the premise that has to hold, and name the cheapest concrete thing that would settle it either way.",
     "6. Judge the whole on weight, not on count. One fatal challenge refutes; ten minor ones do not. Then swap sides: had someone who chose the other way written up the same facts, would your verdict be the same? If not, the framing is deciding it — decide again from the facts.",
     "",
-    'Finding nothing is a real result. "holds" with an empty challenge list is a legitimate answer and you should return it when the subject withstands you — when it withstands you, not when it merely sounds sure of itself. Both errors cost the reader: a fabricated objection teaches them to stop reading you, and an unearned "holds" sends them into the decision with its flaw intact and a stamp saying it was checked. Do not pad, do not hedge, do not soften a fatal or serious problem into a milder one to seem balanced or to keep a kinder verdict, and do not round a verdict up to match the write-up\'s confidence.',
+    "Grade severity against the decision, not the finish of the plan. Every plan can be tightened, so a way to improve it is not, by itself, a reason to doubt the choice. Serious means that, if the challenge is right, the case no longer shows the chosen option beats the alternatives, or the chosen option must become a different plan; an unsupported claim or an overreach is serious when, without it, a rejected option looks as good or better, and moderate when the choice still stands without it. Moderate means the choice stands once a condition is met, a check is added, or a detail is fixed in place, including a test, threshold or sample size that needs fixing and makes no rejected option look better. A risk the subject names, with a test that would reveal it or a way back, is not a hidden one: judge whether the test and the way back work, not whether the risk exists. A test or a way back that needs fixing is a moderate challenge that says how to fix it; only one that cannot be made to work at all is serious. The scale, on an unrelated decision (renewing a support contract for a year rather than going month to month): fatal, the contract's own terms exclude the system it is meant to cover; serious, the annual price assumes last year's usage, usage has already doubled, and the comparison with month to month has to be redone before the choice can be made; moderate, the write-up reviews response times each quarter, and a monthly look would catch a slide sooner; minor, a figure is quoted without its date.",
+    "",
+    'Finding nothing is a real result. "holds" with an empty challenge list is a legitimate answer and you should return it when the subject withstands you — when it withstands you, not when it merely sounds sure of itself. Both errors cost the reader: a fabricated objection teaches them to stop reading you, and an unearned "holds" sends them into the decision with its flaw intact and a stamp saying it was checked. Do not pad, do not hedge, do not soften a fatal or serious problem into a milder one to seem balanced or to keep a kinder verdict, do not raise a moderate one to serious to seem rigorous, and do not round a verdict up to match the write-up\'s confidence.',
     "",
     "You are not being asked to be agreeable, and you are not being asked to be harsh. You are being asked to be right.",
   ].join("\n");

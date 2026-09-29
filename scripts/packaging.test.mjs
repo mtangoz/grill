@@ -210,6 +210,8 @@ describe("the skills", () => {
     assert.doesNotMatch(text, /worse than a missed one/);
     assert.match(text, /Then swap sides/);
     assert.match(text, /rules out a plain "solid"/);
+    assert.match(text, /Grade severity against the decision, not the finish of the plan/);
+    assert.match(text, /can be fixed in place, and makes no rejected option look better, is moderate/);
   });
 
   it("the grill skill writes the subject as a clerk and relays the verdict without softening it", () => {
