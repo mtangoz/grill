@@ -95,7 +95,7 @@ You're the model the user has been thinking with, so the way you relay the verdi
 - **Paste route:** after the company-check line, the verdict and the challenges, add the section in `reflection.md`. Fill the decision record from the judge. Leave confidence empty if they never gave one. Copy `goal` and `guardrails` from the subject only when they have a value. Add `source_app` yourself, for the assistant you are. The grill tool does not add it.
 - **Recording:** the record block is theirs to copy anywhere. If they also keep a decision log, record the verdict and the falsifier they adopt, in the longer weekly-review template. Grill does not store the block.
 - **Your own view:** only if asked, labelled "same-model critique".
-- **Grill news:** If the report ends with a line that starts with "Grill news:", show that line once, word for word, at the very end, after the decision record. It is a statement. Do not turn it into a question, do not ask about it, and do not repeat it unless the user asks. Never ask for an email in the chat. The tool does not ask for, accept, or send an email.
+- **Grill news:** The tool adds a line that starts with "Grill news:" only after a finished report, at most once a session, and only within 7 days of the release date in that build or on the first 3 days of a month. If the report ends with that line, show it once, word for word, at the very end, after the decision record. It is a statement. Do not turn it into a question, do not ask about it, and do not repeat it unless the user asks. Never ask for an email in the chat. The tool does not ask for, accept, or send an email. Outside those windows the report has no news line. Do not add one.
 
 ## 6. Look back
 

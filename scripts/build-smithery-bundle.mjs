@@ -5,12 +5,16 @@
  * and the Smithery registry requires it.
  *
  *   node scripts/build-smithery-bundle.mjs dist/grill.mcpb dist/grill-smithery.mcpb
+ *
+ * When the bundle contains server/index.mjs, RELEASE_DATE in that copy is stamped to the build's
+ * UTC day, or to GRILL_RELEASE_DATE. The checkout is not rewritten.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { releaseDateForBuild, stampReleaseDateFile } from "./releaseDate.mjs";
 
 const SERVER = join(dirname(fileURLToPath(import.meta.url)), "..", "server", "index.mjs");
 
@@ -73,7 +77,7 @@ export function listTools(serverPath = SERVER) {
   });
 }
 
-export async function buildSmitheryBundle(mcpbPath, outPath, serverPath = SERVER) {
+export async function buildSmitheryBundle(mcpbPath, outPath, serverPath = SERVER, { releaseDate = releaseDateForBuild() } = {}) {
   const src = resolve(mcpbPath);
   const dest = resolve(outPath);
   if (!existsSync(src)) throw new Error(`missing bundle: ${src}`);
@@ -83,6 +87,8 @@ export async function buildSmitheryBundle(mcpbPath, outPath, serverPath = SERVER
     if (unzipped.status !== 0) throw new Error(`unzip failed (${unzipped.status})`);
     const manifestPath = join(dir, "manifest.json");
     if (!existsSync(manifestPath)) throw new Error("bundle has no manifest.json at its root");
+    const bundledServer = join(dir, "server", "index.mjs");
+    if (existsSync(bundledServer)) stampReleaseDateFile(bundledServer, releaseDate);
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     if (!Array.isArray(manifest.tools) || manifest.tools.length === 0) throw new Error("manifest tools must be a non-empty array");
     const tools = await listTools(serverPath);
