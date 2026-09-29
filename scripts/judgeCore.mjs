@@ -181,11 +181,42 @@ export function autoRouterPlugin(primaryModel, author) {
 // ── Which chain of models to try, and whether an override is visible in the output ──
 
 /**
- * The chain used when nothing overrides it: OpenRouter's Auto Router first, so the judge
- * is not pinned to one vendor's release cadence, with two concrete fallbacks behind it so
- * a router outage still lands on models with known behaviour.
+ * The chain used when nothing overrides it. One slug: OpenRouter's Auto Router.
+ *
+ * No concrete model is named here. A newly released model needs no edit in this repo —
+ * the router picks, and `autoRouterPlugin` tells it to leave out only the author's
+ * company. A transient failure retries this same slug (`nextAttempt`), bounded, with
+ * backoff. It does not fall through to a pinned model.
  */
-export const DEFAULT_CHAIN = "openrouter/auto,openai/gpt-5.6-sol,openai/gpt-5.3-codex";
+export const DEFAULT_CHAIN = "openrouter/auto";
+
+/**
+ * Extra attempts after the first, all against the same Auto Router slug. Three tries
+ * in total: the first request and two retries. The walk deadline (1.5× one attempt)
+ * still stops a third full timeout from starting.
+ */
+export const AUTO_ROUTER_MAX_RETRIES = 2;
+
+/** Wait before the first retry. Each further retry doubles this, up to the cap. */
+export const AUTO_ROUTER_RETRY_BASE_MS = 250;
+export const AUTO_ROUTER_RETRY_CAP_MS = 2000;
+
+/**
+ * Delay before a retry. `retryIndex` 0 is the first retry. The cap is what keeps a
+ * long streak from turning into an unbounded wait.
+ *
+ * @param {number} retryIndex how many retries have already been spent (0 = first retry).
+ * @param {{baseMs?: number, capMs?: number}} [opts]
+ * @returns {number} milliseconds
+ */
+export function retryBackoffMs(retryIndex, { baseMs = AUTO_ROUTER_RETRY_BASE_MS, capMs = AUTO_ROUTER_RETRY_CAP_MS } = {}) {
+  const i = Number.isInteger(retryIndex) && retryIndex >= 0 ? retryIndex : 0;
+  const base = Number.isFinite(baseMs) && baseMs >= 0 ? baseMs : AUTO_ROUTER_RETRY_BASE_MS;
+  const cap = Number.isFinite(capMs) && capMs >= 0 ? capMs : AUTO_ROUTER_RETRY_CAP_MS;
+  const raw = base * 2 ** i;
+  if (!Number.isFinite(raw)) return Math.floor(cap);
+  return Math.min(Math.floor(cap), Math.max(0, Math.floor(raw)));
+}
 
 /** "a, ,b" -> ["a", "b"]. One definition, so every caller splits a chain the same way. */
 function parseChain(raw) {
@@ -260,10 +291,11 @@ export const MAX_LINK_TIMEOUT_MS = 720000;
  * Resolve the per-attempt timeout and the derived deadline for the whole chain walk.
  *
  * The walk deadline is DERIVED from the per-attempt ceiling (1.5x it) rather than being a
- * second, independently-set number: with a three-link default chain, a per-attempt bound
- * alone still permits three full timeouts back to back. 1.5x lets one attempt run to its
- * own ceiling and a second one start, and forbids a third — the shape of a walk that is
- * still worth paying for. Deriving it from one number means the two can never drift apart.
+ * second, independently-set number: the default may try the Auto Router up to three times
+ * (the first request and two retries), and a per-attempt bound alone still permits three
+ * full timeouts back to back. 1.5x lets one attempt run to its own ceiling and a second
+ * one start, and forbids a third — the shape of a walk that is still worth paying for.
+ * Deriving it from one number means the two can never drift apart.
  *
  * An override outside `[MIN_LINK_TIMEOUT_MS, MAX_LINK_TIMEOUT_MS]` is reported back in
  * `ignored` instead of silently falling back — an override nobody can see is
@@ -330,6 +362,66 @@ export function shouldAdvanceChain({ outcome, status = null, hasNext = false } =
     return { advance: true, reason: `http_${status}` };
   }
   return stay;
+}
+
+/**
+ * What to do after one attempt.
+ *
+ * `router` is true when this attempt asked an Auto Router slug. Only then can another
+ * try land on a different company. A concrete model is the company it is; retrying it
+ * cannot repair a correlation, and an explicit `JUDGE_MODEL` chain is the caller's own
+ * fallback for a transient failure.
+ *
+ * A usable answer whose served model is the excluded company is not an answer. It is
+ * retried against the same router slug. When the retry bound is spent, the action is
+ * `error`: the caller must not return that verdict, and must not hand the attempt to a
+ * later pinned model (that model may be the excluded company).
+ *
+ * A transient failure (`no-tool-call`, `transport`, or an HTTP status that is not
+ * account-scoped) retries the router only when there is no later link. A later link is
+ * an explicit override and is walked, as before.
+ *
+ * @param {object} attempt
+ * @param {"usable"|"no-tool-call"|"http"|"transport"} attempt.outcome
+ * @param {number|null} [attempt.status]
+ * @param {string|null} [attempt.servedModel] the model the response says answered.
+ * @param {string} [attempt.author] the excluded family, same vocabulary as `decorrelationOf`.
+ * @param {boolean} [attempt.router] this attempt was an Auto Router slug.
+ * @param {number} [attempt.retriesUsed] retries already spent on this router slug.
+ * @param {number} [attempt.maxRetries]
+ * @param {boolean} [attempt.hasNext] is there another explicit chain link after this one?
+ * @returns {{action: "accept"|"retry"|"advance"|"stop"|"error", reason: string|null, backoffMs: number}}
+ */
+export function nextAttempt({
+  outcome,
+  status = null,
+  servedModel = null,
+  author = "",
+  router = false,
+  retriesUsed = 0,
+  maxRetries = AUTO_ROUTER_MAX_RETRIES,
+  hasNext = false,
+} = {}) {
+  const canRetry = router && Number.isInteger(retriesUsed) && retriesUsed >= 0 && retriesUsed < maxRetries;
+  if (outcome === "usable" && router && decorrelationOf(servedModel, author).reason === "author-family") {
+    if (canRetry) return { action: "retry", reason: "author-family", backoffMs: retryBackoffMs(retriesUsed) };
+    return { action: "error", reason: "author-family", backoffMs: 0 };
+  }
+  if (outcome === "usable") return { action: "accept", reason: null, backoffMs: 0 };
+
+  const retryable =
+    outcome === "no-tool-call" ||
+    outcome === "transport" ||
+    (outcome === "http" && !ACCOUNT_SCOPED_STATUSES.includes(Number(status)));
+  // No later link: the fallback is another try of this router, not a pinned model.
+  if (retryable && canRetry && !hasNext) {
+    const reason = outcome === "http" ? `http_${status}` : outcome === "no-tool-call" ? "no_tool_call" : "transport";
+    return { action: "retry", reason, backoffMs: retryBackoffMs(retriesUsed) };
+  }
+
+  const step = shouldAdvanceChain({ outcome, status, hasNext });
+  if (step.advance) return { action: "advance", reason: step.reason, backoffMs: 0 };
+  return { action: "stop", reason: step.reason, backoffMs: 0 };
 }
 
 // ── The forced tool call: the shape a judge is required to answer in ──

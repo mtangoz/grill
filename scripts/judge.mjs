@@ -51,10 +51,12 @@
  *
  * ENVIRONMENT
  *   OPENROUTER_API_KEY    required unless --dry-run, or JUDGE_FIXTURE is set.
- *   JUDGE_MODEL           optional comma-separated chain override. An override that does
- *                         not lead with an OpenRouter Auto Router slug is an informational
- *                         note in the report, not a degraded run: the review is valid, and
- *                         the note says the pin replaced the Auto Router.
+ *   JUDGE_MODEL           optional comma-separated chain override. Unset, the judge asks
+ *                         only `openrouter/auto`, excluding the author's company, and
+ *                         retries that same router on a transient failure. An override
+ *                         that does not lead with an OpenRouter Auto Router slug is an
+ *                         informational note in the report, not a degraded run: the review
+ *                         is valid, and the note says the pin replaced the Auto Router.
  *   JUDGE_TIMEOUT_MS      per-attempt timeout override, in ms (1000-720000; default 600000).
  *                         The whole-chain walk deadline is derived from this as 1.5x it.
  *   JUDGE_FIXTURE         path to a saved OpenRouter response JSON; replayed for every
@@ -84,20 +86,23 @@
  * PRIVACY. Every judge request asks OpenRouter to route only to endpoints with a zero-data-
  * retention policy (`provider: { zdr: true, data_collection: "deny" }`). This is not
  * configurable — there is no flag or environment variable that turns it off. A model with
- * no such endpoint fails that request, and the chain walks on to the next link rather than
- * silently falling back to a data-retaining endpoint. The quality check's documented request
+ * no such endpoint fails that request. The default retries the Auto Router; an explicit
+ * JUDGE_MODEL chain walks to its next link. Neither path drops the zero-retention
+ * requirement. The quality check's documented request
  * body has no such field, so its guarantee is the pinned model instead (see QUALITY CHECK).
  * Every request leaves through one function, to one of two OpenRouter URLs, and follows no
  * redirect. Each request sends `X-Title: Grill` and `HTTP-Referer` for https://grillyour.ai,
  * so OpenRouter can show aggregate usage counts for the app. The write-up still goes only
  * to those two URLs.
  *
- * EXIT CODES. Non-zero ONLY for a failure that is OURS to fix: bad arguments, an empty
- * subject, a missing key on a real (non-fixture, non-dry-run) run, or an unusable endpoint
- * override. A run that COMPLETED but could not see everything — a clipped subject, a
- * provider outage, a judge from the subject's own model family — prints the degradation
- * loudly on stderr, renders the banner in the report, and exits 0. "Nothing found" and
- * "the judge was blind" must never look the same. The quality check never changes the exit
+ * EXIT CODES. Non-zero for a failure that is ours to fix: bad arguments, an empty subject,
+ * a missing key on a real (non-fixture, non-dry-run) run, an unusable endpoint override,
+ * or an Auto Router that still served the excluded company after its retries. That last
+ * one exits 1 and prints no verdict. A run that completed but could not see everything —
+ * a clipped subject, a provider outage — prints the degradation and exits 0. A concrete
+ * model pinned with JUDGE_MODEL that belongs to the author's company still exits 0 with
+ * the degradation banner: the caller asked for that model. "Nothing found" and "the
+ * judge was blind" must never look the same. The quality check never changes the exit
  * code either way.
  */
 
@@ -109,6 +114,7 @@ import {
   NO_AUTHOR_FAMILY,
   redactSensitive,
   CONTEXT_BUDGET,
+  AUTO_ROUTER_MAX_RETRIES,
   DEFAULT_CHAIN,
   JUDGE_TOOL,
   MAX_CHALLENGES,
@@ -117,11 +123,11 @@ import {
   buildJudgeMessages,
   checkGrounding,
   decorrelationOf,
+  nextAttempt,
   reconcileVerdict,
   renderJudgeReport,
   resolveChain,
   resolveWalkBudget,
-  shouldAdvanceChain,
   SUBJECT_BUDGET,
   toolCallArgumentsOf,
   validateChallenges,
@@ -411,6 +417,9 @@ const autoPlugin = autoRouterPlugin(primaryModel, opts.author);
 // prose and loses the whole review.
 const walksChain = autoPlugin !== null && modelChain.length > 1;
 const attemptChain = walksChain ? modelChain : [primaryModel];
+// A lone Auto Router (the default, or JUDGE_MODEL set to just that slug) retries in
+// place. An excluded-company answer is also retried when a later link exists — see
+// nextAttempt — and is never handed to that later link.
 
 // HOW LONG THE JUDGE GETS, and how long the walk gets. Both numbers, and why, live once in
 // judgeCore.resolveWalkBudget — this file only reads the environment. An unusable override
@@ -469,6 +478,15 @@ if (opts.dryRun) {
   );
   console.log("[judge] data policy: zero-data-retention endpoints only, on every request (not configurable)");
   console.log(`[judge] chain walk: ${walksChain ? `ON — up to ${attemptChain.length} request(s)` : "off — one request"}`);
+  if (autoPlugin) {
+    console.log(
+      `[judge] auto-router retry: up to ${AUTO_ROUTER_MAX_RETRIES} time(s) of \`${primaryModel}\`${
+        walksChain
+          ? " when the served model is the excluded company, then an error instead of that verdict"
+          : " on a transient failure or an excluded-company answer, with backoff; an excluded company after that is an error, and no verdict is returned"
+      }`,
+    );
+  }
   console.log(
     `[judge] quality check: ${
       checkWanted
@@ -576,10 +594,9 @@ async function callLink(model) {
     };
   }
   if (r.outcome === "stalled") {
-    // `status: null` is load-bearing: it makes this a TRANSPORT outcome, so
-    // `shouldAdvanceChain` walks to the next link instead of treating a 200-that-never-
-    // arrived as an answer. The degradation path this already had is the one a stalled body
-    // belongs on.
+    // `status: null` is load-bearing: it makes this a TRANSPORT outcome, so the walk
+    // retries or advances instead of treating a 200-that-never-arrived as an answer.
+    // The degradation path this already had is the one a stalled body belongs on.
     return {
       data: null,
       status: null,
@@ -602,30 +619,51 @@ const walkStartedAt = Date.now();
 // below stops the walk, the reason the previous link failed is the most useful sentence in
 // the report, and without this it would be the one sentence missing.
 let lastFailure = null;
-for (let i = 0; i < attemptChain.length; i++) {
-  // CHECKED BETWEEN LINKS, never mid-flight — interrupting an attempt in progress is the
-  // abort signal's job, and two mechanisms timing one call is how they drift apart. Every
-  // attempt is billed, so a chain that has already spent its budget failing is not worth
-  // one more paid try.
+// Retries of the current Auto Router link that have actually started. A decision to retry
+// sets `pendingRetry`; the count increments when that retry begins, so a deadline that
+// lands between the decision and the request does not count an attempt that never ran.
+let routerRetriesUsed = 0;
+let pendingRetry = false;
+
+function noteAbandoned(elapsedMs, unattempted) {
+  // `data` STILL HOLDS the attempt walked past, and its cost is already inside
+  // walkedCostUsd. Every other exit from this loop is a stay, where the attempt in
+  // `data` was NOT counted — so the post-loop `data.usage.cost + walkedCostUsd` is right
+  // there and would bill this one twice, name a rejected response as the model that
+  // served the run, and report the chain "exhausted" when links were never called. The
+  // walk reached no answer: say so.
+  data = null;
+  if (lastFailure) degraded.push(lastFailure);
+  degraded.push(
+    `the chain walk was ABANDONED after ${Math.round(elapsedMs / 1000)}s — the ${Math.round(
+      walkDeadlineMs / 1000,
+    )}s walk deadline passed with ${unattempted} link(s) unattempted, so this subject was not judged by them`,
+  );
+}
+
+function addSpent(body) {
+  const spent = typeof body?.usage?.cost === "number" ? body.usage.cost : null;
+  if (spent !== null) walkedCostUsd += spent;
+}
+
+for (let i = 0; i < attemptChain.length; ) {
+  // CHECKED BETWEEN ATTEMPTS, never mid-flight — interrupting an attempt in progress is
+  // the abort signal's job, and two mechanisms timing one call is how they drift apart.
+  // Every attempt is billed, so a chain that has already spent its budget failing is not
+  // worth one more paid try.
   const elapsedMs = Date.now() - walkStartedAt;
-  if (i > 0 && elapsedMs > walkDeadlineMs) {
-    // `data` STILL HOLDS the attempt walked past, and its cost is already inside
-    // walkedCostUsd. Every other exit from this loop is a `stay`, where the attempt in
-    // `data` was NOT counted — so the post-loop `data.usage.cost + walkedCostUsd` is right
-    // there and would bill this one twice, name a rejected response as the model that
-    // served the run, and report the chain "exhausted" when links were never called. The
-    // walk reached no answer: say so.
-    data = null;
-    if (lastFailure) degraded.push(lastFailure);
-    degraded.push(
-      `the chain walk was ABANDONED after ${Math.round(elapsedMs / 1000)}s — the ${Math.round(
-        walkDeadlineMs / 1000,
-      )}s walk deadline passed with ${attemptChain.length - i} link(s) unattempted, so this subject was not judged by them`,
-    );
+  if ((i > 0 || pendingRetry) && elapsedMs > walkDeadlineMs) {
+    const unattempted = pendingRetry && i === 0 ? AUTO_ROUTER_MAX_RETRIES - routerRetriesUsed : attemptChain.length - i;
+    noteAbandoned(elapsedMs, unattempted);
     break;
+  }
+  if (pendingRetry) {
+    routerRetriesUsed += 1;
+    pendingRetry = false;
   }
   const link = attemptChain[i];
   const hasNext = i + 1 < attemptChain.length;
+  const onRouter = autoRouterPlugin(link) !== null;
   const attempt = await callLink(link);
   data = attempt.data;
   lastFailure = attempt.failure ?? null;
@@ -637,18 +675,55 @@ for (let i = 0; i < attemptChain.length; i++) {
     : toolCallArgumentsOf(attempt.data) !== null
       ? "usable"
       : "no-tool-call";
+  const served = typeof attempt.data?.model === "string" && attempt.data.model.length > 0 ? attempt.data.model : null;
+  const decision = nextAttempt({
+    outcome,
+    status: attempt.status,
+    servedModel: served,
+    author: opts.author,
+    router: onRouter,
+    retriesUsed: onRouter ? routerRetriesUsed : 0,
+    hasNext,
+  });
 
-  const step = shouldAdvanceChain({ outcome, status: attempt.status, hasNext });
-  if (!step.advance) {
+  if (decision.action === "retry") {
+    // Same slug again. The cost of this attempt is kept; its body is not the answer.
+    addSpent(attempt.data);
+    data = null;
+    if (!lastFailure && decision.reason === "author-family") {
+      lastFailure = `served by \`${served}\` — the excluded company, so this attempt was not used`;
+    }
+    const sinceStart = Date.now() - walkStartedAt;
+    if (sinceStart > walkDeadlineMs) {
+      noteAbandoned(sinceStart, AUTO_ROUTER_MAX_RETRIES - routerRetriesUsed);
+      break;
+    }
+    pendingRetry = true;
+    console.error(
+      `[judge] router retry: ${link}${served && served !== link ? ` (served ${served})` : ""} → ${link} · ${decision.reason} · backoff ${decision.backoffMs}ms`,
+    );
+    if (decision.backoffMs > 0) await new Promise((resolve) => setTimeout(resolve, decision.backoffMs));
+    continue;
+  }
+
+  if (decision.action === "error") {
+    addSpent(attempt.data);
+    const decor = decorrelationOf(served, opts.author);
+    fail(
+      `refusing a correlated verdict — ${decor.note}. Retried the Auto Router ${routerRetriesUsed} time(s); the excluded company still answered. No verdict was returned.`,
+    );
+  }
+
+  if (decision.action === "accept" || decision.action === "stop") {
     if (attempt.failure) degraded.push(attempt.failure);
     break;
   }
-  const served = typeof attempt.data?.model === "string" && attempt.data.model.length > 0 ? attempt.data.model : null;
-  const spent = typeof attempt.data?.usage?.cost === "number" ? attempt.data.usage.cost : null;
-  // Every attempt is BILLED, walked past or not. Counting only the answering call
-  // understates a walked run exactly when it cost the most and bought the least.
-  if (spent !== null) walkedCostUsd += spent;
-  console.error(`[judge] chain advance: ${link}${served && served !== link ? ` (served ${served})` : ""} → ${attemptChain[i + 1]} · ${step.reason}`);
+
+  // advance — an explicit later link in JUDGE_MODEL, not a pinned default.
+  addSpent(attempt.data);
+  routerRetriesUsed = 0;
+  console.error(`[judge] chain advance: ${link}${served && served !== link ? ` (served ${served})` : ""} → ${attemptChain[i + 1]} · ${decision.reason}`);
+  i += 1;
 }
 
 // ── The result ───────────────────────────────────────────────────────────────

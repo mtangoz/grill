@@ -111,7 +111,9 @@ That vendor is then excluded. A `Written-by-model` line does not override `claud
 
 `--author` names one family, and it replaces judge.mjs's default Anthropic exclusion. When the author company is known, that company is the family passed to `--author`. When it is unknown, Grill CI passes `--author none`, which excludes nothing.
 
-After the run, Grill CI reads the model that actually answered. When a company was excluded, the comment shows `Author model vendor: X, judge: Y (different company ✓)`. If that vendor is the excluded company, the comment is marked NOT decorrelated, the pull request gets `needs-review`, and the job fails. A failed check is not treated as already grilled, so a later run tries again. When the author model is unknown, the comment says so, independence isn't verified, and it suggests adding a `Written-by-model` line. That case does not fail the job.
+The judge asks `openrouter/auto` with that company excluded. If the router still serves the excluded company, the judge retries that same router and then exits with an error instead of returning the verdict.
+
+After the run, Grill CI reads the model that actually answered, when a verdict did come back. When a company was excluded, the comment shows `Author model vendor: X, judge: Y (different company ✓)`. If that vendor is the excluded company, the comment is marked NOT decorrelated, the pull request gets `needs-review`, and the job fails. A failed check is not treated as already grilled, so a later run tries again. When the author model is unknown, the comment says so, independence isn't verified, and it suggests adding a `Written-by-model` line. That case does not fail the job.
 
 ### What Grill CI writes
 
