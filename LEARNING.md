@@ -9,7 +9,7 @@ A model router improves every day without reading anyone's prompts: it learns wh
 | Loop | Learns from | Runs | Output |
 |---|---|---|---|
 | **1. Model choice** | The router's market data: which models people use for each task type | Continuously, inside the router | The judge Grill gets, inherited free as models improve |
-| **2. Quality** | 15 synthetic decisions in `evals/cases/`, with planted flaws, sound cases, loaded questions, and write-ups that lean toward their own decision. Each report is also scored by **Jev**, TypeSafe's typed decision model, which is a third model family | Weekly, and on every change to the judge (`eval.yml`) | Gated: catch rate, false-alarm rate, loaded-question catches, decorrelation. Watched: quotes grounded, falsifiers concrete, verdicts that fit, and Jev's reading of whether the planted flaw was caught. An issue if a gate falls below its floor |
+| **2. Quality** | 17 synthetic decisions in `evals/cases/`, with planted flaws, sound cases, loaded questions, and write-ups that lean toward their own decision. Each report is also scored by **Jev**, TypeSafe's typed decision model, which is a third model family | Weekly, and on every change to the judge (`eval.yml`) | Gated: catch rate, false-alarm rate, loaded-question catches, decorrelation. Watched: quotes grounded, falsifiers concrete, verdicts that fit, and Jev's reading of whether the planted flaw was caught. An issue if a gate falls below its floor |
 | **3. Usefulness and accuracy** | Opt-in, dropdown-only signals: "worth engaging?" by judge family, and each verdict against its outcome | Monthly (`learn.yml`) | A report with recommendations, such as "exclude judge family X" or "verdicts aren't predicting outcomes" |
 
 **Plus upkeep** (`upstream.yml`, weekly):

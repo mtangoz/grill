@@ -90,7 +90,7 @@ const CHECK_NOTE = checkEnabled()
 const DESCRIPTION = [
   "Send a decision, plan or forecast to an outside AI judge: a model from a different company than Claude.",
   "It writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict (solid, solid if, shaky, or doesn't hold up).",
-  "Before calling: write the subject, meaning the decision, every option on the table, the reasons, the prediction and confidence exactly as the user gave them, and the strongest case against.",
+  "Before calling: write the subject, meaning the decision, every option on the table, the reasons, the prediction and confidence exactly as the user gave them, Goal and Guardrails lines in the user's words when they stated them, and the strongest case against.",
   "Write it as a clerk, not an advocate: a write-up that leans toward the decision gets a kinder verdict than it should, and one written by whoever helped reach it leans unless you stop it. Give the case against the same depth as the reasons and don't answer it, include the facts that cut against the decision, and leave out words that grade (clearly, strong, safe) and any recommendation of your own.",
   "Show it to the user, and call only after they approve, because it leaves their machine for a model router (zero-data-retention endpoints only).",
   CHECK_NOTE,

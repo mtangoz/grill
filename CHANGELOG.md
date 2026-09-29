@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A grill can carry an optional goal and guardrails, in the user's words. The judge checks a stated goal or guardrail and does not invent one. A trade-off the user names and accepts is not a defect. The decision record stays version 1 and adds `goal`, `guardrails` and `source_app` only when they have a value. The Grill tool does not fill in `source_app`. Look-back asks whether the goal was reached and whether the guardrails held.
 - The default judge is only OpenRouter's Auto Router (`openrouter/auto`). It excludes the author's company and does not pin a fallback model. A transient failure retries that same router, with backoff and a fixed limit. If the model that answers is still the excluded company, the run errors and does not return that verdict. `JUDGE_MODEL` still overrides the chain.
 
 ## 0.1.1

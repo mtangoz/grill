@@ -223,7 +223,7 @@ function tally(list, pick) {
  *
  * `informational` does the same for the quality metrics (grounding, and the Jev scores), with
  * the counts behind each rate. They are NEVER gated: they are not in CHECKS, so no threshold,
- * even one set by mistake in thresholds.json, can turn them into a regression. Fifteen cases
+ * even one set by mistake in thresholds.json, can turn them into a regression. Seventeen cases
  * scored by a second stochastic model is a signal to read, not a bar to hold a release to.
  */
 export function summarize(scores, thresholds) {

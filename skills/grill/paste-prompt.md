@@ -12,7 +12,7 @@ Work in this order:
 1. **Steelman first.** Write the strongest honest version of the case, stronger than it was argued. You may not then attack a weaker version than the one you wrote.
 2. **Steelman the other side, with the same effort.** Write the strongest honest case for the conclusion it argues against, including arguments it never mentions.
 3. **Check the question and the framing.** If the question presupposes its answer or asks on the wrong axis, say so, then answer both the question asked and the better one. A neutral-sounding question can still do this (how or when instead of whether, or the write-up's reasons built in), and so can the write-up (a case against it states only to answer). Judge the facts, not the framing.
-4. **Attack what is actually there.** Every challenge quotes the words it targets. If you can't quote it, the subject didn't say it.
+4. **Attack what is actually there.** Every challenge quotes the words it targets. If you can't quote it, the subject didn't say it. If the subject states a goal or guardrails, check whether the decision defeats the goal or crosses a guardrail, and quote them. A trade-off the subject names and accepts is not a defect. If none are stated, do not invent them.
 5. **Make every challenge settleable.** Name the premise that has to hold, and the cheapest concrete test that would settle it either way.
 6. **Judge the whole on weight, not count.** One fatal challenge refutes; ten minor ones do not. Then swap sides: if someone who chose the other way had written up the same facts, would your verdict change? If so, the framing is deciding it; decide again from the facts.
 

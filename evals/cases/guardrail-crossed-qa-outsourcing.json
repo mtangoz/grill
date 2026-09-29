@@ -1,0 +1,11 @@
+{
+  "id": "guardrail-crossed-qa-outsourcing",
+  "kind": "flawed",
+  "subject": "Northwind Analytics is deciding whether to outsource all quality assurance to a vendor next month or keep the three-person in-house QA group. The leadership team recommends signing the vendor contract this month and letting the in-house group go, so the next release ships without an in-house pass. Reasoning: the vendor's quote is 40% below the fully loaded cost of the in-house group, based on a rate card dated March 2026, and two peer companies switched last year and reported fewer escaped bugs in their first quarter. The plan: sign the contract this month, hand the vendor the regression suite, and ship the April release on the vendor's sign-off alone. Prediction, offered at 70% confidence: escaped bugs in the first full quarter will be no higher than the trailing four-quarter average. Goal: cut QA cost by about 40% before the June board meeting. Guardrails: no customer-facing release ships without an in-house QA pass, and the vendor may not be the only person who can stop a release. The strongest case against: the plan's own ship step deletes the in-house pass the guardrail requires, so the cost goal is met by crossing the line the write-up said must hold. The team notes the peer companies kept a named in-house owner for the first six months, which this plan does not.",
+  "question": "Between outsourcing QA this month and keeping the in-house group, which do these facts support, and what would have to be true for the other to be the better call?",
+  "expect": {
+    "must_target": ["no customer-facing release ships without an in-house QA pass", "ship the April release on the vendor's sign-off alone"],
+    "verdict_not": ["holds"]
+  },
+  "why": "States a guardrail that no customer-facing release ships without an in-house QA pass, then chooses to ship the April release on the vendor's sign-off alone."
+}
