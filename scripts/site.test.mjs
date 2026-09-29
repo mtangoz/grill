@@ -86,7 +86,7 @@ describe("site/page.html", () => {
 
   it("keeps the README short enough for a directory listing", () => {
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
-    assert.match(readme, /about a few cents/);
+    assert.match(readme, /about a cent or two/);
     assert.match(readme, /docs\/WEEKLY-REVIEW\.md/);
     assert.match(readme, /docs\/PRIVACY\.md/);
     assert.doesNotMatch(readme, /\$9 a month|UPSTASH_|STRIPE_|GRILL_PRO_BILLING|Gmail|Google Calendar|Google Drive|Notion/);
