@@ -23,3 +23,9 @@ as a false alarm.
 guardrail and then chooses a plan that crosses it. `sound-goal-tradeoff-support-hours` names a
 slower reply time and accepts it in order to reach a goal, so a judge that treats that accepted
 trade-off as a defect shows up as a false alarm.
+
+**The eval gates only run with a key.** CI has no OpenRouter key, so there the eval prints a notice and
+skips. A change to the judge prompt or the severity scale needs a live run on a machine with a key
+(`OPENROUTER_API_KEY=… node scripts/eval.mjs`), ideally twice, since the same case can score
+differently run to run. Severity is graded against the choice between the options, so a sound case
+fails when a fix to its plan's details is filed as "serious".
