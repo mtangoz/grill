@@ -20,7 +20,7 @@ startCommand:
       judgeModel:
         type: string
         title: Judge model (optional)
-        description: An OpenRouter model from a different company than your assistant, such as google/gemini-2.5-pro. Leave blank for Grill's default.
+        description: Leave it blank for Grill's default, which picks a judge automatically from a different company than your assistant.
   exampleConfig:
     openrouterApiKey: sk-or-v1-your-key
     jevQualityCheck: true

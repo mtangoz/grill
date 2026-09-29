@@ -194,6 +194,8 @@ describe("issuing a key", () => {
     const create = f.calls.find((c) => c.method === "POST" && c.url === `${ROUTER_API}/keys`);
     assert.deepEqual(JSON.parse(create.init.body), { name: `grill-pro-${CUSTOMER}`, limit: 3 });
     assert.equal(create.init.headers.Authorization, "Bearer mgmt_fake");
+    assert.equal(create.init.headers["HTTP-Referer"], "https://grillyour.ai");
+    assert.equal(create.init.headers["X-Title"], "Grill");
 
     const save = f.calls.find((c) => c.method === "POST" && c.url === `${STRIPE_API}/v1/customers/${CUSTOMER}`);
     const form = new URLSearchParams(save.init.body);
@@ -265,6 +267,8 @@ describe("issuing a key", () => {
     const out = await createCappedKey({ env: ENV, fetch: f, name: "grill-pro-acct", limit: 0.5, reset: null });
     assert.deepEqual(out, { key: KEY, hash: HASH, limitUsd: 0.5 });
     assert.deepEqual(JSON.parse(f.calls[0].init.body), { name: "grill-pro-acct", limit: 0.5 });
+    assert.equal(f.calls[0].init.headers["HTTP-Referer"], "https://grillyour.ai");
+    assert.equal(f.calls[0].init.headers["X-Title"], "Grill");
     assert.equal(f.calls.length, 1, "no monthly PATCH");
   });
 

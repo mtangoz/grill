@@ -88,8 +88,9 @@
  * silently falling back to a data-retaining endpoint. The quality check's documented request
  * body has no such field, so its guarantee is the pinned model instead (see QUALITY CHECK).
  * Every request leaves through one function, to one of two OpenRouter URLs, and follows no
- * redirect. No `HTTP-Referer` header is sent; requests identify themselves only by the
- * `X-Title` header below.
+ * redirect. Each request sends `X-Title: Grill` and `HTTP-Referer` for https://grillyour.ai,
+ * so OpenRouter can show aggregate usage counts for the app. The write-up still goes only
+ * to those two URLs.
  *
  * EXIT CODES. Non-zero ONLY for a failure that is OURS to fix: bad arguments, an empty
  * subject, a missing key on a real (non-fixture, non-dry-run) run, or an unusable endpoint
@@ -154,6 +155,8 @@ import {
  */
 const OPENROUTER_DEFAULT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DECISIONS_DEFAULT_URL = "https://openrouter.ai/api/alpha/decisions";
+/** Sent as HTTP-Referer so OpenRouter can count usage of Grill. The fetch URL stays one of the two endpoints above. */
+const APP_REFERER = "https://grillyour.ai";
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
 function resolveEndpoint(name, raw, defaultUrl) {
@@ -522,6 +525,7 @@ async function postJson(url, body, timeoutMs) {
       headers: {
         Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
+        "HTTP-Referer": APP_REFERER,
         "X-Title": "Grill",
       },
       body: JSON.stringify(body),

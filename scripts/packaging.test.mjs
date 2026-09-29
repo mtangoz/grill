@@ -1,8 +1,9 @@
 // Packaging checks: the four manifests agree with each other, the extension ships every file its
 // server needs, and every file a skill points to exists. Drift here breaks an install, not a test.
 import { describe, it } from "node:test";
+import { manifestForMcpbValidate } from "./validate-manifest.mjs";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +26,9 @@ describe("the manifests agree", () => {
     assert.equal(manifest.name, plugin.name);
     assert.equal(manifest.version, plugin.version);
     assert.equal(pkg.version, plugin.version);
+    assert.equal(market.plugins[0].version, plugin.version);
+    assert.equal(json("server.json").version, plugin.version);
+    assert.match(readFileSync(join(ROOT, "server/index.mjs"), "utf8"), new RegExp(`^const VERSION = "${plugin.version}";$`, "m"));
   });
 
   it("one license everywhere, and the MIT text beside it", () => {
@@ -84,6 +88,63 @@ describe("the manifests agree", () => {
   it("the extension declares exactly the tools the server serves, and a privacy policy", () => {
     assert.deepEqual(manifest.tools.map((t) => t.name), ["grill", "grill_result", "grill_look_back"]);
     assert.ok(manifest.privacy_policies.some((u) => u.includes("openrouter.ai")));
+  });
+
+  it("manifest tool names and input schemas match tools/list", async () => {
+    const child = spawn(process.execPath, [join(ROOT, "server/index.mjs")], {
+      env: { PATH: process.env.PATH },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    child.stderr.resume();
+    const waiting = new Map();
+    let buffer = "";
+    let nextId = 1;
+    child.stdout.on("data", (chunk) => {
+      buffer += chunk;
+      let nl;
+      while ((nl = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, nl);
+        buffer = buffer.slice(nl + 1);
+        if (!line.trim()) continue;
+        const msg = JSON.parse(line);
+        const done = waiting.get(msg.id);
+        if (done) {
+          waiting.delete(msg.id);
+          done(msg);
+        }
+      }
+    });
+    const request = (method, params) =>
+      new Promise((resolve) => {
+        const id = nextId++;
+        waiting.set(id, resolve);
+        child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+      });
+    try {
+      await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } });
+      const listed = (await request("tools/list", {})).result.tools;
+      assert.deepEqual(
+        manifest.tools.map((tool) => tool.name),
+        listed.map((tool) => tool.name),
+      );
+      for (const tool of listed) {
+        const declared = manifest.tools.find((entry) => entry.name === tool.name);
+        assert.deepEqual(declared.inputSchema, tool.inputSchema, tool.name);
+      }
+      const projected = manifestForMcpbValidate(manifest);
+      assert.deepEqual(
+        projected.tools.map((tool) => tool.name),
+        listed.map((tool) => tool.name),
+      );
+      for (const tool of projected.tools) assert.equal(tool.inputSchema, undefined, tool.name);
+      assert.deepEqual(
+        manifest.tools.map((tool) => tool.name),
+        listed.map((tool) => tool.name),
+      );
+    } finally {
+      child.kill();
+      await new Promise((resolve) => child.on("close", resolve));
+    }
   });
 });
 
@@ -215,14 +276,14 @@ describe("the registry listing", () => {
   it("server.json names io.github.mtangoz/grill and lists GRILL_API_KEY, mentioning the other accepted name", () => {
     assert.equal(server.$schema, "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json");
     assert.equal(server.name, "io.github.mtangoz/grill");
-    assert.equal(server.version, "0.1.0");
+    assert.equal(server.version, "0.1.1");
     assert.ok(server.description.length >= 1 && server.description.length <= 100);
     assert.equal(server.repository.url, "https://github.com/mtangoz/grill");
     assert.equal(server.repository.source, "github");
     assert.equal(server.repository.id, "1389543389");
     const pkg = server.packages[0];
     assert.equal(pkg.registryType, "mcpb");
-    assert.equal(pkg.identifier, "https://github.com/mtangoz/grill/releases/download/v0.1.0/grill.mcpb");
+    assert.equal(pkg.identifier, "https://github.com/mtangoz/grill/releases/download/v0.1.1/grill.mcpb");
     assert.match(pkg.identifier, /mcp/i);
     assert.equal(pkg.fileSha256, "de55a661493c44a2f476595ec5bc2e25aba78405f7e6f69b1b55e6665fa97b57");
     assert.match(pkg.fileSha256, /^[a-f0-9]{64}$/);
@@ -261,5 +322,9 @@ describe("Smithery listing file", () => {
       assert.match(yaml, new RegExp(`${env}:`));
     }
     assert.equal(pkg.dependencies, undefined);
+    assert.match(yaml, /Leave it blank for Grill's default, which picks a judge automatically from a different company than your assistant/);
+    assert.doesNotMatch(yaml, /gemini-2\.5-pro/);
+    assert.doesNotMatch(manifest.user_config.judge_model.description, /gemini-2\.5-pro/);
+    assert.doesNotMatch(plugin.userConfig.judge_model.description, /gemini-2\.5-pro/);
   });
 });

@@ -380,7 +380,7 @@ describe("argument handling", () => {
 
 // ---------------------------------------------------------------------------
 describe("every request", () => {
-  it("carries zero-data-retention privacy fields and the X-Title header, and never an HTTP-Referer", async () => {
+  it("carries zero-data-retention privacy fields, the X-Title header, and the app referer", async () => {
     let capturedBody = null;
     let capturedHeaders = null;
     const usableFixture = JSON.parse(readFileSync(join(FIXTURES, "usable-response.json"), "utf8"));
@@ -411,7 +411,7 @@ describe("every request", () => {
     assert.equal(capturedBody.provider.zdr, true);
     assert.equal(capturedBody.provider.data_collection, "deny");
     assert.equal(capturedHeaders["x-title"], "Grill");
-    assert.equal(capturedHeaders["http-referer"], undefined);
+    assert.equal(capturedHeaders["http-referer"], "https://grillyour.ai");
   });
 });
 
@@ -540,10 +540,10 @@ describe("--check: the Jev quality check", () => {
     assert.equal(d.body.state.verdict, "weak");
     assert.equal(d.body.state.challenges.length, 1);
     assert.ok(d.body.questions.answers_question, "asked because there was a question");
-    // The same headers as the judge's request, and no Referer.
+    // The same headers as the judge's request, including the app referer.
     assert.equal(d.headers.authorization, `Bearer ${KEY}`);
     assert.equal(d.headers["x-title"], "Grill");
-    assert.equal(d.headers["http-referer"], undefined);
+    assert.equal(d.headers["http-referer"], "https://grillyour.ai");
 
     assert.equal(r.result.quality.provider, "TypeSafe");
     assert.deepEqual(r.result.quality.concrete, { n: 1, good: 1 });

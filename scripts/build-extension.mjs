@@ -3,10 +3,13 @@
  * Stage the Claude Desktop extension: the manifest, the MCP server and the judge, and nothing else.
  *
  *   node scripts/build-extension.mjs              # stages dist/extension/
- *   npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb
+ *   node scripts/validate-manifest.mjs dist/extension/manifest.json
+ *   node scripts/pack-extension.mjs dist/grill.mcpb
  *
  * The staged tree keeps the repo's relative layout (server/ beside scripts/), because the server
- * finds the judge at ../scripts/judge.mjs. The release workflow runs both commands.
+ * finds the judge at ../scripts/judge.mjs. The release workflow runs these commands. `mcpb pack`
+ * refuses a tool inputSchema, so the archive is zipped directly and the validator runs on a copy
+ * with that field removed. The staged manifest keeps the schemas.
  */
 import { cpSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";

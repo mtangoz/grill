@@ -44,7 +44,12 @@ function fail(message) {
 async function fetchJson(url, what) {
   let response;
   try {
-    response = await fetch(url);
+    response = await fetch(url, {
+      headers: {
+        "HTTP-Referer": "https://grillyour.ai",
+        "X-Title": "Grill",
+      },
+    });
   } catch (e) {
     return fail(`could not reach ${what} (${url}): ${e?.message ?? e}`);
   }

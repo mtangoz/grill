@@ -24,7 +24,7 @@ jobs:
       - name: Check the judge's model chain against OpenRouter
         run: node scripts/upstream-check.mjs
       - name: Validate the Desktop extension manifest
-        run: npx -y @anthropic-ai/mcpb@latest validate manifest.json
+        run: node scripts/validate-manifest.mjs manifest.json
       - name: On failure, open or update ONE issue
         if: failure()
         env:

@@ -3,7 +3,7 @@
   "name": "io.github.mtangoz/grill",
   "title": "Grill",
   "description": "A second opinion on your decisions, from a different AI company.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "websiteUrl": "https://grillyour.ai",
   "_meta": {
     "io.modelcontextprotocol.registry/publisher-provided": {
@@ -18,8 +18,8 @@
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/mtangoz/grill/releases/download/v0.1.0/grill.mcpb",
-      "version": "0.1.0",
+      "identifier": "https://github.com/mtangoz/grill/releases/download/v0.1.1/grill.mcpb",
+      "version": "0.1.1",
       "fileSha256": "de55a661493c44a2f476595ec5bc2e25aba78405f7e6f69b1b55e6665fa97b57",
       "transport": {
         "type": "stdio"

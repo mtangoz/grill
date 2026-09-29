@@ -32,7 +32,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { appendReflection, lookBack } from "../scripts/reflection.mjs";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 const JUDGE = fileURLToPath(new URL("../scripts/judge.mjs", import.meta.url));
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SETUP_URL = "https://github.com/mtangoz/grill#set-up";

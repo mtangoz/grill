@@ -176,8 +176,11 @@ describe("the code users install can talk to one place: OpenRouter", () => {
     // Any other URL in the file is prose, in a comment, never something a request could use.
     for (const line of judge.split("\n").filter((l) => /https?:\/\//.test(l))) {
       const code = line.trim();
-      const isDestination = code.startsWith("const OPENROUTER_DEFAULT_URL = ") || code.startsWith("const DECISIONS_DEFAULT_URL = ");
-      assert.ok(isDestination || /^(\*|\/\/|\/\*\*)/.test(code), `a URL outside a comment: ${code}`);
+      const isNamedUrl =
+        code.startsWith("const OPENROUTER_DEFAULT_URL = ") ||
+        code.startsWith("const DECISIONS_DEFAULT_URL = ") ||
+        code.startsWith("const APP_REFERER = ");
+      assert.ok(isNamedUrl || /^(\*|\/\/|\/\*\*)/.test(code), `a URL outside a comment: ${code}`);
     }
     for (const f of ["scripts/judgeCore.mjs", "scripts/checkCore.mjs"]) {
       assert.doesNotMatch(readFileSync(join(ROOT, f), "utf8"), /https?:\/\//, `${f} names a URL`);

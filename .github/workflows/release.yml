@@ -29,8 +29,8 @@ jobs:
       - name: Build the Desktop extension
         run: |
           node scripts/build-extension.mjs
-          npx -y @anthropic-ai/mcpb validate dist/extension/manifest.json
-          npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb
+          node scripts/validate-manifest.mjs dist/extension/manifest.json
+          node scripts/pack-extension.mjs dist/grill.mcpb
       - name: Zip the skills for claude.ai upload
         run: |
           cd skills

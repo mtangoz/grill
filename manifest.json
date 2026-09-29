@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "grill",
   "display_name": "Grill",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "description": "Grill your decisions: an outside AI judge from a different company than Claude argues the strongest case against a decision or forecast.",
   "long_description": "Say **\"grill this\"** in any chat. Claude writes up the decision, shows it to you, and, once you approve, sends it to an outside judge: a model from a different company, reached through a model router with your own key.\n\nThe judge writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict: holds, holds with conditions, weak, or refuted.\n\nEvery request goes to zero-data-retention endpoints only. A grill costs about a cent and takes 1–3 minutes.",
@@ -34,15 +34,64 @@
   "tools": [
     {
       "name": "grill",
-      "description": "Send an approved decision, plan or forecast to an outside AI judge and get back a verdict, challenges and falsifiers."
+      "description": "Send an approved decision, plan or forecast to an outside AI judge and get back a verdict, challenges and falsifiers.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "The approved challenge subject, in markdown."
+          },
+          "question": {
+            "type": "string",
+            "description": "Optional. One neutral question, at most 600 characters, that never names a preferred answer: it names every option, carries none of the subject's reasons, and is not a yes-or-no question whose easy answer is the choice already made. For a forecast, ask whether the confidence is too high, too low or about right."
+          },
+          "author": {
+            "type": "string",
+            "description": "Optional. The model family that wrote the subject, if not Claude, for example openai. That family is excluded from judging too."
+          },
+          "quality_check": {
+            "type": "boolean",
+            "description": "Optional. false skips the Jev quality check for this grill only, when the user asks. It never turns on a check the user switched off in settings."
+          }
+        },
+        "required": ["subject"],
+        "additionalProperties": false
+      }
     },
     {
       "name": "grill_result",
-      "description": "Collect a grill that was still running."
+      "description": "Collect a grill that was still running.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "The job id the grill tool returned."
+          }
+        },
+        "required": ["job_id"],
+        "additionalProperties": false
+      }
     },
     {
       "name": "grill_look_back",
-      "description": "Score pasted decision records against what happened. Stores nothing and needs no key."
+      "description": "Score pasted decision records against what happened. Stores nothing and needs no key.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "records": {
+            "type": "string",
+            "description": "One or more decision record blocks from earlier grills, pasted by the user."
+          },
+          "happened": {
+            "type": "string",
+            "description": "Optional. What actually happened, including whether each call came true and whether the falsifier fired. Omit it to get the questions first."
+          }
+        },
+        "required": ["records"],
+        "additionalProperties": false
+      }
     }
   ],
   "keywords": [
@@ -82,7 +131,7 @@
     "judge_model": {
       "type": "string",
       "title": "Judge model (optional)",
-      "description": "An OpenRouter model from a different company than the assistant you think with, such as google/gemini-2.5-pro. Leave blank to use Grill's default, which picks per request and keeps the author's company out. Grill Pro setup gives you one. An empty box is the same as blank."
+      "description": "An OpenRouter model from a different company than the assistant you think with. Leave blank to use Grill's default, which picks a judge automatically from a different company than your assistant. Grill Pro setup gives you one. An empty box is the same as blank."
     }
   }
 }
