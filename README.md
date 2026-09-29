@@ -15,7 +15,7 @@ Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes c
 
 ### Claude Desktop (Mac or Windows): the one-click judge, 2 minutes
 
-1. **Get a key** for Grill's model router: go to [openrouter.ai/keys](https://openrouter.ai/keys), sign in, click **Create key**, and add $5 of credit. A grill costs about a few cents.
+1. **Get a key** for Grill's model router: go to [openrouter.ai/keys](https://openrouter.ai/keys), sign in, click **Create key**, and add $5 of credit. A grill costs about a cent or two a grill (about a few cents).
 2. **Install Grill.** Download **[grill.mcpb](https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb)** and double-click it, or drag it onto the Claude window. Paste your key when Claude asks. There's nothing else to install; Claude Desktop runs it.
 3. **Try it.** In any chat, type:
    *Grill this: we're moving our launch to March. I'm 70% sure it gets us more signups.*
@@ -55,13 +55,16 @@ It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTE
 
 ## What it costs
 
-Grill is free. On your own key a grill is about a few cents. Copy and paste uses the assistants you already have.
+Grill is free. On your own key a grill is about a cent or two a grill (about a few cents). Copy and paste uses the assistants you already have.
 
 ## Privacy
 
 - Your notes stay in your tools. Only the write-up you approve is sent. The reflection you write stays in your chat or your own notes.
 - The free tool has no account and stores nothing. Grill's makers never see your decisions.
 - A key or token in the write-up stops the run. Email addresses, phone numbers and card numbers are masked.
+- The optional quality check (Jev) also sees the masked write-up; the website counts visits without cookies.
+
+What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
 
 Details: [docs/PRIVACY.md](docs/PRIVACY.md).
 
