@@ -1,10 +1,11 @@
 // Packaging checks: the four manifests agree with each other, the extension ships every file its
 // server needs, and every file a skill points to exists. Drift here breaks an install, not a test.
 import { describe, it } from "node:test";
-import { manifestForMcpbValidate } from "./validate-manifest.mjs";
+import { buildSmitheryBundle, listTools } from "./build-smithery-bundle.mjs";
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -90,60 +91,44 @@ describe("the manifests agree", () => {
     assert.ok(manifest.privacy_policies.some((u) => u.includes("openrouter.ai")));
   });
 
-  it("manifest tool names and input schemas match tools/list", async () => {
-    const child = spawn(process.execPath, [join(ROOT, "server/index.mjs")], {
-      env: { PATH: process.env.PATH },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    child.stderr.resume();
-    const waiting = new Map();
-    let buffer = "";
-    let nextId = 1;
-    child.stdout.on("data", (chunk) => {
-      buffer += chunk;
-      let nl;
-      while ((nl = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, nl);
-        buffer = buffer.slice(nl + 1);
-        if (!line.trim()) continue;
-        const msg = JSON.parse(line);
-        const done = waiting.get(msg.id);
-        if (done) {
-          waiting.delete(msg.id);
-          done(msg);
-        }
-      }
-    });
-    const request = (method, params) =>
-      new Promise((resolve) => {
-        const id = nextId++;
-        waiting.set(id, resolve);
-        child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
-      });
+  it("manifest tool names match tools/list, and the Desktop manifest has no input schemas", async () => {
+    const listed = await listTools(join(ROOT, "server/index.mjs"));
+    assert.deepEqual(
+      manifest.tools.map((tool) => tool.name),
+      listed.map((tool) => tool.name),
+    );
+    for (const tool of manifest.tools) assert.equal(tool.inputSchema, undefined, tool.name);
+  });
+
+  it("the Smithery bundle's tool schemas match tools/list", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "grill-smithery-test-"));
     try {
-      await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } });
-      const listed = (await request("tools/list", {})).result.tools;
+      const stage = join(dir, "stage");
+      mkdirSync(stage);
+      cpSync(join(ROOT, "manifest.json"), join(stage, "manifest.json"));
+      writeFileSync(join(stage, "kept.txt"), "keep\n");
+      const src = join(dir, "grill.mcpb");
+      const dest = join(dir, "grill-smithery.mcpb");
+      execFileSync("zip", ["-r", "-D", "-X", "-q", src, "."], { cwd: stage });
+      await buildSmitheryBundle(src, dest, join(ROOT, "server/index.mjs"));
+      const unpacked = join(dir, "unpacked");
+      mkdirSync(unpacked);
+      execFileSync("unzip", ["-q", dest, "-d", unpacked]);
+      const built = JSON.parse(readFileSync(join(unpacked, "manifest.json"), "utf8"));
+      const listed = await listTools(join(ROOT, "server/index.mjs"));
       assert.deepEqual(
-        manifest.tools.map((tool) => tool.name),
+        built.tools.map((tool) => tool.name),
         listed.map((tool) => tool.name),
       );
       for (const tool of listed) {
-        const declared = manifest.tools.find((entry) => entry.name === tool.name);
+        const declared = built.tools.find((entry) => entry.name === tool.name);
         assert.deepEqual(declared.inputSchema, tool.inputSchema, tool.name);
+        assert.equal(declared.description, manifest.tools.find((entry) => entry.name === tool.name).description);
       }
-      const projected = manifestForMcpbValidate(manifest);
-      assert.deepEqual(
-        projected.tools.map((tool) => tool.name),
-        listed.map((tool) => tool.name),
-      );
-      for (const tool of projected.tools) assert.equal(tool.inputSchema, undefined, tool.name);
-      assert.deepEqual(
-        manifest.tools.map((tool) => tool.name),
-        listed.map((tool) => tool.name),
-      );
+      assert.equal(readFileSync(join(unpacked, "kept.txt"), "utf8"), "keep\n");
+      assert.equal(JSON.parse(readFileSync(join(ROOT, "manifest.json"), "utf8")).tools[0].inputSchema, undefined);
     } finally {
-      child.kill();
-      await new Promise((resolve) => child.on("close", resolve));
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

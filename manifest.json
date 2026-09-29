@@ -34,64 +34,15 @@
   "tools": [
     {
       "name": "grill",
-      "description": "Send an approved decision, plan or forecast to an outside AI judge and get back a verdict, challenges and falsifiers.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "subject": {
-            "type": "string",
-            "description": "The approved challenge subject, in markdown."
-          },
-          "question": {
-            "type": "string",
-            "description": "Optional. One neutral question, at most 600 characters, that never names a preferred answer: it names every option, carries none of the subject's reasons, and is not a yes-or-no question whose easy answer is the choice already made. For a forecast, ask whether the confidence is too high, too low or about right."
-          },
-          "author": {
-            "type": "string",
-            "description": "Optional. The model family that wrote the subject, if not Claude, for example openai. That family is excluded from judging too."
-          },
-          "quality_check": {
-            "type": "boolean",
-            "description": "Optional. false skips the Jev quality check for this grill only, when the user asks. It never turns on a check the user switched off in settings."
-          }
-        },
-        "required": ["subject"],
-        "additionalProperties": false
-      }
+      "description": "Send an approved decision, plan or forecast to an outside AI judge and get back a verdict, challenges and falsifiers."
     },
     {
       "name": "grill_result",
-      "description": "Collect a grill that was still running.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "job_id": {
-            "type": "string",
-            "description": "The job id the grill tool returned."
-          }
-        },
-        "required": ["job_id"],
-        "additionalProperties": false
-      }
+      "description": "Collect a grill that was still running."
     },
     {
       "name": "grill_look_back",
-      "description": "Score pasted decision records against what happened. Stores nothing and needs no key.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "records": {
-            "type": "string",
-            "description": "One or more decision record blocks from earlier grills, pasted by the user."
-          },
-          "happened": {
-            "type": "string",
-            "description": "Optional. What actually happened, including whether each call came true and whether the falsifier fired. Omit it to get the questions first."
-          }
-        },
-        "required": ["records"],
-        "additionalProperties": false
-      }
+      "description": "Score pasted decision records against what happened. Stores nothing and needs no key."
     }
   ],
   "keywords": [

@@ -3,6 +3,7 @@ name: release
 # Releases the version in package.json. Run it by hand (nothing to type), or push the matching
 # vX.Y.Z tag. It publishes:
 # - grill.mcpb: the Claude Desktop extension (double-click to install);
+# - grill-smithery.mcpb: the same extension with tool input schemas, for the Smithery registry;
 # - grill-skill.zip and weekly-review-skill.zip: for claude.ai, Customize → Skills → upload.
 on:
   push:
@@ -29,8 +30,9 @@ jobs:
       - name: Build the Desktop extension
         run: |
           node scripts/build-extension.mjs
-          node scripts/validate-manifest.mjs dist/extension/manifest.json
-          node scripts/pack-extension.mjs dist/grill.mcpb
+          npx -y @anthropic-ai/mcpb validate dist/extension/manifest.json
+          npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb
+          node scripts/build-smithery-bundle.mjs dist/grill.mcpb dist/grill-smithery.mcpb
       - name: Zip the skills for claude.ai upload
         run: |
           cd skills
@@ -39,7 +41,7 @@ jobs:
           zip -r ../dist/grill-skill.zip grill
           zip -r ../dist/weekly-review-skill.zip weekly-review
       - name: Checksums
-        run: cd dist && sha256sum grill.mcpb grill-skill.zip weekly-review-skill.zip > SHA256SUMS && cat SHA256SUMS
+        run: cd dist && sha256sum grill.mcpb grill-smithery.mcpb grill-skill.zip weekly-review-skill.zip > SHA256SUMS && cat SHA256SUMS
       - name: Attest build provenance
         # Attestations need a public repo (or GitHub Enterprise Cloud); a private pre-launch release skips them.
         if: ${{ !github.event.repository.private }}
@@ -47,6 +49,7 @@ jobs:
         with:
           subject-path: |
             dist/grill.mcpb
+            dist/grill-smithery.mcpb
             dist/grill-skill.zip
             dist/weekly-review-skill.zip
       - name: Publish the release
@@ -61,6 +64,6 @@ jobs:
           fi
           # Draft first, then publish: with release immutability on, a published release takes no
           # more assets, so they must all be attached before it goes public.
-          gh release create "$TAG" --draft --target "$GITHUB_SHA" dist/grill.mcpb dist/grill-skill.zip dist/weekly-review-skill.zip dist/SHA256SUMS \
+          gh release create "$TAG" --draft --target "$GITHUB_SHA" dist/grill.mcpb dist/grill-smithery.mcpb dist/grill-skill.zip dist/weekly-review-skill.zip dist/SHA256SUMS \
             --title "Grill $TAG" --notes "Install steps: https://github.com/$GITHUB_REPOSITORY#set-up. Verify a download: gh attestation verify <file> --repo $GITHUB_REPOSITORY"
           gh release edit "$TAG" --draft=false
