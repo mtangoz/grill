@@ -249,3 +249,17 @@ describe("Glama listing files", () => {
     assert.match(docker, /^USER node$/m);
   });
 });
+
+describe("Smithery listing file", () => {
+  it("smithery.yaml builds the Dockerfile, starts the server over stdio and passes each setting to its env name", () => {
+    const yaml = readFileSync(join(ROOT, "smithery.yaml"), "utf8");
+    assert.match(yaml, /^  dockerfile: Dockerfile$/m);
+    assert.match(yaml, /^  type: stdio$/m);
+    assert.match(yaml, /args: \["server\/index\.mjs"\]/);
+    for (const env of ["GRILL_API_KEY", "GRILL_CHECK", "JUDGE_MODEL"]) {
+      assert.ok(env in manifest.server.mcp_config.env, `${env} not in manifest.json`);
+      assert.match(yaml, new RegExp(`${env}:`));
+    }
+    assert.equal(pkg.dependencies, undefined);
+  });
+});

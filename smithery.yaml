@@ -1,0 +1,37 @@
+# Smithery listing: builds the same image as Glama (Dockerfile) and starts the server over stdio.
+# No npm packages: the server stays zero-dependency. Settings mirror manifest.json's user_config.
+build:
+  dockerfile: Dockerfile
+  dockerBuildPath: .
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      openrouterApiKey:
+        type: string
+        title: Model router key (OpenRouter)
+        description: Create one at https://openrouter.ai/keys. Sent only to OpenRouter. Tools list without a key; a grill needs one. A Grill Pro managed key goes here too.
+      jevQualityCheck:
+        type: boolean
+        title: Quality check with Jev
+        description: Also send the masked write-up and report to Jev, a zero-retention decision model on OpenRouter, to score the grill. About $0.0002 a grill. Turn off to send the write-up to the judge only.
+        default: true
+      judgeModel:
+        type: string
+        title: Judge model (optional)
+        description: An OpenRouter model from a different company than your assistant, such as google/gemini-2.5-pro. Leave blank for Grill's default.
+  exampleConfig:
+    openrouterApiKey: sk-or-v1-your-key
+    jevQualityCheck: true
+    judgeModel: ""
+  commandFunction: |-
+    (config) => ({
+      command: "node",
+      args: ["server/index.mjs"],
+      env: {
+        ...(config.openrouterApiKey ? { GRILL_API_KEY: config.openrouterApiKey } : {}),
+        GRILL_CHECK: config.jevQualityCheck === false ? "false" : "true",
+        ...(config.judgeModel ? { JUDGE_MODEL: config.judgeModel } : {}),
+      },
+    })
