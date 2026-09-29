@@ -11,7 +11,10 @@ import {
   AUTHOR_FAMILY_PATTERNS,
   AUTHOR_MODEL_FAMILY,
   NO_AUTHOR_FAMILY,
+  AUTO_ROUTER_MAX_RETRIES,
   AUTO_ROUTER_PLUGIN_IDS,
+  AUTO_ROUTER_RETRY_BASE_MS,
+  AUTO_ROUTER_RETRY_CAP_MS,
   autoRouterPlugin,
   budgetText,
   challengeScore,
@@ -28,10 +31,12 @@ import {
   MAX_LINK_TIMEOUT_MS,
   MIN_LINK_TIMEOUT_MS,
   buildJudgeMessages,
+  nextAttempt,
   reconcileVerdict,
   renderJudgeReport,
   resolveChain,
   resolveWalkBudget,
+  retryBackoffMs,
   SEVERITIES,
   shouldAdvanceChain,
   SUBJECT_BUDGET,
@@ -564,26 +569,150 @@ describe("renderJudgeReport", () => {
 
 // ---------------------------------------------------------------------------
 describe("the default chain", () => {
-  it("leads with the Auto Router, so the judge is not pinned to one vendor's release cadence", () => {
-    const chain = DEFAULT_CHAIN.split(",").map((s) => s.trim());
-    assert.equal(chain[0], "openrouter/auto");
-    assert.ok(chain.length > 1);
+  const PINNED_VENDOR = /(?:^|[,>\s])(?:openai|anthropic|google|deepseek|x-ai)\//i;
+
+  it("is only the Auto Router — no pinned vendor model", () => {
+    assert.equal(DEFAULT_CHAIN, "openrouter/auto");
+    assert.equal(DEFAULT_CHAIN.includes(","), false);
+    assert.doesNotMatch(DEFAULT_CHAIN, PINNED_VENDOR);
+    const resolved = resolveChain(undefined);
+    assert.deepEqual(resolved.chain, ["openrouter/auto"]);
+    assert.equal(resolved.primary, "openrouter/auto");
+    for (const slug of resolved.chain) {
+      assert.notEqual(autoRouterPlugin(slug), null, `${slug} must stay a router slug`);
+      assert.doesNotMatch(slug, PINNED_VENDOR);
+    }
   });
 
-  it("carries the author-family exclusion on the Auto primary — the whole premise of the instrument", () => {
-    const plugin = autoRouterPlugin(DEFAULT_CHAIN.split(",")[0]);
+  it("excludes the author's company on that router, and only that company", () => {
+    const plugin = autoRouterPlugin(DEFAULT_CHAIN);
     assert.notEqual(plugin, null);
+    assert.deepEqual(plugin.excluded_models, [...AUTHOR_FAMILY_PATTERNS]);
     assert.ok(plugin.excluded_models.includes("anthropic/*"));
-  });
-
-  it("keeps every fallback link a concrete slug, so a walked chain lands somewhere known", () => {
-    const fallbacks = DEFAULT_CHAIN.split(",").slice(1);
-    for (const link of fallbacks) assert.equal(autoRouterPlugin(link.trim()), null);
+    assert.deepEqual(autoRouterPlugin(DEFAULT_CHAIN, "openai").excluded_models, ["openai/*"]);
+    assert.deepEqual(autoRouterPlugin(DEFAULT_CHAIN, "none").excluded_models, []);
   });
 
   it("defaults the challenge cap to something a human will actually read", () => {
     assert.ok(MAX_CHALLENGES > 0);
     assert.ok(MAX_CHALLENGES <= 15);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("auto-router retries", () => {
+  const PINNED_VENDOR = /openai\/|anthropic\/|google\/|deepseek\/|x-ai\//;
+
+  it("backs off, and the wait is capped", () => {
+    assert.equal(retryBackoffMs(0), AUTO_ROUTER_RETRY_BASE_MS);
+    assert.equal(retryBackoffMs(1), AUTO_ROUTER_RETRY_BASE_MS * 2);
+    assert.equal(retryBackoffMs(2), AUTO_ROUTER_RETRY_BASE_MS * 4);
+    assert.equal(retryBackoffMs(10), AUTO_ROUTER_RETRY_CAP_MS);
+    assert.ok(retryBackoffMs(1) > retryBackoffMs(0));
+  });
+
+  it("retries the same router on a transient failure when nothing is pinned behind it", () => {
+    const d = nextAttempt({ outcome: "http", status: 503, router: true, retriesUsed: 0, hasNext: false });
+    assert.equal(d.action, "retry");
+    assert.equal(d.reason, "http_503");
+    assert.equal(d.backoffMs, AUTO_ROUTER_RETRY_BASE_MS);
+    assert.doesNotMatch(JSON.stringify(d), PINNED_VENDOR);
+    const again = nextAttempt({ outcome: "transport", router: true, retriesUsed: 1, hasNext: false });
+    assert.equal(again.action, "retry");
+    assert.equal(again.backoffMs, AUTO_ROUTER_RETRY_BASE_MS * 2);
+  });
+
+  it("stops once the transient retry bound is spent, instead of inventing a model", () => {
+    const d = nextAttempt({
+      outcome: "no-tool-call",
+      router: true,
+      retriesUsed: AUTO_ROUTER_MAX_RETRIES,
+      hasNext: false,
+    });
+    assert.equal(d.action, "stop");
+    assert.doesNotMatch(JSON.stringify(d), PINNED_VENDOR);
+  });
+
+  it("does not retry an account-scoped status", () => {
+    for (const status of ACCOUNT_SCOPED_STATUSES) {
+      const d = nextAttempt({ outcome: "http", status, router: true, retriesUsed: 0, hasNext: false });
+      assert.equal(d.action, "stop", String(status));
+    }
+  });
+
+  it("walks an explicit later link on a transient failure — that chain is the caller's", () => {
+    const d = nextAttempt({ outcome: "transport", router: true, retriesUsed: 0, hasNext: true });
+    assert.equal(d.action, "advance");
+    assert.equal(d.reason, "transport");
+    assert.equal(d.backoffMs, 0);
+  });
+
+  it("treats a served model from the excluded company as a failure and retries the router", () => {
+    const d = nextAttempt({
+      outcome: "usable",
+      servedModel: "openai/gpt-5.6-sol",
+      author: "openai",
+      router: true,
+      retriesUsed: 0,
+      hasNext: true,
+    });
+    assert.equal(d.action, "retry");
+    assert.equal(d.reason, "author-family");
+    assert.ok(d.backoffMs > 0);
+    // The decision names no model to fall through to, pinned or otherwise.
+    assert.equal(Object.hasOwn(d, "model"), false);
+    assert.doesNotMatch(JSON.stringify(d), PINNED_VENDOR);
+  });
+
+  it("errors once those retries are spent, and does not accept the correlated verdict or advance", () => {
+    const d = nextAttempt({
+      outcome: "usable",
+      servedModel: "openai/gpt-5.6-sol",
+      author: "openai",
+      router: true,
+      retriesUsed: AUTO_ROUTER_MAX_RETRIES,
+      hasNext: true,
+    });
+    assert.equal(d.action, "error");
+    assert.equal(d.reason, "author-family");
+    assert.notEqual(d.action, "accept");
+    assert.notEqual(d.action, "advance");
+  });
+
+  it("accepts a usable answer from a different company", () => {
+    const d = nextAttempt({
+      outcome: "usable",
+      servedModel: "google/gemini-2.5-pro",
+      author: "openai",
+      router: true,
+      retriesUsed: 0,
+      hasNext: false,
+    });
+    assert.equal(d.action, "accept");
+  });
+
+  it("still excludes the default family when the caller names no author", () => {
+    const d = nextAttempt({
+      outcome: "usable",
+      servedModel: "anthropic/claude-opus-5",
+      author: "",
+      router: true,
+      retriesUsed: AUTO_ROUTER_MAX_RETRIES,
+      hasNext: false,
+    });
+    assert.equal(d.action, "error");
+  });
+
+  it("does not retry a concrete pin — the caller asked for that model", () => {
+    const d = nextAttempt({
+      outcome: "usable",
+      servedModel: "openai/gpt-5.6-sol",
+      author: "openai",
+      router: false,
+      retriesUsed: 0,
+      hasNext: false,
+    });
+    assert.equal(d.action, "accept");
   });
 });
 

@@ -128,10 +128,12 @@ describe("a response with no tool call", () => {
     const result = JSON.parse(stdout);
     assert.equal(result.verdict, null);
     assert.ok(result.degraded.some((d) => /no tool call/.test(d)));
-    // The fixture is replayed for every attempt, so the default 3-link chain is walked in
-    // full: two advances logged (link1->link2, link2->link3), then the last link is never
-    // abandoned, whatever it returns.
-    assert.equal((stderr.match(/chain advance:/g) ?? []).length, 2);
+    // The fixture is replayed for every attempt. The default is one router slug, retried
+    // twice (three tries). Each failed try logs a retry of that same slug; the last try
+    // is kept, whatever it returns. The retry target is the router, not a pinned model.
+    assert.equal((stderr.match(/router retry:/g) ?? []).length, 2);
+    assert.match(stderr, /router retry: openrouter\/auto \(served openai\/gpt-5\.3-codex\) → openrouter\/auto · no_tool_call/);
+    assert.equal((stderr.match(/chain advance:/g) ?? []).length, 0);
   });
 });
 
@@ -245,15 +247,19 @@ describe("a user-pinned JUDGE_MODEL", () => {
 
 // ---------------------------------------------------------------------------
 describe("a served model from the excluded author family", () => {
-  it("is reported as NOT an independent review, not silently accepted", async () => {
+  it("retries the auto router, then errors without returning the correlated verdict", async () => {
     const env = envFor({ JUDGE_FIXTURE: join(FIXTURES, "anthropic-served-response.json") });
 
-    const { code, stdout } = await runCli(["--text", "a claim", "--json"], env);
+    const { code, stdout, stderr } = await runCli(["--text", "a claim", "--json"], env);
 
-    assert.equal(code, 0);
-    const result = JSON.parse(stdout);
-    assert.equal(result.decorrelated, false);
-    assert.ok(result.degraded.some((d) => /NOT AN INDEPENDENT REVIEW/.test(d)));
+    assert.equal(code, 1);
+    assert.match(stderr, /\[judge\] ERROR: refusing a correlated verdict/);
+    assert.match(stderr, /anthropic\/claude-opus-5/);
+    assert.match(stderr, /No verdict was returned/);
+    assert.equal((stderr.match(/router retry:/g) ?? []).length, 2);
+    assert.doesNotMatch(stderr, /openai\/|google\/|deepseek\/|x-ai\//);
+    assert.equal(stdout.trim(), "");
+    assert.doesNotMatch(stdout, /holds|Verdict|challenges/);
   });
 
   it("excludes nothing for --author none, including an Anthropic answer", async () => {
@@ -273,6 +279,109 @@ describe("a served model from the excluded author family", () => {
     assert.match(dry.stdout, /excluding nothing/);
     assert.match(dry.stdout, /"excluded_models": \[\]/);
     assert.doesNotMatch(dry.stdout, /anthropic\/\*/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("auto-router retries against a loopback router", () => {
+  const usable = JSON.parse(readFileSync(join(FIXTURES, "usable-response.json"), "utf8"));
+  const anthropic = JSON.parse(readFileSync(join(FIXTURES, "anthropic-served-response.json"), "utf8"));
+
+  function listen(responses) {
+    const seen = [];
+    return new Promise((resolve) => {
+      const server = createServer((req, res) => {
+        let raw = "";
+        req.on("data", (c) => (raw += c));
+        req.on("end", () => {
+          seen.push({ at: Date.now(), body: JSON.parse(raw) });
+          const next = responses[Math.min(seen.length - 1, responses.length - 1)];
+          if (typeof next === "number") {
+            res.writeHead(next, { "content-type": "application/json" });
+            res.end('{"error":"upstream"}');
+            return;
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify(next));
+        });
+      });
+      server.listen(0, "127.0.0.1", () => {
+        resolve({
+          seen,
+          url: `http://127.0.0.1:${server.address().port}`,
+          close: () =>
+            new Promise((done) => {
+              server.closeAllConnections?.();
+              server.close(done);
+            }),
+        });
+      });
+    });
+  }
+
+  it("retries openrouter/auto after a transient failure, with the author still excluded", async () => {
+    const server = await listen([503, usable]);
+    const env = envFor({
+      OPENROUTER_API_KEY: "test-key-never-leaves-loopback",
+      JUDGE_OPENROUTER_URL: server.url,
+    });
+    const { code, stdout, stderr } = await runCli(["--text", "a claim", "--json"], env);
+    await server.close();
+
+    assert.equal(code, 0, stderr);
+    assert.equal(server.seen.length, 2);
+    for (const hit of server.seen) {
+      assert.equal(hit.body.model, "openrouter/auto");
+      assert.equal(hit.body.models, undefined, "no pinned fallback array");
+      assert.ok(hit.body.plugins[0].excluded_models.includes("anthropic/*"));
+    }
+    assert.ok(server.seen[1].at - server.seen[0].at >= 200, "the retry waits");
+    assert.match(stderr, /router retry: openrouter\/auto → openrouter\/auto · http_503/);
+    const result = JSON.parse(stdout);
+    assert.equal(result.verdict, "weak");
+    assert.equal(result.servedModel, "openai/gpt-5.6-sol");
+    assert.equal(result.decorrelated, true);
+  });
+
+  it("discards an excluded-company answer and keeps a later one from a different company", async () => {
+    const server = await listen([anthropic, usable]);
+    const env = envFor({
+      OPENROUTER_API_KEY: "test-key-never-leaves-loopback",
+      JUDGE_OPENROUTER_URL: server.url,
+      JUDGE_MODEL: "openrouter/auto,openai/gpt-5.6-sol",
+    });
+    const { code, stdout, stderr } = await runCli(["--text", "a claim", "--author", "anthropic", "--json"], env);
+    await server.close();
+
+    assert.equal(code, 0, stderr);
+    assert.equal(server.seen.length, 2);
+    for (const hit of server.seen) {
+      assert.equal(hit.body.model, "openrouter/auto", "the retry stays on the router");
+      assert.deepEqual(hit.body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
+    }
+    const result = JSON.parse(stdout);
+    assert.equal(result.verdict, "weak", "the correlated holds verdict was not returned");
+    assert.equal(result.servedModel, "openai/gpt-5.6-sol");
+    assert.equal(result.decorrelated, true);
+    assert.doesNotMatch(stderr, /chain advance:/);
+  });
+
+  it("errors when every retry is still the excluded company, and never calls a pinned fallback", async () => {
+    const server = await listen([anthropic, anthropic, anthropic, usable]);
+    const env = envFor({
+      OPENROUTER_API_KEY: "test-key-never-leaves-loopback",
+      JUDGE_OPENROUTER_URL: server.url,
+      JUDGE_MODEL: "openrouter/auto,openai/gpt-5.6-sol",
+    });
+    const { code, stdout, stderr } = await runCli(["--text", "a claim", "--json"], env);
+    await server.close();
+
+    assert.equal(code, 1);
+    assert.match(stderr, /refusing a correlated verdict/);
+    assert.match(stderr, /No verdict was returned/);
+    assert.equal(server.seen.length, 3, "two retries then stop — the pinned fallback is not called");
+    for (const hit of server.seen) assert.equal(hit.body.model, "openrouter/auto");
+    assert.equal(stdout.trim(), "");
   });
 });
 
@@ -320,6 +429,16 @@ describe("JUDGE_OPENROUTER_URL", () => {
 
 // ---------------------------------------------------------------------------
 describe("--dry-run", () => {
+  it("asks only the auto router, excludes the default company, and names no pinned fallback", async () => {
+    const { code, stdout } = await runCli(["--text", "a claim", "--dry-run"], envFor({}));
+    assert.equal(code, 0);
+    assert.match(stdout, /chain: openrouter\/auto · default/);
+    assert.match(stdout, /excluding anthropic\/\*, \*\/claude-\*/);
+    assert.match(stdout, /auto-router retry: up to 2 time\(s\) of `openrouter\/auto`/);
+    assert.doesNotMatch(stdout, /openai\/|google\/|deepseek\/|x-ai\//);
+    assert.equal(stdout.includes('"model": "openrouter/auto"'), true);
+  });
+
   it("shows the privacy fields on the payload it would send", async () => {
     const { code, stdout } = await runCli(["--text", "a claim", "--dry-run"], envFor({}));
     assert.equal(code, 0);
@@ -450,8 +569,8 @@ describe("a judge that sends headers and never finishes the body", () => {
       const result = JSON.parse(stdout);
       // THE STALL IS NAMED AS ITS OWN FAILURE MODE, apart from an ordinary HTTP failure.
       assert.ok(result.degraded.some((d) => /never finished sending its answer/.test(d)));
-      // IT IS A TRANSPORT OUTCOME, so the walk advances instead of treating it as the answer.
-      assert.match(stderr, /chain advance: .*· transport/);
+      // IT IS A TRANSPORT OUTCOME, so the router is retried instead of treating it as the answer.
+      assert.match(stderr, /router retry: .*· transport/);
       // THE WALK IS BOUNDED: two 1200ms aborts exceed the 1800ms deadline, so the third
       // link is never attempted.
       assert.ok(result.degraded.some((d) => /walk deadline passed with 1 link\(s\) unattempted/.test(d)));

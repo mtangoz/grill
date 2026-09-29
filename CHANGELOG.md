@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The default judge is only OpenRouter's Auto Router (`openrouter/auto`). It excludes the author's company and does not pin a fallback model. A transient failure retries that same router, with backoff and a fixed limit. If the model that answers is still the excluded company, the run errors and does not return that verdict. `JUDGE_MODEL` still overrides the chain.
+
 ## 0.1.1
 
 - Requests to OpenRouter send `HTTP-Referer: https://grillyour.ai` next to `X-Title: Grill`, so OpenRouter can show aggregate usage counts for the app. Decision text still goes only to OpenRouter.

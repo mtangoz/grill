@@ -13,7 +13,7 @@ A model router improves every day without reading anyone's prompts: it learns wh
 | **3. Usefulness and accuracy** | Opt-in, dropdown-only signals: "worth engaging?" by judge family, and each verdict against its outcome | Monthly (`learn.yml`) | A report with recommendations, such as "exclude judge family X" or "verdicts aren't predicting outcomes" |
 
 **Plus upkeep** (`upstream.yml`, weekly):
-- the judge's fallback models still exist on the router, and still have zero-retention endpoints; every endpoint serving Jev is zero-retention;
+- the judge asks OpenRouter's Auto Router (`openrouter/auto`) with no pinned fallback model; every endpoint serving Jev is zero-retention;
 - the extension manifest still validates against the latest `mcpb` tool.
 
 ## Quality checks on one grill
