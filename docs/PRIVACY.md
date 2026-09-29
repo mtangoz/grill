@@ -1,6 +1,8 @@
 # Privacy: who can see your decision
 
-**Short version:** The free tool has no account, and Grill never sees a decision. An account is only for a key we manage (a free starter allowance, or Pro when paid plans are on). Bring your own key and there is no account. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. The only server is the small one for Grill Pro accounts and billing, and it never handles a write-up. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
+What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md](PRINCIPLES.md).
+
+**Short version:** The free tool has no account, and Grill never sees a decision. Accounts (a starter key or Pro) are not available yet. The section below describes what would change if they launch; this page will be updated before they do. Bring your own key and there is no account. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
 
 ## Who sees what
 
@@ -14,8 +16,10 @@
 | **Jev (TypeSafe)**, quality check, on by default | The masked write-up and the judge's report | A zero-data-retention endpoint, checked weekly; the check is dropped if any other endpoint answers |
 | **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them. With Pro, also your billing details and your key's usage, as below | There is nowhere for anything else to go |
 | **This website** | An anonymous count of page views, plus whether a decision record was shown or copied, whether a look-back started or finished, and how many records were pasted. No cookie, nothing that identifies you, and never the words of a decision | Vercel Web Analytics, on the website only. The Grill tool never loads it |
-| **Stripe**, Grill Pro only | Your email, card and billing address | Stripe's own privacy policy. Grill never sees your card |
-| **Grill's Pro server**, managed keys only | Your email, sign-in, and (when paid plans are on) checkout and subscription status, which assistant and judge you picked, counts of sign-ups, keys issued, first grills, allowances used up and upgrade clicks, and, only if you turn it on, copies of reports you choose to keep | It runs when you sign in, when a key is issued, and when a subscription changes. Write-ups do not pass through it. The counts are numbers only, never decision text. Saving report copies is off until you turn it on, and you can delete them. A developer test mode can run a sample grill on a laptop, and that mode cannot be turned on in production |
+| **Stripe**, Grill Pro only | Your email, card and billing address | Stripe's own privacy policy. Grill never sees your card. Accounts are not available yet |
+| **Resend**, accounts only | Your email address | The sign-in email is sent through Resend (sees your email address). Accounts are not available yet |
+| **Upstash Redis**, accounts only | Account records | Account records live in an Upstash Redis store. Accounts are not available yet |
+| **Grill's Pro server**, managed keys only | Your email, sign-in, and (when paid plans are on) checkout and subscription status, which assistant and judge you picked, counts of sign-ups, keys issued, first grills, allowances used up and upgrade clicks, and, only if you turn it on, copies of reports you choose to keep | It runs when you sign in, when a key is issued, and when a subscription changes. Write-ups do not pass through it. The counts are numbers only, never decision text. Saving report copies is off until you turn it on, and you can delete them. A developer test mode can run a sample grill on a laptop, and that mode cannot be turned on in production. Accounts are not available yet |
 | **Grill's router account**, Grill Pro only | Your key's usage: cost, model and time of each check, never the text | Logging is off and every request is zero-retention, account-wide |
 
 ## What Grill enforces in code
@@ -38,6 +42,10 @@ Both are off by default. Keep them off:
 2. **Use of inputs/outputs** (Privacy settings), the 1% discount for letting the router use your data.
 
 ## Grill Pro
+
+Accounts (a starter key or Pro) are not available yet. The section below describes what would change if they launch; this page will be updated before they do.
+
+The sign-in email is sent through Resend (sees your email address), and account records live in an Upstash Redis store.
 
 Pro changes who pays for the AI, not where your write-up goes.
 - **Your write-ups still go straight** from your Claude to the router, using your Pro key. They never pass through Grill's server.
