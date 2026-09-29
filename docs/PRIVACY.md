@@ -2,7 +2,7 @@
 
 What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md](PRINCIPLES.md).
 
-**Short version:** The free tool has no account, and Grill never sees a decision. Accounts (a starter key or Pro) are not available yet. The section below describes what would change if they launch; this page will be updated before they do. Bring your own key and there is no account. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
+**Short version:** The free tool has no account, and Grill never sees a decision. Accounts (a starter key or Pro) are not available yet. The section below describes what would change if they launch; this page will be updated before they do. If you choose to join the Pro launch list on the website, we keep your email address, and nothing else, until Pro launches ([below](#the-pro-launch-list)). Bring your own key and there is no account. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
 
 ## Who sees what
 
@@ -19,6 +19,8 @@ What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md]
 | **Stripe**, Grill Pro only | Your email, card and billing address | Stripe's own privacy policy. Grill never sees your card. Accounts are not available yet |
 | **Resend**, accounts only | Your email address | The sign-in email is sent through Resend (sees your email address). Accounts are not available yet |
 | **Upstash Redis**, accounts only | Account records | Account records live in an Upstash Redis store. Accounts are not available yet |
+| **Resend**, Pro launch list, only if you join | Your email address, after you confirm it | Stored as a contact in Resend with no other details, never linked to a grill, a key or a visit. One confirmation email, then one email when Pro is ready. One-click unsubscribe. Deleted 60 days after that email |
+| **Upstash Redis**, Pro launch list | A hash of your email for 24 hours (so the form can't be used to flood someone's inbox), a daily count of confirmation emails sent, and counts of confirmed sign-ups | The hash expires after a day. The counts are numbers only, never tied to an address |
 | **Grill's Pro server**, managed keys only | Your email, sign-in, and (when paid plans are on) checkout and subscription status, which assistant and judge you picked, counts of sign-ups, keys issued, first grills, allowances used up and upgrade clicks, and, only if you turn it on, copies of reports you choose to keep | It runs when you sign in, when a key is issued, and when a subscription changes. Write-ups do not pass through it. The counts are numbers only, never decision text. Saving report copies is off until you turn it on, and you can delete them. A developer test mode can run a sample grill on a laptop, and that mode cannot be turned on in production. Accounts are not available yet |
 | **Grill's router account**, Grill Pro only | Your key's usage: cost, model and time of each check, never the text | Logging is off and every request is zero-retention, account-wide |
 
@@ -60,6 +62,16 @@ Pro changes who pays for the AI, not where your write-up goes.
   - copies of reports, only if you turn saving on at your account's Reports page. Off until you do. You can delete any copy or all of them, and turn saving off. The text stays on the account store, never on your Stripe customer. Grill does not email a verdict or a weekly note today, so nothing is saved until a report exists and saving is on. In test mode, a sample grill is saved the same way.
 - **The key is shown when it is created or rotated**, then dropped. If you lose it, sign in and rotate it. We switch the old one off. Rotating a starter key keeps whatever allowance is left. It does not reset the cap.
 - **Bring your own key and there is no account.** The free tool is unchanged: no sign-in, no tracking in the tool you install, and checks are unlimited on your own credit.
+
+## The Pro launch list
+
+The website has an opt-in form to hear when Pro is ready. The Grill tool never asks for your email. For a limited time before Pro launches, it can show one line, at most once a session, with a link to that form. Set `GRILL_NEWS=off`, or switch off "Show Grill news" in Grill's settings, to hide it. The line is only text: the tool sends nothing to Grill.
+
+- **What we keep:** your email address, as a contact in Resend, only after you click the confirmation link. Before that we keep nothing, except a one-way hash of the address for 24 hours to stop repeat sends. Resend keeps its usual delivery log of the confirmation email. The confirmation link is encrypted, so your address can't be read from it.
+- **What we never keep:** anything you grilled, your key, your model-router usage, or which page you came from. We keep a separate count of sign-ups by where the link was (the tool line, the paste route, the website), and that count is not tied to your address.
+- **What you'll get:** one confirmation email, and one email when Pro is ready. No newsletter.
+- **Unsubscribe:** the link in any email we send, or write to support@grillyour.ai.
+- **How long:** we delete the list 60 days after the launch email. If Pro doesn't happen, we delete it within 30 days of that decision.
 
 ## Your key
 

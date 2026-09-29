@@ -400,6 +400,11 @@ export function fileStore(path) {
   };
 }
 
+/** One Upstash REST command. Shared with the launch list, which uses its own keys. */
+export function redisCommand(env, fetchImpl = globalThis.fetch) {
+  return redisCmd(env, fetchImpl);
+}
+
 function redisCmd(env, fetchImpl) {
   return async (args) => {
     let res;

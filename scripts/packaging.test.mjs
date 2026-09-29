@@ -79,6 +79,19 @@ describe("the manifests agree", () => {
     assert.equal(mcp.mcpServers.grill.env.GRILL_CHECK, "${user_config.jev_quality_check}");
   });
 
+  it("Show Grill news is a boolean setting that defaults to ON and is wired as GRILL_NEWS", () => {
+    for (const cfg of [plugin.userConfig.show_news, manifest.user_config.show_news]) {
+      assert.equal(cfg.type, "boolean");
+      assert.equal(cfg.default, true);
+      assert.notEqual(cfg.sensitive, true);
+      assert.equal(cfg.title, "Show Grill news");
+      assert.match(cfg.description, /sends nothing/);
+      assert.match(cfg.description, /Turn off/);
+    }
+    assert.equal(manifest.server.mcp_config.env.GRILL_NEWS, "${user_config.show_news}");
+    assert.equal(mcp.mcpServers.grill.env.GRILL_NEWS, "${user_config.show_news}");
+  });
+
   it("both launch the same server file, which exists", () => {
     assert.equal(manifest.server.entry_point, "server/index.mjs");
     assert.deepEqual(manifest.server.mcp_config.args, ["${__dirname}/server/index.mjs"]);
@@ -304,7 +317,7 @@ describe("Smithery listing file", () => {
     assert.match(yaml, /^  dockerfile: Dockerfile$/m);
     assert.match(yaml, /^  type: stdio$/m);
     assert.match(yaml, /args: \["server\/index\.mjs"\]/);
-    for (const env of ["GRILL_API_KEY", "GRILL_CHECK", "JUDGE_MODEL"]) {
+    for (const env of ["GRILL_API_KEY", "GRILL_CHECK", "JUDGE_MODEL", "GRILL_NEWS"]) {
       assert.ok(env in manifest.server.mcp_config.env, `${env} not in manifest.json`);
       assert.match(yaml, new RegExp(`${env}:`));
     }

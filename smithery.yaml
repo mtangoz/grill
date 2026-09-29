@@ -21,10 +21,16 @@ startCommand:
         type: string
         title: Judge model (optional)
         description: Leave it blank for Grill's default, which picks a judge automatically from a different company than your assistant.
+      showNews:
+        type: boolean
+        title: Show Grill news
+        description: After a finished grill, show one line about optional Pro features, with a link to leave your email. The tool sends nothing. It stops on its own. Turn off to hide the line.
+        default: true
   exampleConfig:
     openrouterApiKey: sk-or-v1-your-key
     jevQualityCheck: true
     judgeModel: ""
+    showNews: true
   commandFunction: |-
     (config) => ({
       command: "node",
@@ -33,5 +39,6 @@ startCommand:
         ...(config.openrouterApiKey ? { GRILL_API_KEY: config.openrouterApiKey } : {}),
         GRILL_CHECK: config.jevQualityCheck === false ? "false" : "true",
         ...(config.judgeModel ? { JUDGE_MODEL: config.judgeModel } : {}),
+        GRILL_NEWS: config.showNews === false ? "false" : "true",
       },
     })

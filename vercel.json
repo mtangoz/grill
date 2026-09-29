@@ -1,5 +1,5 @@
 {
-  "buildCommand": "node scripts/build-site.mjs",
+  "buildCommand": "GRILL_PRO_NOTIFY=1 node scripts/build-site.mjs",
   "outputDirectory": "_site",
   "rewrites": [
     { "source": "/welcome", "destination": "/api/welcome" },
@@ -7,6 +7,8 @@
     { "source": "/pro", "destination": "/api/pro" },
     { "source": "/pro/auth", "destination": "/api/pro-auth" },
     { "source": "/pro/try", "destination": "/api/pro-try" },
-    { "source": "/pro/reports", "destination": "/api/pro-reports" }
+    { "source": "/pro/reports", "destination": "/api/pro-reports" },
+    { "source": "/notify", "destination": "/api/notify" },
+    { "source": "/notify/confirm", "destination": "/api/notify-confirm" }
   ]
 }

@@ -34,6 +34,12 @@
       "type": "string",
       "title": "Judge model (optional)",
       "description": "An OpenRouter model from a different company than the assistant you think with. Leave blank to use Grill's default, which picks a judge automatically from a different company than your assistant. Grill Pro setup gives you one. An empty box is the same as blank."
+    },
+    "show_news": {
+      "type": "boolean",
+      "title": "Show Grill news",
+      "description": "After a finished grill, show one line about optional Pro features (saved history and look-back reminders), with a link to leave your email. The tool sends nothing. It stops on its own. Turn off to hide the line.",
+      "default": true
     }
   }
 }

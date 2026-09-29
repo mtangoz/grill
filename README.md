@@ -57,12 +57,15 @@ It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTE
 
 Grill is free. On your own key a grill costs about a cent or two. Copy and paste uses the assistants you already have.
 
+Coming later: an optional Pro plan with saved decision history and look-back reminders. The free tool stays free and account-free. [Hear when it's ready](https://grillyour.ai/notify?via=site).
+
 ## Privacy
 
 - Your notes stay in your tools. Only the write-up you approve is sent. The reflection you write stays in your chat or your own notes.
 - The free tool has no account and stores nothing. Grill's makers never see your decisions.
 - A key or token in the write-up stops the run. Email addresses, phone numbers and card numbers are masked.
 - The optional quality check (Jev) also sees the masked write-up; the website counts visits without cookies.
+- Grill news line: after a finished grill, at most once a session, a line with a link to hear when an optional Pro plan is ready. The tool sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own.
 
 What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
 

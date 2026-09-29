@@ -44,3 +44,24 @@ To try the flow before Stripe is connected: `GRILL_PRO_TEST_MODE=1 GRILL_SESSION
 ## Counts, not decision text
 
 Activation (an account that then ran a grill) is the `first_grill` count. Depletion (a starter allowance that ran out) is the `allowance_exhausted` count. On Redis those are `grill:metric:first_grill` and `grill:metric:allowance_exhausted`, next to `account_created`, `key_issued` and `upgrade_clicked`. They are counts only. The account pages do not load website analytics. A weekly job reads them with the account store. The first grill is recorded the next time that usage (cost only) is read, usually when the person opens the account, because the installed Grill tool never calls Grill.
+
+## Pro launch list
+
+The public site build sets `GRILL_PRO_NOTIFY=1`, which replaces "Get a starter key" with the form at `/notify`. `GRILL_PRO_NOTIFY=0` (or unset, for a local build) puts the starter-key block back. The form says sign-ups aren't open yet, with a normal page rather than an error, until the variables below are set.
+
+| Variable | What it is |
+|---|---|
+| `GRILL_NOTIFY_SECRET` | Encrypts the confirmation link. A long random string, at least 16 characters. The address is not readable in the URL. |
+| `GRILL_NOTIFY_DAILY_CAP` | Optional. How many confirmation emails the form will send per UTC day. Default 200. |
+| `RESEND_NOTIFY_SEGMENT_ID` | Resend segment id for "Pro launch". |
+| `RESEND_NOTIFY_TOPIC_ID` | Resend topic id for "Grill Pro launch". |
+| `RESEND_API_KEY` | Same key as the sign-in email. Sends the confirmation only. |
+| `GRILL_PRO_EMAIL_FROM` | From address, such as `Grill <support@grillyour.ai>`. |
+| `UPSTASH_REDIS_REST_URL` | Same Redis as accounts. The list uses its own keys: a 24-hour hash, a daily send count, and interest counters. |
+| `UPSTASH_REDIS_REST_TOKEN` | Token for that Redis database. |
+| `GRILL_PRO_ORIGIN` | Optional. Public origin for the confirmation link, `https://grillyour.ai`. |
+| `NOTIFY_POSTAL_ADDRESS` | Placeholder for the launch email's postal line. Leave it unset until a Hold business address is ready. The template prints `NOTIFY_POSTAL_ADDRESS` until then. This repo does not send the launch email. |
+
+Confirmed sign-ups are Pro interest, not users. `node scripts/notify-interest.mjs` prints `notify_list`, `notify_tool`, `notify_paste` and `notify_site` side by side, with `"label": "Pro interest"` and `"countsAsUsers": false`. They are not summed into a user number. `scripts/snapshot.sh` appends that line to `metrics.jsonl`. The real-user count is unchanged: signal issues, router analytics, support email, and later a first grill on an account.
+
+One-time setup, before the form can accept anyone: verify grillyour.ai in Resend (SPF and DKIM), create the segment "Pro launch" and the topic "Grill Pro launch", add Upstash Redis from the Vercel Marketplace, set the variables on the project, and add one Vercel Firewall rate-limit rule on `POST /notify` (for example 5 a minute). The code never reads or stores an IP. Delete the segment and its contacts 60 days after the launch email. If Pro doesn't happen, delete them within 30 days of that decision. The launch email is sent by hand from Resend, not by this repo, and only after `NOTIFY_POSTAL_ADDRESS` is a real business address.

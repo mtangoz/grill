@@ -8,7 +8,7 @@ A second opinion from a model made by a different company catches what your own 
 
 ## North Star
 
-The goal for now is 100 real users. A real user is a person who ran a grill. We count that from evidence. A download is not a user.
+The goal for now is 100 real users. A real user is a person who ran a grill. We count that from evidence. A download is not a user. A person who leaves an email to hear when Pro is ready is Pro interest. That sign-up is not a user, and it is never counted toward the 100.
 
 ## Privacy
 
@@ -36,6 +36,6 @@ Grill uses OpenRouter's Auto Router. It does not pin models.
 
 The human decides. Grill only advises.
 
-Numbers stay honest. Downloads are not users. A claim needs evidence.
+Numbers stay honest. Downloads are not users. A claim needs evidence. Pro launch-list sign-ups are interest, reported beside the real-user count, and never added to it.
 
 The tool has no third-party dependencies.
