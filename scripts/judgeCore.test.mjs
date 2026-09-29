@@ -5,6 +5,9 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   ACCOUNT_SCOPED_STATUSES,
@@ -419,6 +422,21 @@ describe("buildJudgeMessages", () => {
   it("lets a challenge target the QUESTION, not only the subject — a loaded question is a finding", () => {
     assert.ok(CHALLENGE_KINDS.includes("loaded-framing"));
     assert.ok(JUDGE_TOOL.parameters.properties.challenges.items.properties.target.description.includes("from the question"));
+  });
+
+  it("checks a stated goal or guardrail in discipline step 4, and does not invent one", () => {
+    const sentence =
+      "If the subject states a goal or guardrails, check whether the decision defeats the goal or crosses a guardrail, and quote them. A trade-off the subject names and accepts is not a defect. If none are stated, do not invent them.";
+    const [system] = buildJudgeMessages({ subject: "x" });
+    const at = (needle) => system.content.indexOf(needle);
+    assert.ok(at("4. Attack what is actually there") > -1);
+    assert.ok(at("4. Attack what is actually there") < at(sentence));
+    assert.ok(at(sentence) < at("5. Make every challenge settleable"));
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    for (const file of ["skills/grill/paste-prompt.md", "prompts/grill.md"]) {
+      const text = readFileSync(join(root, file), "utf8");
+      assert.ok(text.includes(sentence), `${file} is missing the goal and guardrail check`);
+    }
   });
 
   it("steelmans the other side before attacking, and audits the question before answering it", () => {

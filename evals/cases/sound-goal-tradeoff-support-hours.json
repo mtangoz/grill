@@ -1,0 +1,11 @@
+{
+  "id": "sound-goal-tradeoff-support-hours",
+  "kind": "sound",
+  "subject": "Harbor Ledger is deciding whether to shrink live support from 12 hours a day to 6 hours, or keep the current window. The team recommends the shorter window. Reasoning: the support queue's median first reply is under an hour during the busy half of the day and over four hours in the quiet half, from a log covering January through August 2026, so the quiet hours add cost without a matching wait-time benefit. The plan: publish the new hours two weeks before they start, keep a named on-call for outages, and review the change after 30 days. Prediction, offered at 60% confidence: paid-plan churn stays within one percentage point of the prior quarter. Goal: protect a daily block of uninterrupted build time for the two people who both support customers and ship the product, so the September release stays on the date already promised. Guardrails: outages still get a human within 15 minutes, and no open ticket older than one business day is left without a reply. The team states the trade-off and accepts it: ordinary questions will wait until the next support window, and that slower reply for non-urgent mail is the cost of the goal. The strongest case against: a customer who writes at the new closing time waits overnight, and a few may read that as neglect even when the outage rule still holds.",
+  "question": "Between a 6-hour support window and the current 12-hour window, which do these facts support, and what would have to be true for the other to be the better call?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "The slower reply for ordinary mail is a trade-off the write-up names and accepts in order to reach its goal, and the plan still meets the guardrails it states."
+}

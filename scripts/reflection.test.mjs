@@ -8,9 +8,13 @@ import {
   appendReflection,
   confidenceFromSubject,
   decisionTitle,
+  goalFromSubject,
+  guardrailsFromSubject,
   lookBack,
+  OPTIONAL_RECORD_FIELDS,
   parseRecords,
   predictionFromSubject,
+  sourceAppLabel,
   verdictFromReport,
 } from "./reflection.mjs";
 
@@ -73,6 +77,29 @@ describe("the reflection footer", () => {
     assert.equal(confidenceFromSubject("Confidence: 50-70%"), "50–70%");
     assert.equal(decisionTitle("## The decision: Take the job in Denver, and see the city later"), "Take the job in Denver, and see the city later");
     assert.equal(verdictFromReport("**Verdict: doesn't hold up**"), "doesn't hold up");
+  });
+
+  it("copies a stated goal and guardrails, and omits the lines when they were not said", () => {
+    assert.deepEqual(OPTIONAL_RECORD_FIELDS, ["goal", "guardrails", "source_app"]);
+    assert.equal(goalFromSubject("Our goal is to grow.\nWe will not break the API."), "");
+    assert.equal(guardrailsFromSubject("Our goal is to grow.\nWe will not break the API."), "");
+    assert.equal(goalFromSubject("Goal: not stated"), "not stated");
+    assert.equal(goalFromSubject("Goal: ship faster (from the assistant)"), "ship faster (from the assistant)");
+    assert.equal(guardrailsFromSubject("Guardrails: keep an in-house pass"), "keep an in-house pass");
+    const stated = appendReflection(JUDGE, {
+      subject: "Decision: Outsource QA\nGoal: cut cost\nGuardrails: keep an in-house pass\nsource_app: Claude Desktop\nI'm 70% sure.",
+      now: NOW,
+    });
+    assert.match(stated, /^goal: cut cost$/m);
+    assert.match(stated, /^guardrails: keep an in-house pass$/m);
+    assert.match(stated, /^source_app: claude$/m);
+    assert.match(stated, /review: 2026-10-11\ngoal: cut cost/);
+    const plain = appendReflection(JUDGE, { subject: "Decision: Ship it\nI'm 70% sure.", now: NOW });
+    assert.doesNotMatch(plain, /^goal:/m);
+    assert.doesNotMatch(plain, /^guardrails:/m);
+    assert.doesNotMatch(plain, /^source_app:/m);
+    const labeled = appendReflection(JUDGE, { subject: "Decision: Ship it", now: NOW, sourceApp: "Gemini" });
+    assert.match(labeled, /^source_app: gemini$/m);
   });
 
   it("does not append a second footer", () => {
@@ -179,6 +206,65 @@ describe("look back", () => {
     assert.match(out, /Those two disagree/);
   });
 
+  it("asks about a stated goal and guardrails, and reads a hit that missed the goal", () => {
+    const withLines = [
+      "version: 1",
+      "date: 2026-09-01",
+      "title: Outsource QA",
+      "prediction: escaped bugs stay flat",
+      "verdict: shaky",
+      "falsifier: one release with both passes",
+      "confidence: 70%",
+      "review: 2026-09-15",
+      "goal: cut QA cost before June",
+      "guardrails: no release without an in-house pass",
+    ].join("\n");
+    const asked = lookBack({ records: withLines });
+    assert.match(asked, /Did you reach the goal\? Yes, no or partly\./);
+    assert.match(asked, /Did your guardrails hold\? Yes or no\./);
+    assert.match(asked, /goal_met: no/);
+    assert.match(asked, /guardrails_held: no/);
+    const missed = lookBack({
+      records: withLines,
+      happened: "title: Outsource QA\ncame_true: yes\nfalsifier_fired: no\ngoal_met: no\nguardrails_held: no\nhappened: Cost fell and a bug shipped.",
+    });
+    assert.match(missed, /the prediction was right about the wrong target/);
+    assert.match(missed, /A guardrail broke\./);
+    assert.match(missed, /0 of 1 goals met, 0 of 1 guardrails held/);
+    const held = lookBack({
+      records: withLines,
+      happened: "came_true: yes\ngoal_met: yes\nguardrails_held: yes\nhappened: Cost fell and the pass stayed.",
+    });
+    assert.doesNotMatch(held, /the prediction was right about the wrong target/);
+    assert.match(held, /The goal was reached/);
+    assert.match(held, /The guardrails held/);
+    assert.match(held, /1 of 1 goals met, 1 of 1 guardrails held/);
+    const partly = lookBack({
+      records: withLines,
+      happened: "came_true: yes\ngoal_met: partly\nguardrails_held: yes\nhappened: Cost fell a little.",
+    });
+    assert.match(partly, /The goal was partly reached/);
+    assert.match(partly, /0 of 1 goals met, 1 of 1 guardrails held/);
+    assert.doesNotMatch(partly, /the prediction was right about the wrong target/);
+    const declined = "version: 1\ndate: 2026-09-01\ntitle: Ship it\nverdict: solid\nfalsifier: a\nconfidence: 50%\nreview: 2026-10-01\ngoal: not stated\n";
+    assert.doesNotMatch(lookBack({ records: declined }), /Did you reach the goal/);
+  });
+
+  it("names a short source app and does not invent one", () => {
+    assert.equal(sourceAppLabel(""), "");
+    assert.equal(sourceAppLabel("   "), "");
+    assert.equal(sourceAppLabel("Claude by Anthropic"), "claude");
+    assert.equal(sourceAppLabel("ChatGPT"), "chatgpt");
+    assert.equal(sourceAppLabel("Copilot, which can run OpenAI"), "copilot");
+    assert.equal(sourceAppLabel("Gemini"), "gemini");
+    assert.equal(sourceAppLabel("Grok"), "grok");
+    assert.equal(sourceAppLabel("Muse"), "muse");
+    assert.equal(sourceAppLabel("Notes App"), "Notes App");
+    const server = readFileSync(join(ROOT, "server/index.mjs"), "utf8");
+    assert.doesNotMatch(server, /source_app|sourceApp/);
+    assert.match(server, /Goal and Guardrails lines/);
+  });
+
   it("explains the record shape when the paste has none", () => {
     const out = lookBack({ records: "just some notes", happened: "it failed" });
     assert.match(out, /No decision record/);
@@ -198,6 +284,28 @@ describe("look back", () => {
     assert.equal(kept.length, 1);
     assert.equal(kept[0].title, "Raise prices");
     assert.equal(kept[0].prediction, "");
+    assert.deepEqual(kept[0], {
+      version: "1",
+      date: "2026-09-01",
+      title: "Raise prices",
+      prediction: "",
+      verdict: "shaky",
+      falsifier: "a",
+      confidence: "70%",
+      review: "2026-10-01",
+    });
+    const withOptional = [
+      older.trimEnd(),
+      "goal: cut cost",
+      "guardrails: keep the in-house pass",
+      "source_app: claude",
+    ].join("\n");
+    const extra = parseRecords(withOptional);
+    assert.equal(extra.length, 1);
+    assert.equal(extra[0].goal, "cut cost");
+    assert.equal(extra[0].guardrails, "keep the in-house pass");
+    assert.equal(extra[0].source_app, "claude");
+    assert.equal(extra[0].title, "Raise prices");
     const mixed = [
       "version: 2",
       "date: 2026-09-01",
@@ -245,6 +353,24 @@ describe("every route carries the footer and the look-back, and the judge prompt
       assert.match(text, /look back/i, `${name} has no look-back`);
       assert.match(text, /does not store|keeps nothing|stores nothing|Nothing is stored/i, `${name} does not say nothing is stored`);
     }
+    const combined = "What are you trying to achieve, and is there anything this must not cost or break?";
+    for (const [name, text] of [
+      ["skill", skill],
+      ["prompt", prompt],
+    ]) {
+      assert.ok(text.includes(combined), `${name} is missing the goal and guardrails question`);
+      assert.match(text, /never yields/, `${name} lets the prediction question yield`);
+      assert.match(text, /just grill it/, `${name} has no skip for just grill it`);
+      assert.match(text, /Goal: not stated/, `${name} does not record a declined goal`);
+      assert.match(text, /Did you reach the goal\? Yes, no or partly\./);
+      assert.match(text, /Did your guardrails hold\? Yes or no\./);
+      assert.match(text, /the prediction was right about the wrong target/);
+      assert.match(text, /A guardrail broke\./);
+    }
+    const recordDoc = readFileSync(join(ROOT, "docs/DECISION-RECORD.md"), "utf8");
+    assert.match(recordDoc, /## Optional lines/);
+    assert.match(recordDoc, /2026-09-29/);
+    assert.match(recordDoc, /Version stays 1/);
   });
 
   it("the judge prompt is unchanged: it still opens with the company line and does not write the reflection", () => {

@@ -14,6 +14,8 @@ export const RECORD_FENCE = "grill-record";
 /** Fixed write order. `version` is first so a paste can be told apart from any other notes. */
 export const RECORD_FIELDS = ["version", "date", "title", "prediction", "verdict", "falsifier", "confidence", "review"];
 export const RECORD_KEYS = ["date", "title", "prediction", "verdict", "falsifier", "confidence", "review"];
+/** Written after `review`, and only when the line has a value. Absent lines do not change version 1. */
+export const OPTIONAL_RECORD_FIELDS = ["goal", "guardrails", "source_app"];
 
 export const BEFORE_YOU_DECIDE_QUESTIONS = [
   "What do you expect to happen, and by when? Write the prediction you will stand behind.",
@@ -110,6 +112,48 @@ export function predictionFromSubject(subject) {
   return "";
 }
 
+function labeledLine(subject, label, max) {
+  const pattern = new RegExp(`^(?:#{1,6}\\s*)?(?:\\*\\*)?${label}(?:\\*\\*)?\\s*:\\s*(.+)$`, "im");
+  const match = String(subject || "").match(pattern);
+  return match ? clip(match[1], max) : "";
+}
+
+/** The goal line the user already wrote. A sentence that merely mentions a goal is not one. */
+export function goalFromSubject(subject) {
+  return labeledLine(subject, "goal", 240);
+}
+
+/** The guardrails line the user already wrote. Leave it empty rather than invent one. */
+export function guardrailsFromSubject(subject) {
+  return labeledLine(subject, "guardrails", 240);
+}
+
+const SOURCE_APPS = [
+  ["copilot", /\bcopilot\b/i],
+  ["chatgpt", /\b(?:chatgpt|openai)\b/i],
+  ["claude", /\b(?:claude|anthropic)\b/i],
+  ["gemini", /\b(?:gemini|google)\b/i],
+  ["grok", /\b(?:grokbot|grok|xai)\b/i],
+  ["muse", /\b(?:muse|meta)\b/i],
+];
+
+/**
+ * A short label for the assistant that wrote the record. Empty stays empty.
+ * The assistant passes this. The grill server does not.
+ */
+export function sourceAppLabel(raw) {
+  const text = oneLine(raw);
+  if (!text) return "";
+  for (const [label, pattern] of SOURCE_APPS) {
+    if (pattern.test(text)) return label;
+  }
+  return clip(text, 40);
+}
+
+function sourceAppFromSubject(subject) {
+  return sourceAppLabel(labeledLine(subject, "source_app", 80));
+}
+
 export function confidenceLabel(raw) {
   const text = oneLine(raw);
   if (!text) return "";
@@ -170,6 +214,14 @@ export function recordBlock(fields) {
     review: oneLine(fields.review ?? ""),
   };
   const lines = RECORD_FIELDS.map((key) => `${key}: ${values[key]}`);
+  const optional = {
+    goal: oneLine(fields.goal ?? ""),
+    guardrails: oneLine(fields.guardrails ?? ""),
+    source_app: sourceAppLabel(fields.source_app),
+  };
+  for (const key of OPTIONAL_RECORD_FIELDS) {
+    if (optional[key]) lines.push(`${key}: ${optional[key]}`);
+  }
   return ["```" + RECORD_FENCE, ...lines, "```"].join("\n");
 }
 
@@ -179,6 +231,9 @@ export function reflectionFooter({
   falsifier,
   confidence = "",
   prediction = "",
+  goal = "",
+  guardrails = "",
+  sourceApp = "",
   date,
   review,
   route = "paste",
@@ -192,7 +247,7 @@ export function reflectionFooter({
     "",
     questions,
     "",
-    "The prediction line is what you expect, and by when. Fill it in if it is empty. The falsifier line is the judge's sharpest check. The confidence line is what you said before the verdict, when you said one. Change the confidence if the verdict moved you, and keep the earlier number beside it. A change is a new call.",
+    "The prediction line is what you expect, and by when. Fill it in if it is empty. The falsifier line is the judge's sharpest check. The confidence line is what you said before the verdict, when you said one. Change the confidence if the verdict moved you, and keep the earlier number beside it. A change is a new call. A goal or guardrail line is copied from what you already said. Leave the line off if you did not state one. Do not invent one.",
     "",
     recordBlock({
       date,
@@ -202,6 +257,9 @@ export function reflectionFooter({
       falsifier: falsifier || "none named",
       confidence,
       review,
+      goal,
+      guardrails,
+      source_app: sourceApp,
     }),
     "",
     "Copy the block above into any notes you keep. Edit the review date if you want a different check-in.",
@@ -214,7 +272,7 @@ export function reflectionFooter({
  * Append the reflection after a finished judge report. The judge's own text, including the
  * verdict and any "Judge:" line, is not rewritten.
  */
-export function appendReflection(report, { subject = "", now = new Date(), route = "mcp" } = {}) {
+export function appendReflection(report, { subject = "", now = new Date(), route = "mcp", sourceApp = "" } = {}) {
   const body = String(report || "").replace(/\s+$/, "");
   if (!body || body.includes("## Before you decide")) return body ? `${body}\n` : "";
   const footer = reflectionFooter({
@@ -223,6 +281,9 @@ export function appendReflection(report, { subject = "", now = new Date(), route
     falsifier: falsifierFromReport(body) || "none named",
     confidence: confidenceFromSubject(subject),
     prediction: predictionFromSubject(subject),
+    goal: goalFromSubject(subject),
+    guardrails: guardrailsFromSubject(subject),
+    sourceApp: sourceAppLabel(sourceApp) || sourceAppFromSubject(subject),
     date: isoDate(now),
     review: isoDate(addDays(now, REVIEW_DAYS)),
     route,
@@ -236,10 +297,15 @@ function takeRecord(current) {
   if (!oneLine(current.date) || !oneLine(current.title)) return null;
   const record = { version: RECORD_VERSION };
   for (const key of RECORD_KEYS) record[key] = oneLine(current[key] ?? "");
+  for (const key of OPTIONAL_RECORD_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(current, key)) continue;
+    const value = oneLine(current[key]);
+    if (value) record[key] = value;
+  }
   return record;
 }
 
-const RECORD_LINE = /^(version|date|title|prediction|verdict|falsifier|confidence|review)\s*:\s*(.*)$/i;
+const RECORD_LINE = /^(version|date|title|prediction|verdict|falsifier|confidence|review|goal|guardrails|source_app)\s*:\s*(.*)$/i;
 
 /**
  * Read version 1 records out of a paste. Field order does not matter. Any other version is
@@ -296,14 +362,30 @@ function yn(raw) {
   return "";
 }
 
+function goalAnswer(raw) {
+  const text = oneLine(raw).toLowerCase();
+  if (!text) return "";
+  if (/^(partly|partial|partially)\b/.test(text)) return "partly";
+  return yn(raw);
+}
+
+/** A goal or guardrail the user actually stated. "not stated" and "none" are declines. */
+function statedValue(value) {
+  const text = oneLine(value);
+  if (!text || /^(not stated|none|none stated|n\/a|na)$/i.test(text)) return "";
+  return text;
+}
+
 function takeOutcome(current) {
   if (!current) return null;
   const came = yn(current.came_true);
   const fired = yn(current.falsifier_fired);
   const happened = oneLine(current.happened ?? "");
   const title = oneLine(current.title ?? "");
-  if (!title && !came && !fired && !happened) return null;
-  return { title, cameTrue: came, falsifierFired: fired, happened };
+  const goalMet = goalAnswer(current.goal_met);
+  const guardrailsHeld = yn(current.guardrails_held);
+  if (!title && !came && !fired && !happened && !goalMet && !guardrailsHeld) return null;
+  return { title, cameTrue: came, falsifierFired: fired, happened, goalMet, guardrailsHeld };
 }
 
 const OUTCOME_KEYS = {
@@ -317,6 +399,10 @@ const OUTCOME_KEYS = {
   falsifier: "falsifier_fired",
   happened: "happened",
   "what actually happened": "happened",
+  goal_met: "goal_met",
+  "goal met": "goal_met",
+  guardrails_held: "guardrails_held",
+  "guardrails held": "guardrails_held",
 };
 
 /** What the user says came back. One block per decision, titled when there is more than one. */
@@ -357,6 +443,8 @@ function questionsFor(records) {
   for (const record of records) {
     const confidence = record.confidence ? ` Confidence then: ${record.confidence}.` : " Confidence was not written down.";
     const prediction = record.prediction ? `Prediction then: ${record.prediction}.` : "";
+    const goal = statedValue(record.goal);
+    const guardrails = statedValue(record.guardrails);
     lines.push(
       `### ${record.title}`,
       "",
@@ -364,17 +452,21 @@ function questionsFor(records) {
         .filter(Boolean)
         .join(" "),
       `Falsifier: ${record.falsifier || "none named"}.`,
-      "- Did it come true? Yes or no.",
-      "- Did the thing that would prove you wrong happen? Yes or no.",
-      "- What happened, in one sentence?",
-      "",
     );
+    if (goal) lines.push(`Goal then: ${goal}.`);
+    if (guardrails) lines.push(`Guardrails then: ${guardrails}.`);
+    lines.push("- Did it come true? Yes or no.", "- Did the thing that would prove you wrong happen? Yes or no.");
+    if (goal) lines.push("- Did you reach the goal? Yes, no or partly.");
+    if (guardrails) lines.push("- Did your guardrails hold? Yes or no.");
+    lines.push("- What happened, in one sentence?", "");
   }
   lines.push("Answer in words. A pasted block with came_true, falsifier_fired and happened still counts:", "");
   lines.push("```text");
   lines.push(`title: ${records[0].title}`);
   lines.push("came_true: no");
   lines.push("falsifier_fired: yes");
+  if (statedValue(records[0].goal)) lines.push("goal_met: no");
+  if (statedValue(records[0].guardrails)) lines.push("guardrails_held: no");
   lines.push("happened: one sentence on what actually happened");
   lines.push("```", "");
   return lines.join("\n");
@@ -406,6 +498,17 @@ function callReading(record, outcome) {
   else if (came === "yes" && allowed) parts.push("It came true, and the verdict had let it stand. The call and the verdict agreed.");
   else if (came === "no" && allowed) parts.push("It did not come true, and the verdict had let it stand. The outcome was harder than the verdict.");
   else parts.push(came === "yes" ? "It came true." : "It did not come true.");
+
+  const goal = statedValue(record.goal);
+  if (goal && outcome.goalMet === "no" && came === "yes") {
+    parts.push("It came true, and the goal was missed: the prediction was right about the wrong target.");
+  } else if (goal && outcome.goalMet === "no") parts.push("The goal was missed.");
+  else if (goal && outcome.goalMet === "yes") parts.push("The goal was reached.");
+  else if (goal && outcome.goalMet === "partly") parts.push("The goal was partly reached.");
+
+  const guardrails = statedValue(record.guardrails);
+  if (guardrails && outcome.guardrailsHeld === "no") parts.push("A guardrail broke.");
+  else if (guardrails && outcome.guardrailsHeld === "yes") parts.push("The guardrails held.");
 
   if (outcome.falsifierFired === "yes" && came === "yes") {
     parts.push("You marked it true, and the falsifier fired. Those two disagree. Say which one you mean.");
@@ -458,6 +561,18 @@ function patternReading(scored) {
     const held = stood.filter((item) => item.cameTrue === "yes").length;
     lines.push(`Where the verdict let the call stand, ${held} of ${stood.length} came true.`);
   }
+  const goalAnswered = back.filter((item) => statedValue(item.record.goal) && ["yes", "no", "partly"].includes(item.goalMet));
+  const guardAnswered = back.filter((item) => statedValue(item.record.guardrails) && ["yes", "no"].includes(item.guardrailsHeld));
+  const counts = [];
+  if (goalAnswered.length) {
+    const met = goalAnswered.filter((item) => item.goalMet === "yes").length;
+    counts.push(`${met} of ${goalAnswered.length} goals met`);
+  }
+  if (guardAnswered.length) {
+    const held = guardAnswered.filter((item) => item.guardrailsHeld === "yes").length;
+    counts.push(`${held} of ${guardAnswered.length} guardrails held`);
+  }
+  if (counts.length) lines.push(`${counts.join(", ")}.`);
   lines.push(back.length < 4 ? "Fewer than four calls are back. Read the direction, not a score." : "Read the direction, not a score.");
   return lines.join(" ");
 }
