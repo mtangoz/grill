@@ -1,6 +1,6 @@
 {
   "name": "grill",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
   },
   "scripts": {
     "test": "node --test scripts/*.test.mjs",
-    "build:extension": "node scripts/build-extension.mjs && npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb",
+    "build:extension": "node scripts/build-extension.mjs && npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb && node scripts/build-smithery-bundle.mjs dist/grill.mcpb dist/grill-smithery.mcpb",
     "eval": "node scripts/eval.mjs",
     "upstream": "node scripts/upstream-check.mjs",
     "learn": "node scripts/signals.mjs"

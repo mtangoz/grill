@@ -30,3 +30,4 @@ jobs:
           node scripts/build-extension.mjs
           npx -y @anthropic-ai/mcpb validate dist/extension/manifest.json
           npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb
+          node scripts/build-smithery-bundle.mjs dist/grill.mcpb dist/grill-smithery.mcpb

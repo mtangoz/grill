@@ -6,7 +6,8 @@
  *   npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb
  *
  * The staged tree keeps the repo's relative layout (server/ beside scripts/), because the server
- * finds the judge at ../scripts/judge.mjs. The release workflow runs both commands.
+ * finds the judge at ../scripts/judge.mjs. The release workflow runs both commands, then
+ * scripts/build-smithery-bundle.mjs for the Smithery registry asset.
  */
 import { cpSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";

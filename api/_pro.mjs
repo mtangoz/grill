@@ -129,7 +129,12 @@ function clients(env, fetchImpl) {
     return { status: res.status, ok: res.ok, body };
   }
   const stripeAuth = () => ({ Authorization: `Bearer ${need("STRIPE_SECRET_KEY")}` });
-  const routerAuth = () => ({ Authorization: `Bearer ${need("OPENROUTER_MANAGEMENT_KEY")}`, "Content-Type": "application/json" });
+  const routerAuth = () => ({
+    Authorization: `Bearer ${need("OPENROUTER_MANAGEMENT_KEY")}`,
+    "Content-Type": "application/json",
+    "HTTP-Referer": SITE_URL,
+    "X-Title": "Grill",
+  });
   return {
     stripe: {
       get: (path) => call(`${STRIPE_API}${path}`, { headers: stripeAuth() }, `Stripe GET ${path.split("?")[0]}`),
