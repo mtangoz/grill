@@ -1,4 +1,4 @@
-// The opt-in ping: explicit on, a kill switch that wins, one first success, then one per ISO week.
+// The opt-in ping: explicit on, a kill switch that wins, exactly one ping after the first success.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
@@ -8,7 +8,6 @@ import {
   PING_TIMEOUT_MS,
   PING_URL,
   bucketMs,
-  isoWeek,
   scheduleUsagePing,
   sendUsagePing,
   usageStatsEnabled,
@@ -106,6 +105,7 @@ describe("what is sent", () => {
       assert.equal(wire.includes(KEY), false);
       assert.equal(wire.includes("subject"), false);
       const state = JSON.parse(readFileSync(place.file, "utf8"));
+      assert.deepEqual(Object.keys(state).sort(), ["firstSentDay", "id"]);
       assert.equal(state.id, body.id);
       assert.equal(state.firstSentDay, "2026-10-01");
       assert.equal(JSON.stringify(state).includes(CANARY), false);
@@ -170,23 +170,21 @@ describe("what is sent", () => {
 });
 
 describe("when it fires", () => {
-  it("sends on the first success, skips the rest of that ISO week, and sends again the next week", async () => {
+  it("sends on the first success and never again, including on a later day", async () => {
     const { calls, fetchImpl } = accept();
     const place = tempFile();
     const base = { ok: true, ms: 100, version: "0.1.1", env: env(), fetchImpl, stateFile: place.file };
     try {
-      assert.equal(isoWeek(Date.parse("2026-10-01T00:00:00Z")), isoWeek(Date.parse("2026-10-04T23:00:00Z")));
-      assert.notEqual(isoWeek(Date.parse("2026-10-01T00:00:00Z")), isoWeek(Date.parse("2026-10-05T00:00:00Z")));
-      assert.equal(isoWeek(Date.parse("2025-12-29T00:00:00Z")), isoWeek(Date.parse("2026-01-01T00:00:00Z")));
-      assert.notEqual(isoWeek(Date.parse("2025-12-28T00:00:00Z")), isoWeek(Date.parse("2026-01-01T00:00:00Z")));
       assert.equal(await sendUsagePing({ ...base, now: Date.parse("2026-10-01T12:00:00Z") }), true);
       assert.equal(await sendUsagePing({ ...base, now: Date.parse("2026-10-04T18:00:00Z") }), false);
+      assert.equal(await sendUsagePing({ ...base, now: Date.parse("2026-10-05T00:00:00Z") }), false);
+      assert.equal(await sendUsagePing({ ...base, now: Date.parse("2027-01-01T00:00:00Z") }), false);
       assert.equal(calls.length, 1);
       const id = JSON.parse(calls[0].body).id;
-      assert.equal(await sendUsagePing({ ...base, now: Date.parse("2026-10-05T00:00:00Z") }), true);
-      assert.equal(calls.length, 2);
-      assert.equal(JSON.parse(calls[1].body).id, id);
-      assert.equal(JSON.parse(calls[1].body).ts, "2026-10-05");
+      const state = JSON.parse(readFileSync(place.file, "utf8"));
+      assert.deepEqual(Object.keys(state).sort(), ["firstSentDay", "id"]);
+      assert.equal(state.id, id);
+      assert.equal(state.firstSentDay, "2026-10-01");
     } finally {
       place.cleanup();
     }
@@ -227,8 +225,8 @@ describe("when it fires", () => {
       });
       assert.equal(sent, true);
       assert.equal(n, 2);
-      let calls = 0;
-      const refused = await sendUsagePing({
+      let later = 0;
+      const again = await sendUsagePing({
         ok: true,
         ms: 100,
         version: "0.1.1",
@@ -236,12 +234,33 @@ describe("when it fires", () => {
         stateFile: place.file,
         now: Date.parse("2026-10-08T00:00:00Z"),
         fetchImpl: async () => {
-          calls += 1;
-          return { status: 400, body: { cancel: async () => {} } };
+          later += 1;
+          return { status: 204, body: { cancel: async () => {} } };
         },
       });
-      assert.equal(refused, false);
-      assert.equal(calls, 1);
+      assert.equal(again, false);
+      assert.equal(later, 0);
+      const fresh = tempFile();
+      try {
+        let calls = 0;
+        const refused = await sendUsagePing({
+          ok: true,
+          ms: 100,
+          version: "0.1.1",
+          env: env(),
+          stateFile: fresh.file,
+          now: Date.parse("2026-10-08T00:00:00Z"),
+          fetchImpl: async () => {
+            calls += 1;
+            return { status: 400, body: { cancel: async () => {} } };
+          },
+        });
+        assert.equal(refused, false);
+        assert.equal(calls, 1);
+        assert.equal(JSON.parse(readFileSync(fresh.file, "utf8")).firstSentDay, "2026-10-08");
+      } finally {
+        fresh.cleanup();
+      }
     } finally {
       place.cleanup();
     }

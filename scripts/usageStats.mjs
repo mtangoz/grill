@@ -7,9 +7,9 @@
  * even when the setting is on. The two are separate because a Desktop install writes the
  * setting into the environment and cannot also leave GRILL_PING for the user to export.
  *
- * One ping after the first successful grill, then at most one per ISO week. The body is
- * metadata only. The state file is created only when the setting is on, and a failure
- * here never changes the grill.
+ * One ping after the first successful grill, and never again. The body is metadata only.
+ * The state file is created only when the setting is on, and it only records that the ping
+ * was sent. A failure here never changes the grill.
  */
 import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -76,17 +76,6 @@ export function utcDay(ms) {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-/** ISO week of the UTC day, `YYYY-Www`. The cap is one ping per week, not per day. */
-export function isoWeek(ms) {
-  const date = new Date(ms);
-  const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = utc.getUTCDay() || 7;
-  utc.setUTCDate(utc.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((utc - yearStart) / 86_400_000 + 1) / 7);
-  return `${utc.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
-}
-
 function clientOf(env) {
   const raw = trimmed(env, "GRILL_CLIENT").toLowerCase();
   if (!raw || raw.startsWith("${")) return "stdio";
@@ -106,7 +95,6 @@ function readState(file) {
       return {
         id: data.id,
         firstSentDay: typeof data.firstSentDay === "string" ? data.firstSentDay : "",
-        lastWeekly: typeof data.lastWeekly === "string" ? data.lastWeekly : "",
       };
     }
   } catch (e) {
@@ -123,7 +111,6 @@ function writeState(file, state) {
   const body = `${JSON.stringify({
     id: state.id,
     firstSentDay: state.firstSentDay || "",
-    lastWeekly: state.lastWeekly || "",
   })}\n`;
   writeFileSync(file, body, { encoding: "utf8", mode: 0o600 });
   chmodSync(file, 0o600);
@@ -163,10 +150,10 @@ async function postPing(url, body, fetchImpl, timeoutMs) {
 }
 
 /**
- * Send the ping if this grill is the first success, or the first success of a new ISO week.
- * Returns false when the setting is off, the grill failed, or the send did not land.
- * Callers pass timing and a version. They do not pass the write-up: this function has no
- * parameter for it, so a decision cannot ride along.
+ * Send the ping once, on the first successful grill. A later success does not send again.
+ * Returns false when the setting is off, the grill failed, the ping was already sent, or
+ * the send did not land. Callers pass timing and a version. They do not pass the write-up:
+ * this function has no parameter for it, so a decision cannot ride along.
  */
 export async function sendUsagePing({
   ok,
@@ -189,15 +176,10 @@ export async function sendUsagePing({
     return false;
   }
   if (existing?.corrupt) existing = null;
-  const state = existing ?? { id: randomUUID(), firstSentDay: "", lastWeekly: "" };
+  const state = existing ?? { id: randomUUID(), firstSentDay: "" };
+  if (state.firstSentDay) return false;
   const ts = utcDay(now);
-  const week = isoWeek(now);
-  if (state.firstSentDay && state.lastWeekly === week) return false;
-  const next = {
-    id: state.id,
-    firstSentDay: state.firstSentDay || ts,
-    lastWeekly: week,
-  };
+  const next = { id: state.id, firstSentDay: ts };
   try {
     writeState(file, next);
   } catch {

@@ -66,7 +66,7 @@ Coming later: an optional Pro plan with saved decision history and look-back rem
 - A key or token in the write-up stops the run. Email addresses, phone numbers and card numbers are masked.
 - The optional quality check (Jev) also sees the masked write-up; the website counts visits without cookies.
 - Grill news line: after a finished grill, at most once a session, and only within 7 days of a release or on the first 3 days of a month, a line with a link to hear when an optional Pro plan is ready. Showing the line sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own.
-- Anonymous usage stats: off by default. One metadata ping to Grill's website after the first successful grill, then at most once a week. Never the decision, the question, the verdict, or your key.
+- Anonymous usage stats: off by default. One metadata ping to Grill's website after the first successful grill, and never again. Never the decision, the question, the verdict, or your key.
 
 What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
 

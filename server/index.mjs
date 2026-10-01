@@ -31,9 +31,9 @@
  *
  * USAGE STATS. Off unless GRILL_USAGE_STATS is exactly true, 1, on or yes. That is the opposite
  * of GRILL_CHECK and GRILL_NEWS. GRILL_PING=off (also false, 0, no) and DO_NOT_TRACK=1 always
- * win. After the first successful grill, and at most once per ISO week after that, a metadata
- * ping may go to Grill's site. It never includes the write-up. The state file is created only
- * when the setting is on. The report is returned without waiting for the ping.
+ * win. One metadata ping may go to Grill's site after the first successful grill, and never
+ * again. It never includes the write-up. The state file is created only when the setting is
+ * on, and it only records that the ping was sent. The report is returned without waiting.
  */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";

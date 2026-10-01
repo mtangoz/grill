@@ -86,7 +86,7 @@ describe("site/page.html", () => {
 
   it("says the website counts visits anonymously, and the tool's usage ping is opt-in", () => {
     const visits = "This website counts visits anonymously, with no cookies and nothing that identifies you.";
-    const tool = "The installed tool can optionally send anonymous usage metadata to this site if you turn that on at install; off by default; never decision words.";
+    const tool = "The installed tool can optionally send one anonymous usage ping to this site after the first successful grill, if you turn that on at install; off by default; never again; never decision words.";
     const launch = "If you join the Pro launch list, we keep your email address, and only that, in Resend until Pro launches, and you can unsubscribe with one click.";
     assert.ok(page.includes(visits));
     assert.ok(page.includes(tool));

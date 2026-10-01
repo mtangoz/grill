@@ -511,7 +511,9 @@ describe("anonymous usage stats", () => {
       assert.equal(client.stderr().includes("/api/ping"), false);
       const statePath = join(home, ".grill", "usage-stats.json");
       const state = JSON.parse(readFileSync(statePath, "utf8"));
+      assert.deepEqual(Object.keys(state).sort(), ["firstSentDay", "id"]);
       assert.equal(state.id, body.id);
+      assert.match(state.firstSentDay, /^\d{4}-\d{2}-\d{2}$/);
       assert.equal(JSON.stringify(state).includes(CANARY), false);
       assert.equal(statSync(statePath).mode & 0o777, 0o600);
       assert.ok(fake.seen.chat.some((call) => call.raw.includes(CANARY)), "the judge still received the write-up");
@@ -520,7 +522,7 @@ describe("anonymous usage stats", () => {
       const second = await client.request("tools/call", { name: "grill", arguments: { subject } });
       assert.equal(second.result.isError, false);
       await new Promise((resolve) => setTimeout(resolve, 200));
-      assert.equal(ping.seen.length, 1, "the same ISO week does not ping again");
+      assert.equal(ping.seen.length, 1, "a later grill does not ping again");
     } finally {
       await client.close();
       await fake.close();
