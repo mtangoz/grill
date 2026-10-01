@@ -2,7 +2,7 @@
 
 What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md](PRINCIPLES.md).
 
-**Short version:** The free tool has no account, and Grill never sees a decision. Accounts (a starter key or Pro) are not available yet. The section below describes what would change if they launch; this page will be updated before they do. If you choose to join the Pro launch list on the website, we keep your email address, and nothing else, until Pro launches ([below](#the-pro-launch-list)). Bring your own key and there is no account. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you. Your notes stay in your tools. The one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
+**Short version:** The free tool has no account, and Grill never sees a decision. Accounts (a starter key or Pro) are not available yet. The section below describes what would change if they launch; this page will be updated before they do. If you choose to join the Pro launch list on the website, we keep your email address, and nothing else, until Pro launches ([below](#the-pro-launch-list)). Bring your own key and there is no account. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool does not track you unless you turn on optional anonymous usage stats at install (off by default). If you leave them off, the tool still only talks to the model router. If you turn them on, it also sends a tiny metadata ping to Grill's website after a grill — never the words of a decision. Details below. Your notes stay in your tools. With the setting off, the one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
 
 ## Who sees what
 
@@ -16,6 +16,7 @@ What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md]
 | **Jev (TypeSafe)**, quality check, on by default | The masked write-up and the judge's report | A zero-data-retention endpoint, checked weekly; the check is dropped if any other endpoint answers |
 | **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them. With Pro, also your billing details and your key's usage, as below | There is nowhere for anything else to go |
 | **This website** | An anonymous count of page views, plus whether a decision record was shown or copied, whether a look-back started or finished, and how many records were pasted. No cookie, nothing that identifies you, and never the words of a decision | Vercel Web Analytics, on the website only. The Grill tool never loads it |
+| **Grill's ping endpoint** (optional, off by default) | A random install ID, Grill version, client/route, success or failure, latency bucket, and the UTC day. **Never** the write-up, question, verdict, notes, or your key | You opt in once at install (or in settings). You can turn it off anytime. No IP stored. Events kept ≤ 90 days; then aggregates only. The ping never runs if the setting is off |
 | **Stripe**, Grill Pro only | Your email, card and billing address | Stripe's own privacy policy. Grill never sees your card. Accounts are not available yet |
 | **Resend**, accounts only | Your email address | The sign-in email is sent through Resend (sees your email address). Accounts are not available yet |
 | **Upstash Redis**, accounts only | Account records | Account records live in an Upstash Redis store. Accounts are not available yet |
@@ -30,11 +31,11 @@ Each of these is pinned by a test, so it can't quietly stop being true.
 - **Nothing leaves without your OK.** Claude shows you the write-up before anything is sent.
 - **Keys and tokens never leave.** If the write-up, question or context contains anything shaped like an API key, token or private key, the run stops before any network call and says so. It never echoes the value.
 - **Contact details are masked.** Email addresses, phone numbers and card numbers are replaced with `[email]`, `[phone]` and `[card number]` before sending. The report says how many, never what.
-- **One destination.** The code you install makes exactly one kind of network call, to the model router. It has no other network code and no third-party packages, so there is no hidden dependency to trust.
+- **Destinations.** By default the code you install makes exactly one kind of network call, to the model router. If you opt in to anonymous usage stats, it may also POST a metadata-only ping to `https://grillyour.ai/api/ping` after a grill. That ping never includes decision text. With the setting off (the default), no call to Grill's servers is made from the tool. Both destinations are pinned by `scripts/privacy.test.mjs`. There is still no third-party package in the tool.
 - Requests to OpenRouter identify the app as Grill (grillyour.ai), so OpenRouter can show aggregate usage counts for the app. No decision text goes anywhere new.
 - **Quotes are checked locally.** Every quote a challenge attacks is checked against your write-up on your own machine, so a made-up objection is flagged. This sends nothing anywhere.
 - **The Jev quality check is on by default.** Jev scores whether the falsifiers are real tests and the verdict fits. Claude tells you before each grill that Jev will see it. Skip it for one grill by saying so, or switch it off in Grill's settings to send the write-up to the judge only. The result is kept only if Jev's zero-retention endpoint answered.
-- **Nothing stored.** The write-up reaches the judge through a pipe, never a file. The report's temporary copy is deleted once read.
+- **Nothing stored.** The write-up reaches the judge through a pipe, never a file. The report's temporary copy is deleted once read. The only file the tool writes for itself is the opt-in usage-stats state (`~/.grill/usage-stats.json`: a random install ID and the day a ping was sent), and only after you turn anonymous usage stats on. With the setting off, that file is never created or read.
 - **Verifiable builds.** Each release is built by GitHub Actions from the tagged source, with a signed provenance attestation and checksums. You can confirm the extension is exactly this code.
 
 ## Two router settings to check (one-click route)
@@ -61,11 +62,11 @@ Pro changes who pays for the AI, not where your write-up goes.
   - counts only: accounts created, keys issued, first grills, allowances used up, and upgrade clicks. No decision text. A weekly look at activation (signed up, then a first grill) and depletion (the allowance ran out) reads these counts. They live on the account store. The account pages do not load website analytics, because those pages can show a raw key;
   - copies of reports, only if you turn saving on at your account's Reports page. Off until you do. You can delete any copy or all of them, and turn saving off. The text stays on the account store, never on your Stripe customer. Grill does not email a verdict or a weekly note today, so nothing is saved until a report exists and saving is on. In test mode, a sample grill is saved the same way.
 - **The key is shown when it is created or rotated**, then dropped. If you lose it, sign in and rotate it. We switch the old one off. Rotating a starter key keeps whatever allowance is left. It does not reset the cap.
-- **Bring your own key and there is no account.** The free tool is unchanged: no sign-in, no tracking in the tool you install, and checks are unlimited on your own credit.
+- **Bring your own key and there is no account.** The free tool is unchanged: no sign-in, and checks are unlimited on your own credit. The tool does not track you unless you turn on anonymous usage stats. That setting is off by default.
 
 ## The Pro launch list
 
-The website has an opt-in form to hear when Pro is ready. The Grill tool never asks for your email. For a limited time before Pro launches, after a finished grill, it can show one line, at most once a session, with a link to that form. It shows that line only when the day is within 7 days of the release date baked into that build, or on the first 3 days of a month. Outside those windows it shows nothing. Set `GRILL_NEWS=off`, or switch off "Show Grill news" in Grill's settings, to hide it. The line is only text: the tool sends nothing to Grill, and it stops after 2026-11-13.
+The website has an opt-in form to hear when Pro is ready. The Grill tool never asks for your email. For a limited time before Pro launches, after a finished grill, it can show one line, at most once a session, with a link to that form. It shows that line only when the day is within 7 days of the release date baked into that build, or on the first 3 days of a month. Outside those windows it shows nothing. Set `GRILL_NEWS=off`, or switch off "Show Grill news" in Grill's settings, to hide it. The line is only text: showing it sends nothing, and it stops after 2026-11-13.
 
 - **What we keep:** your email address, as a contact in Resend, only after you click the confirmation link. Before that we keep nothing, except a one-way hash of the address for 24 hours to stop repeat sends. Resend keeps its usual delivery log of the confirmation email. The confirmation link is encrypted, so your address can't be read from it.
 - **What we never keep:** anything you grilled, your key, your model-router usage, or which page you came from. We keep a separate count of sign-ups by where the link was (the tool line, the paste route, the website), and that count is not tied to your address.
@@ -94,6 +95,17 @@ Claude Desktop may keep local logs of tool calls, including the write-up, on you
 The questions at the end of a grill, and the decision record, stay in your chat or in notes you keep. Grill does not store them and does not send them to the judge. Looking back means you paste those records again. On the one-click route that paste is read on your machine. On the paste route it stays in the assistant you are already talking to. There is no look-back database. The monthly Count in the weekly review is separate: it needs a decision log you keep, and a single grill does not do it.
 
 On this website, the anonymous visit count can also record that a decision record was shown or copied, that a look-back started or finished, and how many records were pasted. Those events are numbers only. They never include the title, the falsifier, the verdict, or what happened. The Grill tool you install does not send them.
+
+## Anonymous usage stats (optional)
+
+Off by default. Asked once in the install dialog (Claude Desktop) or documented for Claude Code / stdio. Turn off anytime in settings or with `GRILL_PING=off`.
+
+- **What we receive:** a random install ID (not derived from your machine or key), the Grill version, which client you used, whether the grill succeeded, how long it took (coarse), and the UTC day.
+- **What we never receive:** the decision, the question, the verdict, your notes, your key, your email, or your IP address (the server does not store IPs).
+- **Why:** so we can tell whether installs become real first grills, without accounts and without reading decisions.
+- **How often:** after your first successful grill (if opted in), then at most weekly while the setting stays on.
+- **Limits:** this samples people who opt in; it is not a full user count. Downloads and OpenRouter aggregates remain separate signals.
+- **Paste route:** does not send this ping (there is no install). The optional GitHub signal form is unchanged.
 
 ## Helping Grill improve
 

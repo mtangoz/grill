@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Stage the Claude Desktop extension: the manifest, the MCP server and the judge, and nothing else.
+ * Stage the Claude Desktop extension: the manifest, the MCP server, the judge and the opt-in
+ * usage ping, and nothing else.
  *
  *   node scripts/build-extension.mjs              # stages dist/extension/
  *   npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb
@@ -19,7 +20,7 @@ import { stampReleaseDateFile } from "./releaseDate.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "dist", "extension");
-const FILES = ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "scripts/reflection.mjs", "docs/PRIVACY.md", "LICENSE"];
+const FILES = ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "scripts/reflection.mjs", "scripts/usageStats.mjs", "docs/PRIVACY.md", "LICENSE"];
 
 rmSync(OUT, { recursive: true, force: true });
 for (const file of FILES) {

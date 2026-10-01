@@ -26,11 +26,17 @@ startCommand:
         title: Show Grill news
         description: After a finished grill, at most once a session, show one line about optional Pro features, with a link to leave your email. Only within 7 days of a release, or on the first 3 days of a month. The tool sends nothing. It stops on its own. Turn off to hide the line.
         default: true
+      usageStats:
+        type: boolean
+        title: Send anonymous usage stats (optional)
+        description: Off by default. Metadata ping after a grill. Never the decision.
+        default: false
   exampleConfig:
     openrouterApiKey: sk-or-v1-your-key
     jevQualityCheck: true
     judgeModel: ""
     showNews: true
+    usageStats: false
   commandFunction: |-
     (config) => ({
       command: "node",
@@ -40,5 +46,8 @@ startCommand:
         GRILL_CHECK: config.jevQualityCheck === false ? "false" : "true",
         ...(config.judgeModel ? { JUDGE_MODEL: config.judgeModel } : {}),
         GRILL_NEWS: config.showNews === false ? "false" : "true",
+        GRILL_USAGE_STATS: config.usageStats === true ? "true" : "false",
+        GRILL_CLIENT: "smithery",
+        GRILL_ROUTE: "one_click",
       },
     })

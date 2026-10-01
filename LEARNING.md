@@ -46,3 +46,5 @@ The reflection at the end of a report (what you expect, how sure you are, what w
 - **They can:** which judge families people find worth engaging, by kind of decision; and whether "weak" and "refuted" verdicts come true less often than "holds" (verdicts that predict nothing are a prompt problem).
 - **They can't:** anything about a decision's content. The form has no text fields, and the report drops any issue edited to include text.
 - **Honest limits:** people who share are self-selected, and a public issue carries their GitHub username. Treat the numbers as directional until there are hundreds.
+
+An optional install-level activation ping (metadata only; see [PRIVACY.md](docs/PRIVACY.md)) may later feed weekly activation and repeat rates. It never includes decision text and stays out of the synthetic eval loop.

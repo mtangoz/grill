@@ -4,12 +4,13 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeMasked, redactSensitive } from "./judgeCore.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
+import { PING_URL, sendUsagePing, usageStatsEnabled } from "./usageStats.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const USABLE = readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8");
@@ -120,12 +121,19 @@ describe("the judge applies it before any network call", () => {
   });
 });
 
-describe("the code users install can talk to one place: OpenRouter", () => {
+describe("the judge still talks only to OpenRouter", () => {
   const build = readFileSync(join(ROOT, "scripts/build-extension.mjs"), "utf8");
   const shipped = JSON.parse(build.match(/const FILES = (\[[^\]]+\])/)[1]).filter((f) => f.endsWith(".mjs"));
 
-  it("ships the server, the judge and the check's pure core, and nothing else runnable", () => {
-    assert.deepEqual(shipped.sort(), ["scripts/checkCore.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/reflection.mjs", "server/index.mjs"]);
+  it("ships the server, the judge, the check's pure core and the opt-in ping, and nothing else runnable", () => {
+    assert.deepEqual(shipped.sort(), [
+      "scripts/checkCore.mjs",
+      "scripts/judge.mjs",
+      "scripts/judgeCore.mjs",
+      "scripts/reflection.mjs",
+      "scripts/usageStats.mjs",
+      "server/index.mjs",
+    ]);
   });
 
   it("imports only Node built-ins and its own files: no third-party code at all", () => {
@@ -137,17 +145,33 @@ describe("the code users install can talk to one place: OpenRouter", () => {
     }
   });
 
-  it("has no raw network modules, and exactly one fetch, in the judge", () => {
-    let fetches = 0;
+  // The old pin was "exactly one fetch, in the judge". That was the one-destination promise.
+  // Opt-in stats add one call, and only that call: the judge's fetch stays on OpenRouter.
+  it("has no raw network modules; the judge's one fetch stays put, and the only other call is the opt-in ping", () => {
+    let judgeFetches = 0;
+    let pingCalls = 0;
     for (const f of shipped) {
       const src = readFileSync(join(ROOT, f), "utf8");
       assert.doesNotMatch(src, /["']node:(?:http|https|http2|net|tls|dgram|dns)["']/, `${f} imports a network module`);
       assert.doesNotMatch(src, /\b(?:XMLHttpRequest|WebSocket)\b/, `${f} opens another channel`);
-      const n = (src.match(/\bfetch\(/g) ?? []).length;
-      if (n > 0) assert.equal(f, "scripts/judge.mjs", `${f} calls fetch`);
-      fetches += n;
+      const fetches = (src.match(/\bfetch\(/g) ?? []).length;
+      const pings = (src.match(/\bfetchImpl\(/g) ?? []).length;
+      if (fetches > 0) assert.equal(f, "scripts/judge.mjs", `${f} calls fetch`);
+      if (pings > 0) assert.equal(f, "scripts/usageStats.mjs", `${f} sends the ping`);
+      judgeFetches += fetches;
+      pingCalls += pings;
     }
-    assert.equal(fetches, 1);
+    assert.equal(judgeFetches, 1);
+    assert.equal(pingCalls, 1);
+    const ping = readFileSync(join(ROOT, "scripts/usageStats.mjs"), "utf8");
+    assert.match(ping, /^export const PING_URL = "https:\/\/grillyour\.ai\/api\/ping";$/m);
+    assert.deepEqual(
+      [...new Set([...ping.matchAll(/https?:\/\/[^\s"'`]+/g)].map((m) => m[0]))],
+      ["https://grillyour.ai/api/ping"],
+    );
+    const call = readFileSync(join(ROOT, "server/index.mjs"), "utf8").match(/scheduleUsagePing\(\{[\s\S]*?\}\);/);
+    assert.ok(call, "the server schedules the ping");
+    assert.doesNotMatch(call[0], /subject|report|question|stderr|GRILL_API_KEY/);
   });
 
   it("that one fetch can reach only the two OpenRouter endpoints, or loopback in tests, and nothing else", () => {
@@ -259,5 +283,279 @@ describe("the quality check is a second destination, and nothing more", () => {
     assert.match(stderr, /Nothing was sent/);
     assert.ok(!stderr.includes("0123456789abcdef"), "the error never echoes the secret");
     assert.equal(fake.seen.chat.length + fake.seen.decisions.length, 0);
+  });
+});
+
+const CANARY = "CANARY-writeup-9f3a2c-do-not-send";
+const PING_KEYS = ["v", "id", "ver", "client", "route", "ok", "ms", "ts"];
+
+function connectServer(env) {
+  const child = spawn(process.execPath, [join(ROOT, "server/index.mjs")], {
+    env: { PATH: process.env.PATH, ...env },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const waiting = new Map();
+  let buffer = "";
+  let stderr = "";
+  child.stderr.on("data", (d) => {
+    stderr += d;
+  });
+  child.stdout.on("data", (chunk) => {
+    buffer += chunk;
+    let nl;
+    while ((nl = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      if (!line.trim()) continue;
+      const msg = JSON.parse(line);
+      if (msg.id !== undefined && waiting.has(msg.id)) {
+        waiting.get(msg.id)(msg);
+        waiting.delete(msg.id);
+      }
+    }
+  });
+  let nextId = 1;
+  const request = (method, params) =>
+    new Promise((resolve, reject) => {
+      const id = nextId++;
+      const timer = setTimeout(() => reject(new Error(`timed out waiting for ${method}`)), 8_000);
+      waiting.set(id, (msg) => {
+        clearTimeout(timer);
+        resolve(msg);
+      });
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    });
+  const close = () =>
+    new Promise((resolve) => {
+      child.on("close", resolve);
+      child.stdin.end();
+    });
+  return { request, close, stderr: () => stderr };
+}
+
+async function startPingSink({ hang = false } = {}) {
+  const seen = [];
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (d) => {
+      raw += d;
+    });
+    req.on("end", () => {
+      seen.push({ url: req.url, body: raw, host: req.headers.host });
+      if (hang) return;
+      res.writeHead(204);
+      res.end();
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    seen,
+    url: `http://127.0.0.1:${server.address().port}/api/ping`,
+    close: () =>
+      new Promise((resolve) => {
+        server.closeAllConnections?.();
+        server.close(resolve);
+      }),
+  };
+}
+
+async function waitForPing(seen, ms = 2_000) {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    if (seen.length > 0) return true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return false;
+}
+
+describe("anonymous usage stats", () => {
+  it("defaults to off in every install config", () => {
+    const manifest = JSON.parse(readFileSync(join(ROOT, "manifest.json"), "utf8"));
+    const plugin = JSON.parse(readFileSync(join(ROOT, ".claude-plugin/plugin.json"), "utf8"));
+    const mcp = JSON.parse(readFileSync(join(ROOT, ".mcp.json"), "utf8"));
+    assert.equal(manifest.user_config.usage_stats.type, "boolean");
+    assert.equal(manifest.user_config.usage_stats.default, false);
+    assert.equal(plugin.userConfig.usage_stats.default, false);
+    assert.equal(manifest.server.mcp_config.env.GRILL_USAGE_STATS, "${user_config.usage_stats}");
+    assert.equal(mcp.mcpServers.grill.env.GRILL_USAGE_STATS, "${user_config.usage_stats}");
+    const yaml = readFileSync(join(ROOT, "smithery.yaml"), "utf8");
+    assert.match(yaml, /GRILL_USAGE_STATS: config\.usageStats === true \? "true" : "false"/);
+    assert.equal(usageStatsEnabled({}), false);
+    assert.equal(usageStatsEnabled({ GRILL_USAGE_STATS: "${user_config.usage_stats}" }), false);
+  });
+
+  it("when off, a finished grill makes no request to grillyour.ai and creates no state file", async () => {
+    const fake = await startFakeOpenRouter();
+    const ping = await startPingSink();
+    const homes = [];
+    try {
+      const cases = [
+        {},
+        { GRILL_USAGE_STATS: "" },
+        { GRILL_USAGE_STATS: "${user_config.usage_stats}" },
+        { GRILL_USAGE_STATS: "false" },
+        { GRILL_USAGE_STATS: "true", GRILL_PING: "off" },
+        { GRILL_USAGE_STATS: "true", DO_NOT_TRACK: "1" },
+      ];
+      for (const extra of cases) {
+        const home = mkdtempSync(join(tmpdir(), "grill-privacy-home-"));
+        homes.push(home);
+        const client = connectServer({
+          GRILL_API_KEY: "sk-or-v1-test-key-never-echoed",
+          GRILL_CHECK: "false",
+          GRILL_NEWS: "off",
+          GRILL_PING_URL: ping.url,
+          HOME: home,
+          ...fake.env,
+          ...extra,
+        });
+        try {
+          await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {} });
+          const res = await client.request("tools/call", {
+            name: "grill",
+            arguments: { subject: `Decision: keep the canary ${CANARY} off the wire.` },
+          });
+          assert.equal(res.result.isError, false, JSON.stringify(extra));
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          assert.equal(ping.seen.length, 0, JSON.stringify(extra));
+          assert.equal(existsSync(join(home, ".grill", "usage-stats.json")), false, JSON.stringify(extra));
+        } finally {
+          await client.close();
+        }
+      }
+      assert.ok(fake.seen.chat.length >= 1, "the judge still called OpenRouter");
+      assert.ok(fake.seen.chat.some((call) => call.raw.includes(CANARY)));
+      assert.equal(fake.seen.other.length, 0);
+    } finally {
+      await fake.close();
+      await ping.close();
+      for (const home of homes) rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("when on, the ping body is only the allowed keys and never the write-up", async () => {
+    const calls = [];
+    const dir = mkdtempSync(join(tmpdir(), "grill-privacy-state-"));
+    let sent = false;
+    try {
+      sent = await sendUsagePing({
+        ok: true,
+        ms: 150,
+        version: "0.1.1",
+        env: {
+          GRILL_USAGE_STATS: "true",
+          GRILL_CLIENT: "mcpb",
+          GRILL_ROUTE: "one_click",
+          subject: CANARY,
+          OPENROUTER_API_KEY: "sk-or-v1-secret-canary",
+        },
+        now: Date.parse("2026-10-01T12:00:00Z"),
+        stateFile: join(dir, "usage-stats.json"),
+        fetchImpl: async (url, init) => {
+          calls.push({ url: String(url), body: init.body });
+          return { status: 204, body: { cancel: async () => {} } };
+        },
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    assert.equal(sent, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, PING_URL);
+    assert.equal(calls[0].url, "https://grillyour.ai/api/ping");
+    const body = JSON.parse(calls[0].body);
+    assert.deepEqual(Object.keys(body), PING_KEYS);
+    assert.equal(calls[0].body.includes(CANARY), false);
+    assert.equal(calls[0].body.includes("sk-or"), false);
+    for (const banned of ["subject", "question", "verdict", "challenge", "email", "model"]) {
+      assert.equal(Object.hasOwn(body, banned), false, banned);
+    }
+  });
+
+  it("a real grill opted in pings loopback with no canary, and does not ping again the same week", async () => {
+    const fake = await startFakeOpenRouter();
+    const ping = await startPingSink();
+    const home = mkdtempSync(join(tmpdir(), "grill-privacy-on-"));
+    const client = connectServer({
+      GRILL_API_KEY: "sk-or-v1-test-key-never-echoed",
+      GRILL_CHECK: "false",
+      GRILL_NEWS: "off",
+      GRILL_USAGE_STATS: "true",
+      GRILL_CLIENT: "mcpb",
+      GRILL_ROUTE: "one_click",
+      GRILL_PING_URL: ping.url,
+      HOME: home,
+      ...fake.env,
+    });
+    try {
+      await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {} });
+      const subject = `Decision: ship ${CANARY} next week if the test holds.`;
+      const first = await client.request("tools/call", { name: "grill", arguments: { subject } });
+      assert.equal(first.result.isError, false);
+      const text = first.result.content.map((part) => part.text).join("\n");
+      assert.equal(text.includes("/api/ping"), false);
+      assert.equal(await waitForPing(ping.seen), true);
+      assert.equal(ping.seen.length, 1);
+      assert.equal(ping.seen[0].url, "/api/ping");
+      assert.equal(ping.seen[0].host.startsWith("127.0.0.1"), true);
+      const body = JSON.parse(ping.seen[0].body);
+      assert.deepEqual(Object.keys(body), PING_KEYS);
+      assert.equal(body.v, "1");
+      assert.equal(body.client, "mcpb");
+      assert.equal(body.route, "one_click");
+      assert.equal(body.ok, true);
+      assert.equal(body.ms % 100, 0);
+      assert.equal(ping.seen[0].body.includes(CANARY), false);
+      assert.equal(text.includes(body.id), false);
+      assert.equal(client.stderr().includes(body.id), false);
+      assert.equal(client.stderr().includes("/api/ping"), false);
+      const statePath = join(home, ".grill", "usage-stats.json");
+      const state = JSON.parse(readFileSync(statePath, "utf8"));
+      assert.equal(state.id, body.id);
+      assert.equal(JSON.stringify(state).includes(CANARY), false);
+      assert.equal(statSync(statePath).mode & 0o777, 0o600);
+      assert.ok(fake.seen.chat.some((call) => call.raw.includes(CANARY)), "the judge still received the write-up");
+      assert.equal(fake.seen.chat.every((call) => call.url.startsWith("/api/v1/chat/completions")), true);
+
+      const second = await client.request("tools/call", { name: "grill", arguments: { subject } });
+      assert.equal(second.result.isError, false);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      assert.equal(ping.seen.length, 1, "the same ISO week does not ping again");
+    } finally {
+      await client.close();
+      await fake.close();
+      await ping.close();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("does not hold the report for a ping that never answers", async () => {
+    const fake = await startFakeOpenRouter();
+    const ping = await startPingSink({ hang: true });
+    const home = mkdtempSync(join(tmpdir(), "grill-privacy-hang-"));
+    const client = connectServer({
+      GRILL_API_KEY: "sk-or-v1-test-key-never-echoed",
+      GRILL_CHECK: "false",
+      GRILL_NEWS: "off",
+      GRILL_USAGE_STATS: "true",
+      GRILL_PING_URL: ping.url,
+      HOME: home,
+      ...fake.env,
+    });
+    try {
+      await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {} });
+      const started = Date.now();
+      const res = await client.request("tools/call", {
+        name: "grill",
+        arguments: { subject: "Decision: return before the ping does." },
+      });
+      assert.equal(res.result.isError, false);
+      assert.ok(Date.now() - started < 3_000, "the grill waited for the ping");
+    } finally {
+      await client.close();
+      await fake.close();
+      await ping.close();
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

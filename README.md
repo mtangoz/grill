@@ -62,12 +62,24 @@ Coming later: an optional Pro plan with saved decision history and look-back rem
 ## Privacy
 
 - Your notes stay in your tools. Only the write-up you approve is sent. The reflection you write stays in your chat or your own notes.
-- The free tool has no account and stores nothing. Grill's makers never see your decisions.
+- The free tool has no account. Grill's makers never see your decisions. Anonymous usage stats are off unless you turn them on.
 - A key or token in the write-up stops the run. Email addresses, phone numbers and card numbers are masked.
 - The optional quality check (Jev) also sees the masked write-up; the website counts visits without cookies.
-- Grill news line: after a finished grill, at most once a session, and only within 7 days of a release or on the first 3 days of a month, a line with a link to hear when an optional Pro plan is ready. The tool sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own.
+- Grill news line: after a finished grill, at most once a session, and only within 7 days of a release or on the first 3 days of a month, a line with a link to hear when an optional Pro plan is ready. Showing the line sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own.
+- Anonymous usage stats: off by default. One metadata ping to Grill's website after the first successful grill, then at most once a week. Never the decision, the question, the verdict, or your key.
 
 What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
+
+### Turn anonymous usage stats on
+
+Leave them off and the tool does not call Grill. To opt in:
+
+- **Claude Desktop:** in the install dialog, switch on "Send anonymous usage stats (optional)".
+- **Claude Code:** `/plugin` → Configure options, the same switch.
+- **Smithery:** the install form, the same switch.
+- **stdio, npx or Docker:** set `GRILL_USAGE_STATS=on`.
+
+Turn them off in the same place, or set `GRILL_PING=off`. `DO_NOT_TRACK=1` also disables the ping. The paste route does not send it.
 
 Details: [docs/PRIVACY.md](docs/PRIVACY.md).
 

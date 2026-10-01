@@ -28,6 +28,12 @@
  * of a UTC month. Outside those windows it adds nothing. It is text only: no network call, no
  * file, no email. GRILL_NEWS off hides it. An unset value or an unfilled ${…} placeholder leaves
  * it on, the same rule as GRILL_CHECK. A test can pass GRILL_NOW as an ISO time.
+ *
+ * USAGE STATS. Off unless GRILL_USAGE_STATS is exactly true, 1, on or yes. That is the opposite
+ * of GRILL_CHECK and GRILL_NEWS. GRILL_PING=off (also false, 0, no) and DO_NOT_TRACK=1 always
+ * win. After the first successful grill, and at most once per ISO week after that, a metadata
+ * ping may go to Grill's site. It never includes the write-up. The state file is created only
+ * when the setting is on. The report is returned without waiting for the ping.
  */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -37,6 +43,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { appendReflection, lookBack } from "../scripts/reflection.mjs";
+import { scheduleUsagePing } from "../scripts/usageStats.mjs";
 
 const VERSION = "0.1.1";
 const JUDGE = fileURLToPath(new URL("../scripts/judge.mjs", import.meta.url));
@@ -325,6 +332,16 @@ function startJob({ subject, question, author, skipCheck }) {
       rmSync(dir, { recursive: true, force: true });
       job.done = true;
       job.outcome = { code, report, stderr, error };
+      const finished = code === 0 && typeof report === "string" && report.trim().length > 0;
+      try {
+        scheduleUsagePing({
+          ok: finished,
+          ms: Date.now() - job.startedAt,
+          version: VERSION,
+        });
+      } catch {
+        // The ping is optional. A throw here must not drop the report.
+      }
       resolve(job.outcome);
     };
     child.on("close", (code) => finish(code, null));
