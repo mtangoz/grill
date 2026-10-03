@@ -55,8 +55,10 @@ describe("the manifests agree", () => {
         assert.deepEqual(plugin.userConfig[k][field], manifest.user_config[k][field], `${k}.${field} differs`);
       }
     }
-    // Wired: both launchers hand the server the same environment, and every declared key reaches it.
-    assert.deepEqual(mcp.mcpServers.grill.env, manifest.server.mcp_config.env);
+    // Wired: both launchers pass every user setting the same way. GRILL_CLIENT and GRILL_ROUTE
+    // are packaging identity (Desktop vs the Claude Code plugin), not a user setting.
+    const userEnv = (env) => Object.fromEntries(Object.entries(env).filter(([, value]) => String(value).startsWith("${user_config.")));
+    assert.deepEqual(userEnv(mcp.mcpServers.grill.env), userEnv(manifest.server.mcp_config.env));
     const referenced = (env) =>
       Object.values(env)
         .map((v) => String(v).match(/^\$\{user_config\.([a-z0-9_]+)\}$/)?.[1])
@@ -91,6 +93,23 @@ describe("the manifests agree", () => {
     }
     assert.equal(manifest.server.mcp_config.env.GRILL_NEWS, "${user_config.show_news}");
     assert.equal(mcp.mcpServers.grill.env.GRILL_NEWS, "${user_config.show_news}");
+  });
+
+  it("anonymous usage stats are a boolean that defaults to OFF and are wired as GRILL_USAGE_STATS", () => {
+    for (const cfg of [plugin.userConfig.usage_stats, manifest.user_config.usage_stats]) {
+      assert.equal(cfg.type, "boolean");
+      assert.equal(cfg.default, false);
+      assert.notEqual(cfg.sensitive, true);
+      assert.equal(cfg.title, "Send anonymous usage stats (optional)");
+      assert.match(cfg.description, /never the decision/);
+      assert.match(cfg.description, /github\.com\/mtangoz\/grill\/blob\/main\/docs\/PRIVACY\.md/);
+    }
+    assert.equal(manifest.server.mcp_config.env.GRILL_USAGE_STATS, "${user_config.usage_stats}");
+    assert.equal(mcp.mcpServers.grill.env.GRILL_USAGE_STATS, "${user_config.usage_stats}");
+    assert.equal(manifest.server.mcp_config.env.GRILL_CLIENT, "mcpb");
+    assert.equal(manifest.server.mcp_config.env.GRILL_ROUTE, "one_click");
+    assert.equal(mcp.mcpServers.grill.env.GRILL_CLIENT, "stdio");
+    assert.equal(mcp.mcpServers.grill.env.GRILL_ROUTE, "plugin");
   });
 
   it("both launch the same server file, which exists", () => {
@@ -320,6 +339,10 @@ describe("the registry listing", () => {
     assert.equal(env.isSecret, true);
     assert.equal(env.isRequired, false);
     assert.match(env.description, /OPENROUTER_API_KEY/);
+    const usage = pkg.environmentVariables.find((item) => item.name === "GRILL_USAGE_STATS");
+    assert.ok(usage, "GRILL_USAGE_STATS is listed");
+    assert.equal(usage.isRequired, false);
+    assert.equal(usage.isSecret, false);
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     assert.match(readme, /GRILL_API_KEY/);
     assert.match(readme, /OPENROUTER_API_KEY/);
@@ -345,10 +368,13 @@ describe("Smithery listing file", () => {
     assert.match(yaml, /^  dockerfile: Dockerfile$/m);
     assert.match(yaml, /^  type: stdio$/m);
     assert.match(yaml, /args: \["server\/index\.mjs"\]/);
-    for (const env of ["GRILL_API_KEY", "GRILL_CHECK", "JUDGE_MODEL", "GRILL_NEWS"]) {
+    for (const env of ["GRILL_API_KEY", "GRILL_CHECK", "JUDGE_MODEL", "GRILL_NEWS", "GRILL_USAGE_STATS"]) {
       assert.ok(env in manifest.server.mcp_config.env, `${env} not in manifest.json`);
       assert.match(yaml, new RegExp(`${env}:`));
     }
+    assert.match(yaml, /usageStats:[\s\S]*?default: false/);
+    assert.match(yaml, /GRILL_USAGE_STATS: config\.usageStats === true \? "true" : "false"/);
+    assert.match(yaml, /GRILL_CLIENT: "smithery"/);
     assert.equal(pkg.dependencies, undefined);
     assert.match(yaml, /Leave it blank for Grill's default, which picks a judge automatically from a different company than your assistant/);
     assert.doesNotMatch(yaml, /gemini-2\.5-pro/);

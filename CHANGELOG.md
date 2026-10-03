@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Optional anonymous usage stats, off unless you turn them on. After the first successful grill, and never again, the tool can POST one metadata ping to `https://grillyour.ai/api/ping`: a random install id, the version, the client and route, whether the grill succeeded, coarse timing, and the UTC day. Never the decision. `GRILL_PING=off` or `DO_NOT_TRACK=1` disables it. The paste route does not send it.
 - Grill runs in any app that runs MCP servers: Cursor, VS Code with Copilot, Codex, Gemini CLI, Windsurf, Zed. `npx -y grillyour` starts the same server the Desktop extension ships, with no dependencies and no install script. `npx -y grillyour --set-key` saves the key once, so an app's config holds no key and can be committed. Setup for each app is in docs/ANY-APP.md. The release publishes the npm package when the `NPM_TOKEN` secret is set.
 - `GRILL_AUTHOR` in an app's MCP config names the company of the assistant, for example `openai` in Codex. The judge is never from that company, even when the assistant leaves the tool's `author` field empty. The tool's description no longer assumes the assistant is Claude.
 - Grill Pro setup lists Cursor, VS Code with Copilot, Codex and Gemini CLI. Each gets a config with no key in it and the judge already chosen. Cursor can run Gemini, so its safe judge is DeepSeek. Before this, a Pro key worked only in Claude Desktop and Claude Code.

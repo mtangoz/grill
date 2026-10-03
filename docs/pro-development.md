@@ -43,7 +43,11 @@ To try the flow before Stripe is connected: `GRILL_PRO_TEST_MODE=1 GRILL_SESSION
 
 ## Counts, not decision text
 
-Activation (an account that then ran a grill) is the `first_grill` count. Depletion (a starter allowance that ran out) is the `allowance_exhausted` count. On Redis those are `grill:metric:first_grill` and `grill:metric:allowance_exhausted`, next to `account_created`, `key_issued` and `upgrade_clicked`. They are counts only. The account pages do not load website analytics. A weekly job reads them with the account store. The first grill is recorded the next time that usage (cost only) is read, usually when the person opens the account, because the installed Grill tool never calls Grill.
+Activation (an account that then ran a grill) is the `first_grill` count. Depletion (a starter allowance that ran out) is the `allowance_exhausted` count. On Redis those are `grill:metric:first_grill` and `grill:metric:allowance_exhausted`, next to `account_created`, `key_issued` and `upgrade_clicked`. They are counts only. The account pages do not load website analytics. A weekly job reads them with the account store. The first grill on an account is recorded the next time that usage (cost only) is read, usually when the person opens the account, because the installed Grill tool does not call the account store.
+
+## Anonymous usage ping
+
+`POST /api/ping` counts opted-in grills. The tool does not call it unless `GRILL_USAGE_STATS` is on. The handler stores daily counters and, when `GRILL_PING_PEPPER` is set, a SHA-256 of the install id salted with that pepper. Those hash keys expire after 90 days. The counters are aggregates and stay. If Upstash is unset, the handler answers 204 and stores nothing. It does not read or store the client address or user-agent. Set `GRILL_PING_PEPPER` (a long random string) on the Vercel project before a release that includes the ping. A global per-minute cap (`GRILL_PING_RATE_PER_MINUTE`, default 120) limits bursts without storing an address.
 
 ## Pro launch list
 

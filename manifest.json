@@ -28,7 +28,10 @@
         "GRILL_API_KEY": "${user_config.openrouter_api_key}",
         "GRILL_CHECK": "${user_config.jev_quality_check}",
         "JUDGE_MODEL": "${user_config.judge_model}",
-        "GRILL_NEWS": "${user_config.show_news}"
+        "GRILL_NEWS": "${user_config.show_news}",
+        "GRILL_USAGE_STATS": "${user_config.usage_stats}",
+        "GRILL_CLIENT": "mcpb",
+        "GRILL_ROUTE": "one_click"
       }
     }
   },
@@ -90,6 +93,12 @@
       "title": "Show Grill news",
       "description": "After a finished grill, at most once a session, show one line about optional Pro features (saved history and look-back reminders), with a link to leave your email. Only within 7 days of a release, or on the first 3 days of a month. The tool sends nothing. It stops on its own. Turn off to hide the line.",
       "default": true
+    },
+    "usage_stats": {
+      "type": "boolean",
+      "title": "Send anonymous usage stats (optional)",
+      "description": "One metadata ping after a grill, never the decision, and only if you turn it on: https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md",
+      "default": false
     }
   }
 }

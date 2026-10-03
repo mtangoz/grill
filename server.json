@@ -31,6 +31,13 @@
           "format": "string",
           "isRequired": false,
           "isSecret": true
+        },
+        {
+          "name": "GRILL_USAGE_STATS",
+          "description": "Optional anonymous usage stats. Off unless set to true, 1, on, or yes. GRILL_PING=off or DO_NOT_TRACK=1 disables it. Never includes a decision.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false
         }
       ]
     }

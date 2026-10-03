@@ -9,7 +9,10 @@
         "GRILL_API_KEY": "${user_config.openrouter_api_key}",
         "GRILL_CHECK": "${user_config.jev_quality_check}",
         "JUDGE_MODEL": "${user_config.judge_model}",
-        "GRILL_NEWS": "${user_config.show_news}"
+        "GRILL_NEWS": "${user_config.show_news}",
+        "GRILL_USAGE_STATS": "${user_config.usage_stats}",
+        "GRILL_CLIENT": "stdio",
+        "GRILL_ROUTE": "plugin"
       }
     }
   }

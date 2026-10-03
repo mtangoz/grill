@@ -84,12 +84,16 @@ describe("site/page.html", () => {
     assert.match(why, /^# Why not just ask your own assistant\?$/m);
   });
 
-  it("says the website counts visits anonymously, and the tool does not", () => {
-    const sentence = "This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool itself never tracks you.";
+  it("says the website counts visits anonymously, and the tool's usage ping is opt-in", () => {
+    const visits = "This website counts visits anonymously, with no cookies and nothing that identifies you.";
+    const tool = "The installed tool can optionally send one anonymous usage ping to this site after the first successful grill, if you turn that on at install; off by default; never again; never decision words.";
     const launch = "If you join the Pro launch list, we keep your email address, and only that, in Resend until Pro launches, and you can unsubscribe with one click.";
-    assert.ok(page.includes(sentence));
+    assert.ok(page.includes(visits));
+    assert.ok(page.includes(tool));
     assert.ok(page.includes(launch));
-    assert.ok(readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8").includes(sentence));
+    const privacy = readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8");
+    assert.ok(privacy.includes(visits));
+    assert.match(privacy, /does not track you unless you turn on optional anonymous usage stats/);
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     assert.match(readme, /docs\/PRIVACY\.md/);
     assert.doesNotMatch(readme, /saving copies/);

@@ -20,6 +20,7 @@
     "scripts/judgeCore.mjs",
     "scripts/checkCore.mjs",
     "scripts/reflection.mjs",
+    "scripts/usageStats.mjs",
     "docs/PRIVACY.md",
     "docs/ANY-APP.md"
   ],
