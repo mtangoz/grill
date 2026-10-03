@@ -2,7 +2,7 @@
 
 What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md](PRINCIPLES.md).
 
-**Short version:** The free tool has no account, and Grill never sees a decision. Accounts (a starter key or Pro) are not available yet. The section below describes what would change if they launch; this page will be updated before they do. If you choose to join the Pro launch list on the website, we keep your email address, and nothing else, until Pro launches ([below](#the-pro-launch-list)). Bring your own key and there is no account. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool does not track you unless you turn on optional anonymous usage stats at install (off by default). If you leave them off, the tool still only talks to the model router. If you turn them on, it also sends one tiny metadata ping to Grill's website after your first successful grill, and not again — never the words of a decision. Details below. Your notes stay in your tools. With the setting off, the one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
+**Short version:** The free tool has no account, and Grill never sees a decision. Accounts (a starter key or Pro) are not available yet. Until 16 November 2026, a few invited people have a free key we created for them; [below](#invite-keys-until-16-november-2026) says what that means. The section below describes what would change if they launch; this page will be updated before they do. If you choose to join the Pro launch list on the website, we keep your email address, and nothing else, until Pro launches ([below](#the-pro-launch-list)). Bring your own key and there is no account. This website counts visits anonymously, with no cookies and nothing that identifies you. The Grill tool does not track you unless you turn on optional anonymous usage stats at install (off by default). If you leave them off, the tool still only talks to the model router. If you turn them on, it also sends one tiny metadata ping to Grill's website after your first successful grill, and not again — never the words of a decision. Details below. Your notes stay in your tools. With the setting off, the one thing that leaves your machine is the write-up you approve, and it goes only to the judge you chose.
 
 ## Who sees what
 
@@ -14,7 +14,7 @@ What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md]
 | **The judge's model provider** | The approved write-up, in transit | Grill routes **only** to zero-data-retention endpoints (`provider: { zdr: true, data_collection: "deny" }`), and never falls back to one that retains |
 | **The app you paste into**, paste route | The approved write-up | That app's settings. Use its private mode, for example a Temporary Chat in ChatGPT |
 | **Jev (TypeSafe)**, quality check, on by default | The masked write-up and the judge's report | A zero-data-retention endpoint, checked weekly; the check is dropped if any other endpoint answers |
-| **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them. With Pro, also your billing details and your key's usage, as below | There is nowhere for anything else to go |
+| **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them. With Pro, also your billing details and your key's usage, as below. If you were sent an invite key, that key's spend (cost, model and time, never the text), and that the key is yours | There is nowhere for anything else to go |
 | **This website** | An anonymous count of page views, plus whether a decision record was shown or copied, whether a look-back started or finished, and how many records were pasted. It can also record a click on a download, the paste prompt, or the OpenRouter keys page, with an optional channel tag (`ref`) from a fixed list when the page address includes one. A missing tag is left off. No cookie, nothing that identifies you, and never the words of a decision | Vercel Web Analytics, on the website only. The Grill tool never loads it |
 | **Grill's ping endpoint** (optional, off by default) | A random install ID, Grill version, client/route, success or failure, latency bucket, and the UTC day. **Never** the write-up, question, verdict, notes, or your key | You opt in once at install (or in settings). You can turn it off anytime. No IP address or request header is read, logged or stored. Events kept ≤ 90 days; then aggregates only. The ping never runs if the setting is off |
 | **Stripe**, Grill Pro only | Your email, card and billing address | Stripe's own privacy policy. Grill never sees your card. Accounts are not available yet |
@@ -64,6 +64,17 @@ Pro changes who pays for the AI, not where your write-up goes.
   - copies of reports, only if you turn saving on at your account's Reports page. Off until you do. You can delete any copy or all of them, and turn saving off. The text stays on the account store, never on your Stripe customer. Grill does not email a verdict or a weekly note today, so nothing is saved until a report exists and saving is on. In test mode, a sample grill is saved the same way.
 - **The key is shown when it is created or rotated**, then dropped. If you lose it, sign in and rotate it. We switch the old one off. Rotating a starter key keeps whatever allowance is left. It does not reset the cap.
 - **Bring your own key and there is no account.** The free tool is unchanged: no sign-in, and checks are unlimited on your own credit. The tool does not track you unless you turn on anonymous usage stats. That setting is off by default.
+
+### Invite keys (until 16 November 2026)
+
+We emailed a few people a free model-router key by hand, so they can try Grill without an OpenRouter account or a card. There is no account, no sign-in and no Grill server involved.
+
+- **The key** is created on Grill's router account, capped at $0.50 of judge spend, with no refill. That account allows zero-data-retention endpoints only, with logging off. Your write-ups go from your computer to the router and the judge, as with your own key, and never pass through us.
+- **What we can see:** the key's spend in the router account (cost, model and time of each check, never the text). The key's label is a number, not your name. We keep a private note of which number we sent to whom, so we can tie that spend to you.
+- **What we keep:** that note, and the email thread you and we already have. Nothing in Resend, Upstash, Stripe or any Grill database.
+- **What we ask:** one follow-up question by email, which you can ignore.
+- **Deleting it:** write to support@grillyour.ai or reply to the invite. We switch the key off and delete our note within 7 days.
+- **The end:** on 16 November 2026 the keys stop working and we delete them and the note. We keep totals only (how many keys were used, total spend), with no names.
 
 ## The Pro launch list
 
