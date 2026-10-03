@@ -16,7 +16,7 @@
  * in a 0700 directory. The key never goes on a command line, where shell history and `ps` would
  * keep it. Nothing here prints a key: status lines name the source and the last four characters.
  */
-import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -75,7 +75,17 @@ export function saveApiKey(key, env = process.env) {
   if (/\s/.test(value)) throw new Error("a key has no spaces or line breaks; paste only the key");
   const path = keyFilePath(env);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(path, `${value}\n`, { mode: 0o600 });
-  chmodSync(path, 0o600); // mode only applies on create; an existing file keeps its own
+  // Never write the key into the existing file: if it was readable by others, a reader could
+  // catch the new key before a chmod. Create a fresh 0600 file (O_EXCL, so not someone else's)
+  // and rename it over the old one. The rename is atomic and gives the key a new inode, so a
+  // descriptor opened on the old, loose file never sees it.
+  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    writeFileSync(tmp, `${value}\n`, { mode: 0o600, flag: "wx" });
+    renameSync(tmp, path);
+  } catch (e) {
+    rmSync(tmp, { force: true });
+    throw e;
+  }
   return path;
 }
