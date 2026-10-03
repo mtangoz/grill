@@ -14,8 +14,17 @@
  * times out a chat.
  *
  * THE KEY. GRILL_API_KEY (filled from the install dialog) wins, then OPENROUTER_API_KEY from the
- * environment. It goes into the judge's environment and nowhere else: it is never returned,
+ * environment, then the key file `node scripts/judge.mjs --set-key` writes (scripts/apiKey.mjs). It goes into the judge's environment and nowhere else: it is never returned,
  * logged or echoed.
+ *
+ * WHO WROTE IT. A host that is not Claude (Cursor, VS Code with Copilot, Codex, Gemini CLI) sets
+ * GRILL_AUTHOR in its MCP config, for example `openai` for Codex. The judge then excludes that
+ * company, even when the assistant leaves the tool's `author` field empty. A value the tool call
+ * sends still wins. Unset, the judge excludes Anthropic, as before.
+ *
+ * AS A COMMAND. `npx -y grillyour` with no arguments is this MCP server over stdio. With
+ * `--set-key` it saves a key from stdin to the key file (scripts/apiKey.mjs), so an MCP config
+ * never has to hold the key. `--key-status`, `--version` and `--help` print and exit.
  *
  * THE QUALITY CHECK. GRILL_CHECK (the install dialog's "Quality check with Jev" setting) set to
  * "true" or "1" passes --check, which also sends the masked write-up to Jev on OpenRouter; see
@@ -42,6 +51,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { keyFilePath, maskKey, resolveApiKey, saveApiKey } from "../scripts/apiKey.mjs";
 import { appendReflection, lookBack } from "../scripts/reflection.mjs";
 import { scheduleUsagePing } from "../scripts/usageStats.mjs";
 
@@ -64,13 +74,15 @@ function waitMs() {
   return Number.isInteger(n) && n >= 1 && n <= 55_000 ? n : 45_000;
 }
 
-/** The user's key. An unfilled install-dialog placeholder arrives as literal `${…}` text; that is no key. */
-function resolveApiKey(env = process.env) {
-  for (const raw of [env.GRILL_API_KEY, env.OPENROUTER_API_KEY]) {
-    const value = typeof raw === "string" ? raw.trim() : "";
-    if (value && !value.startsWith("${")) return value;
-  }
-  return "";
+/** GRILL_AUTHOR from the host's config: a model-family name, or "" when unset or not one. */
+function defaultAuthor(env = process.env) {
+  const value = typeof env.GRILL_AUTHOR === "string" ? env.GRILL_AUTHOR.trim().toLowerCase() : "";
+  return AUTHOR_RE.test(value) ? value : "";
+}
+
+/** The user's key: the install dialog, the environment, then the key file (../scripts/apiKey.mjs). */
+function apiKey(env = process.env) {
+  return resolveApiKey(env).key;
 }
 
 /**
@@ -189,6 +201,7 @@ const SETUP_TEXT = [
   "Grill isn't set up yet: it needs a key for its model router, OpenRouter.",
   "1. Create one at https://openrouter.ai/keys. Sign in, and add a few dollars of credit; a grill costs about a cent.",
   "2. Paste it into Grill's settings where you installed it (Claude Desktop: Settings → Extensions → Grill).",
+  "   Or save it once for every app on this computer: run `npx -y grillyour --set-key` in a terminal, paste the key, press Enter, then Ctrl-D.",
   `Step-by-step: ${SETUP_URL}`,
   "Have Grill Pro? Sign in at https://grillyour.ai/pro and paste the managed key into the same place. You can also set the judge model there.",
   "Until then, the grill skill can write the subject as a prompt for you to paste into ChatGPT or Gemini instead.",
@@ -202,7 +215,7 @@ const CHECK_NOTE = checkEnabled()
   : "The Jev quality check is switched OFF in Grill's settings, so only the judge sees the write-up.";
 
 const DESCRIPTION = [
-  "Send a decision, plan or forecast to an outside AI judge: a model from a different company than Claude.",
+  "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).",
   "It writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict (solid, solid if, shaky, or doesn't hold up).",
   "Before calling: write the subject, meaning the decision, every option on the table, the reasons, the prediction and confidence exactly as the user gave them, Goal and Guardrails lines in the user's words when they stated them, and the strongest case against.",
   "Write it as a clerk, not an advocate: a write-up that leans toward the decision gets a kinder verdict than it should, and one written by whoever helped reach it leans unless you stop it. Give the case against the same depth as the reasons and don't answer it, include the facts that cut against the decision, and leave out words that grade (clearly, strong, safe) and any recommendation of your own.",
@@ -229,7 +242,7 @@ const TOOLS = [
         author: {
           type: "string",
           description:
-            "Optional. The model family that wrote the subject, if not Claude, for example openai. That family is excluded from judging too.",
+            "Optional. The model family that wrote the subject, if not Claude, for example openai, google or xai. That family is excluded from judging. If you are not Claude, always set it to your own family.",
         },
         quality_check: {
           type: "boolean",
@@ -305,7 +318,7 @@ function startJob({ subject, question, author, skipCheck }) {
   if (question) args.push("--question", question);
   if (author) args.push("--author", author);
   if (checkEnabled() && !skipCheck) args.push("--check");
-  const env = { ...process.env, OPENROUTER_API_KEY: resolveApiKey() };
+  const env = { ...process.env, OPENROUTER_API_KEY: apiKey() };
   delete env.JUDGE_CHECK; // the setting above decides, never an inherited variable
   const model = configuredJudgeModel(env);
   if (model) env.JUDGE_MODEL = model;
@@ -390,13 +403,13 @@ async function callTool(name, args = {}, onTick) {
   if (name === "grill") {
     const subject = typeof args.subject === "string" ? args.subject : "";
     const question = typeof args.question === "string" ? args.question.trim() : "";
-    const author = typeof args.author === "string" ? args.author.trim().toLowerCase() : "";
+    const author = (typeof args.author === "string" ? args.author.trim().toLowerCase() : "") || defaultAuthor();
     const skipCheck = args.quality_check === false; // off for this grill only; never switches it on
     if (!subject.trim()) return text("There's no subject to grill. Write it, show it to the user, then call again.", true);
     if (subject.length > MAX_SUBJECT_CHARS) return text(`The subject is ${subject.length} characters; trim it under ${MAX_SUBJECT_CHARS}.`, true);
     if (question.length > MAX_QUESTION_CHARS) return text(`The question is over ${MAX_QUESTION_CHARS} characters; shorten it.`, true);
     if (author && !AUTHOR_RE.test(author)) return text("author must be a lowercase model-family name, like openai.", true);
-    if (!resolveApiKey()) return text(SETUP_TEXT, true);
+    if (!apiKey()) return text(SETUP_TEXT, true);
     const judgeModel = configuredJudgeModel();
     if (judgeModel && judgePinConflicts(judgeModel, author)) {
       return text(
@@ -487,7 +500,47 @@ function runningAsMain() {
   }
 }
 
-if (runningAsMain()) {
+const HELP = `Grill ${VERSION}: an outside AI judge for your decisions, as an MCP server.
+
+  npx -y grillyour                 run the MCP server over stdio (what an app's MCP config starts)
+  npx -y grillyour --set-key       save your model router key: paste it, press Enter, then Ctrl-D
+  npx -y grillyour --key-status    say where the key comes from, without printing it
+  npx -y grillyour --version
+
+Setup for each app: ${SETUP_URL.replace("#set-up", "/blob/main/docs/ANY-APP.md")}`;
+
+/** The command-line flags. Returns true when one was handled and the process should exit. */
+function runCommand(argv) {
+  const flag = argv[0];
+  if (!flag) return false;
+  if (flag === "--help" || flag === "-h") console.log(HELP);
+  else if (flag === "--version" || flag === "-v") console.log(VERSION);
+  else if (flag === "--key-status") {
+    const found = resolveApiKey();
+    if (!found.key) console.log(`No key yet. GRILL_API_KEY and OPENROUTER_API_KEY are unset and ${keyFilePath()} has none. Run: npx -y grillyour --set-key`);
+    else console.log(`Key found: ${found.source} (${maskKey(found.key)})`);
+    if (found.warning) console.log(`Warning: ${found.warning}`);
+  } else if (flag === "--set-key") {
+    let input = "";
+    try {
+      input = readFileSync(0, "utf8");
+    } catch {
+      // no stdin: saveApiKey reports the empty key
+    }
+    try {
+      console.log(`Key saved to ${saveApiKey(input)} (only you can read it). Every Grill on this computer uses it.`);
+    } catch (e) {
+      console.error(`Not saved: ${e.message}. Paste the key, press Enter, then Ctrl-D. Never put it on the command line.`);
+      process.exitCode = 1;
+    }
+  } else {
+    console.error(`Unknown option ${flag}.\n\n${HELP}`);
+    process.exitCode = 1;
+  }
+  return true;
+}
+
+if (runningAsMain() && !runCommand(process.argv.slice(2))) {
   const rl = createInterface({ input: process.stdin });
   rl.on("line", (line) => {
     if (!line.trim()) return;

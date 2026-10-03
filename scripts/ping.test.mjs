@@ -235,5 +235,38 @@ describe("the handler source", () => {
     const src = readFileSync(join(ROOT, "api/_ping.mjs"), "utf8") + readFileSync(join(ROOT, "api/ping.js"), "utf8");
     assert.doesNotMatch(src, /x-forwarded-for|x-real-ip|cf-connecting-ip|user-agent|remoteAddress/i);
     assert.match(src, /content-length/);
+    assert.doesNotMatch(src, /\bconsole\./, "the handler logs nothing");
+    assert.doesNotMatch(src, /\bheaders\.(?:entries|forEach|keys|values)\b|\.\.\.\s*request\.headers/, "the handler never walks the headers");
+  });
+
+  it("reads only content-length from the request headers, and logs nothing", async () => {
+    const w = world();
+    const read = [];
+    const real = new Headers({ "content-type": "application/json", "x-forwarded-for": "203.0.113.8", "x-real-ip": "203.0.113.9" });
+    const spy = new Proxy(real, {
+      get(target, prop) {
+        if (prop === "get" || prop === "has") return (name) => (read.push(String(name).toLowerCase()), target[prop](name));
+        if (typeof prop === "string" && prop !== "then") read.push(`<${prop}>`);
+        const value = target[prop];
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const raw = JSON.stringify(body());
+    const request = { method: "POST", headers: spy, text: async () => raw };
+    const logged = [];
+    const saved = {};
+    for (const level of ["log", "info", "warn", "error", "debug"]) {
+      saved[level] = console[level];
+      console[level] = (...args) => logged.push(args.join(" "));
+    }
+    try {
+      const res = await handlePing(request, { env: ENV, fetch: w.fetchImpl, now: NOW });
+      assert.equal(res.status, 204);
+    } finally {
+      Object.assign(console, saved);
+    }
+    assert.deepEqual(read, ["content-length"]);
+    assert.deepEqual(logged, []);
+    assert.equal(JSON.stringify(w.calls).includes("203.0.113."), false);
   });
 });

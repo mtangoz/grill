@@ -188,7 +188,7 @@ describe("the extension build", () => {
       env: { ...process.env, GRILL_RELEASE_DATE: "2026-04-02" },
     });
     const staged = join(ROOT, "dist/extension");
-    for (const f of ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "scripts/reflection.mjs", "LICENSE"]) {
+    for (const f of ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/apiKey.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "scripts/reflection.mjs", "LICENSE"]) {
       assert.ok(existsSync(join(staged, f)), `missing ${f}`);
     }
     const server = readFileSync(join(ROOT, "server/index.mjs"), "utf8");
@@ -204,6 +204,9 @@ describe("the extension build", () => {
       for (const [, rel] of src.matchAll(/from "\.\/([^"]+)"/g)) {
         assert.ok(existsSync(join(staged, "scripts", rel)), `${f} imports ${rel}, which the build does not stage`);
       }
+    }
+    for (const [, rel] of server.matchAll(/from "\.\.\/scripts\/([^"]+)"/g)) {
+      assert.ok(existsSync(join(staged, "scripts", rel)), `the server imports ${rel}, which the build does not stage`);
     }
   });
 });
@@ -377,5 +380,27 @@ describe("Smithery listing file", () => {
     assert.doesNotMatch(yaml, /gemini-2\.5-pro/);
     assert.doesNotMatch(manifest.user_config.judge_model.description, /gemini-2\.5-pro/);
     assert.doesNotMatch(plugin.userConfig.judge_model.description, /gemini-2\.5-pro/);
+  });
+});
+
+describe("the npm package (npx -y grillyour)", () => {
+  const build = readFileSync(join(ROOT, "scripts/build-extension.mjs"), "utf8");
+  const extension = JSON.parse(build.match(/const FILES = (\[[^\]]+\])/)[1]);
+
+  it("ships the same runnable code as the Desktop extension, and nothing else runnable", () => {
+    const runnable = (list) => list.filter((f) => f.endsWith(".mjs")).sort();
+    assert.deepEqual(runnable(pkg.files), runnable(extension));
+    assert.ok(pkg.files.includes("docs/PRIVACY.md"));
+    assert.equal(pkg.dependencies, undefined);
+    assert.equal(pkg.optionalDependencies, undefined);
+    assert.equal(pkg.scripts.postinstall, undefined, "an install runs no code");
+    assert.equal(pkg.scripts.prepare, undefined, "an install from GitHub runs no code");
+  });
+
+  it("starts the MCP server, and the registry can tie it to this listing", () => {
+    assert.deepEqual(pkg.bin, { grillyour: "server/index.mjs" });
+    assert.match(readFileSync(join(ROOT, "server/index.mjs"), "utf8"), /^#!\/usr\/bin\/env node\n/);
+    assert.equal(pkg.mcpName, json("server.json").name);
+    assert.ok(existsSync(join(ROOT, "docs/ANY-APP.md")));
   });
 });

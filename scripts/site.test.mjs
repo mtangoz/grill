@@ -139,6 +139,38 @@ describe("site/page.html", () => {
     assert.match(privacy, /never include the title, the falsifier, the verdict, or what happened/);
   });
 
+  it("counts install clicks with an allowlisted channel ref, and states the Desktop setup time", () => {
+    for (const name of ["download_mcpb", "download_skill", "copy_prompt", "openrouter_key_click"]) {
+      assert.match(page, new RegExp(`data-track="${name}"`));
+      assert.match(page, new RegExp(`${name}: 1`));
+    }
+    assert.match(page, /releases\/latest\/download\/grill\.mcpb" data-track="download_mcpb"/);
+    assert.match(page, /releases\/latest\/download\/grill-skill\.zip" data-track="download_skill"/);
+    assert.match(page, /prompts\/grill\.md" data-track="copy_prompt"/);
+    assert.match(page, /href="https:\/\/openrouter\.ai\/keys" data-track="openrouter_key_click"/);
+    assert.doesNotMatch(page, /openrouter\.ai\/keys\?/);
+    for (const ref of ["smithery", "glama", "mcpservers", "tensorblock", "mcp-registry", "punkpeye", "hn", "reddit", "direct", "share", "openrouter"]) {
+      assert.match(page, new RegExp(`\\b${ref}\\b`));
+    }
+    assert.match(page, /if \(CHANNEL_REFS\[fromUrl\]\) channelRef = fromUrl/);
+    assert.match(page, /if \(channelRef\) data\.ref = channelRef/);
+    assert.match(page, /window\.va\("event", \{ name: name, data: data \}\)/);
+    assert.match(page, /About 2 minutes if you already have an OpenRouter key/);
+    assert.match(page, /About 10 minutes if you need to create one \(\$5 credit\)/);
+    assert.match(page, /Prefer free first\? Use Any AI above/);
+    assert.match(page, /once per check \(about 1 to 2 cents\)/);
+    assert.match(page, /The tools can list without a key\. The first grill needs credit/);
+    const any = page.indexOf("Any AI (easiest)");
+    const desktop = page.indexOf(">Claude Desktop<");
+    assert.ok(any > 0 && desktop > any, "Any AI stays the first setup route");
+    const privacy = readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8");
+    assert.match(privacy, /click on a download, the paste prompt, or the OpenRouter keys page/);
+    assert.match(privacy, /optional channel tag \(`ref`\)/);
+    assert.match(page, /optional channel tag \(<code>ref<\/code>\) from a fixed list/);
+    assert.match(page, /A missing tag is left off/);
+    assert.match(readFileSync(join(ROOT, "README.md"), "utf8"), /about 2 minutes with a key, about 10 if you need one/);
+  });
+
   it("defines its colours as tokens for light, dark-by-system and dark-by-choice", () => {
     assert.match(page, /:root \{[\s\S]*--paper:/);
     assert.match(page, /@media \(prefers-color-scheme: dark\)[\s\S]*:root:not\(\[data-theme="light"\]\)/);

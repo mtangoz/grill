@@ -20,7 +20,7 @@ import { stampReleaseDateFile } from "./releaseDate.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "dist", "extension");
-const FILES = ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "scripts/reflection.mjs", "scripts/usageStats.mjs", "docs/PRIVACY.md", "LICENSE"];
+const FILES = ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/apiKey.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "scripts/reflection.mjs", "scripts/usageStats.mjs", "docs/PRIVACY.md", "LICENSE"];
 
 rmSync(OUT, { recursive: true, force: true });
 for (const file of FILES) {

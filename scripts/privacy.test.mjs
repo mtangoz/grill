@@ -125,8 +125,9 @@ describe("the judge still talks only to OpenRouter", () => {
   const build = readFileSync(join(ROOT, "scripts/build-extension.mjs"), "utf8");
   const shipped = JSON.parse(build.match(/const FILES = (\[[^\]]+\])/)[1]).filter((f) => f.endsWith(".mjs"));
 
-  it("ships the server, the judge, the check's pure core and the opt-in ping, and nothing else runnable", () => {
+  it("ships the server, the judge, its key reader, the check's pure core and the opt-in ping, and nothing else runnable", () => {
     assert.deepEqual(shipped.sort(), [
+      "scripts/apiKey.mjs",
       "scripts/checkCore.mjs",
       "scripts/judge.mjs",
       "scripts/judgeCore.mjs",
