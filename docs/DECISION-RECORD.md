@@ -39,6 +39,17 @@ Writers always emit these lines, in this order, inside a fence tagged `grill-rec
 - Empty `confidence` is allowed. Empty `prediction` is allowed, and a missing `prediction` line is the same as empty. `date` and `title` are required.
 - Missing `goal`, `guardrails` and `source_app` lines are the same as absent. They are not required. A record without them reads as the record above.
 - The look-back reply is a different block. It uses `title`, `came_true`, `falsifier_fired` and `happened`, inside an ordinary text fence. When the record has a goal or guardrails, it also uses `goal_met` (yes, no or partly) and `guardrails_held` (yes or no). That reply is not a decision record.
+- The look-back also asks "Did anything happen you didn't expect?" The reply may add an optional `surprise:` line: a few words, or leave the line off. To mark that those words match a challenge or the falsifier, add a clause after `|`: `| matches challenge 2` or `| matches falsifier`. Grill uses only that mark. It does not compare the words with the record. `| still live` means the decision is still open and the surprise bears on it.
+
+```text
+title: The decision, in a few words
+came_true: no
+falsifier_fired: no
+happened: one sentence on what actually happened
+surprise: a few words | matches challenge 2 | still live
+```
+
+A miss with a surprise and no match mark reads: the world moved in a way the record didn't foresee. A miss whose surprise is marked as matching a challenge or the falsifier reads: this was flagged and you went ahead. A miss with no surprise is a plain miss. When the line includes `still live`, the reading adds: grill the revised plan; the new record will say it replaces this one. A surprise is not scored and not counted.
 
 ## Optional lines
 

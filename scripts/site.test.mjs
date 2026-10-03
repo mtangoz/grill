@@ -128,7 +128,9 @@ describe("site/page.html", () => {
     assert.match(page, /reflection_lookback_completed/);
     assert.match(page, /window\.va\("event", \{ name: name, data: \{ records: count \} \}\)/);
     assert.match(page, /It never includes the words of a decision/);
-    assert.doesNotMatch(page, /window\.va\([^)]*(judge-answer|saved-records|what-happened|decision-title)/);
+    assert.match(page, /Did anything happen you didn['\u2019]t expect\?/);
+    assert.doesNotMatch(page, /window\.va\([^)]*(judge-answer|saved-records|what-happened|decision-title|surprise)/);
+    assert.doesNotMatch(page, /track\([^)]*surprise/);
     for (const file of ["server/index.mjs", "scripts/reflection.mjs"]) {
       const source = readFileSync(join(ROOT, file), "utf8");
       assert.ok(!source.includes("window.va"), `${file} must not send website analytics`);
@@ -136,7 +138,7 @@ describe("site/page.html", () => {
     }
     const privacy = readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8");
     assert.match(privacy, /how many records were pasted/);
-    assert.match(privacy, /never include the title, the falsifier, the verdict, or what happened/);
+    assert.match(privacy, /never include the title, the falsifier, the verdict, what happened, or a surprise/);
   });
 
   it("counts install clicks with an allowlisted channel ref, and states the Desktop setup time", () => {

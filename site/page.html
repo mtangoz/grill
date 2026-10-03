@@ -77,7 +77,10 @@
   .report pre, .paste pre { font-family: var(--mono); font-size: 0.82rem; line-height: 1.55; white-space: pre-wrap; background: var(--code-bg); padding: 12px 14px; border-radius: 8px; margin: 0 0 0.8rem; }
   .paste { margin: 0 0 2.6rem; }
   .paste textarea { width: 100%; box-sizing: border-box; min-height: 7rem; font: 0.86rem var(--mono); padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: transparent; color: var(--ink); margin: 0 0 0.8rem; }
+  .paste textarea.short { min-height: 3.2rem; }
   .paste label { display: block; font-weight: 600; margin: 0.2rem 0 0.35rem; }
+  .paste input[type="text"] { font: 0.95rem var(--sans); padding: 8px 12px; border: 1px solid var(--rule); border-radius: 8px; background: transparent; color: var(--ink); width: 6rem; }
+  #surprise-challenge-row { margin: 0.2rem 0 0.9rem; }
   .ask { margin: 0.2rem 0 0.9rem; }
   .ask-q { font-weight: 600; margin: 0 0 0.4rem; }
   .ask-choices { display: flex; gap: 8px; }
@@ -240,6 +243,27 @@ review: 2026-10-11
     <div class="ask" id="falsifier-ask">
       <p class="ask-q" id="falsifier-label">Did the thing that would prove you wrong happen?</p>
       <div class="ask-choices" role="group" aria-labelledby="falsifier-label">
+        <button type="button" class="choice" data-value="yes" aria-pressed="false">Yes</button>
+        <button type="button" class="choice" data-value="no" aria-pressed="false">No</button>
+      </div>
+    </div>
+    <label for="surprise">Did anything happen you didn’t expect?</label>
+    <textarea id="surprise" class="short" placeholder="A few words. Optional. This page does not store it."></textarea>
+    <div class="ask" id="surprise-match-ask">
+      <p class="ask-q" id="surprise-match-label">Does that match a challenge or the falsifier?</p>
+      <div class="ask-choices" role="group" aria-labelledby="surprise-match-label">
+        <button type="button" class="choice" data-value="none" aria-pressed="false">No</button>
+        <button type="button" class="choice" data-value="falsifier" aria-pressed="false">The falsifier</button>
+        <button type="button" class="choice" data-value="challenge" aria-pressed="false">A challenge</button>
+      </div>
+    </div>
+    <p id="surprise-challenge-row" hidden>
+      <label for="surprise-challenge">Which challenge? A number.</label>
+      <input id="surprise-challenge" type="text" inputmode="numeric" autocomplete="off" placeholder="2">
+    </p>
+    <div class="ask" id="surprise-live-ask">
+      <p class="ask-q" id="surprise-live-label">Is the decision still open, and does this surprise bear on it?</p>
+      <div class="ask-choices" role="group" aria-labelledby="surprise-live-label">
         <button type="button" class="choice" data-value="yes" aria-pressed="false">Yes</button>
         <button type="button" class="choice" data-value="no" aria-pressed="false">No</button>
       </div>
@@ -467,9 +491,55 @@ review: 2026-10-11
       if (!on) btn.setAttribute("aria-pressed", "true");
     });
   });
+  document.getElementById("surprise-match-ask").addEventListener("click", function () {
+    document.getElementById("surprise-challenge-row").hidden = choice("surprise-match-ask") !== "challenge";
+  });
   function choice(groupId) {
     var pressed = document.querySelector("#" + groupId + " .choice[aria-pressed='true']");
     return pressed ? pressed.getAttribute("data-value") : "";
+  }
+  // A mark is its own clause after "|". The words are never compared with the record.
+  function parseSurprise(raw) {
+    var full = one(raw);
+    if (!full) return { text: "", match: "", live: false };
+    var words = [];
+    var match = "";
+    var live = false;
+    full.split(/\s*\|\s*/).forEach(function (part) {
+      var piece = one(part).replace(/\.$/, "");
+      var challenge = piece.match(/^matches challenge ([1-9]\d*)$/i);
+      if (challenge) {
+        if (!match) match = "challenge " + challenge[1];
+        return;
+      }
+      if (/^matches(?: the)? falsifier$/i.test(piece)) {
+        if (!match) match = "falsifier";
+        return;
+      }
+      if (/^still live$/i.test(piece)) {
+        live = true;
+        return;
+      }
+      if (piece) words.push(piece);
+    });
+    var text = words.join(" | ").trim();
+    if (!text) return { text: "", match: "", live: false };
+    return { text: text, match: match, live: live };
+  }
+  function surpriseLine() {
+    var field = one(document.getElementById("surprise").value);
+    var raw = document.getElementById("what-happened").value;
+    var typed = one((String(raw).match(/^surprise\s*:\s*(.+)$/im) || [])[1] || "");
+    if (!field) return typed;
+    var bits = [field];
+    var match = choice("surprise-match-ask");
+    if (match === "falsifier") bits.push("matches falsifier");
+    if (match === "challenge") {
+      var n = one(document.getElementById("surprise-challenge").value).match(/[1-9]\d*/);
+      if (n) bits.push("matches challenge " + n[0]);
+    }
+    if (choice("surprise-live-ask") === "yes") bits.push("still live");
+    return bits.join(" | ");
   }
   document.getElementById("run-look-back").addEventListener("click", function () {
     var pasted = document.getElementById("saved-records").value;
@@ -483,7 +553,7 @@ review: 2026-10-11
     var typedWhat = one((raw.match(/happened\s*:\s*(.+)/i) || [])[1] || "");
     if (!came) came = typedCame;
     if (!fired) fired = typedFired;
-    var what = typedWhat || (/came_true\s*:|falsifier_fired\s*:|happened\s*:/i.test(raw) ? "" : one(raw));
+    var what = typedWhat || (/came_true\s*:|falsifier_fired\s*:|happened\s*:|surprise\s*:/i.test(raw) ? "" : one(raw));
     if (!records.length) {
       var other = [];
       String(pasted).split(/\n/).forEach(function (raw) {
@@ -503,12 +573,14 @@ review: 2026-10-11
         if (r.prediction) ask.push("Prediction then: " + r.prediction + ".");
         ask.push("Verdict then: " + (r.verdict || "unknown") + ".");
         ask.push("Did it come true? Yes or no.");
+        ask.push("Did anything happen you didn't expect? A few words, or leave it blank.");
         ask.push("");
       });
       show("look-back-out", ask.join("\n"));
       return;
     }
     var record = records[0];
+    var surprise = parseSurprise(surpriseLine());
     var word = one(record.verdict).toLowerCase();
     var doubt = word === "shaky" || word.indexOf("doesn") === 0 || word.indexOf("does not") === 0;
     var line = record.title + ". Verdict then: " + record.verdict + ". ";
@@ -518,9 +590,13 @@ review: 2026-10-11
     else if (came === "yes" && doubt) line += "It came true, and the verdict had doubted it. You were righter than the doubt. ";
     else if (came === "yes") line += "It came true, and the verdict had let it stand. The call and the verdict agreed. ";
     else line += "It did not come true, and the verdict had let it stand. The outcome was harder than the verdict. ";
+    if (came === "no" && surprise.text && surprise.match) line += "This was flagged and you went ahead. ";
+    else if (came === "no" && surprise.text) line += "The world moved in a way the record didn't foresee. ";
     if (fired === "yes" && came === "yes") line += "You marked it true, and the falsifier fired. Those two disagree. ";
     else if (fired === "yes") line += "The falsifier fired. ";
-    if (what) line += "What happened: " + what;
+    if (what) line += "What happened: " + what + " ";
+    if (surprise.text) line += "Surprise: " + surprise.text + ". ";
+    if (surprise.text && surprise.live) line += "Grill the revised plan; the new record will say it replaces this one.";
     var hits = came === "yes" ? 1 : 0;
     var pattern = "1 call back, " + hits + " came true. ";
     var pct = parseInt(record.confidence, 10);

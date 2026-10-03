@@ -282,7 +282,7 @@ const TOOLS = [
         happened: {
           type: "string",
           description:
-            "Optional. What actually happened, including whether each call came true and whether the falsifier fired. Omit it to get the questions first.",
+            "Optional. What actually happened, including whether each call came true, whether the falsifier fired, and an optional surprise line. Omit it to get the questions first.",
         },
       },
       required: ["records"],
