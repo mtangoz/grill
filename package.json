@@ -1,10 +1,28 @@
 {
-  "name": "grill",
+  "name": "grillyour",
   "version": "0.1.1",
   "license": "MIT",
-  "private": true,
   "type": "module",
-  "description": "Grill: an outside AI judge for your decisions, as a Claude plugin.",
+  "description": "Grill: an outside AI judge for your decisions, from a different company than the assistant you think with. An MCP server for any app: npx -y grillyour.",
+  "mcpName": "io.github.mtangoz/grill",
+  "homepage": "https://grillyour.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mtangoz/grill.git"
+  },
+  "bin": {
+    "grillyour": "server/index.mjs"
+  },
+  "files": [
+    "server/index.mjs",
+    "scripts/judge.mjs",
+    "scripts/apiKey.mjs",
+    "scripts/judgeCore.mjs",
+    "scripts/checkCore.mjs",
+    "scripts/reflection.mjs",
+    "docs/PRIVACY.md",
+    "docs/ANY-APP.md"
+  ],
   "engines": {
     "node": ">=20"
   },
