@@ -169,7 +169,7 @@ describe("the extension build", () => {
       env: { ...process.env, GRILL_RELEASE_DATE: "2026-04-02" },
     });
     const staged = join(ROOT, "dist/extension");
-    for (const f of ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "scripts/reflection.mjs", "LICENSE"]) {
+    for (const f of ["manifest.json", "server/index.mjs", "scripts/judge.mjs", "scripts/apiKey.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "scripts/reflection.mjs", "LICENSE"]) {
       assert.ok(existsSync(join(staged, f)), `missing ${f}`);
     }
     const server = readFileSync(join(ROOT, "server/index.mjs"), "utf8");
@@ -185,6 +185,9 @@ describe("the extension build", () => {
       for (const [, rel] of src.matchAll(/from "\.\/([^"]+)"/g)) {
         assert.ok(existsSync(join(staged, "scripts", rel)), `${f} imports ${rel}, which the build does not stage`);
       }
+    }
+    for (const [, rel] of server.matchAll(/from "\.\.\/scripts\/([^"]+)"/g)) {
+      assert.ok(existsSync(join(staged, "scripts", rel)), `the server imports ${rel}, which the build does not stage`);
     }
   });
 });

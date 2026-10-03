@@ -51,7 +51,7 @@ Want it in one step? Use Claude Desktop, above.
 /plugin install grill@grill
 ```
 
-It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTER_API_KEY` works when that is unset.
+It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTER_API_KEY` works when that is unset. Or save the key once for every project on this computer: from a copy of this repository, `node scripts/judge.mjs --set-key` stores it in `~/.config/grill/key`, outside any project's `.env`.
 
 ## What it costs
 

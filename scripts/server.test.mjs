@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,7 +27,7 @@ const KEY = "sk-or-v1-test-key-never-echoed";
 /** A minimal MCP client: send lines, collect replies by id and notifications in order. */
 function connect(env) {
   const child = spawn(process.execPath, [SERVER], {
-    env: { PATH: process.env.PATH, ...env },
+    env: { PATH: process.env.PATH, GRILL_KEY_FILE: join(tmpdir(), "grill-tests-no-key-file", "key"), ...env },
     stdio: ["pipe", "pipe", "pipe"],
   });
   const waiting = new Map();
