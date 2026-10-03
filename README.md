@@ -13,7 +13,7 @@ Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, G
 
 Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes check it and warn you. Who to paste into is in the table below.
 
-### Claude Desktop (Mac or Windows): the one-click judge, 2 minutes
+### Claude Desktop (Mac or Windows): the one-click judge, about 2 minutes with a key, about 10 if you need one
 
 1. **Get a key** for Grill's model router: go to [openrouter.ai/keys](https://openrouter.ai/keys), sign in, click **Create key**, and add $5 of credit. A grill costs about a cent or two.
 2. **Install Grill.** Download **[grill.mcpb](https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb)** and double-click it, or drag it onto the Claude window. Paste your key when Claude asks. There's nothing else to install; Claude Desktop runs it.

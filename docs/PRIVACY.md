@@ -15,7 +15,7 @@ What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md]
 | **The app you paste into**, paste route | The approved write-up | That app's settings. Use its private mode, for example a Temporary Chat in ChatGPT |
 | **Jev (TypeSafe)**, quality check, on by default | The masked write-up and the judge's report | A zero-data-retention endpoint, checked weekly; the check is dropped if any other endpoint answers |
 | **Grill's maintainers** | **Nothing.** Only the choices you share, if you share them. With Pro, also your billing details and your key's usage, as below | There is nowhere for anything else to go |
-| **This website** | An anonymous count of page views, plus whether a decision record was shown or copied, whether a look-back started or finished, and how many records were pasted. No cookie, nothing that identifies you, and never the words of a decision | Vercel Web Analytics, on the website only. The Grill tool never loads it |
+| **This website** | An anonymous count of page views, plus whether a decision record was shown or copied, whether a look-back started or finished, and how many records were pasted. It can also record a click on a download, the paste prompt, or the OpenRouter keys page, with an optional channel tag (`ref`) from a fixed list when the page address includes one. A missing tag is left off. No cookie, nothing that identifies you, and never the words of a decision | Vercel Web Analytics, on the website only. The Grill tool never loads it |
 | **Stripe**, Grill Pro only | Your email, card and billing address | Stripe's own privacy policy. Grill never sees your card. Accounts are not available yet |
 | **Resend**, accounts only | Your email address | The sign-in email is sent through Resend (sees your email address). Accounts are not available yet |
 | **Upstash Redis**, accounts only | Account records | Account records live in an Upstash Redis store. Accounts are not available yet |
@@ -93,7 +93,7 @@ Claude Desktop may keep local logs of tool calls, including the write-up, on you
 
 The questions at the end of a grill, and the decision record, stay in your chat or in notes you keep. Grill does not store them and does not send them to the judge. Looking back means you paste those records again. On the one-click route that paste is read on your machine. On the paste route it stays in the assistant you are already talking to. There is no look-back database. The monthly Count in the weekly review is separate: it needs a decision log you keep, and a single grill does not do it.
 
-On this website, the anonymous visit count can also record that a decision record was shown or copied, that a look-back started or finished, and how many records were pasted. Those events are numbers only. They never include the title, the falsifier, the verdict, or what happened. The Grill tool you install does not send them.
+On this website, the anonymous visit count can also record that a decision record was shown or copied, that a look-back started or finished, and how many records were pasted. Those events are numbers only. They never include the title, the falsifier, the verdict, or what happened. It can also record a click on a download, the paste prompt, or the OpenRouter keys page, plus an optional channel tag (`ref`) from a fixed list (left off when missing or unknown), and never a decision, a title, a URL of your content, an email, or a key. The Grill tool you install does not send them.
 
 ## Helping Grill improve
 
