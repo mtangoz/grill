@@ -16,7 +16,7 @@ function body(values) {
     .join("\n\n");
 }
 
-const rated = (judge, rating, category = "pricing") => ({ event: "rated", category, judge, verdict: "weak", rating, client: "desktop" });
+const rated = (judge, rating, category = "pricing") => ({ event: "rated", category, judge, verdict: "shaky", rating, client: "desktop" });
 const resolved = (verdict, outcome) => ({ event: "resolved", category: "hiring", judge: "openai", verdict, outcome, confidence: "70-89" });
 
 describe("the form and the parser agree", () => {
@@ -47,16 +47,29 @@ describe("parseSignal", () => {
   it("drops a body missing a required field, and ignores optional non-answers", () => {
     const { category, ...noCategory } = rated("openai", "yes");
     assert.equal(parseSignal(body(noCategory)), null);
-    assert.equal(parseSignal(body({ event: "rated", category, judge: "openai", verdict: "holds" })).rating, undefined);
+    assert.equal(parseSignal(body({ event: "rated", category, judge: "openai", verdict: "solid" })).rating, undefined);
+  });
+
+  it("reads an older verdict name as the public one", () => {
+    assert.equal(parseSignal(body({ event: "rated", category: "pricing", judge: "openai", verdict: "holds" })).verdict, "solid");
+    assert.equal(
+      parseSignal(body({ event: "rated", category: "pricing", judge: "openai", verdict: "holds-with-conditions" })).verdict,
+      "solid if",
+    );
+    assert.equal(parseSignal(body({ event: "resolved", category: "hiring", judge: "openai", verdict: "weak", outcome: "no" })).verdict, "shaky");
+    assert.equal(
+      parseSignal(body({ event: "resolved", category: "hiring", judge: "openai", verdict: "refuted", outcome: "yes" })).verdict,
+      "doesn't hold up",
+    );
   });
 });
 
 describe("aggregate and recommend", () => {
   it("computes worth-engaging rates by judge and verdict outcomes", () => {
-    const agg = aggregate([rated("openai", "yes"), rated("openai", "no"), rated("google", "yes"), resolved("weak", "no"), resolved("holds", "yes")]);
+    const agg = aggregate([rated("openai", "yes"), rated("openai", "no"), rated("google", "yes"), resolved("shaky", "no"), resolved("solid", "yes")]);
     assert.equal(agg.counts.rated, 3);
     assert.deepEqual(agg.worthEngaging.byJudge.openai, { yes: 1, n: 2 });
-    assert.deepEqual(agg.verdictOutcomes.weak, { cameTrue: 0, n: 1 });
+    assert.deepEqual(agg.verdictOutcomes.shaky, { cameTrue: 0, n: 1 });
   });
 
   it("stays silent on thin data", () => {
@@ -76,8 +89,8 @@ describe("aggregate and recommend", () => {
 
   it("flags verdicts that don't predict outcomes", () => {
     const signals = [
-      ...Array.from({ length: 10 }, (_, i) => resolved("holds", i < 5 ? "yes" : "no")),
-      ...Array.from({ length: 10 }, (_, i) => resolved("weak", i < 6 ? "yes" : "no")),
+      ...Array.from({ length: 10 }, (_, i) => resolved("solid", i < 5 ? "yes" : "no")),
+      ...Array.from({ length: 10 }, (_, i) => resolved("shaky", i < 6 ? "yes" : "no")),
     ];
     assert.match(recommend(aggregate(signals)).join("\n"), /don't predict outcomes/);
   });

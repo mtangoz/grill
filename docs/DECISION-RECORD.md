@@ -37,7 +37,8 @@ Writers always emit these lines, in this order, inside a fence tagged `grill-rec
 - A block with no `version` line is not a record.
 - Any other version is skipped whole. It is not scored as if it were version 1.
 - Empty `confidence` is allowed. Empty `prediction` is allowed, and a missing `prediction` line is the same as empty. `date` and `title` are required.
-- Missing `goal`, `guardrails` and `source_app` lines are the same as absent. They are not required. A record without them reads as the record above.
+- Missing `goal`, `guardrails`, `decided`, `source_app`, `supersedes` and `changed` lines are the same as absent. They are not required. A record without them reads as the record above.
+- A record never carries a `superseded-by` line. When two records are pasted and one `supersedes` line names the other's date and title, the look-back works out that the later call replaced the earlier one. A record pasted on its own still names the call it replaced, from its own `supersedes` line.
 - The look-back reply is a different block. It uses `title`, `came_true`, `falsifier_fired` and `happened`, inside an ordinary text fence. When the record has a goal or guardrails, it also uses `goal_met` (yes, no or partly) and `guardrails_held` (yes or no). That reply is not a decision record.
 
 ## Optional lines
@@ -51,8 +52,11 @@ A later Grill has to keep reading records people already copied, and an older Gr
 | goal | What you are trying to achieve, in your words. `not stated` when you declined. Omit the line when there is nothing to write. Never invent a goal. |
 | guardrails | What this must not cost or break, in your words. Omit the line when you named none. A trade-off you name and accept is not a guardrail you failed. |
 | source_app | The assistant that wrote the record, such as `claude` or `chatgpt`. You or the assistant add it. The Grill tool does not. |
+| decided | What you chose, in your words, including any change you made because of a challenge. Omit the line until you have chosen. Never invent it. |
+| supersedes | The earlier record this one replaces, as its date and title: `2026-01-10 Hire contractor`. Add it only when you say the choice changed. Omit it on a re-run, when nothing changed. Never invent it. There is no `superseded-by` line. |
+| changed | Why the choice changed, in the shape `evidence — your few words`, `goals — your few words`, `context — your few words`, or `reweighed — your few words`. `reweighed` means the same facts weighed differently. Add it only with `supersedes`, and only in your words. Never invent it. |
 
-Look-back uses a goal when the line is present and is not `not stated`. It asks "Did you reach the goal? Yes, no or partly." A guardrails line asks "Did your guardrails hold? Yes or no." The answers use `goal_met` and `guardrails_held`. When the call came true and the goal was missed, the reading says the prediction was right about the wrong target. When a guardrail did not hold, it says "A guardrail broke." The pattern line counts goals met and guardrails held.
+Look-back uses a goal when the line is present and is not `not stated`. It asks "Did you reach the goal? Yes, no or partly." A guardrails line asks "Did your guardrails hold? Yes or no." The answers use `goal_met` and `guardrails_held`. When the call came true and the goal was missed, the reading says the prediction was right about the wrong target. When a guardrail did not hold, it says "A guardrail broke." The pattern line counts goals met and guardrails held. A `decided` line is read back as what you chose. When the call is scored, the reading says whether that choice came true. The line is omitted when you have not chosen. It is never invented. A `supersedes` line is read back as the call this one replaced. If that earlier record is not in the paste, the look-back says once: "If this replaced an earlier record, paste that too to see both." A `changed` line is read back as what changed. When it says `reweighed`, the reading is: "Nothing new came in; you weighed it differently."
 
 ## What can be added later, without changing this block
 

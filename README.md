@@ -1,6 +1,6 @@
 # 🔥 Grill
 
-**A second opinion on your decisions, from a different AI company than the one you think with.**
+**Hear the strongest case against your plan, then decide for yourself.**
 
 **Setup guide:** [grillyour.ai](https://grillyour.ai)
 

@@ -145,7 +145,7 @@
   </div>
 
   <h1>Get a second opinion before you decide.</h1>
-  <p class="lede">The AI you chat with tends to agree with you. Grill asks a different AI to find the weak spots in your plan, then gives you one quick way to check each one. Before you commit, not after.</p>
+  <p class="lede">Hear the strongest case against your plan, then decide for yourself.</p>
   <p class="cta"><a class="button" href="#setup">Get started</a><span>Free, with the AI you already use</span></p>
 
   <h2 id="setup">Get started</h2>
@@ -409,7 +409,7 @@ review: 2026-10-11
       var line = raw.trim();
       if (!line || line === "---") return;
       if (line.indexOf("```") === 0) { finish(); return; }
-      var m = line.match(/^(version|date|title|prediction|verdict|falsifier|confidence|review)\s*:\s*(.*)$/i);
+      var m = line.match(/^(version|date|title|prediction|verdict|falsifier|confidence|review|decided)\s*:\s*(.*)$/i);
       if (!m) return;
       var key = m[1].toLowerCase();
       if (key === "version") {
@@ -502,6 +502,7 @@ review: 2026-10-11
         ask.push(r.title);
         if (r.prediction) ask.push("Prediction then: " + r.prediction + ".");
         ask.push("Verdict then: " + (r.verdict || "unknown") + ".");
+        if (r.decided) ask.push("You chose: \"" + r.decided + "\".");
         ask.push("Did it come true? Yes or no.");
         ask.push("");
       });
@@ -513,6 +514,9 @@ review: 2026-10-11
     var doubt = word === "shaky" || word.indexOf("doesn") === 0 || word.indexOf("does not") === 0;
     var line = record.title + ". Verdict then: " + record.verdict + ". ";
     if (record.prediction) line += "Prediction then: " + record.prediction + ". ";
+    if (record.decided && came === "yes") line += "You chose \"" + record.decided + "\". It came true. ";
+    else if (record.decided && came === "no") line += "You chose \"" + record.decided + "\". It did not come true. ";
+    else if (record.decided) line += "You chose: \"" + record.decided + "\". ";
     if (came === "not yet") line += "Not back yet, so this call is not scored. ";
     else if (came === "no" && doubt) line += "It did not come true, and the verdict had doubted it. The doubt matched what happened. ";
     else if (came === "yes" && doubt) line += "It came true, and the verdict had doubted it. You were righter than the doubt. ";

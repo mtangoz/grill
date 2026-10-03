@@ -15,7 +15,7 @@ export const RECORD_FENCE = "grill-record";
 export const RECORD_FIELDS = ["version", "date", "title", "prediction", "verdict", "falsifier", "confidence", "review"];
 export const RECORD_KEYS = ["date", "title", "prediction", "verdict", "falsifier", "confidence", "review"];
 /** Written after `review`, and only when the line has a value. Absent lines do not change version 1. */
-export const OPTIONAL_RECORD_FIELDS = ["goal", "guardrails", "source_app"];
+export const OPTIONAL_RECORD_FIELDS = ["goal", "guardrails", "source_app", "decided", "supersedes", "changed"];
 
 export const BEFORE_YOU_DECIDE_QUESTIONS = [
   "What do you expect to happen, and by when? Write the prediction you will stand behind.",
@@ -218,6 +218,9 @@ export function recordBlock(fields) {
     goal: oneLine(fields.goal ?? ""),
     guardrails: oneLine(fields.guardrails ?? ""),
     source_app: sourceAppLabel(fields.source_app),
+    decided: oneLine(fields.decided ?? ""),
+    supersedes: oneLine(fields.supersedes ?? ""),
+    changed: oneLine(fields.changed ?? ""),
   };
   for (const key of OPTIONAL_RECORD_FIELDS) {
     if (optional[key]) lines.push(`${key}: ${optional[key]}`);
@@ -247,7 +250,7 @@ export function reflectionFooter({
     "",
     questions,
     "",
-    "The prediction line is what you expect, and by when. Fill it in if it is empty. The falsifier line is the judge's sharpest check. The confidence line is what you said before the verdict, when you said one. Change the confidence if the verdict moved you, and keep the earlier number beside it. A change is a new call. A goal or guardrail line is copied from what you already said. Leave the line off if you did not state one. Do not invent one.",
+    "The prediction line is what you expect, and by when. Fill it in if it is empty. The falsifier line is the judge's sharpest check. The confidence line is what you said before the verdict, when you said one. Change the confidence if the verdict moved you, and keep the earlier number beside it. A change is a new call. A goal or guardrail line is copied from what you already said. Leave the line off if you did not state one. Do not invent one. A decided line is what you chose, in your own words, including any change you made because of a challenge. Add it only after you say it. Leave it off until then. Do not invent one. If this choice replaced an earlier record, add supersedes as that record's date and title, and changed as evidence, goals, context or reweighed, then your few words. A re-grill where nothing changed is a re-run: leave those lines off. Do not invent them. Do not write a superseded-by line.",
     "",
     recordBlock({
       date,
@@ -305,7 +308,7 @@ function takeRecord(current) {
   return record;
 }
 
-const RECORD_LINE = /^(version|date|title|prediction|verdict|falsifier|confidence|review|goal|guardrails|source_app)\s*:\s*(.*)$/i;
+const RECORD_LINE = /^(version|date|title|prediction|verdict|falsifier|confidence|review|goal|guardrails|source_app|decided|supersedes|changed)\s*:\s*(.*)$/i;
 
 /**
  * Read version 1 records out of a paste. Field order does not matter. Any other version is
@@ -438,7 +441,53 @@ function matchOutcome(record, outcomes) {
   return null;
 }
 
-function questionsFor(records) {
+function namedEarlierCall(record) {
+  const text = oneLine(record.supersedes);
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})\s+(.+)$/);
+  return match ? { date: match[1], title: match[2] } : null;
+}
+
+function earlierInPaste(record, records) {
+  const named = namedEarlierCall(record);
+  if (!named) return null;
+  return (
+    records.find(
+      (other) =>
+        other !== record &&
+        oneLine(other.date) === named.date &&
+        oneLine(other.title).toLowerCase() === named.title.toLowerCase(),
+    ) || null
+  );
+}
+
+/** What a revision line says. Empty when the record has neither line. No superseded-by field is ever written. */
+function revisionLines(record, records) {
+  const lines = [];
+  const named = namedEarlierCall(record);
+  if (named) {
+    const here = earlierInPaste(record, records);
+    lines.push(
+      here
+        ? `This replaced the call of ${named.date}, "${named.title}". That earlier call is in this paste.`
+        : `This replaced the call of ${named.date}, "${named.title}". Its outcome isn't scored here.`,
+    );
+  } else if (oneLine(record.supersedes)) {
+    lines.push(`This replaced an earlier call: ${oneLine(record.supersedes)}.`);
+  }
+  const changed = oneLine(record.changed);
+  if (changed) {
+    lines.push(`What changed: ${changed}.`);
+    if (/^reweighed\b/i.test(changed)) lines.push("Nothing new came in; you weighed it differently.");
+  }
+  return lines;
+}
+
+function pasteEarlierNote(records) {
+  const missing = records.some((record) => oneLine(record.supersedes) && !earlierInPaste(record, records));
+  return missing ? "If this replaced an earlier record, paste that too to see both." : "";
+}
+
+function questionsFor(records, all = records) {
   const lines = [];
   for (const record of records) {
     const confidence = record.confidence ? ` Confidence then: ${record.confidence}.` : " Confidence was not written down.";
@@ -455,6 +504,9 @@ function questionsFor(records) {
     );
     if (goal) lines.push(`Goal then: ${goal}.`);
     if (guardrails) lines.push(`Guardrails then: ${guardrails}.`);
+    const decided = statedValue(record.decided);
+    if (decided) lines.push(`You chose: "${decided}".`);
+    lines.push(...revisionLines(record, all));
     lines.push("- Did it come true? Yes or no.", "- Did the thing that would prove you wrong happen? Yes or no.");
     if (goal) lines.push("- Did you reach the goal? Yes, no or partly.");
     if (guardrails) lines.push("- Did your guardrails hold? Yes or no.");
@@ -473,20 +525,28 @@ function questionsFor(records) {
 }
 
 function askWhatHappened(records) {
-  return [
+  const lines = [
     "## Look back",
     "",
     "Nothing is stored. For each decision, say what actually happened. Then paste the answers the same way.",
     "",
     questionsFor(records),
-  ].join("\n");
+  ];
+  const note = pasteEarlierNote(records);
+  if (note) lines.push(note, "");
+  return lines.join("\n");
 }
 
-function callReading(record, outcome) {
+function callReading(record, outcome, records) {
   const verdict = plainVerdict(record.verdict);
   const came = outcome.cameTrue;
   const parts = [`**${record.title}.** Verdict then: ${verdict}.`];
   if (oneLine(record.prediction)) parts.push(`Prediction then: ${record.prediction}.`);
+  const decided = statedValue(record.decided);
+  if (decided && came === "yes") parts.push(`You chose "${decided}". It came true.`);
+  else if (decided && came === "no") parts.push(`You chose "${decided}". It did not come true.`);
+  else if (decided) parts.push(`You chose: "${decided}".`);
+  for (const line of revisionLines(record, records)) parts.push(line);
   if (came === "not yet" || !came) {
     parts.push(outcome.happened ? `Not scored yet. ${outcome.happened}` : "Not back yet, so this call is not scored.");
     return parts.join(" ");
@@ -633,8 +693,10 @@ export function lookBack({ records = "", happened = "" } = {}) {
 
   const lines = ["## Look back", "", "Nothing is stored. This reading stays in the chat.", ""];
   if (trimmed.length > parsed.length) lines.push("Only the first 30 records were read.", "");
-  for (const item of scored) lines.push(callReading(item.record, item), "");
+  for (const item of scored) lines.push(callReading(item.record, item, parsed), "");
   lines.push("## Pattern", "", patternReading(scored), "");
-  if (pending.length) lines.push("Still to answer:", "", questionsFor(pending));
+  const note = pasteEarlierNote(parsed);
+  if (note) lines.push(note, "");
+  if (pending.length) lines.push("Still to answer:", "", questionsFor(pending, parsed));
   return lines.join("\n");
 }

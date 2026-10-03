@@ -74,6 +74,12 @@ describe("site/page.html", () => {
     ]);
   });
 
+  it("leads with the choice staying with the person", () => {
+    assert.match(page, /<p class="lede">Hear the strongest case against your plan, then decide for yourself\.<\/p>/);
+    const line3 = readFileSync(join(ROOT, "README.md"), "utf8").split("\n")[2];
+    assert.equal(line3, "**Hear the strongest case against your plan, then decide for yourself.**");
+  });
+
   it("says Desktop and Claude Code enforce a different company, and the paste routes warn", () => {
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     const why = readFileSync(join(ROOT, "docs/WHY.md"), "utf8");
