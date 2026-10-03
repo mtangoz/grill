@@ -4,7 +4,9 @@ name: release
 # vX.Y.Z tag. It publishes:
 # - grill.mcpb: the Claude Desktop extension (double-click to install);
 # - grill-smithery.mcpb: the same extension with tool input schemas, for the Smithery registry;
-# - grill-skill.zip and weekly-review-skill.zip: for claude.ai, Customize → Skills → upload.
+# - grill-skill.zip and weekly-review-skill.zip: for claude.ai, Customize → Skills → upload;
+# - the npm package `grillyour`, for `npx -y grillyour` in Cursor, VS Code, Codex and other MCP
+#   apps (docs/ANY-APP.md). Only when the NPM_TOKEN secret is set; without it this step is skipped.
 on:
   push:
     tags: ["v*"]
@@ -25,6 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org
       - name: Tests
         run: node --test scripts/*.test.mjs
       - name: Build the Desktop extension
@@ -67,3 +70,16 @@ jobs:
           gh release create "$TAG" --draft --target "$GITHUB_SHA" dist/grill.mcpb dist/grill-smithery.mcpb dist/grill-skill.zip dist/weekly-review-skill.zip dist/SHA256SUMS \
             --title "Grill $TAG" --notes "Install steps: https://github.com/$GITHUB_REPOSITORY#set-up. Verify a download: gh attestation verify <file> --repo $GITHUB_REPOSITORY"
           gh release edit "$TAG" --draft=false
+      - name: Publish to npm
+        # After the GitHub release, so a registry hiccup can't hold the extension back. Provenance
+        # links the package to this workflow run, the same as the release attestation.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        if: ${{ env.NODE_AUTH_TOKEN != '' }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if npm view "grillyour@$VERSION" version >/dev/null 2>&1; then
+            echo "grillyour@$VERSION is already on npm."
+          else
+            npm publish --provenance --access public
+          fi

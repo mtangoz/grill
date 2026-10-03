@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -101,7 +101,7 @@ describe("the MCP handshake", () => {
     assert.deepEqual(names, ["grill", "grill_result", "grill_look_back"]);
     const grill = res.result.tools[0];
     assert.deepEqual(grill.inputSchema.required, ["subject"]);
-    assert.match(grill.description, /different company than Claude/);
+    assert.match(grill.description, /different company than the assistant that wrote it \(Claude, unless set otherwise\)/);
     await c.close();
   });
 
@@ -533,5 +533,100 @@ describe("the Grill news line", () => {
     assert.match(known.result.instructions, /within 7 days of a release or on the first 3 days of a month/);
     assert.match(known.result.instructions, /Don't ask about it or repeat it/);
     await c.close();
+  });
+});
+
+describe("GRILL_AUTHOR: a host that is not Claude", () => {
+  const subject = { subject: "We will raise prices 20% in Q4." };
+
+  it("excludes the host's company when the call leaves author empty, and a call's own author still wins", async () => {
+    const fake = await startFakeOpenRouter();
+    // The stand-in answers as OpenAI, so the host here is Gemini CLI.
+    const gemini = await initialized({ GRILL_API_KEY: KEY, GRILL_AUTHOR: "Google", GRILL_CHECK: "false", ...fake.env });
+    const res = await gemini.request("tools/call", { name: "grill", arguments: subject });
+    assert.equal(res.result.isError, false, textOf(res));
+    const excluded = fake.seen.chat[0].body.plugins[0].excluded_models;
+    assert.ok(excluded.includes("google/*"), "the host's company is excluded");
+    assert.ok(!excluded.includes("anthropic/*"), "Claude can judge work Claude did not write");
+    await gemini.close();
+
+    const told = await initialized({ GRILL_API_KEY: KEY, GRILL_AUTHOR: "google", GRILL_CHECK: "false", ...fake.env });
+    await told.request("tools/call", { name: "grill", arguments: { ...subject, author: "xai" } });
+    const last = fake.seen.chat.at(-1).body.plugins[0].excluded_models;
+    assert.ok(last.includes("x-ai/*") || last.includes("xai/*"), last.join(","));
+    assert.ok(!last.includes("google/*"), "the call's own author replaces GRILL_AUTHOR");
+    await told.close();
+    // And a host that declares the company that answers gets no verdict at all.
+    const codex = await initialized({ GRILL_API_KEY: KEY, GRILL_AUTHOR: "openai", GRILL_CHECK: "false", ...fake.env });
+    const refused = await codex.request("tools/call", { name: "grill", arguments: subject });
+    assert.equal(refused.result.isError, true);
+    assert.match(textOf(refused), /correlated verdict/);
+    await codex.close();
+    await fake.close();
+  });
+
+  it("refuses a pinned judge from the host's own company", async () => {
+    const c = await initialized({ GRILL_API_KEY: KEY, GRILL_AUTHOR: "openai", JUDGE_MODEL: "openai/gpt-5.6-sol", JUDGE_FIXTURE: USABLE });
+    const res = await c.request("tools/call", { name: "grill", arguments: subject });
+    assert.equal(res.result.isError, true);
+    assert.match(textOf(res), /same company/);
+    await c.close();
+  });
+
+  it("ignores a value that is not a family name, or an unfilled placeholder", async () => {
+    const fake = await startFakeOpenRouter();
+    for (const value of ["${user_config.author}", "open ai!", ""]) {
+      const c = await initialized({ GRILL_API_KEY: KEY, GRILL_AUTHOR: value, GRILL_CHECK: "false", ...fake.env });
+      await c.request("tools/call", { name: "grill", arguments: subject });
+      assert.ok(fake.seen.chat.at(-1).body.plugins[0].excluded_models.includes("anthropic/*"), `"${value}" falls back to Anthropic`);
+      await c.close();
+    }
+    await fake.close();
+  });
+});
+
+describe("the server as a command (npx -y grillyour …)", () => {
+  const run = (args, env = {}, stdin) =>
+    new Promise((resolve) => {
+      const child = spawn(process.execPath, [SERVER, ...args], {
+        env: { PATH: process.env.PATH, GRILL_KEY_FILE: join(tmpdir(), "grill-tests-no-key-file", "key"), ...env },
+        stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+      });
+      let out = "";
+      let err = "";
+      child.stdout.on("data", (d) => (out += d));
+      child.stderr.on("data", (d) => (err += d));
+      child.on("close", (code) => resolve({ code, out, err }));
+      if (stdin !== undefined) child.stdin.end(stdin);
+    });
+
+  it("--set-key saves stdin to the key file, --key-status finds it, and neither prints the key", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "grill-srv-key-")), "key");
+    const set = await run(["--set-key"], { GRILL_KEY_FILE: file }, `${KEY}\n`);
+    assert.equal(set.code, 0, set.err);
+    assert.equal(readFileSync(file, "utf8"), `${KEY}\n`);
+    const status = await run(["--key-status"], { GRILL_KEY_FILE: file });
+    assert.match(status.out, /Key found: .*\(…hoed\)/);
+    assert.ok(!(set.out + status.out).includes(KEY));
+  });
+
+  it("then serves grills off that file with no key in the MCP config", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "grill-srv-key-")), "key");
+    await run(["--set-key"], { GRILL_KEY_FILE: file }, `${KEY}\n`);
+    const fake = await startFakeOpenRouter();
+    const c = await initialized({ GRILL_KEY_FILE: file, GRILL_CHECK: "false", ...fake.env });
+    const res = await c.request("tools/call", { name: "grill", arguments: { subject: "We will raise prices 20% in Q4." } });
+    assert.equal(res.result.isError, false, textOf(res));
+    assert.equal(fake.seen.chat[0].headers.authorization, `Bearer ${KEY}`);
+    await c.close();
+    await fake.close();
+  });
+
+  it("--set-key with nothing piped exits 1; an unknown flag exits 1 with the help", async () => {
+    assert.equal((await run(["--set-key"], {}, "")).code, 1);
+    const bad = await run(["--nope"]);
+    assert.equal(bad.code, 1);
+    assert.match(bad.err, /--set-key/);
+    assert.match((await run(["--version"])).out, /^\d+\.\d+\.\d+/);
   });
 });

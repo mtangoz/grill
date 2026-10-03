@@ -100,7 +100,11 @@ export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const MAGIC_TTL_SECONDS = 20 * 60;
 const LINK_COOLDOWN_MS = 20 * 1000;
 
-/** Assistants someone might think with, and the company behind each. Copilot is its own case. */
+/**
+ * Assistants someone might think with, and the company behind each. Copilot and Cursor run models
+ * from several companies, so they are their own case (MULTI_MODEL). Route "mcp" is an app that
+ * runs Grill's MCP server itself with `npx -y grillyour`, using the managed key from the key file.
+ */
 export const ASSISTANTS = Object.freeze([
   { id: "claude-desktop", label: "Claude Desktop", company: "anthropic", route: "extension" },
   { id: "claude-web", label: "claude.ai", company: "anthropic", route: "skill" },
@@ -110,6 +114,10 @@ export const ASSISTANTS = Object.freeze([
   { id: "gemini", label: "Gemini", company: "google", route: "paste" },
   { id: "grok", label: "Grok", company: "xai", route: "paste" },
   { id: "muse", label: "Muse", company: "meta", route: "paste" },
+  { id: "cursor", label: "Cursor", company: "cursor", route: "mcp" },
+  { id: "vscode", label: "VS Code with Copilot", company: "copilot", route: "mcp" },
+  { id: "codex", label: "Codex", company: "openai", route: "mcp" },
+  { id: "gemini-cli", label: "Gemini CLI", company: "google", route: "mcp" },
 ]);
 
 /** Judges a Pro setup can pin. The slug is what Grill's JUDGE_MODEL setting receives. */
@@ -121,7 +129,11 @@ export const JUDGES = Object.freeze([
   { id: "anthropic/claude-sonnet-4.5", company: "anthropic", label: "Anthropic Claude" },
 ]);
 
-const COPILOT_BLOCKED = new Set(["openai", "anthropic", "xai"]);
+/** Hosts that can run several companies' models, and the judge companies each one rules out. */
+const MULTI_MODEL = Object.freeze({
+  copilot: new Set(["openai", "anthropic", "xai"]),
+  cursor: new Set(["openai", "anthropic", "xai", "google"]),
+});
 const PASTE_NAME = {
   openai: "ChatGPT",
   google: "Gemini",
@@ -147,7 +159,7 @@ export function judgeAllowed(assistantId, judgeId) {
   const assistant = assistantById(assistantId);
   const judge = judgeById(judgeId);
   if (!assistant || !judge) return false;
-  if (assistant.company === "copilot") return !COPILOT_BLOCKED.has(judge.company);
+  if (MULTI_MODEL[assistant.company]) return !MULTI_MODEL[assistant.company].has(judge.company);
   return judge.company !== assistant.company;
 }
 
@@ -750,7 +762,7 @@ export function renderSetupConfig({ assistant, judge, key }) {
       ``,
       `Tell ${a.label}: when you write the judge prompt, the judge is ${where}.`,
       ``,
-      `The managed key is for Claude Desktop or Claude Code, if you want the one-click check:`,
+      `The managed key is for Claude Desktop, Claude Code, Cursor, VS Code, Codex or Gemini CLI, if you want the one-click check:`,
     );
   }
   if (a.route === "extension" || a.route === "plugin" || a.route === "paste" || a.route === "skill") {
@@ -775,6 +787,7 @@ export function renderSetupConfig({ assistant, judge, key }) {
       `When it asks, paste the model router key and the judge model above.`,
     );
   }
+  if (a.route === "mcp") lines.push(...mcpSetup(a, j, keyLine));
   if (a.route === "skill") {
     lines.push(
       ``,
@@ -783,6 +796,37 @@ export function renderSetupConfig({ assistant, judge, key }) {
     );
   }
   return lines.join("\n");
+}
+
+/** The npx setup for an app that runs MCP servers. The key goes in the key file, never the config. */
+function mcpSetup(a, j, keyLine) {
+  const env = { JUDGE_MODEL: j.id };
+  if (!MULTI_MODEL[a.company]) env.GRILL_AUTHOR = a.company; // a one-company host is always the author
+  const json = (wrapper) => JSON.stringify(wrapper, null, 2);
+  const server = { command: "npx", args: ["-y", "grillyour"], env };
+  const configs = {
+    cursor: ["In Cursor: Settings, then MCP, then Add new MCP server. Or put this in ~/.cursor/mcp.json:", json({ mcpServers: { grill: server } })],
+    vscode: ["In VS Code: run \"MCP: Open User Configuration\" and add:", json({ servers: { grill: { type: "stdio", ...server } } })],
+    codex: [
+      "In Codex: add this to ~/.codex/config.toml:",
+      [`[mcp_servers.grill]`, `command = "npx"`, `args = ["-y", "grillyour"]`, `env = { ${Object.entries(env).map(([k, v]) => `${k} = "${v}"`).join(", ")} }`].join("\n"),
+    ],
+    "gemini-cli": ["In Gemini CLI: add this to ~/.gemini/settings.json:", json({ mcpServers: { grill: server } })],
+  };
+  const [where, config] = configs[a.id];
+  return [
+    `1. Save the key on this computer, once. You need Node.js 20 or later. In a terminal, run:`,
+    `   npx -y grillyour --set-key`,
+    `   Paste this key, press Enter, then Ctrl-D (on Windows: Ctrl-Z, then Enter):`,
+    `   ${keyLine}`,
+    `   The key stays in a file only you can read. It is not in the config below.`,
+    ``,
+    `2. ${where}`,
+    config,
+    ``,
+    `3. Restart ${a.label}, then ask: "Grill this: <your decision>".`,
+    `Check the key any time: npx -y grillyour --key-status`,
+  ];
 }
 
 function setupFields(account, { error = "", key = "", assistant = "", judge = "" } = {}) {
@@ -795,7 +839,8 @@ function setupFields(account, { error = "", key = "", assistant = "", judge = ""
         : defaultJudge(chosenAssistant);
   const assistantRadios = ASSISTANTS.map((a) => {
     const checked = a.id === chosenAssistant ? " checked" : "";
-    return `<label class="choice"><input type="radio" name="assistant" value="${esc(a.id)}" data-company="${esc(a.company)}"${checked}> ${esc(a.label)}</label>`;
+    const blocks = [...(MULTI_MODEL[a.company] ?? [a.company])].join(",");
+    return `<label class="choice"><input type="radio" name="assistant" value="${esc(a.id)}" data-company="${esc(a.company)}" data-blocks="${esc(blocks)}"${checked}> ${esc(a.label)}</label>`;
   }).join("");
   const judgeRadios = JUDGES.map((j) => {
     const checked = j.id === chosenJudge ? " checked" : "";
@@ -821,20 +866,19 @@ function setupFields(account, { error = "", key = "", assistant = "", judge = ""
     for (var i = 0; i < list.length; i++) if (list[i].checked) return list[i];
     return null;
   }
-  function blocked(assistantCompany, judgeCompany) {
-    if (assistantCompany === "copilot") return judgeCompany === "openai" || judgeCompany === "anthropic" || judgeCompany === "xai";
-    return assistantCompany === judgeCompany;
+  function blocked(assistant, judgeCompany) {
+    return assistant.getAttribute("data-blocks").split(",").indexOf(judgeCompany) !== -1;
   }
   function align() {
     var assistant = picked(assistants);
     var current = picked(judges);
     if (!assistant || !current) return;
-    if (!blocked(assistant.getAttribute("data-company"), current.getAttribute("data-company"))) {
+    if (!blocked(assistant, current.getAttribute("data-company"))) {
       note.textContent = "";
       return;
     }
     for (var i = 0; i < judges.length; i++) {
-      if (blocked(assistant.getAttribute("data-company"), judges[i].getAttribute("data-company"))) continue;
+      if (blocked(assistant, judges[i].getAttribute("data-company"))) continue;
       judges[i].checked = true;
       note.textContent = "That assistant can't be judged by the same company, so this judge is selected instead.";
       return;
@@ -850,7 +894,7 @@ function setupForm(account, env, opts = {}) {
     "Set up Grill Pro",
     `${testBanner(env)}
 <h1>Set up the assistant you think with</h1>
-<p>Pick who you think with, then a judge from a different company. Copilot can run OpenAI, Anthropic or xAI, so Gemini or DeepSeek is the safe judge for it. We'll fill in a config you can copy. The key is only included if you paste it here. We don't save the key.</p>
+<p>Pick who you think with, then a judge from a different company. Copilot can run OpenAI, Anthropic or xAI, so Gemini or DeepSeek is the safe judge for it. Cursor can also run Gemini, so DeepSeek is its safe judge. We'll fill in a config you can copy. The key is only included if you paste it here. We don't save the key.</p>
 ${setupFields(account, opts)}
 <p class="small"><a href="/pro">Back to your account</a></p>`,
   );

@@ -44,6 +44,14 @@ Want it in one step? Use Claude Desktop, above.
 | Grok or GrokBot | Claude, ChatGPT or Gemini |
 | Muse | Claude, ChatGPT or Gemini |
 
+### Cursor, VS Code, Codex, Gemini CLI, or any app that runs MCP servers
+
+```bash
+npx -y grillyour --set-key      # once: paste your key, Enter, then Ctrl-D
+```
+
+Then add a server named `grill` that runs `npx -y grillyour`. The config holds no key. Each app's config, and one-click installs for Cursor and VS Code, are in [docs/ANY-APP.md](docs/ANY-APP.md). A Grill Pro key works here too.
+
 ### Claude Code
 
 ```
@@ -51,7 +59,7 @@ Want it in one step? Use Claude Desktop, above.
 /plugin install grill@grill
 ```
 
-It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTER_API_KEY` works when that is unset. Or save the key once for every project on this computer: from a copy of this repository, `node scripts/judge.mjs --set-key` stores it in `~/.config/grill/key`, outside any project's `.env`.
+It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTER_API_KEY` works when that is unset. Or save the key once for every app on this computer with `npx -y grillyour --set-key`. It goes in `~/.config/grill/key`, outside any project's `.env`.
 
 ## What it costs
 

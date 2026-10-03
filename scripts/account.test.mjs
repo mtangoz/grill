@@ -86,6 +86,36 @@ describe("the judge has to be a different company", () => {
     assert.equal(judgeAllowed("gemini", "openai/gpt-5.6-sol"), true);
   });
 
+  it("covers the MCP apps: Cursor runs Gemini too, VS Code is Copilot, Codex is OpenAI, Gemini CLI is Google", () => {
+    for (const id of ["cursor", "vscode", "codex", "gemini-cli"]) assert.equal(judgeAllowed(id, defaultJudge(id)), true, id);
+    assert.equal(defaultJudge("cursor"), "deepseek/deepseek-chat");
+    assert.equal(judgeAllowed("cursor", "google/gemini-2.5-pro"), false);
+    assert.equal(judgeAllowed("vscode", "openai/gpt-5.6-sol"), false);
+    assert.equal(judgeAllowed("vscode", "google/gemini-2.5-pro"), true);
+    assert.equal(judgeAllowed("codex", "openai/gpt-5.6-sol"), false);
+    assert.equal(judgeAllowed("codex", "anthropic/claude-sonnet-4.5"), true, "Claude may judge work Claude did not write");
+    assert.equal(judgeAllowed("gemini-cli", "google/gemini-2.5-pro"), false);
+  });
+
+  it("gives an MCP app a key-free config: the key goes to --set-key, never into the file", () => {
+    const key = "sk-or-v1-test-config-only";
+    const codex = renderSetupConfig({ assistant: "codex", judge: "anthropic/claude-sonnet-4.5", key });
+    assert.match(codex, /npx -y grillyour --set-key/);
+    assert.match(codex, /\[mcp_servers\.grill\]/);
+    assert.match(codex, /GRILL_AUTHOR = "openai"/);
+    assert.match(codex, /JUDGE_MODEL = "anthropic\/claude-sonnet-4\.5"/);
+    const [before, after] = codex.split("2. ");
+    assert.ok(before.includes(key), "the key is shown once, for --set-key");
+    assert.ok(!after.includes(key), "the MCP config itself carries no key");
+
+    const cursor = renderSetupConfig({ assistant: "cursor", judge: "deepseek/deepseek-chat", key });
+    const config = JSON.parse(cursor.slice(cursor.indexOf("{"), cursor.lastIndexOf("}") + 1));
+    assert.deepEqual(config.mcpServers.grill, { command: "npx", args: ["-y", "grillyour"], env: { JUDGE_MODEL: "deepseek/deepseek-chat" } });
+    const vscode = renderSetupConfig({ assistant: "vscode", judge: "google/gemini-2.5-pro", key });
+    assert.equal(JSON.parse(vscode.slice(vscode.indexOf("{"), vscode.lastIndexOf("}") + 1)).servers.grill.type, "stdio");
+    assert.match(renderSetupConfig({ assistant: "gemini-cli", judge: "openai/gpt-5.6-sol", key }), /"GRILL_AUTHOR": "google"/);
+  });
+
   it("puts the managed key in the one-click config, and keeps it out of a paste instruction", () => {
     const key = "sk-or-v1-test-config-only";
     const desktop = renderSetupConfig({ assistant: "claude-desktop", judge: "google/gemini-2.5-pro", key });
