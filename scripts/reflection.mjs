@@ -379,6 +379,39 @@ function statedValue(value) {
   return text;
 }
 
+/**
+ * A surprise is a few words, plus marks the user wrote. A mark is its own clause after `|`.
+ * The words are never compared with a challenge or the falsifier.
+ * `still live` means the decision is still open and the surprise bears on it.
+ */
+function parseSurprise(raw) {
+  const full = oneLine(raw);
+  if (!full) return { text: "", match: "", live: false };
+  const words = [];
+  let match = "";
+  let live = false;
+  for (const part of full.split(/\s*\|\s*/)) {
+    const piece = oneLine(part).replace(/\.$/, "");
+    const challenge = piece.match(/^matches challenge ([1-9]\d*)$/i);
+    if (challenge) {
+      if (!match) match = `challenge ${challenge[1]}`;
+      continue;
+    }
+    if (/^matches(?: the)? falsifier$/i.test(piece)) {
+      if (!match) match = "falsifier";
+      continue;
+    }
+    if (/^still live$/i.test(piece)) {
+      live = true;
+      continue;
+    }
+    if (piece) words.push(piece);
+  }
+  const text = words.join(" | ").trim();
+  if (!text) return { text: "", match: "", live: false };
+  return { text, match, live };
+}
+
 function takeOutcome(current) {
   if (!current) return null;
   const came = yn(current.came_true);
@@ -387,8 +420,19 @@ function takeOutcome(current) {
   const title = oneLine(current.title ?? "");
   const goalMet = goalAnswer(current.goal_met);
   const guardrailsHeld = yn(current.guardrails_held);
-  if (!title && !came && !fired && !happened && !goalMet && !guardrailsHeld) return null;
-  return { title, cameTrue: came, falsifierFired: fired, happened, goalMet, guardrailsHeld };
+  const surprise = parseSurprise(current.surprise);
+  if (!title && !came && !fired && !happened && !goalMet && !guardrailsHeld && !surprise.text) return null;
+  return {
+    title,
+    cameTrue: came,
+    falsifierFired: fired,
+    happened,
+    goalMet,
+    guardrailsHeld,
+    surprise: surprise.text,
+    surpriseMatch: surprise.match,
+    surpriseLive: surprise.live,
+  };
 }
 
 const OUTCOME_KEYS = {
@@ -402,6 +446,7 @@ const OUTCOME_KEYS = {
   falsifier: "falsifier_fired",
   happened: "happened",
   "what actually happened": "happened",
+  surprise: "surprise",
   goal_met: "goal_met",
   "goal met": "goal_met",
   guardrails_held: "guardrails_held",
@@ -510,9 +555,10 @@ function questionsFor(records, all = records) {
     lines.push("- Did it come true? Yes or no.", "- Did the thing that would prove you wrong happen? Yes or no.");
     if (goal) lines.push("- Did you reach the goal? Yes, no or partly.");
     if (guardrails) lines.push("- Did your guardrails hold? Yes or no.");
-    lines.push("- What happened, in one sentence?", "");
+    lines.push("- What happened, in one sentence?");
+    lines.push("- Did anything happen you didn't expect? A few words, or leave it blank.", "");
   }
-  lines.push("Answer in words. A pasted block with came_true, falsifier_fired and happened still counts:", "");
+  lines.push("Answer in words. A pasted block with came_true, falsifier_fired and happened still counts. surprise is optional:", "");
   lines.push("```text");
   lines.push(`title: ${records[0].title}`);
   lines.push("came_true: no");
@@ -520,7 +566,12 @@ function questionsFor(records, all = records) {
   if (statedValue(records[0].goal)) lines.push("goal_met: no");
   if (statedValue(records[0].guardrails)) lines.push("guardrails_held: no");
   lines.push("happened: one sentence on what actually happened");
+  lines.push("surprise: a few words, or leave this line off");
   lines.push("```", "");
+  lines.push(
+    "Leave surprise off when nothing unexpected happened. If it matches challenge N or the falsifier, add `| matches challenge 2` or `| matches falsifier`. Grill uses only that mark. If the decision is still open and the surprise bears on it, add `| still live`.",
+    "",
+  );
   return lines.join("\n");
 }
 
@@ -549,7 +600,7 @@ function callReading(record, outcome, records) {
   for (const line of revisionLines(record, records)) parts.push(line);
   if (came === "not yet" || !came) {
     parts.push(outcome.happened ? `Not scored yet. ${outcome.happened}` : "Not back yet, so this call is not scored.");
-    return parts.join(" ");
+    return parts.concat(surpriseTail(outcome)).join(" ");
   }
   const doubt = verdict === "shaky" || verdict === "doesn't hold up";
   const allowed = verdict === "solid" || verdict === "solid if";
@@ -558,6 +609,9 @@ function callReading(record, outcome, records) {
   else if (came === "yes" && allowed) parts.push("It came true, and the verdict had let it stand. The call and the verdict agreed.");
   else if (came === "no" && allowed) parts.push("It did not come true, and the verdict had let it stand. The outcome was harder than the verdict.");
   else parts.push(came === "yes" ? "It came true." : "It did not come true.");
+
+  if (came === "no" && outcome.surprise && outcome.surpriseMatch) parts.push("This was flagged and you went ahead.");
+  else if (came === "no" && outcome.surprise) parts.push("The world moved in a way the record didn't foresee.");
 
   const goal = statedValue(record.goal);
   if (goal && outcome.goalMet === "no" && came === "yes") {
@@ -581,7 +635,14 @@ function callReading(record, outcome, records) {
   if (record.confidence && confidenceValue(record.confidence) == null) parts.push(`Confidence was written as "${record.confidence}", which is not a number, so it is not in the sum.`);
   else if (record.confidence && /–/.test(confidenceLabel(record.confidence))) parts.push("The band is scored at its midpoint.");
   if (outcome.happened) parts.push(`What happened: ${outcome.happened}`);
-  return parts.join(" ");
+  return parts.concat(surpriseTail(outcome)).join(" ");
+}
+
+function surpriseTail(outcome) {
+  if (!outcome.surprise) return [];
+  const lines = [`Surprise: ${outcome.surprise}.`];
+  if (outcome.surpriseLive) lines.push("Grill the revised plan; the new record will say it replaces this one.");
+  return lines;
 }
 
 function patternReading(scored) {

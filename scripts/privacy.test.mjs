@@ -3,6 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { runInNewContext } from "node:vm";
 import { createServer } from "node:http";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -560,5 +561,91 @@ describe("anonymous usage stats", () => {
       await ping.close();
       rmSync(home, { recursive: true, force: true });
     }
+  });
+});
+
+describe("a look-back surprise stays on the page", () => {
+  it("never puts the surprise text in a track() or analytics payload", () => {
+    const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
+    const script = page.match(/<script>\s*([\s\S]*?)<\/script>\s*$/)[1];
+    const surprise = "SURPRISE_SENTINEL_office_closed_9f3a";
+    const happened = "HAPPENED_SENTINEL_flat_signups_1c2b";
+    const events = [];
+    const els = new Map();
+    function el(id) {
+      if (!els.has(id)) {
+        els.set(id, {
+          id,
+          hidden: false,
+          value: "",
+          textContent: "",
+          listeners: {},
+          setAttribute() {},
+          getAttribute() {
+            return null;
+          },
+          addEventListener(type, fn) {
+            (this.listeners[type] ||= []).push(fn);
+          },
+          querySelector() {
+            return null;
+          },
+          querySelectorAll() {
+            return [];
+          },
+        });
+      }
+      return els.get(id);
+    }
+    const document = {
+      getElementById: el,
+      querySelector() {
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    };
+    const window = {
+      addEventListener() {},
+      va(kind, payload) {
+        events.push({ kind, payload });
+      },
+    };
+    runInNewContext(
+      script,
+      { document, window, navigator: {}, location: { search: "" }, URLSearchParams },
+      { timeout: 1000 },
+    );
+    el("saved-records").value = [
+      "version: 1",
+      "date: 2026-09-01",
+      "title: Take the job",
+      "verdict: solid",
+      "falsifier: a weekend commute",
+      "confidence: 60%",
+      "review: 2026-10-01",
+    ].join("\n");
+    el("what-happened").value = `came_true: no\nhappened: ${happened}`;
+    el("surprise").value = `${surprise} | matches falsifier | still live`;
+    const clicks = el("run-look-back").listeners.click;
+    assert.ok(clicks?.length, "the look-back button did not bind");
+    for (const fn of clicks) fn();
+    const blob = JSON.stringify(events);
+    assert.ok(events.length >= 1, "look-back did not record a count");
+    assert.ok(!blob.includes(surprise), blob);
+    assert.ok(!blob.includes(happened), blob);
+    assert.ok(!blob.includes("matches falsifier"), blob);
+    assert.ok(!blob.includes("still live"), blob);
+    for (const event of events) {
+      assert.deepEqual(Object.keys(event.payload.data).sort(), ["records"]);
+      assert.equal(typeof event.payload.data.records, "number");
+    }
+    const reading = el("look-back-out").textContent;
+    assert.ok(reading.includes(surprise), "the surprise stays in the local reading");
+    assert.match(reading, /this was flagged and you went ahead/i);
+    assert.match(reading, /grill the revised plan; the new record will say it replaces this one/i);
+    const reflection = readFileSync(join(ROOT, "scripts/reflection.mjs"), "utf8");
+    assert.doesNotMatch(reflection, /\b(fetch|track|writeFile|appendFile)\s*\(/);
   });
 });
