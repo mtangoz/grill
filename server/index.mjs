@@ -210,87 +210,90 @@ const SETUP_TEXT = [
 // The user must know who sees the write-up before they approve it, and whether the Jev check is
 // one of them depends on their setting. The server knows the setting, so it says so here, where
 // Claude reads it before every call. (A setting change restarts the server, so this stays true.)
-const CHECK_NOTE = checkEnabled()
-  ? "The Jev quality check is ON: Jev, a decision model from TypeSafe, also sees the masked write-up and the report, on a zero-retention endpoint. Tell the user that before they approve, and that they can skip it for this grill (pass quality_check: false) or switch it off in Grill's settings."
-  : "The Jev quality check is switched OFF in Grill's settings, so only the judge sees the write-up.";
-
-const DESCRIPTION = [
-  "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).",
-  "It writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict (solid, solid if, shaky, or doesn't hold up).",
-  "Before calling: write the subject, meaning the decision, every option on the table, the reasons, the prediction and confidence exactly as the user gave them, Goal and Guardrails lines in the user's words when they stated them, and the strongest case against.",
-  "Write it as a clerk, not an advocate: a write-up that leans toward the decision gets a kinder verdict than it should, and one written by whoever helped reach it leans unless you stop it. Give the case against the same depth as the reasons and don't answer it, include the facts that cut against the decision, and leave out words that grade (clearly, strong, safe) and any recommendation of your own.",
-  "Show it to the user, and call only after they approve, because it leaves their machine for a model router (zero-data-retention endpoints only).",
-  CHECK_NOTE,
-  "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default.",
-  "Costs about a cent on the user's own key, or on a Grill Pro key, and usually takes 1–3 minutes. If the result is a job id, call grill_result with it.",
-].join(" ");
-
-const TOOLS = [
-  {
-    name: "grill",
-    title: "Grill a decision",
-    description: DESCRIPTION,
-    inputSchema: {
-      type: "object",
-      properties: {
-        subject: { type: "string", description: "The approved challenge subject, in markdown." },
-        question: {
-          type: "string",
-          description:
-            "Optional. One neutral question, at most 600 characters, that never names a preferred answer: it names every option, carries none of the subject's reasons, and is not a yes-or-no question whose easy answer is the choice already made. For a forecast, ask whether the confidence is too high, too low or about right.",
+// Hosted Grill imports this same text so the two cannot drift.
+export function buildGrillTools({ checkOn }) {
+  const checkNote = checkOn
+    ? "The Jev quality check is ON: Jev, a decision model from TypeSafe, also sees the masked write-up and the report, on a zero-retention endpoint. Tell the user that before they approve, and that they can skip it for this grill (pass quality_check: false) or switch it off in Grill's settings."
+    : "The Jev quality check is switched OFF in Grill's settings, so only the judge sees the write-up.";
+  const description = [
+    "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).",
+    "It writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict (solid, solid if, shaky, or doesn't hold up).",
+    "Before calling: write the subject, meaning the decision, every option on the table, the reasons, the prediction and confidence exactly as the user gave them, Goal and Guardrails lines in the user's words when they stated them, and the strongest case against.",
+    "Write it as a clerk, not an advocate: a write-up that leans toward the decision gets a kinder verdict than it should, and one written by whoever helped reach it leans unless you stop it. Give the case against the same depth as the reasons and don't answer it, include the facts that cut against the decision, and leave out words that grade (clearly, strong, safe) and any recommendation of your own.",
+    "Show it to the user, and call only after they approve, because it leaves their machine for a model router (zero-data-retention endpoints only).",
+    checkNote,
+    "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default.",
+    "Costs about a cent on the user's own key, or on a Grill Pro key, and usually takes 1–3 minutes. If the result is a job id, call grill_result with it.",
+  ].join(" ");
+  return [
+    {
+      name: "grill",
+      title: "Grill a decision",
+      description,
+      inputSchema: {
+        type: "object",
+        properties: {
+          subject: { type: "string", description: "The approved challenge subject, in markdown." },
+          question: {
+            type: "string",
+            description:
+              "Optional. One neutral question, at most 600 characters, that never names a preferred answer: it names every option, carries none of the subject's reasons, and is not a yes-or-no question whose easy answer is the choice already made. For a forecast, ask whether the confidence is too high, too low or about right.",
+          },
+          author: {
+            type: "string",
+            description:
+              "Optional. The model family that wrote the subject, if not Claude, for example openai, google or xai. That family is excluded from judging. If you are not Claude, always set it to your own family.",
+          },
+          quality_check: {
+            type: "boolean",
+            description:
+              "Optional. false skips the Jev quality check for this grill only, when the user asks. It never turns on a check the user switched off in settings.",
+          },
         },
-        author: {
-          type: "string",
-          description:
-            "Optional. The model family that wrote the subject, if not Claude, for example openai, google or xai. That family is excluded from judging. If you are not Claude, always set it to your own family.",
-        },
-        quality_check: {
-          type: "boolean",
-          description:
-            "Optional. false skips the Jev quality check for this grill only, when the user asks. It never turns on a check the user switched off in settings.",
-        },
+        required: ["subject"],
+        additionalProperties: false,
       },
-      required: ["subject"],
-      additionalProperties: false,
+      annotations: { title: "Grill a decision", readOnlyHint: true, openWorldHint: true },
     },
-    annotations: { title: "Grill a decision", readOnlyHint: true, openWorldHint: true },
-  },
-  {
-    name: "grill_result",
-    title: "Collect a grill that was still running",
-    description: "Collect the report of a grill that returned a job id. Waits up to 45 seconds; call again if it is still running.",
-    inputSchema: {
-      type: "object",
-      properties: { job_id: { type: "string", description: "The job id the grill tool returned." } },
-      required: ["job_id"],
-      additionalProperties: false,
-    },
-    annotations: { title: "Collect a grill", readOnlyHint: true, openWorldHint: false },
-  },
-  {
-    name: "grill_look_back",
-    title: "Look back at a decision record",
-    description:
-      "Score one or more decision records the user pasted, against what actually happened. If they have not said what happened, ask. Stores nothing, sends nothing, and needs no key. The judge's verdict is not revised.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        records: {
-          type: "string",
-          description: "One or more decision record blocks from earlier grills, pasted by the user.",
-        },
-        happened: {
-          type: "string",
-          description:
-            "Optional. What actually happened, including whether each call came true, whether the falsifier fired, and an optional surprise line. Omit it to get the questions first.",
-        },
+    {
+      name: "grill_result",
+      title: "Collect a grill that was still running",
+      description: "Collect the report of a grill that returned a job id. Waits up to 45 seconds; call again if it is still running.",
+      inputSchema: {
+        type: "object",
+        properties: { job_id: { type: "string", description: "The job id the grill tool returned." } },
+        required: ["job_id"],
+        additionalProperties: false,
       },
-      required: ["records"],
-      additionalProperties: false,
+      annotations: { title: "Collect a grill", readOnlyHint: true, openWorldHint: false },
     },
-    annotations: { title: "Look back", readOnlyHint: true, openWorldHint: false },
-  },
-];
+    {
+      name: "grill_look_back",
+      title: "Look back at a decision record",
+      description:
+        "Score one or more decision records the user pasted, against what actually happened. If they have not said what happened, ask. Stores nothing, sends nothing, and needs no key. The judge's verdict is not revised.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          records: {
+            type: "string",
+            description: "One or more decision record blocks from earlier grills, pasted by the user.",
+          },
+          happened: {
+            type: "string",
+            description:
+              "Optional. What actually happened, including whether each call came true, whether the falsifier fired, and an optional surprise line. Omit it to get the questions first.",
+          },
+        },
+        required: ["records"],
+        additionalProperties: false,
+      },
+      annotations: { title: "Look back", readOnlyHint: true, openWorldHint: false },
+    },
+  ];
+}
+
+const TOOLS = buildGrillTools({ checkOn: checkEnabled() });
 
 const jobs = new Map();
 
