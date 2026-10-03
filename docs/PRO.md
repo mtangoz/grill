@@ -1,6 +1,6 @@
 # Grill Pro accounts
 
-The free tool has no account, no sign-in and no server of its own. Bring your own key and checks stay free and unlimited on your own credit. This file is about a key Grill manages: a free starter allowance, and the optional paid subscription for when billing is turned on.
+The free tool has no account, no sign-in and no server of its own. A proposed hosted route for ChatGPT and claude.ai, and the pricing that goes with it, are in [PRD-hosted-pro.md](PRD-hosted-pro.md). Bring your own key and checks stay free and unlimited on your own credit. This file is about a key Grill manages: a free starter allowance, and the optional paid subscription for when billing is turned on.
 
 ## Why a magic link
 
