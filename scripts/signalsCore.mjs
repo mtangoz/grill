@@ -26,7 +26,7 @@ export const FIELDS = Object.freeze({
     options: ["openai", "google", "deepseek", "meta", "mistral", "qwen", "xai", "moonshot", "other", "paste-route"],
     required: true,
   },
-  verdict: { label: "Verdict", options: ["holds", "holds-with-conditions", "weak", "refuted"], required: true },
+  verdict: { label: "Verdict", options: ["solid", "solid if", "shaky", "doesn't hold up"], required: true },
   rating: { label: "Worth engaging?", options: ["yes", "no", "not-asked"] },
   confidence: { label: "Your confidence when you made the call", options: ["under-30", "30-49", "50-69", "70-89", "90-plus", "none"] },
   outcome: { label: "Did it come true? (resolved only)", options: ["yes", "no", "unclear", "not-yet"] },
@@ -34,6 +34,14 @@ export const FIELDS = Object.freeze({
 });
 
 const NO_RESPONSE = "_No response_";
+
+/** Older signal issues used the tool's internal verdict names. They still count, under the public names. */
+const LEGACY_VERDICT = Object.freeze({
+  holds: "solid",
+  "holds-with-conditions": "solid if",
+  weak: "shaky",
+  refuted: "doesn't hold up",
+});
 
 /** Parse one issue body rendered from the form. Returns the signal, or null if anything is off-form. */
 export function parseSignal(body) {
@@ -55,8 +63,9 @@ export function parseSignal(body) {
       if (field.required) return null;
       continue;
     }
-    if (!field.options.includes(raw)) return null; // free text, or an option the form never offered
-    signal[id] = raw;
+    const value = id === "verdict" && LEGACY_VERDICT[raw] ? LEGACY_VERDICT[raw] : raw;
+    if (!field.options.includes(value)) return null; // free text, or an option the form never offered
+    signal[id] = value;
   }
   return signal;
 }
@@ -104,14 +113,14 @@ export function recommend(agg, { minN = 10 } = {}) {
       );
     }
   }
-  const good = ["holds", "holds-with-conditions"].map((v) => agg.verdictOutcomes[v]).filter(Boolean);
-  const bad = ["weak", "refuted"].map((v) => agg.verdictOutcomes[v]).filter(Boolean);
+  const good = ["solid", "solid if"].map((v) => agg.verdictOutcomes[v]).filter(Boolean);
+  const bad = ["shaky", "doesn't hold up"].map((v) => agg.verdictOutcomes[v]).filter(Boolean);
   const sum = (xs) => xs.reduce((a, x) => ({ cameTrue: a.cameTrue + x.cameTrue, n: a.n + x.n }), { cameTrue: 0, n: 0 });
   const g = sum(good);
   const b = sum(bad);
   if (g.n >= minN && b.n >= minN && rate(b.cameTrue, b.n) >= rate(g.cameTrue, g.n)) {
     out.push(
-      `Verdicts don't predict outcomes yet: calls judged weak or refuted came true ${Math.round(rate(b.cameTrue, b.n) * 100)}% of the time (n=${b.n}), against ${Math.round(rate(g.cameTrue, g.n) * 100)}% for holds (n=${g.n}). Review the judge prompt against the evals.`,
+      `Verdicts don't predict outcomes yet: calls judged shaky or doesn't hold up came true ${Math.round(rate(b.cameTrue, b.n) * 100)}% of the time (n=${b.n}), against ${Math.round(rate(g.cameTrue, g.n) * 100)}% for solid or solid if (n=${g.n}). Review the judge prompt against the evals.`,
     );
   }
   return out;
@@ -131,7 +140,7 @@ export function renderReport(agg, recs, { dropped = 0, period = "" } = {}) {
   }
   lines.push(`| **all** | ${agg.counts.rated} | ${pct(agg.worthEngaging.overall)} |`, "");
   lines.push("## Do verdicts predict outcomes?", "", "| Verdict | Resolved | Came true |", "|---|---|---|");
-  for (const v of ["holds", "holds-with-conditions", "weak", "refuted"]) {
+  for (const v of ["solid", "solid if", "shaky", "doesn't hold up"]) {
     const x = agg.verdictOutcomes[v];
     if (x) lines.push(`| ${v} | ${x.n} | ${pct(rate(x.cameTrue, x.n))} |`);
   }

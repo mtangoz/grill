@@ -105,7 +105,7 @@ grillyour.ai/judge is a page in your browser. It is not an account, and it does 
 - The page calls `https://openrouter.ai/api/v1/chat/completions` directly. The write-up and the key go to OpenRouter, not to us. The address fragment of an Open in Grill link (`#text=…&from=claude`) is read in the browser and is not sent to Grill's server.
 - The request asks OpenRouter's Auto Router (`openrouter/auto`) and tells that router to leave out the company of the assistant you said wrote the text. It uses the same exclusion the installed judge sends. It asks only for zero-data-retention endpoints (`provider: { zdr: true, data_collection: "deny" }`). There is no pinned fallback model.
 - Email addresses, phone numbers and card numbers are masked in the browser before the request. A key or token in the write-up stops the run, and nothing is sent.
-- The decision record is built in the page. You can copy it or download it as markdown. Nothing is stored on a Grill server.
+- The verdict is advice. The page does not tell you what to decide. The decision record is built in the page. You can copy it or download it as markdown. A `decided`, `supersedes` or `changed` line is written only if you add it. A look-back surprise is optional and stays in the browser. Nothing is stored on a Grill server.
 - This page does not load analytics or any third-party script. It does not count the visit, and it does not send the words of a decision anywhere except OpenRouter, which you asked it to call.
 
 ## Your log
@@ -120,7 +120,7 @@ Claude Desktop may keep local logs of tool calls, including the write-up, on you
 
 The questions at the end of a grill, and the decision record, stay in your chat or in notes you keep. Grill does not store them and does not send them to the judge. Looking back means you paste those records again. On the one-click route that paste is read on your machine. On the paste route it stays in the assistant you are already talking to. There is no look-back database. The monthly Count in the weekly review is separate: it needs a decision log you keep, and a single grill does not do it.
 
-On the home page, the anonymous visit count can also record that a decision record was shown or copied, that a look-back started or finished, and how many records were pasted. The judge page does not send those events. Those events are numbers only. They never include the title, the falsifier, the verdict, or what happened. It can also record a click on a download, the paste prompt, or the OpenRouter keys page, plus an optional channel tag (`ref`) from a fixed list (left off when missing or unknown), and never a decision, a title, a URL of your content, an email, or a key. The Grill tool you install does not send them.
+On the home page, the anonymous visit count can also record that a decision record was shown or copied, that a look-back started or finished, and how many records were pasted. The judge page does not send those events. Those events are numbers only. They never include the title, the falsifier, the verdict, what happened, or a surprise. It can also record a click on a download, the paste prompt, or the OpenRouter keys page, plus an optional channel tag (`ref`) from a fixed list (left off when missing or unknown), and never a decision, a title, a URL of your content, an email, or a key. The Grill tool you install does not send them.
 
 ## Anonymous usage stats (optional)
 

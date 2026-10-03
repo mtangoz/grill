@@ -21,7 +21,8 @@
   </div>
 
   <h1>Grill it in your browser.</h1>
-  <p class="lede">Paste a write-up and your OpenRouter key. A model from a different company finds the weak spots. The key and the text stay on this device and go straight to OpenRouter. Grill stores nothing.</p>
+  <p class="lede">Hear the strongest case against your plan, then decide for yourself.</p>
+  <p class="note">Paste a write-up and your OpenRouter key. A model from a different company argues the other side. The verdict is advice. You decide. The key and the text stay on this device and go straight to OpenRouter. Grill stores nothing.</p>
 
   <form class="paste" id="grill-form" action="#" method="post" autocomplete="off">
     <label for="key">OpenRouter key</label>
@@ -60,6 +61,7 @@
       <p><span class="k">Judge</span> <span id="model"></span></p>
       <p id="cost-line"><span class="k">Cost</span> <span id="cost"></span></p>
     </div>
+    <p class="note" id="verdict-note">Advice. The verdict never becomes the decision. You decide.</p>
     <pre id="report" class="report"></pre>
 
     <h2>Before you decide</h2>
@@ -75,7 +77,7 @@
       <button class="button" id="copy-record" type="button">Copy the record</button>
       <button class="choice" id="download-record" type="button">Download markdown</button>
     </p>
-    <p class="note">The block is a version 1 grill-record. Copy it or download it. Nothing is stored on a server. Edit the prediction and the confidence before you copy, if the verdict moved you.</p>
+    <p class="note">The block is a version 1 grill-record. Copy it or download it. Nothing is stored on a server. Edit the prediction and the confidence before you copy, if the verdict moved you. A decided line is what you chose, in your own words, including any change you made because of a challenge. Add it only after you say it. If this choice replaced an earlier record, add supersedes as that record's date and title, and changed as evidence, goals, context or reweighed, then your few words. A re-grill where nothing changed leaves those lines off. Grill does not invent them, and it does not tell you what to decide.</p>
   </div>
 
   <h2 id="how">Ask your assistant for a link</h2>
@@ -84,12 +86,12 @@
   <p class="note">The link looks like <code id="link-example">https://grillyour.ai/judge#text=…&amp;from=claude</code>. The write-up sits after the #, so the browser does not send it to Grill. Set from to claude, gemini, chatgpt, grok, or other. Do not put your key in the link.</p>
 
   <h2>Look back</h2>
-  <p class="note">Paste one or more saved records and say what happened. This stays in your browser. Nothing is stored.</p>
+  <p class="note">Paste one or more saved records and say what happened. A surprise line is optional: a few words on anything you did not expect. This stays in your browser. Nothing is stored.</p>
   <form class="paste" id="look-form" action="#" method="post">
     <label for="look-records">Saved records</label>
     <textarea id="look-records" placeholder="```grill-record"></textarea>
     <label for="look-happened">What happened</label>
-    <textarea id="look-happened" placeholder="Did it come true? Did the thing that would prove you wrong happen?"></textarea>
+    <textarea id="look-happened" placeholder="Did it come true? Did the thing that would prove you wrong happen? surprise: optional"></textarea>
     <p class="cta"><button class="button" id="look-back" type="button">Look back</button></p>
     <pre id="look-out" hidden></pre>
   </form>

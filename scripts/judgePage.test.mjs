@@ -173,6 +173,11 @@ describe("the rendered verdict and the decision record", () => {
     assert.match(finished.record, /verdict: shaky/);
     assert.match(finished.record, /source_app: claude/);
     assert.match(finished.record, /70%/);
+    assert.doesNotMatch(finished.record, /^decided:/m);
+    assert.doesNotMatch(finished.record, /^supersedes:/m);
+    assert.doesNotMatch(finished.record, /^changed:/m);
+    assert.match(finished.report, /A decided line is what you chose/);
+    assert.match(finished.report, /add supersedes/);
   });
 });
 
@@ -312,8 +317,13 @@ describe("the judge page source", () => {
 
   it("has the reflection questions, a fragment-only reader, and no analytics or fallback models", () => {
     for (const question of BEFORE_YOU_DECIDE_QUESTIONS) assert.ok(html.includes(question), question);
+    assert.match(html, /Hear the strongest case against your plan, then decide for yourself/);
+    assert.match(html, /The verdict never becomes the decision/);
+    assert.match(html, /does not tell you what to decide/);
     assert.match(html, /Before you decide/);
     assert.match(html, /grill-record/);
+    assert.match(html, /supersedes/);
+    assert.match(html, /surprise line is optional/);
     assert.match(html, /Nothing is stored/);
     assert.match(html, /Remember on this device/);
     assert.match(html, /Forget key/);

@@ -1,6 +1,6 @@
 # 🔥 Grill
 
-**A second opinion on your decisions, from a different AI company than the one you think with.**
+**Hear the strongest case against your plan, then decide for yourself.**
 
 **Setup guide:** [grillyour.ai](https://grillyour.ai)
 
@@ -24,7 +24,7 @@ The extension reads `GRILL_API_KEY`. `OPENROUTER_API_KEY` works when that is uns
 
 ### Use Grill in your browser
 
-Open [grillyour.ai/judge](https://grillyour.ai/judge). Paste your OpenRouter key, choose which assistant wrote the decision, and paste the write-up. Press **Grill it**. The key stays in the tab unless you tick **Remember on this device**. Forget key deletes it. The write-up and the key go from your browser straight to OpenRouter. Grill does not receive them and does not store them. The same page works on a phone.
+Open [grillyour.ai/judge](https://grillyour.ai/judge). Paste your OpenRouter key, choose which assistant wrote the decision, and paste the write-up. Press **Grill it**. The page shows the verdict as advice. The verdict never becomes the decision, and the page does not tell you what to decide. The key stays in the tab unless you tick **Remember on this device**. Forget key deletes it. The write-up and the key go from your browser straight to OpenRouter. Grill does not receive them and does not store them. The same page works on a phone.
 
 You can also tell Claude or Gemini: "Summarize the decision and give me an Open in Grill link." The link puts the write-up in the address fragment (`https://grillyour.ai/judge#text=…&from=claude`), which the browser does not send to Grill. Do not put the key in the link.
 

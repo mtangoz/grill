@@ -1,14 +1,18 @@
 # Principles
 
-Grill helps people make better decisions with AI.
-
 ## Mission
 
-A second opinion from a model made by a different company catches what your own assistant misses. That saves rework. The reflection builds judgement over time. The reflection is "Before you decide", the decision record, and the look back.
+Grill helps people make better decisions with AI. An AI from a different company argues the other side; you decide; later you look back and see how your judgement did.
+
+## Vision
+
+AI that makes people's judgement stronger, not weaker: every important call meets its strongest objection, the person still makes the call, and learns from how it turned out, including when to change course.
 
 ## North Star
 
 The goal for now is 100 real users. A real user is a person who ran a grill. We count that from evidence. A download is not a user. A person who leaves an email to hear when Pro is ready is Pro interest. That sign-up is not a user, and it is never counted toward the 100.
+
+Evidenced look-backs are reported alongside the 100, and never added to it. The count is public signal issues with `Event: resolved`, plus outreach replies that confirm a look-back. It uses those existing reports. It does not add tracking or collect anything new.
 
 ## Privacy
 
@@ -38,6 +42,10 @@ Grill uses OpenRouter's Auto Router. It does not pin models.
 
 The human decides. Grill only advises.
 
-Numbers stay honest. Downloads are not users. A claim needs evidence. Pro launch-list sign-ups are interest, reported beside the real-user count, and never added to it.
+The verdict never becomes the decision. The verdict changes only on new evidence. Your decision can change for new evidence, new goals, a changed situation or a different weighing, and the record says which. Changing your mind is part of the record, not a mark against it.
+
+A copy-paste check is in [docs/manual-check.md](manual-check.md).
+
+Numbers stay honest. Downloads are not users. A claim needs evidence. Pro launch-list sign-ups are interest, reported beside the real-user count, and never added to it. Evidenced look-backs are reported beside that count too, and never added to it.
 
 The tool has no third-party dependencies.

@@ -32,7 +32,7 @@ body:
     id: verdict
     attributes:
       label: Verdict
-      options: ["holds", "holds-with-conditions", "weak", "refuted"]
+      options: ["solid", "solid if", "shaky", "doesn't hold up"]
     validations:
       required: true
   - type: dropdown

@@ -74,6 +74,12 @@ describe("site/page.html", () => {
     ]);
   });
 
+  it("leads with the choice staying with the person", () => {
+    assert.match(page, /<p class="lede">Hear the strongest case against your plan, then decide for yourself\.<\/p>/);
+    const line3 = readFileSync(join(ROOT, "README.md"), "utf8").split("\n")[2];
+    assert.equal(line3, "**Hear the strongest case against your plan, then decide for yourself.**");
+  });
+
   it("says Desktop and Claude Code enforce a different company, and the paste routes warn", () => {
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     const why = readFileSync(join(ROOT, "docs/WHY.md"), "utf8");
@@ -128,7 +134,9 @@ describe("site/page.html", () => {
     assert.match(page, /reflection_lookback_completed/);
     assert.match(page, /window\.va\("event", \{ name: name, data: \{ records: count \} \}\)/);
     assert.match(page, /It never includes the words of a decision/);
-    assert.doesNotMatch(page, /window\.va\([^)]*(judge-answer|saved-records|what-happened|decision-title)/);
+    assert.match(page, /Did anything happen you didn['\u2019]t expect\?/);
+    assert.doesNotMatch(page, /window\.va\([^)]*(judge-answer|saved-records|what-happened|decision-title|surprise)/);
+    assert.doesNotMatch(page, /track\([^)]*surprise/);
     for (const file of ["server/index.mjs", "scripts/reflection.mjs"]) {
       const source = readFileSync(join(ROOT, file), "utf8");
       assert.ok(!source.includes("window.va"), `${file} must not send website analytics`);
@@ -136,7 +144,7 @@ describe("site/page.html", () => {
     }
     const privacy = readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8");
     assert.match(privacy, /how many records were pasted/);
-    assert.match(privacy, /never include the title, the falsifier, the verdict, or what happened/);
+    assert.match(privacy, /never include the title, the falsifier, the verdict, what happened, or a surprise/);
   });
 
   it("counts install clicks with an allowlisted channel ref, and states the Desktop setup time", () => {

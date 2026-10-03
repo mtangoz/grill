@@ -80,7 +80,7 @@ describe("the reflection footer", () => {
   });
 
   it("copies a stated goal and guardrails, and omits the lines when they were not said", () => {
-    assert.deepEqual(OPTIONAL_RECORD_FIELDS, ["goal", "guardrails", "source_app"]);
+    assert.deepEqual(OPTIONAL_RECORD_FIELDS, ["goal", "guardrails", "source_app", "decided", "supersedes", "changed"]);
     assert.equal(goalFromSubject("Our goal is to grow.\nWe will not break the API."), "");
     assert.equal(guardrailsFromSubject("Our goal is to grow.\nWe will not break the API."), "");
     assert.equal(goalFromSubject("Goal: not stated"), "not stated");
@@ -98,6 +98,11 @@ describe("the reflection footer", () => {
     assert.doesNotMatch(plain, /^goal:/m);
     assert.doesNotMatch(plain, /^guardrails:/m);
     assert.doesNotMatch(plain, /^source_app:/m);
+    assert.doesNotMatch(plain, /^decided:/m);
+    const named = appendReflection(JUDGE, { subject: "Decision: Ship it\nDecided: ship it anyway\nI'm 70% sure.", now: NOW });
+    assert.doesNotMatch(named, /^decided:/m);
+    assert.doesNotMatch(named, /^supersedes:/m);
+    assert.doesNotMatch(named, /^changed:/m);
     const labeled = appendReflection(JUDGE, { subject: "Decision: Ship it", now: NOW, sourceApp: "Gemini" });
     assert.match(labeled, /^source_app: gemini$/m);
   });
@@ -135,6 +140,9 @@ describe("look back", () => {
     assert.match(out, /^## Look back/);
     assert.match(out, /Did it come true\?/);
     assert.match(out, /Did the thing that would prove you wrong happen\?/);
+    assert.match(out, /Did anything happen you didn't expect\?/);
+    assert.match(out, /surprise: a few words, or leave this line off/);
+    assert.match(out, /Grill uses only that mark/);
     assert.match(out, /Prediction then: more signups by June/);
     assert.match(out, /Move the launch to March/);
     assert.match(out, /Hire before the pilot/);
@@ -250,6 +258,175 @@ describe("look back", () => {
     assert.doesNotMatch(lookBack({ records: declined }), /Did you reach the goal/);
   });
 
+  const oneMiss = [
+    "version: 1",
+    "date: 2026-09-01",
+    "title: Take the job in Denver",
+    "prediction: I will still want the job after a month",
+    "verdict: solid",
+    "falsifier: spend a long weekend there",
+    "confidence: 60%",
+    "review: 2026-10-01",
+  ].join("\n");
+
+  function miss(happened) {
+    return lookBack({ records: oneMiss, happened });
+  }
+
+  it("reads a miss with an unmarked surprise as the world moving", () => {
+    const out = miss("came_true: no\nsurprise: the office closed\nhappened: The office closed in week two.");
+    assert.match(out, /It did not come true/);
+    assert.match(out, /The world moved in a way the record didn't foresee/);
+    assert.match(out, /Surprise: the office closed/);
+    assert.doesNotMatch(out, /This was flagged and you went ahead/);
+    assert.doesNotMatch(out, /grill the revised plan/i);
+    const namedInWords = miss("came_true: no\nsurprise: the challenge and the falsifier both came up");
+    assert.match(namedInWords, /The world moved in a way the record didn't foresee/);
+    assert.doesNotMatch(namedInWords, /This was flagged and you went ahead/);
+    const hit = lookBack({
+      records: oneMiss,
+      happened: "came_true: yes\nsurprise: a side project took off",
+    });
+    assert.doesNotMatch(hit, /The world moved in a way the record didn't foresee/);
+    assert.doesNotMatch(hit, /This was flagged and you went ahead/);
+  });
+
+  it("reads a miss whose surprise the user marked as something the record already named", () => {
+    const falsifier = miss("came_true: no\nsurprise: the weekend commute failed | matches falsifier");
+    assert.match(falsifier, /This was flagged and you went ahead/);
+    assert.match(falsifier, /Surprise: the weekend commute failed/);
+    assert.doesNotMatch(falsifier, /The world moved in a way the record didn't foresee/);
+    const challenge = miss("came_true: no\nsurprise: a rival opened an office | matches challenge 2");
+    assert.match(challenge, /This was flagged and you went ahead/);
+    assert.doesNotMatch(challenge, /The world moved in a way the record didn't foresee/);
+    const theWord = miss("came_true: no\nsurprise: the weekend commute failed | matches the falsifier");
+    assert.match(theWord, /This was flagged and you went ahead/);
+    const markOnly = miss("came_true: no\nsurprise: matches challenge 2");
+    assert.doesNotMatch(markOnly, /This was flagged and you went ahead/);
+    assert.doesNotMatch(markOnly, /The world moved in a way the record didn't foresee/);
+  });
+
+  it("reads a miss with no surprise as a plain miss, and does not count surprises", () => {
+    const plain = miss("came_true: no\nhappened: It did not work out.");
+    assert.match(plain, /It did not come true, and the verdict had let it stand/);
+    assert.doesNotMatch(plain, /The world moved in a way the record didn't foresee/);
+    assert.doesNotMatch(plain, /This was flagged and you went ahead/);
+    assert.doesNotMatch(plain, /Surprise:/);
+    assert.doesNotMatch(plain, /grill the revised plan/i);
+    const withSurprise = miss("came_true: no\nsurprise: the office closed | still live\nhappened: It did not work out.");
+    assert.match(withSurprise, /The world moved in a way the record didn't foresee/);
+    assert.match(withSurprise, /Grill the revised plan; the new record will say it replaces this one/);
+    assert.equal(plain.split("## Pattern")[1], withSurprise.split("## Pattern")[1]);
+    assert.doesNotMatch(withSurprise.split("## Pattern")[1], /surprise|reversal|flagged/i);
+    const liveHit = lookBack({
+      records: oneMiss,
+      happened: "came_true: yes\nsurprise: the office moved | still live",
+    });
+    assert.match(liveHit, /Grill the revised plan; the new record will say it replaces this one/);
+    assert.doesNotMatch(liveHit, /This was flagged and you went ahead/);
+  });
+
+  it("reads a decided line back in the person's words, and does not invent one", () => {
+    const chosen = [
+      "version: 1",
+      "date: 2026-09-01",
+      "title: Raise prices",
+      "verdict: shaky",
+      "falsifier: churn stays under 4%",
+      "confidence: 70%",
+      "review: 2026-10-01",
+      "decided: raise by 10% instead, after the challenge",
+    ].join("\n");
+    const asked = lookBack({ records: chosen });
+    assert.match(asked, /You chose: "raise by 10% instead, after the challenge"\./);
+    const hit = lookBack({ records: chosen, happened: "came_true: yes\nfalsifier_fired: no\nhappened: Churn stayed flat." });
+    assert.match(hit, /You chose "raise by 10% instead, after the challenge"\. It came true\./);
+    const miss = lookBack({ records: chosen, happened: "came_true: no\nhappened: Churn jumped." });
+    assert.match(miss, /You chose "raise by 10% instead, after the challenge"\. It did not come true\./);
+    const blank = "version: 1\ndate: 2026-09-01\ntitle: Ship it\nverdict: solid\nfalsifier: a\nconfidence: 50%\nreview: 2026-10-01\n";
+    assert.doesNotMatch(lookBack({ records: blank, happened: "came_true: yes" }), /You chose/);
+    assert.doesNotMatch(lookBack({ records: blank }), /replaced|What changed|paste that too|reweighed|superseded-by/i);
+  });
+
+  it("accepts supersedes and changed, and a lone block names the call it replaced", () => {
+    const earlier = [
+      "version: 1",
+      "date: 2026-01-10",
+      "title: Hire contractor",
+      "verdict: shaky",
+      "falsifier: one paid pilot",
+      "confidence: 60%",
+      "review: 2026-01-24",
+    ].join("\n");
+    const revised = [
+      "version: 1",
+      "date: 2026-02-02",
+      "title: Hire in house",
+      "verdict: solid if",
+      "falsifier: one release with both passes",
+      "confidence: 55%",
+      "review: 2026-02-16",
+      "supersedes: 2026-01-10 Hire contractor",
+      "changed: reweighed — the same pilot, weighed against switching cost",
+    ].join("\n");
+    const parsed = parseRecords(revised);
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0].supersedes, "2026-01-10 Hire contractor");
+    assert.equal(parsed[0].changed, "reweighed — the same pilot, weighed against switching cost");
+    assert.equal(parsed[0].version, "1");
+    const alone = lookBack({ records: revised, happened: "came_true: yes\nhappened: The in-house pass held." });
+    assert.match(alone, /This replaced the call of 2026-01-10, "Hire contractor"\./);
+    assert.match(alone, /Its outcome isn't scored here/);
+    assert.match(alone, /What changed: reweighed — the same pilot, weighed against switching cost\./);
+    assert.match(alone, /Nothing new came in; you weighed it differently\./);
+    assert.match(alone, /If this replaced an earlier record, paste that too to see both\./);
+    assert.equal((alone.match(/paste that too to see both/g) ?? []).length, 1);
+    assert.doesNotMatch(alone, /superseded-by/);
+    const plain = lookBack({ records: earlier, happened: "came_true: no\nhappened: No pilot paid." });
+    assert.doesNotMatch(plain, /replaced|What changed|paste that too|reweighed|superseded-by/i);
+    const both = lookBack({
+      records: `${earlier}\n${revised}`,
+      happened: "title: Hire contractor\ncame_true: no\n\ntitle: Hire in house\ncame_true: yes\n",
+    });
+    assert.match(both, /That earlier call is in this paste/);
+    assert.doesNotMatch(both, /paste that too to see both/);
+    assert.doesNotMatch(both, /superseded-by/);
+  });
+
+  it("reads a surprise beside a revision that reweighed the earlier call", () => {
+    const revised = [
+      "version: 1",
+      "date: 2026-02-02",
+      "title: Hire in house",
+      "verdict: solid",
+      "falsifier: one release with both passes",
+      "confidence: 55%",
+      "review: 2026-02-16",
+      "supersedes: 2026-01-10 Hire contractor",
+      "changed: reweighed — the same pilot, weighed against switching cost",
+    ].join("\n");
+    const unforeseen = lookBack({
+      records: revised,
+      happened: "came_true: no\nsurprise: the pilot budget was cut | still live\nhappened: The budget was cut.",
+    });
+    assert.match(unforeseen, /This replaced the call of 2026-01-10, "Hire contractor"\./);
+    assert.match(unforeseen, /Its outcome isn't scored here/);
+    assert.match(unforeseen, /What changed: reweighed — the same pilot, weighed against switching cost\./);
+    assert.match(unforeseen, /Nothing new came in; you weighed it differently\./);
+    assert.match(unforeseen, /The world moved in a way the record didn't foresee/);
+    assert.match(unforeseen, /Grill the revised plan; the new record will say it replaces this one/);
+    assert.match(unforeseen, /If this replaced an earlier record, paste that too to see both\./);
+    assert.doesNotMatch(unforeseen, /This was flagged and you went ahead/);
+    assert.doesNotMatch(unforeseen.split("## Pattern")[1], /surprise|reversal/i);
+    const flagged = lookBack({
+      records: revised,
+      happened: "came_true: no\nsurprise: the in-house pass slipped | matches falsifier",
+    });
+    assert.match(flagged, /This was flagged and you went ahead/);
+    assert.match(flagged, /Nothing new came in; you weighed it differently\./);
+    assert.doesNotMatch(flagged, /The world moved in a way the record didn't foresee/);
+  });
+
   it("names a short source app and does not invent one", () => {
     assert.equal(sourceAppLabel(""), "");
     assert.equal(sourceAppLabel("   "), "");
@@ -306,6 +483,12 @@ describe("look back", () => {
     assert.equal(extra[0].guardrails, "keep the in-house pass");
     assert.equal(extra[0].source_app, "claude");
     assert.equal(extra[0].title, "Raise prices");
+    assert.equal(extra[0].decided, undefined);
+    const withDecided = [withOptional.trimEnd(), "decided: raise by 10% instead, after the challenge"].join("\n");
+    const chosen = parseRecords(withDecided);
+    assert.equal(chosen.length, 1);
+    assert.equal(chosen[0].decided, "raise by 10% instead, after the challenge");
+    assert.equal(chosen[0].version, "1");
     const mixed = [
       "version: 2",
       "date: 2026-09-01",
@@ -366,11 +549,45 @@ describe("every route carries the footer and the look-back, and the judge prompt
       assert.match(text, /Did your guardrails hold\? Yes or no\./);
       assert.match(text, /the prediction was right about the wrong target/);
       assert.match(text, /A guardrail broke\./);
+      assert.match(text, /verdict never becomes the decision/i, `${name} drops the verdict guardrail`);
+      assert.match(text, /so should I do it\?/, `${name} does not hand the choice back`);
+      assert.match(text, /don't flip the verdict/i, `${name} can flip the verdict on push-back`);
+      assert.match(text, /earlier verdict beside the new one/, `${name} hides an earlier verdict`);
+      assert.match(text, /`decided`/, `${name} has no decided line`);
+      assert.match(text, /[Nn]ever invent it/, `${name} may invent a decision`);
     }
+    assert.match(server, /verdict never becomes the decision/i);
+    assert.match(server, /so should I do it\?/);
+    assert.match(server, /earlier verdict beside the new one/);
+    const manual = readFileSync(join(ROOT, "docs/manual-check.md"), "utf8");
+    for (const name of ["Claude", "ChatGPT", "Gemini", "Grok"]) {
+      assert.ok(manual.includes(name), `manual check skips ${name}`);
+    }
+    assert.match(manual, /Do not pin a judge model/);
+    assert.doesNotMatch(manual, /openrouter\/|JUDGE_MODEL\s*=/);
     const recordDoc = readFileSync(join(ROOT, "docs/DECISION-RECORD.md"), "utf8");
     assert.match(recordDoc, /## Optional lines/);
     assert.match(recordDoc, /2026-09-29/);
     assert.match(recordDoc, /Version stays 1/);
+    for (const [name, text] of [
+      ["skill", skill],
+      ["prompt", prompt],
+      ["page", page],
+      ["record", recordDoc],
+    ]) {
+      assert.match(text, /Did anything happen you didn['\u2019]t expect\?/, name);
+      assert.match(text, /the world moved in a way the record didn't foresee/i, name);
+      assert.match(text, /this was flagged and you went ahead/i, name);
+      assert.match(text, /grill the revised plan; the new record will say it replaces this one/i, name);
+      if (name === "page") {
+        assert.match(text, /id="surprise"/, name);
+        assert.match(text, /surprise\\s\*:/, name);
+      } else {
+        assert.match(text, /surprise:/, name);
+      }
+    }
+    assert.match(recordDoc, /Nothing new came in; you weighed it differently/);
+    assert.match(recordDoc, /\| supersedes \|/);
   });
 
   it("the judge prompt is unchanged: it still opens with the company line and does not write the reflection", () => {
