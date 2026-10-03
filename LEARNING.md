@@ -43,7 +43,7 @@ The reflection at the end of a report (what you expect, how sure you are, what w
 
 ## What the signals can and can't tell us
 
-- **They can:** which judge families people find worth engaging, by kind of decision; and whether "weak" and "refuted" verdicts come true less often than "holds" (verdicts that predict nothing are a prompt problem).
+- **They can:** which judge families people find worth engaging, by kind of decision; and whether "shaky" and "doesn't hold up" verdicts come true less often than "solid" (verdicts that predict nothing are a prompt problem). A public signal with Event `resolved` counts as an evidenced look-back. That count, plus outreach replies that confirm a look-back, is reported beside the 100 real users and is never added to the 100. See [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
 - **They can't:** anything about a decision's content. The form has no text fields, and the report drops any issue edited to include text.
 - **Honest limits:** people who share are self-selected, and a public issue carries their GitHub username. Treat the numbers as directional until there are hundreds.
 
