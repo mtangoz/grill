@@ -770,6 +770,30 @@ export const JUDGE_TOOL = Object.freeze({
   },
 });
 
+/**
+ * The chat-completions body for one judge attempt.
+ *
+ * The model is whatever the caller passes. Grill's default caller passes
+ * `DEFAULT_CHAIN` (`openrouter/auto`) and no `models` list: there is no pinned
+ * fallback. An explicit chain that is not walked link by link may still pass
+ * `models`, which is the caller's override, not a default.
+ *
+ * Exclusion is `autoRouterPlugin`: OpenRouter's Auto Router plugin, which
+ * ignores the author's company. `provider` is the zero-retention pair the
+ * judge always sends. Neither is optional here.
+ */
+export function judgeChatBody({ model, messages, author, models = null } = {}) {
+  const body = { model, messages };
+  if (Array.isArray(models) && models.length > 1) body.models = models;
+  const plugin = autoRouterPlugin(model, author);
+  if (plugin) body.plugins = [plugin];
+  body.tools = [{ type: "function", function: JUDGE_TOOL }];
+  body.tool_choice = { type: "function", function: { name: JUDGE_TOOL.name } };
+  body.usage = { include: true };
+  body.provider = { zdr: true, data_collection: "deny" };
+  return body;
+}
+
 /** Weights for ranking. Severity dominates; confidence breaks ties within a severity. */
 const SEVERITY_WEIGHT = Object.freeze({ fatal: 1000, serious: 300, moderate: 80, minor: 10 });
 const CONFIDENCE_WEIGHT = Object.freeze({ high: 3, medium: 2, low: 1 });

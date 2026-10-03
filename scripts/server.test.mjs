@@ -136,6 +136,10 @@ describe("grill without a key", () => {
     assert.equal(res.result.isError, true);
     assert.match(textOf(res), /openrouter\.ai\/keys/);
     assert.match(textOf(res), /Settings → Extensions → Grill/);
+    assert.match(textOf(res), /github:mtangoz\/grill --set-key/);
+    assert.match(textOf(res), /Claude Code does not ask/);
+    assert.match(textOf(res), /grillyour\.ai\/judge/);
+    assert.doesNotMatch(textOf(res), /grillyour\.ai\/pro/);
     await c.close();
   });
 

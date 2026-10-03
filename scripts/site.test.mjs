@@ -291,8 +291,25 @@ describe("the site build", () => {
     assert.doesNotMatch(on, /Get a starter key/);
     assert.doesNotMatch(on, /href="\/pro"/);
     assert.match(readFileSync(join(ROOT, "vercel.json"), "utf8"), /GRILL_PRO_NOTIFY=1 node scripts\/build-site\.mjs/);
+    assert.match(readFileSync(join(ROOT, "vercel.json"), "utf8"), /"source": "\/judge"/);
     const ignored = build("yes-please");
     assert.doesNotMatch(ignored, /<main[^>]*data-notify/);
     assert.match(ignored, /Get a starter key/);
+  });
+
+  it("publishes /judge without visit analytics, and copies the shared judge modules", () => {
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+    const html = readFileSync(join(ROOT, "_site/judge/index.html"), "utf8");
+    assert.match(html, /<title>Grill a decision<\/title>/);
+    assert.match(html, /<link rel="canonical" href="https:\/\/grillyour\.ai\/judge">/);
+    assert.match(html, /--paper:/);
+    assert.match(html, /src="\/judge\/judge-app\.mjs"/);
+    assert.doesNotMatch(html, /_vercel\/insights/);
+    assert.doesNotMatch(html, /window\.va/);
+    const home = readFileSync(join(ROOT, "_site/index.html"), "utf8");
+    assert.match(home, /href="\/judge"/);
+    for (const file of ["judge-app.mjs", "judgePage.mjs", "judgeCore.mjs", "checkCore.mjs", "reflection.mjs"]) {
+      assert.ok(readFileSync(join(ROOT, "_site/judge", file), "utf8").length > 0, file);
+    }
   });
 });
