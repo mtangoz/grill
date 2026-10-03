@@ -81,6 +81,24 @@ describe("saving it", () => {
     assert.equal(resolveApiKey({ GRILL_KEY_FILE: file }).warning, null);
   });
 
+  it("never writes a new key into an old file others can read: a fresh 0600 file is renamed over it", { skip: !posix }, async () => {
+    const { chmodSync, closeSync, openSync, readSync, readdirSync } = await import("node:fs");
+    const file = tempKeyFile();
+    saveApiKey("sk-or-v1-old-key-0000", { GRILL_KEY_FILE: file });
+    chmodSync(file, 0o644);
+    const before = statSync(file).ino;
+    const fd = openSync(file, "r"); // another user's reader, opened while the file was loose
+    saveApiKey(KEY, { GRILL_KEY_FILE: file });
+    const buf = Buffer.alloc(64);
+    const seen = buf.subarray(0, readSync(fd, buf, 0, 64, 0)).toString();
+    closeSync(fd);
+    assert.ok(!seen.includes(KEY), "the old descriptor never sees the new key");
+    assert.notEqual(statSync(file).ino, before);
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+    assert.equal(readFileSync(file, "utf8"), `${KEY}\n`);
+    assert.deepEqual(readdirSync(dirname(file)), ["key"], "no temp file left behind");
+  });
+
   it("refuses an empty paste or one with spaces in it", () => {
     const file = tempKeyFile();
     assert.throws(() => saveApiKey("  \n", { GRILL_KEY_FILE: file }), /no key/);
