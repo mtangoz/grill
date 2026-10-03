@@ -265,7 +265,11 @@ describe("confirming", () => {
 
   it("rejects a bad, tampered or expired token and stores nothing further", async () => {
     const { w, token } = await ready();
-    const flipped = `${token.slice(0, -2)}${token.endsWith("a") ? "b" : "a"}${token.slice(-1)}`;
+    // Flip a character of the IV. The replacement has to be chosen from the
+    // character being replaced: endsWith() looks at a different character, so
+    // the "tampered" token sometimes equals the real one.
+    const flipped = `${token[0] === "a" ? "b" : "a"}${token.slice(1)}`;
+    assert.notEqual(flipped, token);
     const expired = sealNotifyToken({ email: NORMAL, via: "tool", exp: NOW - 1 }, ENV.GRILL_NOTIFY_SECRET);
     const wrong = sealNotifyToken({ email: NORMAL, via: "tool", exp: NOW + 1000 }, "a-different-secret-value");
     for (const t of ["nope", flipped, expired, wrong]) {
