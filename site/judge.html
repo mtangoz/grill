@@ -1,0 +1,104 @@
+<title>Grill a decision</title>
+<style>
+  .paste input, .paste select { width: 100%; box-sizing: border-box; font: 0.95rem var(--sans); padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: transparent; color: var(--ink); margin: 0 0 0.8rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 0 0 0.4rem; }
+  .check { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+  .error { border: 1px solid var(--ink); border-radius: 8px; padding: 10px 12px; margin: 0 0 1rem; }
+  .summary { font-family: var(--mono); font-size: 0.9rem; margin: 0 0 1rem; }
+  .summary p { margin: 0.15rem 0; }
+  .summary .k { color: var(--quiet); display: inline-block; width: 8ch; }
+  textarea.record { min-height: 14rem; }
+  #report { white-space: pre-wrap; }
+</style>
+<main id="top">
+  <div class="top">
+    <a class="mark" href="/">grill</a>
+    <nav aria-label="Sections">
+      <a href="/">Home</a>
+      <a href="#how">How</a>
+      <a href="https://github.com/mtangoz/grill">GitHub</a>
+    </nav>
+  </div>
+
+  <h1>Grill it in your browser.</h1>
+  <p class="lede">Hear the strongest case against your plan, then decide for yourself.</p>
+  <p class="note">Paste a write-up and your OpenRouter key. A model from a different company argues the other side. The verdict is advice. You decide. The key and the text stay on this device and go straight to OpenRouter. Grill stores nothing.</p>
+
+  <form class="paste" id="grill-form" action="#" method="post" autocomplete="off">
+    <label for="key">OpenRouter key</label>
+    <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-v1-…">
+    <p class="row">
+      <label class="check" for="remember"><input id="remember" type="checkbox"> Remember on this device</label>
+      <button class="choice" id="forget" type="button">Forget key</button>
+    </p>
+    <p class="note">The key stays in this tab. Remember keeps it in this browser only. Forget key deletes it. It is sent only to OpenRouter, as the request's credential.</p>
+
+    <label for="assistant">Which assistant wrote this?</label>
+    <select id="assistant">
+      <option value="">Choose one</option>
+      <option value="claude">Claude (Anthropic)</option>
+      <option value="gemini">Gemini (Google)</option>
+      <option value="chatgpt">ChatGPT (OpenAI)</option>
+      <option value="grok">Grok (xAI)</option>
+      <option value="other">Other</option>
+    </select>
+    <p class="note" id="other-note" hidden>Other does not name a company, so Grill cannot check that the judge is a different one.</p>
+
+    <label for="question">Goal or question (optional)</label>
+    <textarea id="question" placeholder="What would have to be true for the other option to be the better call?"></textarea>
+
+    <label for="writeup">Write-up</label>
+    <textarea id="writeup" placeholder="The decision, the options, the reasons, and what you expect."></textarea>
+
+    <p class="cta"><button class="button" id="grill" type="button">Grill it</button></p>
+    <p class="note" id="status" hidden role="status"></p>
+    <p class="error" id="error" hidden role="alert"></p>
+  </form>
+
+  <div id="result" hidden>
+    <div class="summary" aria-live="polite">
+      <p><span class="k">Verdict</span> <strong id="verdict"></strong></p>
+      <p><span class="k">Judge</span> <span id="model"></span></p>
+      <p id="cost-line"><span class="k">Cost</span> <span id="cost"></span></p>
+    </div>
+    <p class="note" id="verdict-note">Advice. The verdict never becomes the decision. You decide.</p>
+    <pre id="report" class="report"></pre>
+
+    <h2>Before you decide</h2>
+    <p class="note">These stay in your notes. Grill does not store them and does not send them to the judge.</p>
+    <ol>
+      <li>What do you expect to happen, and by when? Write the prediction you will stand behind.</li>
+      <li>How sure are you now, as a percent? A band is fine. This is your confidence, not the judge.</li>
+      <li>What would prove you wrong? Name the one result you will treat as decisive.</li>
+    </ol>
+    <label for="record">Decision record</label>
+    <textarea id="record" class="record" spellcheck="false"></textarea>
+    <p class="cta">
+      <button class="button" id="copy-record" type="button">Copy the record</button>
+      <button class="choice" id="download-record" type="button">Download markdown</button>
+    </p>
+    <p class="note">The block is a version 1 grill-record. Copy it or download it. Nothing is stored on a server. Edit the prediction and the confidence before you copy, if the verdict moved you. A decided line is what you chose, in your own words, including any change you made because of a challenge. Add it only after you say it. If this choice replaced an earlier record, add supersedes as that record's date and title, and changed as evidence, goals, context or reweighed, then your few words. A re-grill where nothing changed leaves those lines off. Grill does not invent them, and it does not tell you what to decide.</p>
+  </div>
+
+  <h2 id="how">Ask your assistant for a link</h2>
+  <p class="note">Or paste the write-up above. You can give Claude or Gemini this line:</p>
+  <pre id="link-instruction">Summarize the decision and give me an Open in Grill link.</pre>
+  <p class="note">The link looks like <code id="link-example">https://grillyour.ai/judge#text=…&amp;from=claude</code>. The write-up sits after the #, so the browser does not send it to Grill. Set from to claude, gemini, chatgpt, grok, or other. Do not put your key in the link.</p>
+
+  <h2>Look back</h2>
+  <p class="note">Paste one or more saved records and say what happened. A surprise line is optional: a few words on anything you did not expect. This stays in your browser. Nothing is stored.</p>
+  <form class="paste" id="look-form" action="#" method="post">
+    <label for="look-records">Saved records</label>
+    <textarea id="look-records" placeholder="```grill-record"></textarea>
+    <label for="look-happened">What happened</label>
+    <textarea id="look-happened" placeholder="Did it come true? Did the thing that would prove you wrong happen? surprise: optional"></textarea>
+    <p class="cta"><button class="button" id="look-back" type="button">Look back</button></p>
+    <pre id="look-out" hidden></pre>
+  </form>
+
+  <div class="footer">
+    <span>Grill, by Hold Systems</span>
+    <span><a href="/">Back to Grill</a> · <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">Privacy</a></span>
+  </div>
+</main>
+<script type="module" src="/judge/judge-app.mjs"></script>

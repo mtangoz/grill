@@ -8,7 +8,7 @@
  *
  *   node scripts/build-site.mjs        # writes _site/index.html
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { billingMode, couponId, starterAllowanceUsd } from "../api/_pro.mjs";
@@ -58,8 +58,8 @@ const cut = page.indexOf("</style>");
 if (cut === -1) throw new Error("site/page.html must open with its <title>, links and <style>");
 const pageHead = page.slice(0, cut + "</style>".length);
 const pageBody = page.slice(cut + "</style>".length);
-const doc = (head, title, body) =>
-  `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${body}\n${ANALYTICS}\n</body>\n</html>\n`;
+const doc = (head, title, body, { analytics = true } = {}) =>
+  `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${body}\n${analytics ? `${ANALYTICS}\n` : ""}</body>\n</html>\n`;
 
 // The offer, the paywall and the launch-list form are build-time switches.
 // GRILL_PRO_COUPON set means 50% off is on the page. GRILL_PRO_BILLING=subscription shows
@@ -107,4 +107,27 @@ writeFileSync(
   join(OUT, "terms", "index.html"),
   doc(headFor({ description: "Grill Pro terms, in plain words.", url: `${SITE_URL}terms/` }), `${termsTitle}\n${style}`, terms.slice(termsTitle.length)),
 );
-console.log("built _site/index.html and _site/terms/index.html");
+
+// The judge page calls OpenRouter from the browser. It does not load visit analytics or any
+// other third-party script. The shared modules are copied beside the page so the browser
+// import graph matches the files the tests import.
+const judge = readFileSync(join(ROOT, "site/judge.html"), "utf8");
+const judgeTitle = judge.match(/^<title>[^<]*<\/title>/)?.[0];
+if (!judgeTitle) throw new Error("site/judge.html must open with its <title>");
+const judgeDir = join(OUT, "judge");
+mkdirSync(judgeDir, { recursive: true });
+const judgeDescription =
+  "Grill a decision in your browser. Your key and your write-up go straight to OpenRouter. Grill does not store them.";
+writeFileSync(
+  join(judgeDir, "index.html"),
+  doc(
+    headFor({ description: judgeDescription, url: `${SITE_URL}judge` }),
+    `${judgeTitle}\n${style}`,
+    judge.slice(judgeTitle.length),
+    { analytics: false },
+  ),
+);
+for (const file of ["judge-app.mjs", "judgePage.mjs", "judgeCore.mjs", "checkCore.mjs", "reflection.mjs"]) {
+  copyFileSync(join(ROOT, "scripts", file), join(judgeDir, file));
+}
+console.log("built _site/index.html, _site/terms/index.html and _site/judge/index.html");

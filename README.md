@@ -22,6 +22,12 @@ Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes c
 
 The extension reads `GRILL_API_KEY`. `OPENROUTER_API_KEY` works when that is unset.
 
+### Use Grill in your browser
+
+Open [grillyour.ai/judge](https://grillyour.ai/judge). Paste your OpenRouter key, choose which assistant wrote the decision, and paste the write-up. Press **Grill it**. The page shows the verdict as advice. The verdict never becomes the decision, and the page does not tell you what to decide. The key stays in the tab unless you tick **Remember on this device**. Forget key deletes it. The write-up and the key go from your browser straight to OpenRouter. Grill does not receive them and does not store them. The same page works on a phone.
+
+You can also tell Claude or Gemini: "Summarize the decision and give me an Open in Grill link." The link puts the write-up in the address fragment (`https://grillyour.ai/judge#text=…&from=claude`), which the browser does not send to Grill. Do not put the key in the link.
+
 ### claude.ai on the web or your phone: no key needed
 
 1. Download **[grill-skill.zip](https://github.com/mtangoz/grill/releases/latest/download/grill-skill.zip)**. In Claude, open **Customize → Skills**, upload it, and switch it on.
@@ -47,19 +53,27 @@ Want it in one step? Use Claude Desktop, above.
 ### Cursor, VS Code, Codex, Gemini CLI, or any app that runs MCP servers
 
 ```bash
-npx -y grillyour --set-key      # once: paste your key, Enter, then Ctrl-D
+npx -y github:mtangoz/grill --set-key      # once: paste your key, Enter, then Ctrl-D
 ```
 
-Then add a server named `grill` that runs `npx -y grillyour`. The config holds no key. Each app's config, and one-click installs for Cursor and VS Code, are in [docs/ANY-APP.md](docs/ANY-APP.md). A Grill Pro key works here too.
+Then add a server named `grill` that runs `npx -y github:mtangoz/grill`. The config holds no key. Each app's config, and one-click installs for Cursor and VS Code, are in [docs/ANY-APP.md](docs/ANY-APP.md). Once the `grillyour` package is on npm, `npx -y grillyour` is the same command.
 
 ### Claude Code
+
+Save the key first. Claude Code does not ask for it.
+
+```bash
+npx -y github:mtangoz/grill --set-key
+```
+
+Paste the key, press Enter, then Ctrl-D (Windows: Ctrl-Z, then Enter). It goes in `~/.config/grill/key`, outside any project's `.env`. Then:
 
 ```
 /plugin marketplace add mtangoz/grill
 /plugin install grill@grill
 ```
 
-It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTER_API_KEY` works when that is unset. Or save the key once for every app on this computer with `npx -y grillyour --set-key`. It goes in `~/.config/grill/key`, outside any project's `.env`.
+If a settings dialog appears, leave the key and Judge model empty. Start a new session so the plugin's server starts. Grill reads `GRILL_API_KEY` first. `OPENROUTER_API_KEY` works when that is unset. Otherwise it reads the key file. Once the `grillyour` package is on npm, `npx -y grillyour --set-key` is the same save command.
 
 ## What it costs
 

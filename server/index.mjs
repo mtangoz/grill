@@ -201,9 +201,11 @@ const SETUP_TEXT = [
   "Grill isn't set up yet: it needs a key for its model router, OpenRouter.",
   "1. Create one at https://openrouter.ai/keys. Sign in, and add a few dollars of credit; a grill costs about a cent.",
   "2. Paste it into Grill's settings where you installed it (Claude Desktop: Settings → Extensions → Grill).",
-  "   Or save it once for every app on this computer: run `npx -y grillyour --set-key` in a terminal, paste the key, press Enter, then Ctrl-D.",
+  "   Or save it once for every app on this computer: run `npx -y github:mtangoz/grill --set-key` in a terminal, paste the key, press Enter, then Ctrl-D.",
+  "   Claude Code does not ask for the key. Save it with that command first, then install the plugin and start a new session.",
+  "   Once the grillyour package is on npm, `npx -y grillyour --set-key` is the same command.",
   `Step-by-step: ${SETUP_URL}`,
-  "Have Grill Pro? Sign in at https://grillyour.ai/pro and paste the managed key into the same place. You can also set the judge model there.",
+  "On the web or a phone, open https://grillyour.ai/judge and paste the key there. It stays on your device.",
   "Until then, the grill skill can write the subject as a prompt for you to paste into ChatGPT or Gemini instead.",
 ].join("\n");
 
@@ -517,7 +519,7 @@ function runCommand(argv) {
   else if (flag === "--version" || flag === "-v") console.log(VERSION);
   else if (flag === "--key-status") {
     const found = resolveApiKey();
-    if (!found.key) console.log(`No key yet. GRILL_API_KEY and OPENROUTER_API_KEY are unset and ${keyFilePath()} has none. Run: npx -y grillyour --set-key`);
+    if (!found.key) console.log(`No key yet. GRILL_API_KEY and OPENROUTER_API_KEY are unset and ${keyFilePath()} has none. Run: npx -y github:mtangoz/grill --set-key`);
     else console.log(`Key found: ${found.source} (${maskKey(found.key)})`);
     if (found.warning) console.log(`Warning: ${found.warning}`);
   } else if (flag === "--set-key") {

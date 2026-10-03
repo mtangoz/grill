@@ -8,6 +8,7 @@
     { "source": "/pro/auth", "destination": "/api/pro-auth" },
     { "source": "/pro/try", "destination": "/api/pro-try" },
     { "source": "/pro/reports", "destination": "/api/pro-reports" },
+    { "source": "/judge", "destination": "/judge/index.html" },
     { "source": "/notify", "destination": "/api/notify" },
     { "source": "/notify/confirm", "destination": "/api/notify-confirm" }
   ]

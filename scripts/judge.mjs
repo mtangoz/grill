@@ -128,13 +128,13 @@ import {
   CONTEXT_BUDGET,
   AUTO_ROUTER_MAX_RETRIES,
   DEFAULT_CHAIN,
-  JUDGE_TOOL,
   MAX_CHALLENGES,
   MAX_LINK_TIMEOUT_MS,
   MIN_LINK_TIMEOUT_MS,
   buildJudgeMessages,
   checkGrounding,
   decorrelationOf,
+  judgeChatBody,
   nextAttempt,
   reconcileVerdict,
   renderJudgeReport,
@@ -471,22 +471,19 @@ if (ignoredTimeout !== null) {
 const checkTimeoutMs = Math.min(CHECK_TIMEOUT_MS, linkTimeoutMs);
 
 function bodyFor(model) {
-  const body = { model, messages };
-  if (!walksChain && modelChain.length > 1) body.models = modelChain;
   // Derived from the LINK, not the primary: past the first hop the links are concrete
   // slugs and must carry no router plugin, or the setting rides under an id that model
-  // never reads.
-  const plugin = autoRouterPlugin(model, opts.author);
-  if (plugin) body.plugins = [plugin];
-  body.tools = [{ type: "function", function: JUDGE_TOOL }];
-  body.tool_choice = { type: "function", function: { name: JUDGE_TOOL.name } };
-  body.usage = { include: true };
+  // never reads. judgeChatBody applies that, plus the zero-retention provider pair.
   // PRIVACY IS NOT CONFIGURABLE. Every request, on every link of the chain, asks for
-  // zero-data-retention routing — there is no flag or environment variable that removes
+  // zero-data-retention routing. There is no flag or environment variable that removes
   // this. A model with no such endpoint fails this specific request, which the chain walk
   // treats like any other HTTP failure and moves past rather than retrying without it.
-  body.provider = { zdr: true, data_collection: "deny" };
-  return body;
+  return judgeChatBody({
+    model,
+    messages,
+    author: opts.author,
+    models: !walksChain && modelChain.length > 1 ? modelChain : null,
+  });
 }
 
 if (opts.dryRun) {

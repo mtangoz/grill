@@ -69,7 +69,7 @@ Show the subject and question, and say where they will go before sending anythin
    - Mask what the one-click route masks: email addresses become [email], phone numbers [phone], card numbers [card number].
    - Never include a key or token.
    - Suggest they turn on the app's private mode first, for example a Temporary Chat in ChatGPT.
-3. Give it back as one block they can copy. If it is under 6,000 characters, also give an "Open in ChatGPT" link: `https://chatgpt.com/?q=` followed by the URL-encoded prompt. For Gemini or any other assistant, they paste it themselves. Name the assistants they can paste it into: ChatGPT, Gemini or Grok.
+3. Give it back as one block they can copy. If it is under 6,000 characters, also give an "Open in ChatGPT" link: `https://chatgpt.com/?q=` followed by the URL-encoded prompt. For Gemini or any other assistant, they paste it themselves. Name the assistants they can paste it into: ChatGPT, Gemini or Grok. If they have an OpenRouter key, also give an Open in Grill link: `https://grillyour.ai/judge#text=` plus the URL-encoded approved write-up, then `&from=claude`. The write-up goes in the fragment, never the query string. Do not put their key in the link. They open it, paste the key once, and read the verdict there. Pasting the write-up into that page works the same way.
 4. Ask them to paste the judge's answer back here. Your own view is not the judge.
 5. Mention once that Claude Desktop with the Grill extension does this in one step: https://github.com/mtangoz/grill#set-up
 6. If they have a Grill Pro setup that names a judge, paste into that assistant, and only if it is a different company from you. Do not put their managed key in the prompt.
