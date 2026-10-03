@@ -52,6 +52,7 @@ function runCli(args, env, stdinText) {
 function envFor(overrides = {}) {
   const env = { ...process.env };
   for (const k of [
+    "GRILL_API_KEY",
     "OPENROUTER_API_KEY",
     "JUDGE_FIXTURE",
     "JUDGE_MODEL",
@@ -62,7 +63,8 @@ function envFor(overrides = {}) {
   ]) {
     delete env[k];
   }
-  return { ...env, ...overrides };
+  // Never the developer's real key file: point at one that does not exist.
+  return { ...env, GRILL_KEY_FILE: join(tmpdir(), "grill-tests-no-key-file", "key"), ...overrides };
 }
 
 function tmpFile(prefix, name, content) {

@@ -47,10 +47,20 @@
  *                      with --check, also ask Jev whether any challenge identifies this
  *                      specific flaw. The eval loop passes each case's planted flaw; the text
  *                      is masked like the subject before it is sent.
+ *   --set-key          read a model router key from stdin and save it to the key file (below),
+ *                      mode 0600, then exit. Paste the key and press Enter, then Ctrl-D, or pipe
+ *                      it in. Never put the key on the command line: shell history keeps it.
+ *   --key-status       say whether a key is found and where from, then exit. Never prints the
+ *                      key, makes no network call, and exits 0 either way.
  *   --help, -h         print this text.
  *
  * ENVIRONMENT
- *   OPENROUTER_API_KEY    required unless --dry-run, or JUDGE_FIXTURE is set.
+ *   GRILL_API_KEY         the model router key. Wins over everything below.
+ *   OPENROUTER_API_KEY    the same key, read when GRILL_API_KEY is unset.
+ *   GRILL_KEY_FILE        where the key file is. Default $XDG_CONFIG_HOME/grill/key, else
+ *                         ~/.config/grill/key. Read when neither variable above is set. It sits
+ *                         outside every repository, so a rewritten project `.env` cannot lose
+ *                         it. A key is required unless --dry-run, or JUDGE_FIXTURE is set.
  *   JUDGE_MODEL           optional comma-separated chain override. Unset, the judge asks
  *                         only `openrouter/auto`, excluding the author's company, and
  *                         retries that same router on a transient failure. An override
@@ -107,6 +117,8 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
+
+import { keyFilePath, maskKey, resolveApiKey, saveApiKey } from "./apiKey.mjs";
 
 import {
   autoRouterPlugin,
@@ -255,6 +267,30 @@ function parseArgs(argv) {
         break;
       case "--check-flaw":
         opts.checkFlaw = next();
+        break;
+      case "--set-key":
+        {
+          let path;
+          try {
+            path = saveApiKey(readStdin());
+          } catch (e) {
+            fail(`--set-key: ${e.message}. Pipe or paste the key on stdin, never as an argument.`);
+          }
+          console.log(`[judge] key saved to ${path} (mode 600)`);
+        }
+        process.exit(0);
+        break;
+      case "--key-status":
+        {
+          const found = resolveApiKey();
+          if (!found.key) {
+            console.log(`[judge] no key: GRILL_API_KEY and OPENROUTER_API_KEY are unset and ${keyFilePath()} has none`);
+          } else {
+            console.log(`[judge] key found: ${found.source} (${maskKey(found.key)})`);
+            if (found.warning) console.log(`[judge] warning: ${found.warning}`);
+          }
+        }
+        process.exit(0);
         break;
       case "--help":
       case "-h":
@@ -507,12 +543,16 @@ if (opts.dryRun) {
 // ── The call ─────────────────────────────────────────────────────────────────
 const FIXTURE = process.env.JUDGE_FIXTURE;
 
-if (!FIXTURE && !process.env.OPENROUTER_API_KEY) {
+const API_KEY = FIXTURE ? { key: "" } : resolveApiKey();
+if (!FIXTURE && !API_KEY.key) {
   fail(
-    "OPENROUTER_API_KEY is not set, so the judge cannot run. Export it, set JUDGE_FIXTURE to "
-      + "replay a saved response, or pass --dry-run to inspect the request payload without either.",
+    "no model router key, so the judge cannot run. Set GRILL_API_KEY or OPENROUTER_API_KEY, or "
+      + `save one to ${keyFilePath()} with --set-key. A lost key cannot be read back from anywhere: `
+      + "make a new one in your OpenRouter account. Set JUDGE_FIXTURE to replay a saved "
+      + "response, or pass --dry-run to inspect the request payload without either.",
   );
 }
+if (API_KEY.warning) console.error(`[judge] warning: ${API_KEY.warning}`);
 
 /**
  * THE ONE PLACE THE INSTALLED CODE TOUCHES THE NETWORK. scripts/privacy.test.mjs counts the
@@ -541,7 +581,7 @@ async function postJson(url, body, timeoutMs) {
     response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${API_KEY.key}`,
         "Content-Type": "application/json",
         "HTTP-Referer": APP_REFERER,
         "X-Title": "Grill",

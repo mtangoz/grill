@@ -14,7 +14,7 @@
  * times out a chat.
  *
  * THE KEY. GRILL_API_KEY (filled from the install dialog) wins, then OPENROUTER_API_KEY from the
- * environment. It goes into the judge's environment and nowhere else: it is never returned,
+ * environment, then the key file `node scripts/judge.mjs --set-key` writes (scripts/apiKey.mjs). It goes into the judge's environment and nowhere else: it is never returned,
  * logged or echoed.
  *
  * THE QUALITY CHECK. GRILL_CHECK (the install dialog's "Quality check with Jev" setting) set to
@@ -36,6 +36,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { resolveApiKey } from "../scripts/apiKey.mjs";
 import { appendReflection, lookBack } from "../scripts/reflection.mjs";
 
 const VERSION = "0.1.1";
@@ -57,13 +58,9 @@ function waitMs() {
   return Number.isInteger(n) && n >= 1 && n <= 55_000 ? n : 45_000;
 }
 
-/** The user's key. An unfilled install-dialog placeholder arrives as literal `${…}` text; that is no key. */
-function resolveApiKey(env = process.env) {
-  for (const raw of [env.GRILL_API_KEY, env.OPENROUTER_API_KEY]) {
-    const value = typeof raw === "string" ? raw.trim() : "";
-    if (value && !value.startsWith("${")) return value;
-  }
-  return "";
+/** The user's key: the install dialog, the environment, then the key file (../scripts/apiKey.mjs). */
+function apiKey(env = process.env) {
+  return resolveApiKey(env).key;
 }
 
 /**
@@ -182,6 +179,7 @@ const SETUP_TEXT = [
   "Grill isn't set up yet: it needs a key for its model router, OpenRouter.",
   "1. Create one at https://openrouter.ai/keys. Sign in, and add a few dollars of credit; a grill costs about a cent.",
   "2. Paste it into Grill's settings where you installed it (Claude Desktop: Settings → Extensions → Grill).",
+  "   Or, on this computer, save it once to ~/.config/grill/key: `node scripts/judge.mjs --set-key` in the Grill folder, paste the key, press Enter, then Ctrl-D. Every Grill on this computer reads it.",
   `Step-by-step: ${SETUP_URL}`,
   "Have Grill Pro? Sign in at https://grillyour.ai/pro and paste the managed key into the same place. You can also set the judge model there.",
   "Until then, the grill skill can write the subject as a prompt for you to paste into ChatGPT or Gemini instead.",
@@ -298,7 +296,7 @@ function startJob({ subject, question, author, skipCheck }) {
   if (question) args.push("--question", question);
   if (author) args.push("--author", author);
   if (checkEnabled() && !skipCheck) args.push("--check");
-  const env = { ...process.env, OPENROUTER_API_KEY: resolveApiKey() };
+  const env = { ...process.env, OPENROUTER_API_KEY: apiKey() };
   delete env.JUDGE_CHECK; // the setting above decides, never an inherited variable
   const model = configuredJudgeModel(env);
   if (model) env.JUDGE_MODEL = model;
@@ -379,7 +377,7 @@ async function callTool(name, args = {}, onTick) {
     if (subject.length > MAX_SUBJECT_CHARS) return text(`The subject is ${subject.length} characters; trim it under ${MAX_SUBJECT_CHARS}.`, true);
     if (question.length > MAX_QUESTION_CHARS) return text(`The question is over ${MAX_QUESTION_CHARS} characters; shorten it.`, true);
     if (author && !AUTHOR_RE.test(author)) return text("author must be a lowercase model-family name, like openai.", true);
-    if (!resolveApiKey()) return text(SETUP_TEXT, true);
+    if (!apiKey()) return text(SETUP_TEXT, true);
     const judgeModel = configuredJudgeModel();
     if (judgeModel && judgePinConflicts(judgeModel, author)) {
       return text(

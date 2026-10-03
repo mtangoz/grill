@@ -30,6 +30,7 @@ Each of these is pinned by a test, so it can't quietly stop being true.
 - **Nothing leaves without your OK.** Claude shows you the write-up before anything is sent.
 - **Keys and tokens never leave.** If the write-up, question or context contains anything shaped like an API key, token or private key, the run stops before any network call and says so. It never echoes the value.
 - **Contact details are masked.** Email addresses, phone numbers and card numbers are replaced with `[email]`, `[phone]` and `[card number]` before sending. The report says how many, never what.
+- **Your key stays on your computer.** If you save it with `--set-key`, it goes in `~/.config/grill/key`, readable only by you (mode 600). Grill reads it there and sends it only to the model router, as the request's credential. Status lines show its last four characters, never the key.
 - **One destination.** The code you install makes exactly one kind of network call, to the model router. It has no other network code and no third-party packages, so there is no hidden dependency to trust.
 - Requests to OpenRouter identify the app as Grill (grillyour.ai), so OpenRouter can show aggregate usage counts for the app. No decision text goes anywhere new.
 - **Quotes are checked locally.** Every quote a challenge attacks is checked against your write-up on your own machine, so a made-up objection is flagged. This sends nothing anywhere.
