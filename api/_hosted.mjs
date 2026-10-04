@@ -108,6 +108,20 @@ function unauthorized(origin) {
   });
 }
 
+function methodNotAllowed() {
+  return new Response("That request isn't supported.", {
+    status: 405,
+    headers: { Allow: "GET, POST", "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+  });
+}
+
+/** `__route` only selects a handler inside api/hosted.js. It is not a parameter of these handlers. */
+function pageUrl(request) {
+  const url = new URL(request.url);
+  url.searchParams.delete("__route");
+  return url;
+}
+
 function toolText(text, isError = false) {
   return { content: [{ type: "text", text }], isError };
 }
@@ -709,7 +723,7 @@ async function callDecided(args, account, deps) {
 }
 
 async function identity(request, deps, { audience }) {
-  if (queryHasToken(request.url)) return { error: unauthorized(publicOrigin(request)) };
+  if (queryHasToken(pageUrl(request).href)) return { error: unauthorized(publicOrigin(request)) };
   const origin = publicOrigin(request);
   const token = audience ? (request.headers.get("authorization") || "").match(/^Bearer\s+(\S+)$/i)?.[1] || "" : cookieValue(request.headers.get("cookie"), "__session");
   if (!token) return { error: audience ? unauthorized(origin) : null, missing: true };
@@ -751,7 +765,7 @@ export async function handleMcp(request, deps) {
   if (!hostedEnabled(deps.env)) return notFound();
   try {
     const origin = publicOrigin(request);
-    if (queryHasToken(request.url)) return unauthorized(origin);
+    if (queryHasToken(pageUrl(request).href)) return unauthorized(origin);
     if (request.method === "DELETE") {
       const who = await identity(request, deps, { audience: true });
       if (who.error) return who.error;
@@ -827,6 +841,7 @@ export async function handleMcp(request, deps) {
 
 export async function handleProtectedResource(request, deps) {
   if (!hostedEnabled(deps.env)) return notFound();
+  if (request.method === "DELETE") return methodNotAllowed();
   const origin = publicOrigin(request);
   const issuer = typeof deps.env.CLERK_ISSUER === "string" ? deps.env.CLERK_ISSUER.trim() : "";
   if (!issuer) return fixedError(requestId());
@@ -838,7 +853,7 @@ export async function handleProtectedResource(request, deps) {
 
 function signInRedirect(request, deps) {
   const issuer = String(deps.env.CLERK_ISSUER || "").replace(/\/$/, "");
-  const back = `${publicOrigin(request)}${new URL(request.url).pathname}`;
+  const back = `${publicOrigin(request)}${pageUrl(request).pathname}`;
   return new Response(null, {
     status: 302,
     headers: { Location: `${issuer}/sign-in?redirect_url=${encodeURIComponent(back)}`, "Cache-Control": "no-store" },
@@ -996,12 +1011,13 @@ export async function handleDecisions(request, deps) {
   const id = requestId();
   deps = { ...deps, requestId: id };
   if (!hostedEnabled(deps.env)) return notFound();
+  if (request.method === "DELETE") return methodNotAllowed();
   try {
     const session = await pageUser(request, deps);
     if (session.redirect) return session.redirect;
     if (session.missing) return html(200, page("Grill", "<h1>This account has been deleted.</h1>"));
     if (session.html) return html(200, session.html);
-    const url = new URL(request.url);
+    const url = pageUrl(request);
     if (request.method === "GET" && url.searchParams.get("export") === "text") return exportRecords(session.account, deps, "text");
     if (request.method === "GET" && url.searchParams.get("export") === "json") return exportRecords(session.account, deps, "json");
     if (request.method === "POST") {
@@ -1037,6 +1053,7 @@ export async function handleAccount(request, deps) {
   const id = requestId();
   deps = { ...deps, requestId: id };
   if (!hostedEnabled(deps.env)) return notFound();
+  if (request.method === "DELETE") return methodNotAllowed();
   try {
     const session = await pageUser(request, deps);
     if (session.redirect) return session.redirect;

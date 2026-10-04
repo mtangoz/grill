@@ -518,11 +518,17 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.match(html, /Replaces 2026-01-10 Hire contractor/);
       assert.doesNotMatch(html, /flip-flop|consistency score/i);
       assert.doesNotMatch(html, new RegExp(USER_KEY));
-      const exported = await handleDecisions(new Request("https://grillyour.ai/decisions?export=text", { headers: { cookie: `__session=${session}` } }), ctx);
+      const exported = await handleDecisions(
+        new Request("https://grillyour.ai/decisions?export=text&__route=decisions", { headers: { cookie: `__session=${session}` } }),
+        ctx,
+      );
       const blocks = await exported.text();
       assert.equal(parseRecords(blocks).length, 2);
       assert.match(blocks, /source_app: claude/);
-      const asJson = await handleDecisions(new Request("https://grillyour.ai/decisions?export=json", { headers: { cookie: `__session=${session}` } }), ctx);
+      const asJson = await handleDecisions(
+        new Request("https://grillyour.ai/decisions?__route=decisions&export=json", { headers: { cookie: `__session=${session}` } }),
+        ctx,
+      );
       const rows = JSON.parse(await asJson.text());
       assert.equal(rows.length, 2);
       const decided = await postMcp(
@@ -646,6 +652,90 @@ describe("hosted Grill", { concurrency: false }, () => {
   });
 });
 
+describe("one hosted function", () => {
+  it("answers DELETE with 405 on the pages, and 404 while hosted is off", async () => {
+    const ctx = world();
+    for (const call of [
+      handleAccount(new Request("https://grillyour.ai/account?__route=account", { method: "DELETE" }), ctx),
+      handleDecisions(new Request("https://grillyour.ai/decisions?__route=decisions", { method: "DELETE" }), ctx),
+      handleProtectedResource(new Request("https://mcp.example/.well-known/oauth-protected-resource?__route=prm", { method: "DELETE" }), ctx),
+    ]) {
+      const res = await call;
+      assert.equal(res.status, 405);
+      assert.equal(res.headers.get("allow"), "GET, POST");
+    }
+    const off = { ...ctx, env: { ...ctx.env, GRILL_HOSTED: "" } };
+    const dark = await handleAccount(new Request("https://grillyour.ai/account", { method: "DELETE" }), off);
+    assert.equal(dark.status, 404);
+  });
+
+  it("ignores __route on the sign-in return and on a query token", async () => {
+    const ctx = world();
+    const back = await handleAccount(new Request("https://grillyour.ai/account?__route=account"), ctx);
+    assert.equal(back.status, 302);
+    const loc = new URL(back.headers.get("location"));
+    assert.equal(loc.searchParams.get("redirect_url"), "https://grillyour.ai/account");
+    const token = signJwt(claims());
+    const poisoned = await handleMcp(
+      new Request(`${RESOURCE}?__route=mcp&access_token=${token}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+      }),
+      ctx,
+    );
+    assert.equal(poisoned.status, 401);
+    const routed = await handleMcp(
+      new Request(`${RESOURCE}?__route=mcp`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+      }),
+      ctx,
+    );
+    assert.equal(routed.status, 200);
+  });
+
+  it("dispatches /api/hosted by __route, and by the public path", async () => {
+    const saved = { hosted: process.env.GRILL_HOSTED, issuer: process.env.CLERK_ISSUER };
+    process.env.GRILL_HOSTED = "on";
+    process.env.CLERK_ISSUER = "https://clerk.example.test";
+    try {
+      const { GET, POST, DELETE } = await import("../api/hosted.js");
+      const meta = await GET(new Request("https://mcp.example/api/hosted?__route=prm"));
+      assert.equal(meta.status, 200);
+      assert.equal((await meta.json()).resource, "https://mcp.example/mcp");
+
+      const account = await GET(new Request("https://grillyour.ai/api/hosted?__route=account"));
+      assert.equal(account.status, 302);
+      assert.equal(new URL(account.headers.get("location")).searchParams.get("redirect_url"), "https://grillyour.ai/account");
+
+      const byPath = await GET(new Request("https://grillyour.ai/decisions"));
+      assert.equal(byPath.status, 302);
+      assert.equal(new URL(byPath.headers.get("location")).searchParams.get("redirect_url"), "https://grillyour.ai/decisions");
+
+      const removed = await DELETE(new Request("https://grillyour.ai/api/hosted?__route=decisions", { method: "DELETE" }));
+      assert.equal(removed.status, 405);
+
+      const mcp = await POST(new Request("https://mcp.example/api/hosted?__route=mcp", { method: "POST", body: "{}" }));
+      assert.equal(mcp.status, 401);
+      assert.match(mcp.headers.get("www-authenticate"), /oauth-protected-resource/);
+
+      const unknown = await GET(new Request("https://mcp.example/api/hosted"));
+      assert.equal(unknown.status, 401);
+
+      process.env.GRILL_HOSTED = "";
+      const off = await GET(new Request("https://grillyour.ai/account"));
+      assert.equal(off.status, 404);
+    } finally {
+      if (saved.hosted === undefined) delete process.env.GRILL_HOSTED;
+      else process.env.GRILL_HOSTED = saved.hosted;
+      if (saved.issuer === undefined) delete process.env.CLERK_ISSUER;
+      else process.env.CLERK_ISSUER = saved.issuer;
+    }
+  });
+});
+
 describe("hosted mappings and ledger pins", () => {
   it("maps each OAuth client, and does not let clientInfo override that", () => {
     const table = [
@@ -684,14 +774,7 @@ describe("hosted mappings and ledger pins", () => {
   });
 
   it("does not log decision text, and pins hosted network destinations", () => {
-    const files = [
-      "api/_hosted.mjs",
-      "api/mcp.js",
-      "api/decisions.js",
-      "api/account.js",
-      "api/oauth-protected-resource.js",
-      "scripts/hostedCore.mjs",
-    ];
+    const files = ["api/_hosted.mjs", "api/hosted.js", "scripts/hostedCore.mjs"];
     for (const file of files) {
       const src = readFileSync(join(ROOT, file), "utf8");
       for (const match of src.matchAll(/console\.(?:log|error|warn|info|debug)\(([^)]*)\)/g)) {

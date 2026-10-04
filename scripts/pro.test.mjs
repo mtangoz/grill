@@ -456,14 +456,14 @@ describe("the endpoints", () => {
         { source: "/pro/reports", destination: "/api/pro-reports" },
         { source: "/notify", destination: "/api/notify" },
         { source: "/notify/confirm", destination: "/api/notify-confirm" },
-        { source: "/mcp", destination: "/api/mcp" },
-        { source: "/.well-known/oauth-protected-resource", destination: "/api/oauth-protected-resource" },
-        { source: "/.well-known/oauth-protected-resource/:extra*", destination: "/api/oauth-protected-resource" },
-        { source: "/decisions", destination: "/api/decisions" },
-        { source: "/account", destination: "/api/account" },
+        { source: "/mcp", destination: "/api/hosted?__route=mcp" },
+        { source: "/.well-known/oauth-protected-resource", destination: "/api/hosted?__route=prm" },
+        { source: "/.well-known/oauth-protected-resource/:extra*", destination: "/api/hosted?__route=prm" },
+        { source: "/decisions", destination: "/api/hosted?__route=decisions" },
+        { source: "/account", destination: "/api/hosted?__route=account" },
       ],
       functions: {
-        "api/mcp.js": { maxDuration: 300, includeFiles: "scripts/{apiKey,checkCore,judge,judgeCore,reflection,usageStats}.mjs" },
+        "api/hosted.js": { maxDuration: 300, includeFiles: "scripts/{apiKey,checkCore,judge,judgeCore,reflection,usageStats}.mjs" },
       },
     });
   });
