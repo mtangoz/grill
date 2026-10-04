@@ -738,6 +738,12 @@ export const JUDGE_TOOL = Object.freeze({
               enum: [...CONFIDENCES],
               description: "How sure you are, given you can see only what was supplied to you.",
             },
+            call: {
+              type: "string",
+              enum: ["checked", "yours"],
+              description:
+                "\"checked\" = the judge can settle it without the user's values: a bug, a fact, a figure or calculation, an internal inconsistency, a quote that doesn't match its source. \"yours\" = it hinges on the user's own values, priorities, risk appetite or unwritten rules of thumb; the judge can name the trade-off but not decide it. When unsure, use \"yours\".",
+            },
           },
           required: [
             "kind",
@@ -837,7 +843,10 @@ export function validateChallenges(raw, { maxChallenges = MAX_CHALLENGES } = {})
       return;
     }
 
-    challenges.push({
+    // `call` is optional. An unknown value is dropped, never a reason to lose the challenge.
+    // Old fixtures and models that omit it still validate. Missing means "yours" in the report.
+    const call = str(item.call).toLowerCase();
+    const row = {
       kind,
       severity,
       target,
@@ -849,7 +858,9 @@ export function validateChallenges(raw, { maxChallenges = MAX_CHALLENGES } = {})
         ? str(item.confidence).toLowerCase()
         : "medium",
       _index: index,
-    });
+    };
+    if (call === "checked" || call === "yours") row.call = call;
+    challenges.push(row);
   });
 
   challenges.sort((a, b) => challengeScore(b) - challengeScore(a) || a._index - b._index);
@@ -1044,6 +1055,7 @@ export function buildJudgeMessages({ subject, question = "", contextBlocks = [],
     "3. Check the question and the framing before you answer. If the question put to you presupposes its answer, hands you the alternative it prefers, or asks on the wrong axis, say so as a loaded-framing challenge, then answer the question that should have been asked as well as the one that was. A question can presuppose while sounding neutral: by asking how or when instead of whether, or by carrying the write-up's own reasons inside it. The write-up can lean the same way: a case against that it states only to answer, evidence it grades instead of shows. Discount that framing, and file it as loaded-framing when it hides something that bears on the verdict.",
     "4. Attack what is actually there. Every challenge must quote the words it targets — from the subject, or for loaded-framing, from the question. If you cannot quote it, the subject did not say it and you are arguing with yourself. If the subject states a goal or guardrails, check whether the decision defeats the goal or crosses a guardrail, and quote them. A trade-off the subject names and accepts is not a defect. If none are stated, do not invent them.",
     "5. Make every challenge settleable. Name the premise that has to hold, and name the cheapest concrete thing that would settle it either way.",
+    "Mark each challenge as checked (you can settle it from facts, figures, logic or consistency, with no appeal to the user's values) or yours (it turns on the user's values, priorities or unwritten rules); the report lists them apart as \"Checked for you\" and \"Your call\" so the user can go straight to the calls only they can make.",
     "6. Judge the whole on weight, not on count. One fatal challenge refutes; ten minor ones do not. Then swap sides: had someone who chose the other way written up the same facts, would your verdict be the same? If not, the framing is deciding it — decide again from the facts.",
     "",
     "Grade severity against the decision, not the finish of the plan. Every plan can be tightened, so a way to improve it is not, by itself, a reason to doubt the choice. Serious means that, if the challenge is right, the case no longer shows the chosen option beats the alternatives, or the chosen option must become a different plan; an unsupported claim or an overreach is serious when, without it, a rejected option looks as good or better, and moderate when the choice still stands without it. Moderate means the choice stands once a condition is met, a check is added, or a detail is fixed in place, including a test, threshold or sample size that needs fixing and makes no rejected option look better. A risk the subject names, with a test that would reveal it or a way back, is not a hidden one: judge whether the test and the way back work, not whether the risk exists. A test or a way back that needs fixing is a moderate challenge that says how to fix it; only one that cannot be made to work at all is serious. The scale, on an unrelated decision (renewing a support contract for a year rather than going month to month): fatal, the contract's own terms exclude the system it is meant to cover; serious, the annual price assumes last year's usage, usage has already doubled, and the comparison with month to month has to be redone before the choice can be made; moderate, the write-up reviews response times each quarter, and a monthly look would catch a slide sooner; minor, a figure is quoted without its date.",
@@ -1196,19 +1208,30 @@ export function renderJudgeReport(result) {
       "",
     );
   } else {
-    challenges.forEach((c, i) => {
-      out.push(
-        `### ${i + 1}. ${c.severity.toUpperCase()} · ${KIND_LABEL[c.kind] ?? c.kind} · confidence: ${c.confidence}`,
-        "",
-        `> ${c.target.replace(/\n/g, "\n> ")}`,
-        "",
-        c.challenge,
-        "",
-        `- **What would have to be true:** ${c.what_would_have_to_be_true}`,
-        `- **Falsifier:** ${c.falsifier}`,
-        "",
-      );
-    });
+    // Numbers stay the severity rank (1 is the most severe). Groups only change where each
+    // challenge is shown. A missing or unknown call is "Your call". An empty group is omitted.
+    const ranked = challenges.map((c, i) => ({ c, n: i + 1 }));
+    const groups = [
+      ["Checked for you", ranked.filter(({ c }) => c.call === "checked")],
+      ["Your call", ranked.filter(({ c }) => c.call !== "checked")],
+    ];
+    for (const [label, items] of groups) {
+      if (items.length === 0) continue;
+      out.push(`### ${label}`, "");
+      for (const { c, n } of items) {
+        out.push(
+          `### ${n}. ${c.severity.toUpperCase()} · ${KIND_LABEL[c.kind] ?? c.kind} · confidence: ${c.confidence}`,
+          "",
+          `> ${c.target.replace(/\n/g, "\n> ")}`,
+          "",
+          c.challenge,
+          "",
+          `- **What would have to be true:** ${c.what_would_have_to_be_true}`,
+          `- **Falsifier:** ${c.falsifier}`,
+          "",
+        );
+      }
+    }
   }
 
   if (strongestObjection) out.push("## If you fix one thing", "", strongestObjection, "");

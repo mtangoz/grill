@@ -114,6 +114,7 @@ describe("the MCP handshake", () => {
     assert.match(grill.description, /kinder verdict than it should/);
     assert.match(grill.description, /don't answer it/);
     assert.match(grill.description, /Goal and Guardrails lines/);
+    assert.match(grill.description, /quick or bulk/);
     assert.deepEqual(Object.keys(grill.inputSchema.properties).sort(), ["author", "quality_check", "question", "subject"]);
     assert.match(grill.inputSchema.properties.question.description, /names every option/);
     assert.match(grill.inputSchema.properties.question.description, /easy answer is the choice already made/);

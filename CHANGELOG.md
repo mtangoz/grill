@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Each verdict lists challenges in two groups: "Checked for you" (bugs, facts, figures, consistency the judge could settle) and "Your call" (what turns on your own values or unwritten rules). The judge tags each challenge; untagged ones count as your call.
+- Speed rule: Grill never adds a required question before the verdict on a quick or bulk grill. A forecast is an optional one-line offer after the verdict, for decisions you mark as big. The prediction question no longer blocks a grill.
+- docs/PRINCIPLES.md links every promise to the code and test that enforce it, and marks promises that are prompt instructions only. `node --test scripts/principles.test.mjs` checks them. The README has a "What Grill promises" section.
 - The mission and vision say Grill is for stronger judgement: a different company's AI argues the other side, the person decides, and a later look-back shows how that judgement did, including when to change course. The lead line is "Hear the strongest case against your plan, then decide for yourself."
 - Evidenced look-backs are reported beside the 100 real users, and never added to that count. The count is public signal issues with Event `resolved`, plus outreach replies that confirm a look-back. No new tracking.
 - The verdict never becomes the decision. If you ask whether you should do it, the assistant hands the choice back and names the deciding test. Push-back does not flip the verdict without new evidence. A re-grill in the same chat shows the earlier verdict beside the new one. A copy-paste check across Claude, ChatGPT, Gemini and Grok is in docs/manual-check.md. It does not pin a model.
