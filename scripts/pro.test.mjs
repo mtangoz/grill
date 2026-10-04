@@ -463,7 +463,7 @@ describe("the endpoints", () => {
         { source: "/account", destination: "/api/account" },
       ],
       functions: {
-        "api/mcp.js": { maxDuration: 300, includeFiles: "scripts/**" },
+        "api/mcp.js": { maxDuration: 300, includeFiles: "scripts/{apiKey,checkCore,judge,judgeCore,reflection,usageStats}.mjs" },
       },
     });
   });

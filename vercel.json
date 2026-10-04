@@ -20,7 +20,7 @@
   "functions": {
     "api/mcp.js": {
       "maxDuration": 300,
-      "includeFiles": "scripts/**"
+      "includeFiles": "scripts/{apiKey,checkCore,judge,judgeCore,reflection,usageStats}.mjs"
     }
   }
 }
