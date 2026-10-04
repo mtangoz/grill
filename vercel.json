@@ -1,4 +1,5 @@
 {
+  "fluid": true,
   "buildCommand": "GRILL_PRO_NOTIFY=1 node scripts/build-site.mjs",
   "outputDirectory": "_site",
   "rewrites": [

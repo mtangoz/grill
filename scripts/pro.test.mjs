@@ -444,6 +444,7 @@ describe("the endpoints", () => {
   it("/welcome, /checkout and /notify are routed to their functions, and the site build is what Vercel runs", () => {
     const config = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
     assert.deepEqual(config, {
+      fluid: true,
       buildCommand: "GRILL_PRO_NOTIFY=1 node scripts/build-site.mjs",
       outputDirectory: "_site",
       rewrites: [
