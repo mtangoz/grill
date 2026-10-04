@@ -542,7 +542,12 @@ describe("every route carries the footer and the look-back, and the judge prompt
       ["prompt", prompt],
     ]) {
       assert.ok(text.includes(combined), `${name} is missing the goal and guardrails question`);
-      assert.match(text, /never yields/, `${name} lets the prediction question yield`);
+      assert.match(
+        text,
+        /Never add a required question before the verdict on a quick or bulk grill/,
+        `${name} can require a question before the verdict on a quick or bulk grill`,
+      );
+      assert.doesNotMatch(text, /never yields/i, `${name} still says the prediction question never yields`);
       assert.match(text, /just grill it/, `${name} has no skip for just grill it`);
       assert.match(text, /Goal: not stated/, `${name} does not record a declined goal`);
       assert.match(text, /Did you reach the goal\? Yes, no or partly\./);

@@ -122,6 +122,21 @@ describe("budgetText", () => {
 
 // ---------------------------------------------------------------------------
 describe("validateChallenges — drop, do not coerce", () => {
+  it("drops an invalid call value instead of rejecting the challenge", () => {
+    const { challenges, rejected } = validateChallenges([
+      wellFormed({ call: "maybe" }),
+      wellFormed({ call: "Checked" }),
+      wellFormed({ call: "" }),
+      wellFormed({ call: "yours" }),
+    ]);
+    assert.deepEqual(rejected, []);
+    assert.equal(challenges.length, 4);
+    assert.equal(Object.hasOwn(challenges[0], "call"), false);
+    assert.equal(challenges[1].call, "checked");
+    assert.equal(Object.hasOwn(challenges[2], "call"), false);
+    assert.equal(challenges[3].call, "yours");
+  });
+
   it("keeps a well-formed challenge and strips the internal index", () => {
     const { challenges, rejected, capped } = validateChallenges([wellFormed()]);
     assert.equal(challenges.length, 1);
@@ -461,6 +476,23 @@ describe("buildJudgeMessages", () => {
     }
   });
 
+  it("states the checked and yours split in the system prompt and in JUDGE_TOOL", () => {
+    const sentence =
+      'Mark each challenge as checked (you can settle it from facts, figures, logic or consistency, with no appeal to the user\'s values) or yours (it turns on the user\'s values, priorities or unwritten rules); the report lists them apart as "Checked for you" and "Your call" so the user can go straight to the calls only they can make.';
+    const [system] = buildJudgeMessages({ subject: "x" });
+    const at = (needle) => system.content.indexOf(needle);
+    assert.ok(at("5. Make every challenge settleable") > -1);
+    assert.ok(at("5. Make every challenge settleable") < at(sentence));
+    assert.ok(at(sentence) < at("6. Judge the whole"));
+    const call = JUDGE_TOOL.parameters.properties.challenges.items.properties.call;
+    assert.deepEqual(call.enum, ["checked", "yours"]);
+    assert.equal(
+      call.description,
+      '"checked" = the judge can settle it without the user\'s values: a bug, a fact, a figure or calculation, an internal inconsistency, a quote that doesn\'t match its source. "yours" = it hinges on the user\'s own values, priorities, risk appetite or unwritten rules of thumb; the judge can name the trade-off but not decide it. When unsure, use "yours".',
+    );
+    assert.equal(JUDGE_TOOL.parameters.properties.challenges.items.required.includes("call"), false);
+  });
+
   it("steelmans the other side before attacking, and audits the question before answering it", () => {
     const [system, user] = buildJudgeMessages({ subject: "x", question: "is one example enough?" });
     const at = (needle) => system.content.indexOf(needle);
@@ -586,6 +618,54 @@ describe("renderJudgeReport", () => {
       counterSteelman: "none — the subject argues no direction",
     });
     assert.ok(!none.includes("Counter-steelman"));
+  });
+
+  it("renders Checked for you before Your call, and a missing call counts as yours", () => {
+    const { challenges } = validateChallenges([
+      wellFormed({
+        severity: "minor",
+        confidence: "low",
+        call: "checked",
+        target: "the figure is 12",
+        challenge: "the figure has no date",
+      }),
+      wellFormed({
+        severity: "serious",
+        confidence: "high",
+        call: "yours",
+        target: "we accept the risk",
+        challenge: "whether to accept that risk is your call",
+      }),
+      wellFormed({
+        severity: "moderate",
+        confidence: "medium",
+        target: "ship on Friday",
+        challenge: "the missing tag is still a call",
+      }),
+    ]);
+    const md = renderJudgeReport({ verdict: "weak", challenges });
+    const checkedAt = md.indexOf("### Checked for you");
+    const yoursAt = md.indexOf("### Your call");
+    assert.ok(md.indexOf("## Challenges (3)") < checkedAt);
+    assert.ok(checkedAt < yoursAt);
+    assert.ok(checkedAt < md.indexOf("the figure has no date") && md.indexOf("the figure has no date") < yoursAt);
+    assert.ok(yoursAt < md.indexOf("whether to accept that risk is your call"));
+    assert.ok(md.indexOf("whether to accept that risk is your call") < md.indexOf("the missing tag is still a call"));
+    assert.ok(md.indexOf("### 3. MINOR") > checkedAt && md.indexOf("### 3. MINOR") < yoursAt);
+    assert.ok(md.indexOf("### 1. SERIOUS") > yoursAt);
+    assert.ok(md.indexOf("### 1. SERIOUS") < md.indexOf("### 2. MODERATE"));
+
+    const onlyChecked = renderJudgeReport({
+      verdict: "weak",
+      challenges: validateChallenges([wellFormed({ call: "checked" })]).challenges,
+    });
+    assert.match(onlyChecked, /### Checked for you/);
+    assert.doesNotMatch(onlyChecked, /### Your call/);
+
+    const empty = renderJudgeReport({ verdict: "holds", challenges: [] });
+    assert.doesNotMatch(empty, /### Checked for you/);
+    assert.doesNotMatch(empty, /### Your call/);
+    assert.match(empty, /tried to break it and could not/);
   });
 
   it("labels a loaded-framing challenge by name, not by slug", () => {

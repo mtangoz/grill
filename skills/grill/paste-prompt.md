@@ -33,8 +33,9 @@ Answer in exactly this format:
 **Verdict:** solid / solid if / shaky / doesn't hold up, and one sentence why.
 **Steelman:** …
 **Counter-steelman:** …
-**Challenges,** most severe first; for each:
+**Challenges,** most severe first, with Checked for you challenges before Your call ones; for each:
 - Severity (fatal, serious, moderate or minor) · kind (unsupported claim, hidden assumption, missing failure mode, simpler path ignored, overreach, evidence mismatch, loaded framing, or unfalsifiable) · your confidence (high, medium or low)
+- Checked for you (a fact, figure, bug or consistency you can verify) or Your call (turns on my values or unwritten rules)
 - > the quoted words it targets
 - The challenge, in one to three sentences.
 - What would have to be true: …
