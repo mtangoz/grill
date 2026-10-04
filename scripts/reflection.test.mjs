@@ -533,6 +533,12 @@ describe("every route carries the footer and the look-back, and the judge prompt
       assert.match(text, /at most one short question/);
       assert.match(text, /Say 'more', 'options', or your call\./);
       assert.match(text, /only after they answer|only after I answer/);
+      assert.match(
+        text,
+        /Never add a required question before the verdict on a quick or bulk grill/,
+        `${name} can require a question before the verdict on a quick or bulk grill`,
+      );
+      assert.doesNotMatch(text, /never yields/i, `${name} still says the prediction question never yields`);
       assert.match(text, /Did you reach the goal\? Yes, no or partly\./);
       assert.match(text, /Did your guardrails hold\? Yes or no\./);
       assert.match(text, /the prediction was right about the wrong target/);

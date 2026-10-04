@@ -37,6 +37,7 @@ Write at most 150 words, and nothing else. Do the steelman and the counter-steel
 **Sharpest:** one sentence. Lead with the missing option if there is one, otherwise the biggest risk. Cheap test: the cheapest test.
 **More:** the second challenge, in one sentence. Cheap test: its cheapest test. Flips if: the one or two facts that would flip the call.
 **Options:** the options side by side, the one question that splits them, and a one-line rule.
+Mark a fact, figure, bug or consistency you can verify as Checked for you, and a challenge that turns on the user's values or unwritten rules as Your call. Do not move one into the other.
 
 Stop there. Do not add a third challenge.
 

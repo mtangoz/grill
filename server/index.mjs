@@ -246,6 +246,7 @@ export function buildGrillTools({ checkOn }) {
     "The judge is picked by openrouter/auto. Do not pin a model, and do not fall back to this chat's own model for speed or cost.",
     "Send the decision as the user stated it, with whatever context is already in the chat. Do not rewrite it into a template, and do not add your own case against.",
     "Ask at most one short question, and only if the decision is truly unclear, such as 'What's the goal?'. Then call this tool. Do not wait for an OK, and do not show a write-up full of blanks.",
+    "Never add a required question before the verdict on a quick or bulk grill. Ask only what the subject strictly needs.",
     `The first time you use Grill with this person, say once, as one line, and not again: ${ONCE_DISCLOSURE}`,
     checkNote,
     "After that, do not repeat the disclosure. Do not mention the judge's model, a score, a balance, or a quote check.",
