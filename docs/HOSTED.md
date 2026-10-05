@@ -23,7 +23,8 @@ On the preview environment only, until the spike in [hosted-spike.md](hosted-spi
 |---|---|
 | `GRILL_HOSTED` | `on` to serve `/mcp`, the sign-in metadata, `/decisions` and `/account`. Anything else, including unset, is a 404. |
 | `GRILL_HOSTED_ALLOWLIST` | Comma-separated emails. If unset, the list does not filter. Set it before anyone is invited. |
-| `CLERK_ISSUER` | Clerk Frontend API URL, no trailing slash. This is the authorization server in the protected-resource metadata. |
+| `CLERK_ISSUER` | Clerk Frontend API URL, no trailing slash. This is the authorization server in the protected-resource metadata. It does not serve the sign-in page. |
+| `CLERK_SIGN_IN_URL` | Optional. Absolute URL of the Clerk Account Portal sign-in page. When unset, Grill derives it from `CLERK_ISSUER`: `name.clerk.accounts.dev` becomes `https://name.accounts.dev/sign-in`, `name.clerk.accountsstage.dev` becomes `https://name.accountsstage.dev/sign-in`, and `clerk.example.com` becomes `https://accounts.example.com/sign-in`. Set this when the Frontend API host does not follow those shapes. |
 | `CLERK_JWKS_URL` | Optional. Defaults to `<CLERK_ISSUER>/.well-known/jwks.json`. |
 | `CLERK_SECRET_KEY` | Clerk secret key. Used to read the verified email and to delete the user when they delete the account. |
 | `OPENROUTER_MANAGEMENT_KEY` | Creates one capped key per person. Never put this where a visitor can read it. |
@@ -45,7 +46,7 @@ For this preview:
 - Google, and an emailed code.
 - Redirect `https://claude.ai/api/mcp/auth_callback` for Claude on the web, desktop, mobile and Cowork.
 - Port-agnostic loopback `http://localhost/callback` and `http://127.0.0.1/callback` for Claude Code.
-- Add the preview origin to Clerk's allowed origins so `/decisions` and `/account` can come back signed in. The session cookie is `__session`. Grill checks it with the same JWKS.
+- Add this site's origin to Clerk's allowed origins. Signed-out visits to `/decisions` and `/account` redirect to the Account Portal sign-in page, then back here. Grill reads the `__session` cookie with the same JWKS. A development instance does not set that cookie on a `*.vercel.app` preview: the dev session stays on Clerk's host, and Clerk will not send the browser back until this origin is allowed. A return with no session shows a short message instead of another redirect. On a production instance, use your own domain (`accounts.<domain>` for sign-in, the app on that same domain) so the cookie can come back with the person.
 
 Grill maps the OAuth client, not the chat's own guess:
 

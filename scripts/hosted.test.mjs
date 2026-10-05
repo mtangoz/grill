@@ -674,7 +674,9 @@ describe("one hosted function", () => {
     const back = await handleAccount(new Request("https://grillyour.ai/account?__route=account"), ctx);
     assert.equal(back.status, 302);
     const loc = new URL(back.headers.get("location"));
-    assert.equal(loc.searchParams.get("redirect_url"), "https://grillyour.ai/account");
+    assert.equal(loc.origin, "https://accounts.example.test");
+    assert.equal(loc.pathname, "/sign-in");
+    assert.equal(loc.searchParams.get("redirect_url"), "https://grillyour.ai/account?from=signin");
     const token = signJwt(claims());
     const poisoned = await handleMcp(
       new Request(`${RESOURCE}?__route=mcp&access_token=${token}`, {
@@ -696,6 +698,71 @@ describe("one hosted function", () => {
     assert.equal(routed.status, 200);
   });
 
+  it("sends signed-out account pages to the Account Portal, and does not loop", async () => {
+    const cases = [
+      ["https://named-animal-12.clerk.accounts.dev", "https://named-animal-12.accounts.dev"],
+      ["https://clerk.grillyour.ai/", "https://accounts.grillyour.ai"],
+      ["https://foo.clerk.accountsstage.dev", "https://foo.accountsstage.dev"],
+    ];
+    for (const [issuer, portal] of cases) {
+      const ctx = world();
+      ctx.env.CLERK_ISSUER = issuer;
+      const res = await handleAccount(new Request("https://grillyour.ai/account"), ctx);
+      assert.equal(res.status, 302);
+      const loc = new URL(res.headers.get("location"));
+      assert.equal(loc.origin, portal);
+      assert.equal(loc.pathname, "/sign-in");
+      assert.equal(loc.searchParams.get("redirect_url"), "https://grillyour.ai/account?from=signin");
+      assert.equal(loc.hostname.includes("clerk."), false);
+    }
+
+    const decisions = world();
+    decisions.env.CLERK_ISSUER = "https://clerk.grillyour.ai";
+    const listed = await handleDecisions(new Request("https://preview.example/decisions"), decisions);
+    const listedLoc = new URL(listed.headers.get("location"));
+    assert.equal(listedLoc.origin, "https://accounts.grillyour.ai");
+    assert.equal(listedLoc.searchParams.get("redirect_url"), "https://preview.example/decisions?from=signin");
+
+    const custom = world();
+    custom.env.CLERK_ISSUER = "https://named-animal-12.clerk.accounts.dev";
+    custom.env.CLERK_SIGN_IN_URL = "https://accounts.custom.test/enter";
+    const overridden = await handleAccount(new Request("https://grillyour.ai/account"), custom);
+    const overLoc = new URL(overridden.headers.get("location"));
+    assert.equal(overLoc.origin, "https://accounts.custom.test");
+    assert.equal(overLoc.pathname, "/enter");
+    assert.equal(overLoc.searchParams.get("redirect_url"), "https://grillyour.ai/account?from=signin");
+
+    const unknown = world();
+    unknown.env.CLERK_ISSUER = "https://fapi.example.test";
+    const unset = await handleAccount(new Request("https://grillyour.ai/account"), unknown);
+    assert.equal(unset.status, 200);
+    assert.match(await unset.text(), /CLERK_SIGN_IN_URL/);
+    assert.equal(unset.headers.get("location"), null);
+
+    const returned = world();
+    const stuck = await handleDecisions(new Request("https://grillyour.ai/decisions?from=signin"), returned);
+    assert.equal(stuck.status, 200);
+    const body = await stuck.text();
+    assert.match(body, /no session for this site/);
+    assert.match(body, /https:\/\/accounts\.example\.test\/sign-in/);
+    assert.equal(body.includes("clerk.example.test/sign-in"), false);
+    assert.equal(stuck.headers.get("location"), null);
+
+    const session = signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 });
+    const home = await handleAccount(
+      new Request("https://grillyour.ai/account?from=signin", { headers: { cookie: `__session=${session}` } }),
+      world(),
+    );
+    assert.equal(home.status, 200);
+    const signedIn = await home.text();
+    assert.match(signedIn, /Your account/);
+    assert.equal(signedIn.includes("no session for this site"), false);
+
+    const mcp = await handleMcp(new Request("https://mcp.example/mcp", { method: "POST", body: "{}" }), world());
+    assert.equal(mcp.status, 401);
+    assert.equal(mcp.headers.get("location"), null);
+  });
+
   it("dispatches /api/hosted by __route, and by the public path", async () => {
     const saved = { hosted: process.env.GRILL_HOSTED, issuer: process.env.CLERK_ISSUER };
     process.env.GRILL_HOSTED = "on";
@@ -708,11 +775,13 @@ describe("one hosted function", () => {
 
       const account = await GET(new Request("https://grillyour.ai/api/hosted?__route=account"));
       assert.equal(account.status, 302);
-      assert.equal(new URL(account.headers.get("location")).searchParams.get("redirect_url"), "https://grillyour.ai/account");
+      assert.equal(new URL(account.headers.get("location")).origin, "https://accounts.example.test");
+      assert.equal(new URL(account.headers.get("location")).searchParams.get("redirect_url"), "https://grillyour.ai/account?from=signin");
 
       const byPath = await GET(new Request("https://grillyour.ai/decisions"));
       assert.equal(byPath.status, 302);
-      assert.equal(new URL(byPath.headers.get("location")).searchParams.get("redirect_url"), "https://grillyour.ai/decisions");
+      assert.equal(new URL(byPath.headers.get("location")).origin, "https://accounts.example.test");
+      assert.equal(new URL(byPath.headers.get("location")).searchParams.get("redirect_url"), "https://grillyour.ai/decisions?from=signin");
 
       const removed = await DELETE(new Request("https://grillyour.ai/api/hosted?__route=decisions", { method: "DELETE" }));
       assert.equal(removed.status, 405);

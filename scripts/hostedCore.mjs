@@ -70,6 +70,48 @@ export function queryHasToken(url) {
   return params.has("token") || params.has("access_token");
 }
 
+/**
+ * Account Portal sign-in URL. The Frontend API host (CLERK_ISSUER) does not serve /sign-in.
+ * Development `name.clerk.accounts.dev` becomes `name.accounts.dev`. Staging
+ * `name.clerk.accountsstage.dev` becomes `name.accountsstage.dev`. Production
+ * `clerk.example.com` becomes `accounts.example.com`. An absolute CLERK_SIGN_IN_URL wins.
+ * Returns "" when the host cannot be derived and no override is set.
+ */
+export function signInUrl(env, redirectUrl) {
+  const chosen = absoluteHttpUrl(env?.CLERK_SIGN_IN_URL) || derivedSignIn(env?.CLERK_ISSUER);
+  if (!chosen) return "";
+  const url = new URL(chosen);
+  if (redirectUrl) url.searchParams.set("redirect_url", String(redirectUrl));
+  return url.toString();
+}
+
+function absoluteHttpUrl(raw) {
+  const text = typeof raw === "string" ? raw.trim() : "";
+  if (!text) return "";
+  try {
+    const url = new URL(text);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function derivedSignIn(issuer) {
+  let host = "";
+  try {
+    host = new URL(String(issuer || "").trim()).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+  if (!host) return "";
+  // Same host rewrite Clerk uses for the Account Portal (buildAccountsBaseUrl).
+  const mapped = host.replace(/clerk\.accountsstage\./, "accountsstage.").replace(/clerk\.accounts\.|clerk\./, "accounts.");
+  if (mapped === host) return "";
+  return `https://${mapped}/sign-in`;
+}
+
 function hostOf(raw) {
   try {
     return new URL(String(raw)).hostname.toLowerCase();

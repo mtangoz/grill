@@ -48,6 +48,7 @@ import {
   queryHasToken,
   recordFence,
   recordsForLookBack,
+  signInUrl,
   sourceAppFromClient,
   starterCreditUsd,
   topChallengeLines,
@@ -851,19 +852,41 @@ export async function handleProtectedResource(request, deps) {
   });
 }
 
+function returnTo(request) {
+  const back = new URL(`${publicOrigin(request)}${pageUrl(request).pathname}`);
+  back.searchParams.set("from", "signin");
+  return back.toString();
+}
+
 function signInRedirect(request, deps) {
-  const issuer = String(deps.env.CLERK_ISSUER || "").replace(/\/$/, "");
-  const back = `${publicOrigin(request)}${pageUrl(request).pathname}`;
+  const location = signInUrl(deps.env, returnTo(request));
+  if (!location) return null;
   return new Response(null, {
     status: 302,
-    headers: { Location: `${issuer}/sign-in?redirect_url=${encodeURIComponent(back)}`, "Cache-Control": "no-store" },
+    headers: { Location: location, "Cache-Control": "no-store" },
   });
+}
+
+function signInMissed(request, deps) {
+  const again = signInUrl(deps.env, returnTo(request));
+  const link = again ? `<p><a href="${esc(again)}">Try sign-in again</a></p>` : "";
+  return page(
+    "Grill",
+    `<h1>Sign-in didn't come back to this page.</h1>
+    <p>The sign-in page is open, but this browser has no session for this site. Add this site's address to Clerk's allowed origins, or open Grill on your own domain, then try again.</p>
+    ${link}`,
+  );
 }
 
 async function pageUser(request, deps) {
   const who = await identity(request, deps, { audience: false });
   if (who.error) return { redirect: who.error };
-  if (who.missing || !who.payload) return { redirect: signInRedirect(request, deps) };
+  if (who.missing || !who.payload) {
+    if (pageUrl(request).searchParams.get("from") === "signin") return { html: signInMissed(request, deps) };
+    const redirect = signInRedirect(request, deps);
+    if (!redirect) return { html: page("Grill", "<h1>Sign-in isn't set up.</h1><p>Set CLERK_SIGN_IN_URL to your Clerk Account Portal sign-in page.</p>") };
+    return { redirect };
+  }
   const user = await clerkUser(who.payload.sub, deps);
   if (!user) return { missing: true };
   const email = verifiedEmail(user);
