@@ -26,7 +26,7 @@ On the preview environment only, until the spike in [hosted-spike.md](hosted-spi
 | `CLERK_ISSUER` | Clerk Frontend API URL, no trailing slash. This is the authorization server in the protected-resource metadata. It does not serve the sign-in page. |
 | `CLERK_SIGN_IN_URL` | Optional. Absolute URL of the Clerk Account Portal sign-in page. When unset, Grill derives it from `CLERK_ISSUER`: `name.clerk.accounts.dev` becomes `https://name.accounts.dev/sign-in`, `name.clerk.accountsstage.dev` becomes `https://name.accountsstage.dev/sign-in`, and `clerk.example.com` becomes `https://accounts.example.com/sign-in`. Set this when the Frontend API host does not follow those shapes. |
 | `CLERK_JWKS_URL` | Optional. Defaults to `<CLERK_ISSUER>/.well-known/jwks.json`. |
-| `CLERK_SECRET_KEY` | Clerk secret key. Used to read the verified email and to delete the user when they delete the account. |
+| `CLERK_SECRET_KEY` | Clerk secret key. Used to read the verified email, to read an AgentID access token when the sign-in is an agent, and to delete the user when they delete the account. |
 | `OPENROUTER_MANAGEMENT_KEY` | Creates one capped key per person. Never put this where a visitor can read it. |
 | `GRILL_STARTER_CREDIT_USD` | Optional. Hard limit on that key. Default `1.00`. No monthly reset. |
 | `UPSTASH_REDIS_REST_URL` | Redis for the account, the short-lived report, and the records. |
@@ -47,6 +47,7 @@ For this preview:
 - Redirect `https://claude.ai/api/mcp/auth_callback` for Claude on the web, desktop, mobile and Cowork.
 - Port-agnostic loopback `http://localhost/callback` and `http://127.0.0.1/callback` for Claude Code.
 - Add this site's origin to Clerk's allowed origins. Signed-out visits to `/decisions` and `/account` redirect to the Account Portal sign-in page, then back here. Grill reads the `__session` cookie with the same JWKS. A development instance does not set that cookie on a `*.vercel.app` preview: the dev session stays on Clerk's host, and Clerk will not send the browser back until this origin is allowed. A return with no session shows a short message instead of another redirect. On a production instance, use your own domain (`accounts.<domain>` for sign-in, the app on that same domain) so the cookie can come back with the person.
+- AgentID is optional. Turn on Clerk's built-in AgentID connection when an agent should sign in. To let Grill check the human owner's email against the allowlist, register an AgentID app, use those custom credentials in Clerk, and add the `owner_email` scope. Details are in [hosted-spike.md](hosted-spike.md).
 
 Grill maps the OAuth client, not the chat's own guess:
 

@@ -652,6 +652,229 @@ describe("hosted Grill", { concurrency: false }, () => {
   });
 });
 
+const AGENT_TOKEN = "tok_agent_owner_lookup_do_not_log";
+const OWNER_EMAIL = "owner.person@example.com";
+const AGENTID_USERINFO = "https://auth.agentid.com/v0/userinfo";
+
+function clerkPerson({ id, email, agent = false, verified = true }) {
+  return {
+    id,
+    primary_email_address_id: "idn_1",
+    email_addresses: [{ id: "idn_1", email_address: email, verification: { status: verified ? "verified" : "unverified" } }],
+    external_accounts: agent ? [{ provider: "oauth_agentid", verification: { strategy: "oauth_agentid", status: "verified" } }] : [],
+  };
+}
+
+function tokenPayload(token = AGENT_TOKEN, scopes = ["openid", "email", "profile", "owner_email"]) {
+  return { data: [{ object: "oauth_access_token", provider: "oauth_agentid", token, scopes }], total_count: 1 };
+}
+
+function agentCtx(users, { tokens = {}, userinfo = Response.json({}) } = {}) {
+  const ctx = world();
+  ctx.env.GRILL_HOSTED_ALLOWLIST = OWNER_EMAIL;
+  const calls = [];
+  const inner = ctx.fetch;
+  ctx.fetch = async (url, init = {}) => {
+    const u = String(url);
+    const method = init.method || "GET";
+    calls.push(u);
+    if (u.includes("/oauth_access_tokens/oauth_agentid")) {
+      const id = decodeURIComponent(new URL(u).pathname.split("/")[3]);
+      const spec = tokens[id];
+      if (spec instanceof Response) return spec;
+      if (spec) return Response.json(spec);
+      return Response.json({ data: [], total_count: 0 });
+    }
+    if (u === AGENTID_USERINFO) {
+      if (typeof userinfo === "function") return userinfo(init);
+      return userinfo;
+    }
+    if (u.startsWith("https://api.clerk.com/v1/users/") && method === "GET") {
+      const id = decodeURIComponent(new URL(u).pathname.split("/")[3]);
+      if (users[id]) return Response.json(users[id]);
+    }
+    return inner(url, init);
+  };
+  ctx.calls = calls;
+  return ctx;
+}
+
+function askGrill(id = 1) {
+  return { jsonrpc: "2.0", id, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: ask." } } };
+}
+
+function userinfoCalls(ctx) {
+  return ctx.calls.filter((url) => url === AGENTID_USERINFO).length;
+}
+
+async function storedAccount(ctx, id) {
+  const raw = await ctx.redis(["GET", `grill:hosted:acct:${id}`]);
+  return raw ? JSON.parse(raw) : null;
+}
+
+describe("AgentID owner email", () => {
+  beforeEach(() => resetHostedCaches());
+
+  it("allows an agent whose own verified email is on the list, without asking AgentID", async () => {
+    const ctx = agentCtx(
+      { user_invitee: clerkPerson({ id: "user_invitee", email: "invitee@example.com", agent: true }) },
+      { tokens: { user_invitee: tokenPayload() }, userinfo: Response.json({ owner_email: "nope@example.com", owner_email_verified: true }) },
+    );
+    ctx.env.GRILL_HOSTED_ALLOWLIST = "invitee@example.com";
+    const { json } = await postMcp(ctx, askGrill(), { token: signJwt(claims({ sub: "user_invitee" })) });
+    assert.equal(textOf(json), CONSENT_TEXT);
+    assert.equal(userinfoCalls(ctx), 0);
+    assert.equal(ctx.calls.some((url) => url.includes("/oauth_access_tokens/")), false);
+    assert.equal(ctx.management.creates.length, 1);
+  });
+
+  it("allows an agent when the verified owner email is on the list", async () => {
+    const errors = [];
+    const orig = console.error;
+    console.error = (...args) => {
+      errors.push(args.map((part) => String(part)).join(" "));
+    };
+    try {
+      const ctx = agentCtx(
+        { user_agent: clerkPerson({ id: "user_agent", email: "agent.one@inbox.example", agent: true }) },
+        {
+          tokens: { user_agent: tokenPayload() },
+          userinfo: Response.json({ owner_email: `  ${OWNER_EMAIL.toUpperCase()}  `, owner_email_verified: true }),
+        },
+      );
+      const { json } = await postMcp(ctx, askGrill(), { token: signJwt(claims({ sub: "user_agent" })) });
+      assert.equal(textOf(json), CONSENT_TEXT);
+      assert.equal(json.result.isError, false);
+      assert.equal(userinfoCalls(ctx), 1);
+      assert.equal(ctx.management.creates.length, 1);
+      const session = signJwt({ iss: "https://clerk.example.test", sub: "user_agent", exp: Math.floor(Date.now() / 1000) + 3600 });
+      const page = await handleAccount(new Request("https://grillyour.ai/account", { headers: { cookie: `__session=${session}` } }), ctx);
+      const html = await page.text();
+      assert.equal(page.status, 200);
+      assert.match(html, /agent\.one@inbox\.example/);
+      assert.equal(html.includes(OWNER_EMAIL), false);
+      assert.equal(html.includes(AGENT_TOKEN), false);
+      assert.equal(JSON.stringify(ctx.writes).includes(AGENT_TOKEN), false);
+      assert.equal(errors.some((line) => line.includes(OWNER_EMAIL) || line.includes(AGENT_TOKEN)), false);
+      const row = await storedAccount(ctx, "user_agent");
+      assert.equal(row.human, OWNER_EMAIL);
+      assert.equal(row.email, "agent.one@inbox.example");
+    } finally {
+      console.error = orig;
+    }
+  });
+
+  it("denies an unverified, missing, or unlisted owner email, and a missing token or scope", async () => {
+    const cases = [
+      ["unverified", Response.json({ owner_email: OWNER_EMAIL, owner_email_verified: false }), tokenPayload(), 1],
+      ["verified flag is not boolean true", Response.json({ owner_email: OWNER_EMAIL, owner_email_verified: "true" }), tokenPayload(), 1],
+      ["missing email", Response.json({ owner_email_verified: true }), tokenPayload(), 1],
+      ["not listed", Response.json({ owner_email: "stranger@example.com", owner_email_verified: true }), tokenPayload(), 1],
+      ["missing token", Response.json({ owner_email: OWNER_EMAIL, owner_email_verified: true }), { data: [], total_count: 0 }, 0],
+      ["missing scope", Response.json({ owner_email: OWNER_EMAIL, owner_email_verified: true }), tokenPayload(AGENT_TOKEN, ["openid", "email", "profile"]), 0],
+    ];
+    for (const [label, userinfo, tokens, infoCalls] of cases) {
+      resetHostedCaches();
+      const ctx = agentCtx(
+        { user_agent: clerkPerson({ id: "user_agent", email: "agent.one@inbox.example", agent: true }) },
+        { tokens: { user_agent: tokens }, userinfo },
+      );
+      const { json } = await postMcp(ctx, askGrill(), { token: signJwt(claims({ sub: "user_agent" })) });
+      assert.equal(textOf(json), INVITE_ONLY, label);
+      assert.equal(json.result.isError, true, label);
+      assert.equal(userinfoCalls(ctx), infoCalls, label);
+      assert.equal(ctx.management.creates.length, 0, label);
+      assert.equal(JSON.stringify(json).includes(AGENT_TOKEN), false, label);
+      assert.equal(JSON.stringify(json).includes(OWNER_EMAIL), false, label);
+    }
+  });
+
+  it("denies when the owner lookup fails, and remembers the miss", async () => {
+    const down = agentCtx(
+      { user_agent: clerkPerson({ id: "user_agent", email: "agent.one@inbox.example", agent: true }) },
+      { tokens: { user_agent: tokenPayload() }, userinfo: () => { throw new Error("agentid down"); } },
+    );
+    const first = await postMcp(down, askGrill(1), { token: signJwt(claims({ sub: "user_agent" })) });
+    const second = await postMcp(down, askGrill(2), { token: signJwt(claims({ sub: "user_agent" })) });
+    assert.equal(textOf(first.json), INVITE_ONLY);
+    assert.equal(textOf(second.json), INVITE_ONLY);
+    assert.equal(userinfoCalls(down), 1);
+    assert.equal(down.management.creates.length, 0);
+    assert.equal(first.res.status, 200);
+
+    resetHostedCaches();
+    const clerkDown = agentCtx(
+      { user_agent: clerkPerson({ id: "user_agent", email: "agent.one@inbox.example", agent: true }) },
+      { tokens: { user_agent: new Response("no", { status: 502 }) }, userinfo: Response.json({ owner_email: OWNER_EMAIL, owner_email_verified: true }) },
+    );
+    const denied = await postMcp(clerkDown, askGrill(), { token: signJwt(claims({ sub: "user_agent" })) });
+    assert.equal(textOf(denied.json), INVITE_ONLY);
+    assert.equal(userinfoCalls(clerkDown), 0);
+    assert.equal(clerkDown.management.creates.length, 0);
+  });
+
+  it("remembers a verified owner so the next request does not call Clerk or AgentID again", async () => {
+    const ctx = agentCtx(
+      { user_agent: clerkPerson({ id: "user_agent", email: "agent.one@inbox.example", agent: true }) },
+      { tokens: { user_agent: [{ token: AGENT_TOKEN, provider: "oauth_agentid", scopes: "openid email profile owner_email" }] }, userinfo: Response.json({ owner_email: OWNER_EMAIL, owner_email_verified: true }) },
+    );
+    const token = signJwt(claims({ sub: "user_agent" }));
+    const first = await postMcp(ctx, askGrill(1), { token });
+    const tokenCalls = ctx.calls.filter((url) => url.includes("/oauth_access_tokens/")).length;
+    const infoCalls = userinfoCalls(ctx);
+    const second = await postMcp(ctx, askGrill(2), { token });
+    assert.equal(textOf(first.json), CONSENT_TEXT);
+    assert.equal(textOf(second.json), CONSENT_TEXT);
+    assert.equal(tokenCalls, 1);
+    assert.equal(infoCalls, 1);
+    assert.equal(ctx.calls.filter((url) => url.includes("/oauth_access_tokens/")).length, 1);
+    assert.equal(userinfoCalls(ctx), 1);
+    const sets = ctx.writes.filter((row) => row[0] === "SET" && row[1] === "grill:hosted:owner:user_agent");
+    assert.equal(sets.length, 1);
+    assert.equal(sets[0][2], OWNER_EMAIL);
+    assert.equal(sets[0][3], "EX");
+    assert.equal(sets[0][4], "600");
+    assert.equal(ctx.management.creates.length, 1);
+  });
+
+  it("lets two agents of one owner share one starter key, and a borrowing delete leaves that key", async () => {
+    const users = {
+      user_agent_a: clerkPerson({ id: "user_agent_a", email: "agent.a@inbox.example", agent: true }),
+      user_agent_b: clerkPerson({ id: "user_agent_b", email: "agent.b@inbox.example", agent: true }),
+    };
+    const ctx = agentCtx(users, {
+      tokens: { user_agent_a: tokenPayload(), user_agent_b: tokenPayload() },
+      userinfo: () => Response.json({ owner_email: OWNER_EMAIL, owner_email_verified: true }),
+    });
+    const first = await postMcp(ctx, askGrill(1), { token: signJwt(claims({ sub: "user_agent_a" })) });
+    const second = await postMcp(ctx, askGrill(2), { token: signJwt(claims({ sub: "user_agent_b" })) });
+    assert.equal(textOf(first.json), CONSENT_TEXT);
+    assert.equal(textOf(second.json), CONSENT_TEXT);
+    assert.equal(ctx.management.creates.length, 1);
+    const holder = await storedAccount(ctx, "user_agent_a");
+    const borrower = await storedAccount(ctx, "user_agent_b");
+    assert.equal(holder.human, OWNER_EMAIL);
+    assert.equal(borrower.human, OWNER_EMAIL);
+    assert.equal(borrower.capFrom, "user_agent_a");
+    assert.equal(borrower.keyHash, holder.keyHash);
+    assert.ok(borrower.keyHash);
+    const session = signJwt({ iss: "https://clerk.example.test", sub: "user_agent_b", exp: Math.floor(Date.now() / 1000) + 3600 });
+    const gone = await handleAccount(
+      new Request("https://grillyour.ai/account", {
+        method: "POST",
+        headers: { cookie: `__session=${session}`, "content-type": "application/x-www-form-urlencoded" },
+        body: "action=delete-account&confirm=delete",
+      }),
+      ctx,
+    );
+    assert.match(await gone.text(), /account is deleted/);
+    assert.equal(ctx.management.removed.length, 0);
+    const still = await storedAccount(ctx, "user_agent_a");
+    assert.equal(still.keyHash, holder.keyHash);
+    assert.equal(await storedAccount(ctx, "user_agent_b"), null);
+  });
+});
+
 describe("one hosted function", () => {
   it("answers DELETE with 405 on the pages, and 404 while hosted is off", async () => {
     const ctx = world();
@@ -852,7 +1075,7 @@ describe("hosted mappings and ledger pins", () => {
     }
     const hosted = readFileSync(join(ROOT, "api/_hosted.mjs"), "utf8");
     const urls = [...hosted.matchAll(/https?:\/\/[^\s"'`]+/g)].map((match) => match[0]);
-    assert.deepEqual(urls, ["https://api.clerk.com"]);
+    assert.deepEqual(urls, ["https://api.clerk.com", "https://auth.agentid.com/v0/userinfo"]);
     const childEnv = hosted.slice(hosted.indexOf("function judgeChildEnv"), hosted.indexOf("function startJudge"));
     assert.doesNotMatch(childEnv, /JUDGE_MODEL/);
     assert.match(hosted, /OPENROUTER_API_KEY: apiKey/);

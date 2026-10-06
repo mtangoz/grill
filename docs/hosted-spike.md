@@ -69,6 +69,16 @@ Do not build around the failure in production. If fewer than 4 of 5 runs return 
 
 Say which runs failed, whether the failure was sign-in, a timeout, or a verdict that never arrived, and whether the phone behaved differently from the web.
 
+## Agents (AgentID)
+
+An agent can sign in through Clerk's AgentID connection. Clerk does not copy the human owner's email onto the Clerk user. Grill reads that address from AgentID only when two things are true: the Clerk user has an AgentID sign-in, and the agent's own verified email is not already on `GRILL_HOSTED_ALLOWLIST`.
+
+The agent is allowed when AgentID says the owner email is verified and that address is on the allowlist. A failed lookup, a missing token, a missing owner scope, an unverified owner email, or an owner who is not on the list gets the same invite-only reply as anyone else. Grill remembers the lookup for about 10 minutes so it is not repeated on every request. It does not log the owner email or the token.
+
+That owner email is the person Grill uses for the starter-key cap. Several agents of one person share one cap. The account page still shows the agent's own email.
+
+Clerk's development instance can turn AgentID on with its shared credentials, and that is enough for the agent to sign in. The owner email is only returned when AgentID is a registered app with custom credentials in Clerk, and the connection's scopes include `owner_email` (Clerk already asks for `openid`, `email`, and `profile`). The agent's AgentMail key also needs permission to share its owner. The AgentID access token lasts about 10 minutes and is not refreshed, so after the remembered lookup expires the agent has to sign in again before Grill can read the owner.
+
 ## What this spike does not prove
 
 It does not prove ChatGPT, Gemini, or Grok. It does not turn the connector on for people outside the allowlist. It does not add a card or a top-up.

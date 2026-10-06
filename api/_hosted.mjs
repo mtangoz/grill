@@ -57,6 +57,11 @@ import {
 
 const JUDGE = fileURLToPath(new URL("../scripts/judge.mjs", import.meta.url));
 const CLERK_API = "https://api.clerk.com";
+// Clerk Backend: GET /v1/users/{user_id}/oauth_access_tokens/oauth_agentid
+const AGENTID_PROVIDER = "oauth_agentid";
+// userinfo_endpoint from AgentID's openid-configuration.
+const AGENTID_USERINFO = "https://auth.agentid.com/v0/userinfo";
+const OWNER_CACHE_SECONDS = 10 * 60;
 const VERSION = "0.1.1";
 const jwksCache = new Map();
 const userCache = new Map();
@@ -253,6 +258,117 @@ function verifiedEmail(user) {
   return String(primary.email_address || "").trim().toLowerCase();
 }
 
+function cleanEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  if (!email || email.length > 320 || !/^[^@\s]+@[^@\s]+$/.test(email)) return "";
+  return email;
+}
+
+/** Clerk's AgentID connection. The strategy on the external account is oauth_agentid. */
+function agentIdSignIn(user) {
+  const accounts = Array.isArray(user?.external_accounts) ? user.external_accounts : [];
+  return accounts.some((row) => {
+    const provider = String(row?.provider || "");
+    const strategy = String(row?.verification?.strategy || "");
+    return provider === AGENTID_PROVIDER || strategy === AGENTID_PROVIDER;
+  });
+}
+
+function ownerCacheKey(userId) {
+  return `grill:hosted:owner:${userId}`;
+}
+
+function scopeNames(scopes) {
+  if (Array.isArray(scopes)) return scopes.map((item) => String(item).trim()).filter(Boolean);
+  if (typeof scopes === "string" && scopes.trim()) return scopes.split(/[\s,]+/).filter(Boolean);
+  return null;
+}
+
+/** Clerk returns a list, or `{ data: [...] }` on the current API. The token is not kept. */
+function agentIdAccessToken(body) {
+  const rows = Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : [];
+  const row = rows[0];
+  const token = typeof row?.token === "string" ? row.token.trim() : "";
+  if (!token) return "";
+  const scopes = scopeNames(row?.scopes);
+  if (scopes && !scopes.includes("owner_email")) return "";
+  return token;
+}
+
+/**
+ * The human owner's email, from AgentID, for an agent whose own email is not
+ * already allowed. Empty means not allowed: a failed call, no token, no
+ * owner_email scope, a missing address, or an owner email that is not verified.
+ * The token is not stored and not logged.
+ */
+async function readOwnerEmail(userId, deps) {
+  const secret = deps.env.CLERK_SECRET_KEY;
+  if (!secret || !userId) return "";
+  let tokenRes;
+  try {
+    tokenRes = await deps.fetch(`${CLERK_API}/v1/users/${encodeURIComponent(userId)}/oauth_access_tokens/${AGENTID_PROVIDER}`, {
+      headers: { Authorization: `Bearer ${secret}` },
+      redirect: "error",
+    });
+  } catch {
+    return "";
+  }
+  if (!tokenRes.ok) return "";
+  const token = agentIdAccessToken(await tokenRes.json().catch(() => null));
+  if (!token) return "";
+  let infoRes;
+  try {
+    infoRes = await deps.fetch(AGENTID_USERINFO, {
+      headers: { Authorization: `Bearer ${token}` },
+      redirect: "error",
+    });
+  } catch {
+    return "";
+  }
+  if (!infoRes.ok) return "";
+  const info = await infoRes.json().catch(() => null);
+  if (info?.owner_email_verified !== true) return "";
+  return cleanEmail(info?.owner_email);
+}
+
+/** Remember the owner lookup for ten minutes, including a miss, so it is not repeated on every request. */
+async function cachedOwnerEmail(userId, deps) {
+  const key = ownerCacheKey(userId);
+  try {
+    const cached = await redis(deps, ["GET", key]);
+    if (cached === "-") return "";
+    const email = typeof cached === "string" ? cleanEmail(cached) : "";
+    if (email) return email;
+  } catch {
+    // A store miss is not a grant. Ask AgentID for this request.
+  }
+  const owner = await readOwnerEmail(userId, deps);
+  try {
+    await redis(deps, ["SET", key, owner || "-", "EX", OWNER_CACHE_SECONDS]);
+  } catch {
+    // This request still uses the answer it just got.
+  }
+  return owner;
+}
+
+/**
+ * Allowed when their own verified email is on the list, or when an AgentID
+ * sign-in names a verified owner email that is. The owner is looked up only
+ * for an AgentID sign-in whose own email is not already allowed. `human` is
+ * the email the starter cap is keyed to: the owner for an agent admitted that
+ * way, otherwise their own email.
+ */
+async function admit(user, deps, userId) {
+  const email = verifiedEmail(user);
+  if (!email) return { email: "", human: "", allowed: false };
+  if (!agentIdSignIn(user) || allowlistAllows(email, deps.env)) {
+    return { email, human: email, allowed: allowlistAllows(email, deps.env) };
+  }
+  const owner = await cachedOwnerEmail(user?.id || userId, deps);
+  const allowed = Boolean(owner) && allowlistAllows(owner, deps.env);
+  return { email, human: allowed ? owner : email, allowed };
+}
+
 async function loadAccount(id, deps) {
   const raw = await redis(deps, ["GET", acctKey(id)]);
   if (!raw) return null;
@@ -280,6 +396,10 @@ async function saveAccount(account, deps) {
     })),
     createdAt: account.createdAt,
   };
+  // The person the starter cap belongs to, when this sign-in is an agent.
+  if (account.human && account.human !== account.email) copy.human = account.human;
+  // Set when this sign-in spends a key minted for someone else. Deleting it must not revoke that key.
+  if (account.capFrom) copy.capFrom = account.capFrom;
   await redis(deps, ["SET", acctKey(account.id), JSON.stringify(copy)]);
 }
 
@@ -293,12 +413,15 @@ function openSecret(cipher, env, name) {
   }
 }
 
-async function ensureAccount(userId, email, deps) {
+async function ensureAccount(userId, email, deps, human) {
+  const own = String(email || "").trim().toLowerCase();
+  const capEmail = cleanEmail(human) || own;
   let account = await loadAccount(userId, deps);
   if (!account) {
     account = {
       id: userId,
-      email,
+      email: own,
+      human: capEmail,
       records: null,
       keyCipher: null,
       keyHash: null,
@@ -309,13 +432,32 @@ async function ensureAccount(userId, email, deps) {
       createdAt: new Date().toISOString(),
     };
     await saveAccount(account, deps);
-  } else if (account.email !== email) {
-    account.email = email;
+  } else if (account.email !== own) {
+    account.email = own;
     await saveAccount(account, deps);
   }
   if (account.keyCipher && account.keyHash) return account;
-  const prior = await redis(deps, ["GET", emailIndex(email)]);
+  if ((account.human || account.email) !== capEmail) {
+    account.human = capEmail;
+    await saveAccount(account, deps);
+  }
+  const prior = await redis(deps, ["GET", emailIndex(capEmail)]);
   if (prior && prior !== userId) {
+    // An agent spends the key already minted for this person. A second sign-in
+    // with the same email still does not get a second key.
+    if (capEmail !== own) {
+      const holder = await loadAccount(prior, deps);
+      if (holder?.keyCipher && holder.keyHash) {
+        account.keyCipher = holder.keyCipher;
+        account.keyHash = holder.keyHash;
+        account.keyLimitUsd = holder.keyLimitUsd ?? null;
+        account.keyName = holder.keyName || null;
+        account.capFrom = prior;
+        account.human = capEmail;
+        await saveAccount(account, deps);
+        return account;
+      }
+    }
     account.creditBlocked = "email";
     return account;
   }
@@ -333,7 +475,7 @@ async function ensureAccount(userId, email, deps) {
   account.keyHash = made.hash;
   account.keyLimitUsd = made.limitUsd;
   account.keyName = name;
-  await redis(deps, ["SET", emailIndex(email), userId]);
+  await redis(deps, ["SET", emailIndex(capEmail), userId]);
   await saveAccount(account, deps);
   return account;
 }
@@ -815,10 +957,10 @@ export async function handleMcp(request, deps) {
     if (msg.method === "tools/list") return rpcResponse(rpcId, { tools: hostedTools() }, request);
     if (msg.method === "tools/call") {
       const user = await clerkUser(who.payload.sub, deps);
-      const email = verifiedEmail(user);
-      if (!email) return rpcResponse(rpcId, toolText("Grill needs a verified email on this account before it can run.", true), request);
-      if (!allowlistAllows(email, deps.env)) return rpcResponse(rpcId, toolText(INVITE_ONLY, true), request);
-      const account = await ensureAccount(who.payload.sub, email, deps);
+      const gate = await admit(user, deps, who.payload.sub);
+      if (!gate.email) return rpcResponse(rpcId, toolText("Grill needs a verified email on this account before it can run.", true), request);
+      if (!gate.allowed) return rpcResponse(rpcId, toolText(INVITE_ONLY, true), request);
+      const account = await ensureAccount(who.payload.sub, gate.email, deps, gate.human);
       const name = msg.params?.name;
       const args = msg.params?.arguments ?? {};
       let result;
@@ -889,11 +1031,11 @@ async function pageUser(request, deps) {
   }
   const user = await clerkUser(who.payload.sub, deps);
   if (!user) return { missing: true };
-  const email = verifiedEmail(user);
-  if (!email) return { html: page("Grill", "<h1>Grill needs a verified email on this account.</h1>") };
-  if (!allowlistAllows(email, deps.env)) return { html: page("Grill", `<h1>${esc(INVITE_ONLY)}</h1>`) };
-  const account = await ensureAccount(who.payload.sub, email, deps);
-  return { account, email };
+  const gate = await admit(user, deps, who.payload.sub);
+  if (!gate.email) return { html: page("Grill", "<h1>Grill needs a verified email on this account.</h1>") };
+  if (!gate.allowed) return { html: page("Grill", `<h1>${esc(INVITE_ONLY)}</h1>`) };
+  const account = await ensureAccount(who.payload.sub, gate.email, deps, gate.human);
+  return { account, email: gate.email };
 }
 
 function html(status, body) {
@@ -1006,7 +1148,7 @@ async function exportRecords(account, deps, kind) {
 }
 
 async function deleteAccount(account, deps) {
-  if (account.keyHash) {
+  if (account.keyHash && !account.capFrom) {
     try {
       await removeManagedKey(account.keyHash, { env: deps.env, fetch: deps.fetch });
     } catch {
@@ -1025,7 +1167,13 @@ async function deleteAccount(account, deps) {
   await deleteRecordIds(account, deps, ids);
   await redis(deps, ["DEL", recordIndex(account.id)]);
   await redis(deps, ["DEL", acctKey(account.id)]);
-  await redis(deps, ["DEL", emailIndex(account.email)]);
+  // A borrowing agent does not hold the cap, so their delete leaves the shared key and its index.
+  if (!account.capFrom) {
+    const indexEmail = account.human || account.email;
+    const holder = await redis(deps, ["GET", emailIndex(indexEmail)]);
+    if (!holder || holder === account.id) await redis(deps, ["DEL", emailIndex(indexEmail)]);
+  }
+  await redis(deps, ["DEL", ownerCacheKey(account.id)]);
   userCache.delete(account.id);
   creditCache.delete(account.id);
 }
