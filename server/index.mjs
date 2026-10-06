@@ -207,11 +207,51 @@ const SETUP_TEXT = [
   "Until then, the grill skill can write the subject as a prompt for you to paste into ChatGPT or Gemini instead.",
 ].join("\n");
 
+// One home for the "still running" words, so the local server and hosted Grill cannot drift.
+// `mode` "check" is the hosted fallback (the person says "check"). Anything else, including
+// omitted, is today's wording. The env var that selects it is read only on the hosted path.
+const AUTO_RESULT_DESCRIPTION =
+  "Collect the report of a grill that returned a job id. Waits up to 45 seconds; call again if it is still running.";
+
+export function grillWaitText(mode) {
+  const check = String(mode ?? "").trim().toLowerCase() === "check";
+  if (check) {
+    return {
+      mode: "check",
+      resultDescription:
+        "Collect the report of a grill that returned a job id. Waits up to 45 seconds. If it is still running, follow the result, and do not call again on your own.",
+      hostedJobClause:
+        "If the result says the grill is still running, follow that result, and do not call grill_result again on your own.",
+      hostedInstruction:
+        "If grill says it is still running, follow that result, and do not call grill_result again on your own.",
+    };
+  }
+  return {
+    mode: "auto",
+    resultDescription: AUTO_RESULT_DESCRIPTION,
+    hostedJobClause: "If the result is a job id, call grill_result until the verdict arrives.",
+    hostedInstruction: "If grill returns a job id, call grill_result until the report arrives. Do not ask the person to check.",
+  };
+}
+
+/** The tool result while a job is still running. `seconds` is the local server's elapsed time. */
+export function stillGrillingText({ jobId, seconds, mode } = {}) {
+  const id = String(jobId);
+  if (grillWaitText(mode).mode === "check") {
+    return `Still grilling (job ${id}). Tell the user, in one short plain sentence, that the grill is still running and to say "check" in about a minute. When they say check, call grill_result with job_id "${id}".`;
+  }
+  if (seconds !== undefined && seconds !== null) {
+    return `Still grilling (job ${id}, ${seconds}s so far). Call grill_result with job_id "${id}" to collect the report. A grill usually takes 1–3 minutes.`;
+  }
+  return `Still grilling (job ${id}). Call grill_result with job_id "${id}" to collect the report. A grill usually takes 1–3 minutes.`;
+}
+
 // The user must know who sees the write-up before they approve it, and whether the Jev check is
 // one of them depends on their setting. The server knows the setting, so it says so here, where
 // Claude reads it before every call. (A setting change restarts the server, so this stays true.)
-// Hosted Grill imports this same text so the two cannot drift.
-export function buildGrillTools({ checkOn }) {
+// Hosted Grill imports this same text so the two cannot drift. `waitMode` is omitted here;
+// hosted passes it, and only "check" changes the grill_result description.
+export function buildGrillTools({ checkOn, waitMode } = {}) {
   const checkNote = checkOn
     ? "The Jev quality check is ON: Jev, a decision model from TypeSafe, also sees the masked write-up and the report, on a zero-retention endpoint. Tell the user that before they approve, and that they can skip it for this grill (pass quality_check: false) or switch it off in Grill's settings."
     : "The Jev quality check is switched OFF in Grill's settings, so only the judge sees the write-up.";
@@ -258,7 +298,7 @@ export function buildGrillTools({ checkOn }) {
     {
       name: "grill_result",
       title: "Collect a grill that was still running",
-      description: "Collect the report of a grill that returned a job id. Waits up to 45 seconds; call again if it is still running.",
+      description: grillWaitText(waitMode).resultDescription,
       inputSchema: {
         type: "object",
         properties: { job_id: { type: "string", description: "The job id the grill tool returned." } },
@@ -397,9 +437,7 @@ function outcomeOf(job) {
 
 function pending(job) {
   const secs = Math.round((Date.now() - job.startedAt) / 1000);
-  return text(
-    `Still grilling (job ${job.id}, ${secs}s so far). Call grill_result with job_id "${job.id}" to collect the report. A grill usually takes 1–3 minutes.`,
-  );
+  return text(stillGrillingText({ jobId: job.id, seconds: secs }));
 }
 
 async function callTool(name, args = {}, onTick) {

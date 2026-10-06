@@ -16,11 +16,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, WELCOME_HEADERS } from "./_pro.mjs";
 import { appendReflection, lookBack, parseRecords, recordBlock } from "../scripts/reflection.mjs";
+import { stillGrillingText } from "../server/index.mjs";
 import {
   CONSENT_TEXT,
   CREDIT_CACHE_MS,
   DAILY_GRILL_LIMIT,
-  HOSTED_INSTRUCTIONS,
+  hostedInstructions,
+  hostedWaitMode,
   INVITE_ONLY,
   JOB_TTL_SECONDS,
   MAX_PASTE_CHARS,
@@ -636,9 +638,7 @@ async function callGrill(args, account, payload, params, deps) {
     }
   });
   schedule(pending, deps, deps.requestId);
-  return toolText(
-    `Still grilling (job ${credential.jobId}). Call grill_result with job_id "${credential.jobId}" to collect the report. A grill usually takes 1–3 minutes.`,
-  );
+  return toolText(stillGrillingText({ jobId: credential.jobId, mode: hostedWaitMode(deps.env) }));
 }
 
 async function callResult(args, account, deps) {
@@ -656,9 +656,7 @@ async function callResult(args, account, deps) {
   if (typeof cipher !== "string" || !cipher) {
     const running = Number(await redis(deps, ["SISMEMBER", runningKey(account.id), credential.id])) || 0;
     if (!running) return toolText("No grill is running with that job id. It may already have been collected.", true);
-    return toolText(
-      `Still grilling (job ${credential.jobId}). Call grill_result with job_id "${credential.jobId}" to collect the report. A grill usually takes 1–3 minutes.`,
-    );
+    return toolText(stillGrillingText({ jobId: credential.jobId, mode: hostedWaitMode(deps.env) }));
   }
   await redis(deps, ["DEL", jobRedisKey(credential.id)]);
   let stored;
@@ -799,6 +797,7 @@ export async function handleMcp(request, deps) {
     }
     const rpcId = msg.id;
     if (rpcId === undefined || rpcId === null) return new Response(null, { status: 202 });
+    const waitMode = hostedWaitMode(deps.env);
     if (msg.method === "initialize") {
       return rpcResponse(
         rpcId,
@@ -806,13 +805,13 @@ export async function handleMcp(request, deps) {
           protocolVersion: negotiateProtocol(msg.params?.protocolVersion),
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "grill", title: "Grill", version: VERSION },
-          instructions: HOSTED_INSTRUCTIONS,
+          instructions: hostedInstructions(waitMode),
         },
         request,
       );
     }
     if (msg.method === "ping") return rpcResponse(rpcId, {}, request);
-    if (msg.method === "tools/list") return rpcResponse(rpcId, { tools: hostedTools() }, request);
+    if (msg.method === "tools/list") return rpcResponse(rpcId, { tools: hostedTools({ waitMode }) }, request);
     if (msg.method === "tools/call") {
       const user = await clerkUser(who.payload.sub, deps);
       const email = verifiedEmail(user);

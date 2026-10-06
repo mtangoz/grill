@@ -19,6 +19,9 @@ import {
   decryptString,
   encryptString,
   footerLine,
+  HOSTED_INSTRUCTIONS,
+  hostedInstructions,
+  hostedWaitMode,
   linkChains,
   parseJobCredential,
   sourceAppFromClient,
@@ -650,6 +653,55 @@ describe("hosted Grill", { concurrency: false }, () => {
       await fake.close();
     }
   });
+
+  it("reads GRILL_HOSTED_WAIT as auto unless the value is check", () => {
+    assert.equal(hostedWaitMode({}), "auto");
+    assert.equal(hostedWaitMode({ GRILL_HOSTED_WAIT: "" }), "auto");
+    assert.equal(hostedWaitMode({ GRILL_HOSTED_WAIT: "auto" }), "auto");
+    assert.equal(hostedWaitMode({ GRILL_HOSTED_WAIT: "later" }), "auto");
+    assert.equal(hostedWaitMode({ GRILL_HOSTED_WAIT: " check " }), "check");
+    assert.equal(hostedInstructions("auto"), HOSTED_INSTRUCTIONS);
+    assert.equal(hostedInstructions("later"), HOSTED_INSTRUCTIONS);
+    assert.equal(hostedInstructions(undefined), HOSTED_INSTRUCTIONS);
+    assert.notEqual(hostedInstructions("check"), HOSTED_INSTRUCTIONS);
+    assert.doesNotMatch(hostedInstructions("check"), /say "check"/);
+  });
+
+  it("keeps today's still-running line in auto, including an unknown value, and returns the report when the job finishes", async () => {
+    for (const value of [undefined, "auto", "later"]) {
+      const row = await waitModeRun(value);
+      const expected = `Still grilling (job ${row.jobId}). Call grill_result with job_id "${row.jobId}" to collect the report. A grill usually takes 1–3 minutes.`;
+      assert.equal(row.startedText, expected, String(value));
+      assert.equal(row.againText, expected, String(value));
+      assert.equal(row.doneError, false, String(value));
+      assert.match(row.doneText, /Saved to your decisions/, String(value));
+      assert.doesNotMatch(row.doneText, /say "check"/, String(value));
+      assert.equal(row.instructions, HOSTED_INSTRUCTIONS, String(value));
+      assert.match(row.grillDescription, /call grill_result until the verdict arrives/, String(value));
+      assert.equal(
+        row.resultDescription,
+        "Collect the report of a grill that returned a job id. Waits up to 45 seconds; call again if it is still running.",
+        String(value),
+      );
+    }
+  });
+
+  it("in check mode, a running job tells the assistant to ask for one word, and a finished job is the report", async () => {
+    const row = await waitModeRun("check");
+    const expected = `Still grilling (job ${row.jobId}). Tell the user, in one short plain sentence, that the grill is still running and to say "check" in about a minute. When they say check, call grill_result with job_id "${row.jobId}".`;
+    assert.equal(row.startedText, expected);
+    assert.equal(row.againText, expected);
+    assert.equal(row.doneError, false);
+    assert.match(row.doneText, /Saved to your decisions/);
+    assert.doesNotMatch(row.doneText, /say "check"/);
+    assert.match(row.instructions, /follow that result/);
+    assert.doesNotMatch(row.instructions, /Do not ask the person to check/);
+    assert.doesNotMatch(row.instructions, /say "check"/);
+    assert.match(row.grillDescription, /do not call grill_result again on your own/);
+    assert.doesNotMatch(row.grillDescription, /until the verdict arrives/);
+    assert.match(row.resultDescription, /do not call again on your own/);
+    assert.doesNotMatch(row.resultDescription, /say "check"/);
+  });
 });
 
 describe("one hosted function", () => {
@@ -868,3 +920,67 @@ describe("hosted mappings and ledger pins", () => {
     assert.match(principles, /passes through Grill's server in memory/);
   });
 });
+
+async function waitModeRun(waitValue) {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const fake = await startFakeOpenRouter({
+    chat: () => gate.then(() => ({ text: readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8") })),
+  });
+  const backgrounds = [];
+  const ctx = world();
+  const env = { ...ctx.env };
+  if (waitValue !== undefined) env.GRILL_HOSTED_WAIT = waitValue;
+  const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+  const deps = { ...judgeDeps(fake), waitMs: 40, backgrounds, now: Date.parse("2026-10-03T15:00:00Z"), env };
+  try {
+    const init = await postMcp(
+      ctx,
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } },
+      { token, deps },
+    );
+    const listed = await postMcp(ctx, { jsonrpc: "2.0", id: 2, method: "tools/list" }, { token, deps });
+    const pendingCall = postMcp(
+      ctx,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "grill", arguments: { subject: `Decision: ${CANARY}`, keep_records: true, quality_check: false } },
+      },
+      { token, deps },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const started = await pendingCall;
+    const startedText = textOf(started.json);
+    const jobId = startedText.match(/job (g1\.[0-9a-f]{32}\.[A-Za-z0-9_-]+)/)[1];
+    const again = await postMcp(
+      ctx,
+      { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId } } },
+      { token, deps: { ...deps, waitMs: 20 } },
+    );
+    release();
+    await Promise.all(backgrounds);
+    const done = await postMcp(
+      ctx,
+      { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId } } },
+      { token, deps: { ...deps, waitMs: 500 } },
+    );
+    const tools = listed.json.result.tools;
+    return {
+      startedText,
+      againText: textOf(again.json),
+      doneText: textOf(done.json),
+      doneError: done.json.result.isError,
+      jobId,
+      instructions: init.json.result.instructions,
+      grillDescription: tools.find((tool) => tool.name === "grill").description,
+      resultDescription: tools.find((tool) => tool.name === "grill_result").description,
+    };
+  } finally {
+    release();
+    await fake.close();
+  }
+}

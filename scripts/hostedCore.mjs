@@ -4,7 +4,7 @@
  */
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { parseRecords } from "./reflection.mjs";
-import { buildGrillTools } from "../server/index.mjs";
+import { buildGrillTools, grillWaitText } from "../server/index.mjs";
 
 export const HOSTED_PROTOCOLS = Object.freeze(["2025-11-25", "2025-06-18", "2025-03-26"]);
 export const CLAUDE_WEB_REDIRECT = "https://claude.ai/api/mcp/auth_callback";
@@ -32,6 +32,12 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 export function hostedEnabled(env = {}) {
   return env.GRILL_HOSTED === "on";
+}
+
+/** `check` is the fallback. Unset, `auto`, or any other value stays on today's behaviour. */
+export function hostedWaitMode(env = {}) {
+  const raw = env && typeof env.GRILL_HOSTED_WAIT === "string" ? env.GRILL_HOSTED_WAIT : "";
+  return grillWaitText(raw).mode;
 }
 
 export function negotiateProtocol(asked) {
@@ -350,14 +356,16 @@ const HOSTED_COST_LINE =
   "Usually takes 1–3 minutes and uses a little of the person's Grill credit. The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost. If the result is a job id, call grill_result until the verdict arrives. The first time, Grill asks whether to keep decision records before anything is sent: show that question, and call again with keep_records true or false only after the person answers Yes or No.";
 
 /** Same clerk / show-first text as the local server, plus the hosted account fields. */
-export function hostedTools() {
-  const [grill, result, look] = buildGrillTools({ checkOn: true });
+export function hostedTools({ waitMode = "auto" } = {}) {
+  const copy = grillWaitText(waitMode);
+  const [grill, result, look] = buildGrillTools({ checkOn: true, waitMode });
   const localCost =
     "Costs about a cent on the user's own key, or on a Grill Pro key, and usually takes 1–3 minutes. If the result is a job id, call grill_result with it.";
+  const hostedCost = HOSTED_COST_LINE.replace("If the result is a job id, call grill_result until the verdict arrives.", copy.hostedJobClause);
   return [
     {
       ...grill,
-      description: grill.description.replace(localCost, HOSTED_COST_LINE),
+      description: grill.description.replace(localCost, hostedCost),
       inputSchema: {
         ...grill.inputSchema,
         properties: {
@@ -410,7 +418,7 @@ export function hostedTools() {
   ];
 }
 
-export const HOSTED_INSTRUCTIONS = [
+const HOSTED_INSTRUCTION_LINES = [
   "Grill sends an approved decision to an outside judge picked by openrouter/auto.",
   "Exclude only the company that wrote the write-up. Never use this chat's own model as the judge, and never pin a model.",
   "Write the subject as a clerk, not an advocate. Show it to the person and get their OK before calling grill.",
@@ -421,7 +429,15 @@ export const HOSTED_INSTRUCTIONS = [
   "When they say what they chose, call grill_decided with their words. Never invent a decided line.",
   "Add supersedes and changed only when they say the choice changed, in their words. A re-run with nothing changed leaves those off.",
   "When they say look back, call grill_look_back. With a Grill account it can read saved records, so they do not have to paste.",
-].join(" ");
+];
+
+/** Auto mode, byte for byte. Check mode swaps only the still-running line, via grillWaitText. */
+export const HOSTED_INSTRUCTIONS = HOSTED_INSTRUCTION_LINES.join(" ");
+
+export function hostedInstructions(mode) {
+  const line = grillWaitText(mode).hostedInstruction;
+  return HOSTED_INSTRUCTION_LINES.map((item) => (item.startsWith("If grill returns a job id,") ? line : item)).join(" ");
+}
 
 /** A tiny Redis used by tests. Production talks to Upstash over fetch instead. */
 export function createMemoryRedis() {
