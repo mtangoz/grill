@@ -15,7 +15,9 @@ import {
   NEWS_UNTIL,
   NEWS_URL,
   RELEASE_DATE,
+  grillWaitText,
   newsLine,
+  stillGrillingText,
   withNews,
 } from "../server/index.mjs";
 
@@ -99,6 +101,8 @@ describe("the MCP handshake", () => {
     const res = await c.request("tools/list", {});
     const names = res.result.tools.map((t) => t.name);
     assert.deepEqual(names, ["grill", "grill_result", "grill_look_back"]);
+    const resultTool = res.result.tools.find((t) => t.name === "grill_result");
+    assert.equal(resultTool.description, grillWaitText("auto").resultDescription);
     const grill = res.result.tools[0];
     assert.deepEqual(grill.inputSchema.required, ["subject"]);
     assert.match(grill.description, /different company than the assistant that wrote it \(Claude, unless set otherwise\)/);
@@ -450,7 +454,11 @@ describe("the Grill news line", () => {
 
     const slow = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_WAIT_MS: "1", GRILL_CHECK: "false" });
     const pending = await slow.request("tools/call", { name: "grill", arguments: { subject } });
-    assert.match(textOf(pending), /Still grilling/);
+    assert.match(
+      textOf(pending),
+      /^Still grilling \(job [0-9a-f]{8}, \d+s so far\)\. Call grill_result with job_id "[0-9a-f]{8}" to collect the report\. A grill usually takes 1–3 minutes\.$/,
+    );
+    assert.doesNotMatch(textOf(pending), /say "check"/);
     assert.doesNotMatch(textOf(pending), /Grill news/);
     await slow.close();
   });
@@ -628,5 +636,35 @@ describe("the server as a command (npx -y grillyour …)", () => {
     assert.equal(bad.code, 1);
     assert.match(bad.err, /--set-key/);
     assert.match((await run(["--version"])).out, /^\d+\.\d+\.\d+/);
+  });
+});
+
+describe("still-running wording", () => {
+  const localAuto = (jobId, seconds) =>
+    `Still grilling (job ${jobId}, ${seconds}s so far). Call grill_result with job_id "${jobId}" to collect the report. A grill usually takes 1–3 minutes.`;
+  const hostedAuto = (jobId) =>
+    `Still grilling (job ${jobId}). Call grill_result with job_id "${jobId}" to collect the report. A grill usually takes 1–3 minutes.`;
+  const check = (jobId) =>
+    `Still grilling (job ${jobId}). Tell the user, in one short plain sentence, that the grill is still running and to say "check" in about a minute. When they say check, call grill_result with job_id "${jobId}".`;
+
+  it("keeps today's sentences unless the mode is check, and an unknown mode stays on auto", () => {
+    assert.equal(stillGrillingText({ jobId: "abcd1234", seconds: 12 }), localAuto("abcd1234", 12));
+    assert.equal(stillGrillingText({ jobId: "abcd1234", seconds: 0, mode: "auto" }), localAuto("abcd1234", 0));
+    assert.equal(stillGrillingText({ jobId: "g1.abc", mode: "auto" }), hostedAuto("g1.abc"));
+    assert.equal(stillGrillingText({ jobId: "g1.abc" }), hostedAuto("g1.abc"));
+    for (const mode of ["", "auto", "AUTO", "later", "on"]) {
+      assert.equal(grillWaitText(mode).mode, "auto", JSON.stringify(mode));
+      assert.equal(stillGrillingText({ jobId: "g1.abc", mode }), hostedAuto("g1.abc"), JSON.stringify(mode));
+    }
+    assert.equal(grillWaitText(" check ").mode, "check");
+    assert.equal(stillGrillingText({ jobId: "g1.abc", seconds: 9, mode: "check" }), check("g1.abc"));
+    assert.equal(
+      grillWaitText("auto").resultDescription,
+      "Collect the report of a grill that returned a job id. Waits up to 45 seconds; call again if it is still running.",
+    );
+    assert.equal(grillWaitText("nope").hostedInstruction, grillWaitText("auto").hostedInstruction);
+    assert.match(grillWaitText("auto").hostedInstruction, /Do not ask the person to check\.$/);
+    assert.doesNotMatch(grillWaitText("check").hostedInstruction, /say "check"/);
+    assert.doesNotMatch(grillWaitText("check").resultDescription, /say "check"/);
   });
 });

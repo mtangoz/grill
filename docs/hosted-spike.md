@@ -65,9 +65,17 @@ Write down, for each run: did the verdict arrive on its own, about how long it t
 
 ## If it fails
 
-Do not build around the failure in production. If fewer than 4 of 5 runs return on their own, the chat is not re-checking `grill_result`. Stop and switch this slice to the fallback: the first reply says the grill is still running and asks the person to say `check` in a minute. That is one extra word, and it is still inside the chat.
+Do not build around the failure in production. If fewer than 4 of 5 runs return on their own, the chat is not re-checking `grill_result`. Stop and flip the check switch below. That is one extra word, and it is still inside the chat.
 
 Say which runs failed, whether the failure was sign-in, a timeout, or a verdict that never arrived, and whether the phone behaved differently from the web.
+
+## The check switch
+
+Leave `GRILL_HOSTED_WAIT` unset, or set it to `auto`. That is today's behaviour: after you approve the write-up, the assistant calls `grill_result` on its own. You should not have to type anything. The pass rule above is for this setting.
+
+Flip it only when fewer than 4 of the 5 web runs come back on their own. On the **preview** environment, set `GRILL_HOSTED_WAIT=check` and redeploy that preview. Do not change `GRILL_HOSTED`. Do not set this on production.
+
+What you see: after you have approved the write-up, one short sentence that the grill is still running and to say `check` in about a minute. Saying `check` collects the verdict. If it is still going, you get the same sentence again. Any other value, including a blank or a typo, stays on `auto`.
 
 ## What this spike does not prove
 
