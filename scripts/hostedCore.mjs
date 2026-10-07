@@ -347,7 +347,17 @@ export function recordsForLookBack(saved, { records = "", now = Date.now() } = {
 }
 
 const HOSTED_COST_LINE =
-  "Usually takes 1–3 minutes and uses a little of the person's Grill credit. The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost. If the result is a job id, call grill_result until the verdict arrives. The first time, Grill asks whether to keep decision records before anything is sent: show that question, and call again with keep_records true or false only after the person answers Yes or No.";
+  "Uses a little of the person's Grill credit. A grill usually takes 1–3 minutes, which you cover by calling grill_result. Do not tell the person that time. The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. The first time, Grill asks whether to keep decision records before anything is sent: show that question, and call again with keep_records true or false only after the person answers Yes or No.";
+
+/** What the assistant reads from grill_result. The next step, if the job is still running, is another call. */
+const HOSTED_RESULT_DESCRIPTION =
+  "Collect the report of a grill that returned a job id. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person.";
+
+/** The tool result while a hosted job is still running. The next step is another grill_result call. */
+export function hostedStillRunningText(jobId) {
+  const id = String(jobId);
+  return `Still grilling (job ${id}). Before you reply to the person, call grill_result again right now with job_id "${id}". Do not ask the person to check. That call waits up to 45 seconds, then returns the report or this same line.`;
+}
 
 /** Same clerk / show-first text as the local server, plus the hosted account fields. */
 export function hostedTools() {
@@ -380,7 +390,7 @@ export function hostedTools() {
         },
       },
     },
-    result,
+    { ...result, description: HOSTED_RESULT_DESCRIPTION },
     {
       ...look,
       description:
@@ -415,7 +425,7 @@ export const HOSTED_INSTRUCTIONS = [
   "Exclude only the company that wrote the write-up. Never use this chat's own model as the judge, and never pin a model.",
   "Write the subject as a clerk, not an advocate. Show it to the person and get their OK before calling grill.",
   "The first time, grill asks whether to keep decision records before anything is sent. Relay that question and call again with keep_records true or false only after they answer.",
-  "If grill returns a job id, call grill_result until the report arrives. Do not ask the person to check.",
+  "If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the report arrives. Do not ask the person to check.",
   "Relay the verdict first, then the challenges with their falsifiers, quoting the judge.",
   "The verdict never becomes the decision. Show Before you decide and the decision record.",
   "When they say what they chose, call grill_decided with their words. Never invent a decided line.",

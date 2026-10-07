@@ -216,6 +216,36 @@ describe("hosted Grill", { concurrency: false }, () => {
     assert.equal(typeof grill.inputSchema.properties.keep_records, "object");
   });
 
+  it("tells the assistant to call grill_result again right now, before any reply", async () => {
+    const ctx = world();
+    const token = signJwt(claims());
+    const init = await postMcp(
+      ctx,
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } },
+      { token },
+    );
+    const instructions = init.json.result.instructions;
+    assert.match(
+      instructions,
+      /If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the report arrives\. Do not ask the person to check\./,
+    );
+    assert.doesNotMatch(instructions, /call grill_result until the report arrives/);
+    assert.equal(instructions.includes("—"), false);
+    const listed = await postMcp(ctx, { jsonrpc: "2.0", id: 2, method: "tools/list" }, { token });
+    const tools = listed.json.result.tools;
+    const grill = tools.find((tool) => tool.name === "grill");
+    assert.match(grill.description, /A grill usually takes 1–3 minutes, which you cover by calling grill_result\. Do not tell the person that time\./);
+    assert.match(
+      grill.description,
+      /If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives\./,
+    );
+    assert.doesNotMatch(grill.description, /call grill_result until the verdict arrives/);
+    assert.equal(
+      tools.find((tool) => tool.name === "grill_result").description,
+      "Collect the report of a grill that returned a job id. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person.",
+    );
+  });
+
   it("returns plain JSON unless the client asks only for event streams", async () => {
     const ctx = world();
     const token = signJwt(claims());
@@ -442,8 +472,17 @@ describe("hosted Grill", { concurrency: false }, () => {
       );
       await new Promise((resolve) => setTimeout(resolve, 80));
       const started = await pending;
-      assert.match(textOf(started.json), /Still grilling/);
       const jobId = textOf(started.json).match(/job (g1\.[0-9a-f]{32}\.[A-Za-z0-9_-]+)/)[1];
+      const still = `Still grilling (job ${jobId}). Before you reply to the person, call grill_result again right now with job_id "${jobId}". Do not ask the person to check. That call waits up to 45 seconds, then returns the report or this same line.`;
+      assert.equal(textOf(started.json), still);
+      assert.equal(still.includes("1–3"), false);
+      assert.equal(still.includes("minute"), false);
+      const stillRunning = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId } } },
+        { token, deps: { waitMs: 20 } },
+      );
+      assert.equal(textOf(stillRunning.json), still);
       const credential = parseJobCredential(jobId);
       release();
       await Promise.all(backgrounds);

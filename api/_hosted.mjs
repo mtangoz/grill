@@ -35,6 +35,7 @@ import {
   encryptString,
   footerLine,
   hostedEnabled,
+  hostedStillRunningText,
   hostedTools,
   isoDay,
   keyFromEnv,
@@ -778,9 +779,7 @@ async function callGrill(args, account, payload, params, deps) {
     }
   });
   schedule(pending, deps, deps.requestId);
-  return toolText(
-    `Still grilling (job ${credential.jobId}). Call grill_result with job_id "${credential.jobId}" to collect the report. A grill usually takes 1–3 minutes.`,
-  );
+  return toolText(hostedStillRunningText(credential.jobId));
 }
 
 async function callResult(args, account, deps) {
@@ -798,9 +797,7 @@ async function callResult(args, account, deps) {
   if (typeof cipher !== "string" || !cipher) {
     const running = Number(await redis(deps, ["SISMEMBER", runningKey(account.id), credential.id])) || 0;
     if (!running) return toolText("No grill is running with that job id. It may already have been collected.", true);
-    return toolText(
-      `Still grilling (job ${credential.jobId}). Call grill_result with job_id "${credential.jobId}" to collect the report. A grill usually takes 1–3 minutes.`,
-    );
+    return toolText(hostedStillRunningText(credential.jobId));
   }
   await redis(deps, ["DEL", jobRedisKey(credential.id)]);
   let stored;
