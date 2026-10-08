@@ -444,6 +444,7 @@ describe("the endpoints", () => {
   it("/welcome, /checkout and /notify are routed to their functions, and the site build is what Vercel runs", () => {
     const config = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
     assert.deepEqual(config, {
+      fluid: true,
       buildCommand: "GRILL_PRO_NOTIFY=1 node scripts/build-site.mjs",
       outputDirectory: "_site",
       rewrites: [
@@ -455,7 +456,15 @@ describe("the endpoints", () => {
         { source: "/pro/reports", destination: "/api/pro-reports" },
         { source: "/notify", destination: "/api/notify" },
         { source: "/notify/confirm", destination: "/api/notify-confirm" },
+        { source: "/mcp", destination: "/api/hosted?__route=mcp" },
+        { source: "/.well-known/oauth-protected-resource", destination: "/api/hosted?__route=prm" },
+        { source: "/.well-known/oauth-protected-resource/:extra*", destination: "/api/hosted?__route=prm" },
+        { source: "/decisions", destination: "/api/hosted?__route=decisions" },
+        { source: "/account", destination: "/api/hosted?__route=account" },
       ],
+      functions: {
+        "api/hosted.js": { maxDuration: 300, includeFiles: "scripts/{apiKey,checkCore,judge,judgeCore,reflection,usageStats}.mjs" },
+      },
     });
   });
 

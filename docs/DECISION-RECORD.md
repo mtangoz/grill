@@ -62,7 +62,7 @@ A later Grill has to keep reading records people already copied, and an older Gr
 |---|---|
 | goal | What you are trying to achieve, in your words. `not stated` when you declined. Omit the line when there is nothing to write. Never invent a goal. |
 | guardrails | What this must not cost or break, in your words. Omit the line when you named none. A trade-off you name and accept is not a guardrail you failed. |
-| source_app | The assistant that wrote the record, such as `claude` or `chatgpt`. You or the assistant add it. The Grill tool does not. |
+| source_app | The assistant that wrote the record, such as `claude`, `claude-code` or `chatgpt`. You or the assistant add it. The installed Grill tool does not. A Grill account in chat fills it from the connector you used. |
 | decided | What you chose, in your words, including any change you made because of a challenge. Omit the line until you have chosen. Never invent it. |
 | supersedes | The earlier record this one replaces, as its date and title: `2026-01-10 Hire contractor`. Add it only when you say the choice changed. Omit it on a re-run, when nothing changed. Never invent it. There is no `superseded-by` line. |
 | changed | Why the choice changed, in the shape `evidence — your few words`, `goals — your few words`, `context — your few words`, or `reweighed — your few words`. `reweighed` means the same facts weighed differently. Add it only with `supersedes`, and only in your words. Never invent it. |

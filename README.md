@@ -61,6 +61,10 @@ Then add a server named `grill` that runs `npx -y grillyour`. The config holds n
 
 It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTER_API_KEY` works when that is unset. Or save the key once for every app on this computer with `npx -y grillyour --set-key`. It goes in `~/.config/grill/key`, outside any project's `.env`.
 
+### Inside Claude.ai
+
+Invite-only, and not live yet. When Grill turns it on, you add a custom connector at the address Grill gives you, sign in, and grill in the chat. Until then, use Claude Desktop or the paste route above. Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
+
 ## What it costs
 
 Grill is free. On your own key a grill costs about a cent or two. Copy and paste uses the assistants you already have.
@@ -70,7 +74,7 @@ Coming later: an optional Pro plan with saved decision history and look-back rem
 ## Privacy
 
 - Your notes stay in your tools. Only the write-up you approve is sent. The reflection you write stays in your chat or your own notes.
-- The free tool has no account. Grill's makers never see your decisions. Anonymous usage stats are off unless you turn them on.
+- The free tool has no account. Grill's makers never see your decisions on that tool. Anonymous usage stats are off unless you turn them on. An in-chat account is invite-only and not live yet; what it stores is in [docs/DATA-LEDGER.md](docs/DATA-LEDGER.md).
 - A key or token in the write-up stops the run. Email addresses, phone numbers and card numbers are masked.
 - The optional quality check (Jev) also sees the masked write-up; the website counts visits without cookies.
 - Grill news line: after a finished grill, at most once a session, and only within 7 days of a release or on the first 3 days of a month, a line with a link to hear when an optional Pro plan is ready. Showing the line sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own.

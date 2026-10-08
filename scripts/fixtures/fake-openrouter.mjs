@@ -54,7 +54,7 @@ export async function startFakeOpenRouter({ chat, decisions } = {}) {
   const server = createServer((req, res) => {
     let raw = "";
     req.on("data", (c) => (raw += c));
-    req.on("end", () => {
+    req.on("end", async () => {
       let body = null;
       try {
         body = JSON.parse(raw);
@@ -63,7 +63,7 @@ export async function startFakeOpenRouter({ chat, decisions } = {}) {
       }
       const route = req.url === CHAT_PATH ? "chat" : req.url === DECISIONS_PATH ? "decisions" : "other";
       seen[route].push({ url: req.url, headers: req.headers, raw, body });
-      const reply = handlers[route](body) ?? {};
+      const reply = (await Promise.resolve(handlers[route](body))) ?? {};
       if (reply.stall) {
         res.writeHead(200, { "content-type": "application/json" });
         res.write('{"answers":'); // and never res.end()
