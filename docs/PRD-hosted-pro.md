@@ -35,7 +35,7 @@ Browser apps can only reach an MCP server on the internet. So Pro needs a hosted
 
 | Risk | Control | Checked by |
 |---|---|---|
-| Write-up in logs | The relay never logs a request or response body. Errors return a fixed message with a request id. Log drains and error trackers stay off for `api/mcp`. | A test fails if any `console.*` in the relay takes the subject, the report or a request body. Same style as `privacy.test.mjs`. |
+| Write-up in logs | The relay never logs a request or response body. Errors return a fixed message with a request id. Log drains and error trackers stay off for `api/hosted`. | A test fails if any `console.*` in the relay takes the subject, the report or a request body. Same style as `privacy.test.mjs`. |
 | Write-up stored | Nothing in plain text touches Redis or disk. A finished report is encrypted (AES-256-GCM) with a fresh random key per job. The **key lives only in the job id handed to the assistant**. Redis holds ciphertext with a 15-minute TTL, deleted on first read. | A test intercepts every Redis write and asserts each is ciphertext no longer than the report plus the overhead. |
 | Masking skipped | The relay runs the same masking as the local judge (`judgeCore.mjs`): keys and tokens refuse the run; emails, phones and cards are masked. Same code, not a copy. | The existing masking tests run against the relay path too. |
 | Code differs from what we say | The relay is in this public repository and deploys only from `main`. A `/pro/relay` page shows the commit SHA that is live. | A release check compares the live SHA with the tagged release. |
@@ -111,7 +111,7 @@ Reuse first. Accounts, magic links, managed keys, caps, rotation, Stripe checkou
 
 | Piece | New or reused |
 |---|---|
-| `api/mcp.js`: Streamable HTTP MCP endpoint | **new**. It wraps the tool definitions the local server already has, moved to a shared module so there is one home. |
+| `api/hosted.js`: Streamable HTTP MCP endpoint, plus `/account`, `/decisions`, and the protected-resource metadata | **new**. One function, so a Hobby deploy stays within the serverless function limit. It wraps the tool definitions the local server already has, moved to a shared module so there is one home. |
 | OAuth 2.1 authorization server with dynamic client registration (`/.well-known/oauth-authorization-server`, `/oauth/register`, `/oauth/authorize`, `/oauth/token`) | **new**. It signs in with the existing magic link. Tokens are HMAC-signed like today's session cookie, with no token table. |
 | Relay: masking, prompt, call, validation | **reused**. `judge.mjs` logic moves to a function both the CLI and the relay call, so there is one code path. |
 | Encrypted short-lived job store | **new**, on the Upstash Redis Pro already uses. |
@@ -125,7 +125,7 @@ Behind `GRILL_HOSTED=on`, off by default, like `GRILL_PRO_BILLING`.
 ## 6. Phases
 
 1. **Measure (now, no code).** Turn starter keys on for a small group. Read cost-only monthly spend per key. This replaces the assumed table in §4 with a real one.
-2. **Relay in test mode.** `api/mcp.js`, OAuth and the encrypted job store, with `GRILL_PRO_TEST_MODE` against the loopback router. Connect from ChatGPT developer mode and a claude.ai custom connector on a preview deployment.
+2. **Relay in test mode.** `api/hosted.js`, OAuth and the encrypted job store, with `GRILL_PRO_TEST_MODE` against the loopback router. Connect from ChatGPT developer mode and a claude.ai custom connector on a preview deployment.
 3. **Privacy review.** Merge PRIVACY.md and PRINCIPLES.md, then grill the relay design with an outside judge, the same instrument we sell, before launch.
 4. **Billing.** The $3 / $30 prices, the metered overage price, the cap and the footer line, all under Stripe test keys.
 5. **Launch to the Pro launch list.**

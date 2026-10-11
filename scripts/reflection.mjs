@@ -28,6 +28,13 @@ const LOOK_BACK_LINE = {
   paste: 'To look back, paste one or more blocks back into this chat and say "look back". Nothing is stored.',
   site: "To look back, paste the blocks into the box on this page. They stay in your browser. Nothing is stored.",
   note: "To look back, paste one or more blocks and say what happened. Nothing is stored.",
+  account:
+    'To look back, say "look back" in this chat, or open the decisions page on your Grill account. Grill keeps this record only because you chose to.',
+};
+
+const STORAGE_NOTE = {
+  account:
+    "These stay in your chat. Grill does not send them to the judge. Grill keeps the decision record only if you chose to, encrypted, and you can export or delete it.",
 };
 
 const VERDICT_PLAIN = Object.freeze({
@@ -129,6 +136,7 @@ export function guardrailsFromSubject(subject) {
 }
 
 const SOURCE_APPS = [
+  ["claude-code", /\bclaude[- ]code\b/i],
   ["copilot", /\bcopilot\b/i],
   ["chatgpt", /\b(?:chatgpt|openai)\b/i],
   ["claude", /\b(?:claude|anthropic)\b/i],
@@ -240,13 +248,19 @@ export function reflectionFooter({
   date,
   review,
   route = "paste",
+  supersedes = "",
+  changed = "",
 } = {}) {
   const questions = BEFORE_YOU_DECIDE_QUESTIONS.map((question, index) => `${index + 1}. ${question}`).join("\n");
   const close = LOOK_BACK_LINE[route] || LOOK_BACK_LINE.note;
+  const storageNote = STORAGE_NOTE[route] || "These stay in your notes. Grill does not store them and does not send them to the judge.";
+  const replace = oneLine(supersedes);
+  const why = oneLine(changed);
+  const keepReplace = Boolean(replace && why);
   return [
     "## Before you decide",
     "",
-    "These stay in your notes. Grill does not store them and does not send them to the judge.",
+    storageNote,
     "",
     questions,
     "",
@@ -263,6 +277,8 @@ export function reflectionFooter({
       goal,
       guardrails,
       source_app: sourceApp,
+      supersedes: keepReplace ? replace : "",
+      changed: keepReplace ? why : "",
     }),
     "",
     "Copy the block above into any notes you keep. Edit the review date if you want a different check-in.",
@@ -275,7 +291,7 @@ export function reflectionFooter({
  * Append the reflection after a finished judge report. The judge's own text, including the
  * verdict and any "Judge:" line, is not rewritten.
  */
-export function appendReflection(report, { subject = "", now = new Date(), route = "mcp", sourceApp = "" } = {}) {
+export function appendReflection(report, { subject = "", now = new Date(), route = "mcp", sourceApp = "", supersedes = "", changed = "" } = {}) {
   const body = String(report || "").replace(/\s+$/, "");
   if (!body || body.includes("## Before you decide")) return body ? `${body}\n` : "";
   const footer = reflectionFooter({
@@ -290,6 +306,8 @@ export function appendReflection(report, { subject = "", now = new Date(), route
     date: isoDate(now),
     review: isoDate(addDays(now, REVIEW_DAYS)),
     route,
+    supersedes,
+    changed,
   });
   return `${body}\n\n${footer}`;
 }

@@ -1,5 +1,6 @@
 /**
- * Grill Pro: the only code Grill runs on a server, and it never sees a decision.
+ * Grill Pro: account pages for a managed key. They do not see a decision.
+ * The in-chat account is separate, in api/_hosted.mjs, and off unless GRILL_HOSTED=on.
  *
  * It does four things:
  *   1. starts a Stripe checkout for Grill Pro, applying the early-access coupon when one is configured;

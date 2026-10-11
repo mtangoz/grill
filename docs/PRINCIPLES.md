@@ -26,13 +26,13 @@ The HTTP-Referer header lets OpenRouter count Grill usage in aggregate. It adds 
 
 The website counts visits without cookies. It never counts the words of a decision. The installed tool can optionally send anonymous usage metadata to this site if you turn that on at install; off by default; never decision words.
 
-Grill never collects decision text, notes, reflections, or keys. It does not collect anything that identifies you unless you opt in to anonymous usage stats, and then only a random install ID.
+Grill never collects decision text, notes, reflections, or keys. It does not collect anything that identifies you unless you opt in to anonymous usage stats, and then only a random install ID. With a Grill account in chat, the approved write-up passes through Grill's server in memory. It is never logged or stored. Decision records are kept only if you choose, and you can export or delete them.
 
 The free tool has no account. It stores nothing about a decision. The opt-in usage-stats file on your computer holds only that random ID and when a ping was sent, and only if you turned the setting on.
 
 Any telemetry is opt-in. It is off by default. It is disclosed in [docs/PRIVACY.md](PRIVACY.md). It never includes decision text. It uses only a random install ID.
 
-Grill Pro is accounts and stored history. It is not live. It will be disclosed in [docs/PRIVACY.md](PRIVACY.md) and on the site before launch. It will be opt-in.
+A Grill account is opt-in, and invite-only until Grill turns it on. It can keep your decision records if you choose, encrypted, with export and delete. It stores your sign-in, your credit, and the cost, time and model of each grill. It never stores the write-up, and it never keeps a full report for more than 15 minutes. You never see the model-router key; Grill holds it for you. The account is off until Grill turns it on. Details: [docs/PRIVACY.md](PRIVACY.md) and [docs/DATA-LEDGER.md](DATA-LEDGER.md).
 
 ## Product guardrails
 
