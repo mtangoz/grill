@@ -1273,6 +1273,7 @@ describe("the note a person reads", () => {
     assert.ok(countWords(layers.options) <= LAYER2_WORD_BUDGET, countWords(layers.options));
     assert.ok(countWords(layers.options) >= 60, countWords(layers.options));
     assert.match(layers.brief, /^\*\*Shaky\.\*\*/);
+    assert.doesNotMatch(layers.brief, /\*\*Shaky\. \*\*/);
     assert.match(layers.brief, /Missing:/);
     assert.match(layers.brief, /Cheap test:/);
     assert.match(layers.brief, /Say 'more', 'options', or your call\./);

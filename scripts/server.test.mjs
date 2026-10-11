@@ -195,14 +195,18 @@ describe("a grill end to end (fixture, no network)", () => {
       name: "grill",
       arguments: { subject: "We will raise prices 20% in Q4.", question: "Which way, and on what grounds?" },
     });
-    assert.equal(res.result.isError, false);
-    const report = textOf(res);
-    assert.match(report, /\*\*Shaky\.\*\*/);
-    assert.match(report, /Pull the signup curve from the last comparable launch/);
-    assert.match(report, /Say 'more', 'options', or your call\./);
-    assert.doesNotMatch(report, /grill-record|## Steelman|## Quality check|gpt-/);
-    assert.ok(report.indexOf("**Shaky.**") < report.indexOf("Say 'more'"));
-    await c.close();
+    try {
+      assert.equal(res.result.isError, false);
+      const report = textOf(res);
+      assert.match(report, /\*\*Shaky\.\*\*/);
+      assert.doesNotMatch(report, /\*\*Shaky\. \*\*/);
+      assert.match(report, /Pull the signup curve from the last comparable launch/);
+      assert.match(report, /Say 'more', 'options', or your call\./);
+      assert.doesNotMatch(report, /grill-record|## Steelman|## Quality check|gpt-/);
+      assert.ok(report.indexOf("**Shaky.**") < report.indexOf("Say 'more'"));
+    } finally {
+      await c.close();
+    }
     assert.ok(!c.transcript().includes(KEY), "the key must never be echoed");
   });
 

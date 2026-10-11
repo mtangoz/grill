@@ -1381,13 +1381,29 @@ function sentence(text) {
 }
 
 function endsSentence(text) {
-  return /[.!?]["']?$/.test(String(text || "").trim());
+  return /[.!?]["'*]*$/.test(String(text || "").trim());
 }
 
+/** A period inside **bold.** is not a sentence boundary. The closing marks stay on that sentence. */
 function splitSentences(text) {
   const clean = String(text || "").replace(/\s+/g, " ").trim();
   if (!clean) return [];
-  return (clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || []).map((part) => part.trim()).filter(Boolean);
+  const parts = [];
+  let start = 0;
+  for (let i = 0; i < clean.length; i++) {
+    if (!/[.!?]/.test(clean[i])) continue;
+    let end = i + 1;
+    while (end < clean.length && /["'*\]]/.test(clean[end])) end++;
+    if (end < clean.length && !/\s/.test(clean[end])) continue;
+    const part = clean.slice(start, end).trim();
+    if (part) parts.push(part);
+    while (end < clean.length && /\s/.test(clean[end])) end++;
+    start = end;
+    i = end - 1;
+  }
+  const rest = clean.slice(start).trim();
+  if (rest) parts.push(rest);
+  return parts;
 }
 
 /** Leading complete sentences that fit. A sentence that does not fit is left out, not cut with an ellipsis. */
@@ -1564,13 +1580,13 @@ function renderBrief(result, subject) {
   const degraded = Array.isArray(result?.degraded) && result.degraded.length > 0;
   const prefix = degraded ? "Not a clean review." : "";
   if (isThinGrill(result, subject)) return withClosing(thinLayer(result, prefix));
-  const missing = sentenceWithin(explicitMissing(result), 40);
+  const missing = sentenceWithin(explicitMissing(result), 16);
   const top = challengeList(result)[0];
   const sharp = missing
     ? `Missing: ${missing}`
-    : `Risk: ${sentenceWithin(top?.challenge || result?.strongestObjection || "", 40) || "the case does not establish the call."}`;
-  const test = sentenceWithin(top?.falsifier || "", 40) || "Name the cheapest check that would settle it.";
-  const reason = sentenceWithin(String(result?.verdictReason || "").replace(/\?/g, ""), 40);
+    : `Risk: ${sentenceWithin(top?.challenge || result?.strongestObjection || "", 16) || "the case does not establish the call."}`;
+  const test = sentenceWithin(top?.falsifier || "", 14) || "Name the cheapest check that would settle it.";
+  const reason = sentenceWithin(String(result?.verdictReason || "").replace(/\?/g, ""), 20);
   const label = verdictLabel(result);
   const verdict = label
     ? reason
