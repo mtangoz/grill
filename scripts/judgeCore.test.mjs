@@ -38,6 +38,7 @@ import {
   buildJudgeMessages,
   nextAttempt,
   reconcileVerdict,
+  CLOSING_ASK,
   LAYER1_WORD_BUDGET,
   LAYER2_WORD_BUDGET,
   SCOPE_GUARD,
@@ -1329,6 +1330,56 @@ describe("the note a person reads", () => {
     assert.ok(countWords(layers.more) >= 60 && countWords(layers.more) <= LAYER2_WORD_BUDGET, countWords(layers.more));
     assert.ok(countWords(layers.options) >= 60 && countWords(layers.options) <= LAYER2_WORD_BUDGET, countWords(layers.options));
     assert.doesNotMatch(`${layers.more}\n${layers.options}\n${layers.full}`, /steelman|gpt-5|grill-record/i);
+  });
+
+  it("ends layer 1 on a full sentence and keeps the question grammatical", () => {
+    const reason =
+      "The evidence-first sequencing is sound and no fatal flaw appears, but the $20 overall cap is in direct tension with the $1 per-user cap when both can bind in the same month.";
+    const question =
+      "What the $20 overall and $1 per-user caps are denominated in, over what window, and do they reset each month?";
+    const note = renderUserFacing(
+      { needsFacts: true, verdict: "weak", verdictReason: reason, factsNeeded: [question] },
+      { subject: "cap it?" },
+    );
+    assert.ok(countWords(note) <= LAYER1_WORD_BUDGET, `${countWords(note)}: ${note}`);
+    assert.doesNotMatch(note, /…|\.\.\./);
+    const [body, ask] = note.split("\n\n");
+    assert.equal(ask, CLOSING_ASK);
+    assert.match(body, /[.!?]$/);
+    assert.match(body, /appears\. What the \$20 overall and \$1 per-user caps are denominated in, over what window, and do they reset each month\?$/);
+    assert.doesNotMatch(body, /,\s*\?/);
+
+    const fragment = renderUserFacing(
+      {
+        needsFacts: true,
+        verdict: "weak",
+        verdictReason: reason,
+        factsNeeded: ["What the $20 overall and $1 per-user caps are denominated in, over what window, and whether unused credit rolls"],
+      },
+      { subject: "cap it?" },
+    );
+    assert.ok(countWords(fragment) <= LAYER1_WORD_BUDGET, countWords(fragment));
+    assert.doesNotMatch(fragment, /…|\.\.\.|,\s*\?/);
+    assert.match(fragment, /What single fact would change this\?/);
+
+    const settled = renderUserFacing(
+      {
+        verdict: "weak",
+        verdictReason:
+          "The evidence-first sequencing is sound and no fatal flaw appears, but the twenty dollar overall cap is in direct tension with the one dollar cap when both can bind in the same month and nobody has said what the numbers mean.",
+        missingOption: "Keep a capped free tier instead of a hard monthly ceiling.",
+        challenges: [
+          {
+            challenge: "The cap is named without saying whether it is dollars, calls, or something else.",
+            falsifier: "Write down the unit and the window before treating the cap as a limit.",
+          },
+        ],
+      },
+      { subject: "We will cap hosted spend at $20 overall and $1 per person each month, counted before the judge runs." },
+    );
+    assert.ok(countWords(settled) <= LAYER1_WORD_BUDGET, `${countWords(settled)}: ${settled}`);
+    assert.doesNotMatch(settled, /…|\.\.\./);
+    assert.match(settled, /[.!?]\n\nSay 'more', 'options', or your call\.$/);
   });
 
   it("the scope guard is the shared sentence", () => {

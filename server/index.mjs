@@ -79,6 +79,27 @@ function waitMs() {
   return Number.isInteger(n) && n >= 1 && n <= 55_000 ? n : 45_000;
 }
 
+/**
+ * Test-only clock, used for the first wait only. GRILL_CLOCK_STEP_MS makes each read jump
+ * forward, so that wait is already over on the second read. A fast fixture then cannot finish
+ * inside the wait and skip the job id. Later waits use Date.now(), so grill_result can collect
+ * the job. Unset in normal use.
+ */
+let waitClockSpent = false;
+function waitClock() {
+  if (waitClockSpent) return null;
+  const step = Number(process.env.GRILL_CLOCK_STEP_MS);
+  if (!Number.isInteger(step) || step < 1 || step > 60_000) return null;
+  waitClockSpent = true;
+  const start = Number(process.env.GRILL_CLOCK_MS);
+  let t = Number.isFinite(start) ? start : 0;
+  return () => {
+    const value = t;
+    t += step;
+    return value;
+  };
+}
+
 /** GRILL_AUTHOR from the host's config: a model-family name, or "" when unset or not one. */
 function defaultAuthor(env = process.env) {
   const value = typeof env.GRILL_AUTHOR === "string" ? env.GRILL_AUTHOR.trim().toLowerCase() : "";
@@ -401,11 +422,13 @@ function startJob({ subject, question, author, skipCheck }) {
 }
 
 async function waitFor(job, ms, onTick) {
-  const deadline = Date.now() + ms;
-  while (!job.done && Date.now() < deadline) {
+  const clock = waitClock();
+  const now = clock || Date.now;
+  const deadline = now() + ms;
+  while (!job.done && now() < deadline) {
     let timer;
     const tick = new Promise((resolve) => {
-      timer = setTimeout(resolve, Math.min(progressEveryMs(), Math.max(0, deadline - Date.now())));
+      timer = setTimeout(resolve, Math.min(progressEveryMs(), Math.max(0, deadline - now())));
     });
     await Promise.race([job.promise, tick]);
     clearTimeout(timer);
