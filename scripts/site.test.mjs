@@ -210,6 +210,50 @@ describe("the terms page", () => {
   });
 });
 
+describe("the contribute page", () => {
+  const contribute = readFileSync(join(ROOT, "site/contribute.html"), "utf8");
+
+  it("is linked from the home header and footer", () => {
+    assert.match(page, /<a href="\/contribute\/">Contribute<\/a>/);
+    const footer = page.match(/<div class="footer">[\s\S]*?<\/div>/)?.[0] || "";
+    assert.match(footer, /href="\/contribute\/"/);
+    assert.match(readFileSync(join(ROOT, "site/terms.html"), "utf8"), /href="\/contribute\/"/);
+  });
+
+  it("says why help matters, the three ways, and how a change is reviewed", () => {
+    assert.match(contribute, /<title>Contribute to Grill<\/title>/);
+    assert.match(contribute, /one model, from a different company/);
+    assert.match(contribute, /No ads\. No selling your data\. No training on your decisions\. Grill is paid for by subscriptions only\./);
+    assert.match(contribute, /issues\/new\?template=idea\.yml/);
+    assert.match(contribute, /label%3A%22good\+first\+issue%22/);
+    assert.match(contribute, /prompts\/grill\.md/);
+    assert.match(contribute, /blob\/main\/CONTRIBUTING\.md/);
+    assert.match(contribute, /src="\/brand\/favicon-32\.png"/);
+    assert.match(contribute, /won’t be merged/);
+    assert.ok(!contribute.includes("—"), "no em dashes");
+    assert.doesNotMatch(contribute, /<!doctype|<html[\s>]|<head[\s>]|<body[\s>]/i);
+  });
+
+  it("matches CONTRIBUTING.md on setup, tests, and the two rules that do not move", () => {
+    const contributing = readFileSync(join(ROOT, "CONTRIBUTING.md"), "utf8");
+    assert.match(contributing, /Node\.js/);
+    assert.match(contributing, /node --test scripts\/\*\.test\.mjs/);
+    assert.match(contributing, /npm test/);
+    assert.match(contributing, /docs\/PR-AUTOMATION\.md/);
+    assert.match(contributing, /No ads\. No selling your data\. No training on your decisions\. Grill is paid for by subscriptions only\./);
+    assert.match(contributing, /different company than the assistant/);
+    assert.match(contributing, /will not be merged/);
+    assert.match(contributing, /template=idea\.yml/);
+    assert.match(contributing, /template=bug\.yml/);
+    assert.match(contributing, /https:\/\/grillyour\.ai\/contribute\//);
+    for (const name of ["idea.yml", "bug.yml"]) {
+      const form = readFileSync(join(ROOT, ".github/ISSUE_TEMPLATE", name), "utf8");
+      assert.match(form, /^name: /m);
+      assert.match(form, /Don't include a real decision|Don't paste a key/);
+    }
+  });
+});
+
 describe("the site build", () => {
   it("wraps the page into a full document, with its title and styles in the head", () => {
     execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
@@ -228,12 +272,20 @@ describe("the site build", () => {
     assert.match(terms, /<title>Grill Pro terms<\/title>/);
     assert.match(terms, /<link rel="canonical" href="https:\/\/grillyour\.ai\/terms\/">/);
     assert.match(terms, /--paper:/, "the terms page borrows the site's styles");
+    const contribute = readFileSync(join(ROOT, "_site/contribute/index.html"), "utf8");
+    assert.match(contribute, /<title>Contribute to Grill<\/title>/);
+    assert.match(contribute, /<link rel="canonical" href="https:\/\/grillyour\.ai\/contribute\/">/);
+    assert.match(contribute, /How to improve Grill\./);
+    assert.match(contribute, /--paper:/, "the contribute page borrows the site's styles");
+    assert.match(contribute, /src="\/brand\/favicon-32\.png"/);
     const snippet = '<script defer src="/_vercel/insights/script.js"></script>';
     assert.ok(html.includes("window.va"), "the home page counts visits");
     assert.ok(html.includes(snippet));
     assert.ok(terms.includes(snippet), "the terms page counts visits");
+    assert.ok(contribute.includes(snippet), "the contribute page counts visits");
     assert.ok(!page.includes(snippet), "the artifact source does not count visits");
     assert.ok(!readFileSync(join(ROOT, "site/terms.html"), "utf8").includes(snippet));
+    assert.ok(!readFileSync(join(ROOT, "site/contribute.html"), "utf8").includes(snippet));
     for (const f of ["server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/build-extension.mjs"]) {
       assert.ok(!readFileSync(join(ROOT, f), "utf8").includes("_vercel/insights"), `${f} must not load website analytics`);
     }

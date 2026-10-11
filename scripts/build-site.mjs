@@ -104,14 +104,26 @@ cpSync(join(ROOT, "site/brand"), join(OUT, "brand"), { recursive: true });
 cpSync(join(ROOT, "site/brand/favicon.ico"), join(OUT, "favicon.ico"));
 writeFileSync(join(OUT, "index.html"), doc(headFor({ description: DESCRIPTION, url: SITE_URL }), pageHead, homeBody));
 
-// Other pages (site/terms.html) are a <title> and a body; they borrow the main page's styles.
+// Other pages are a <title> and a body; they borrow the main page's styles.
 const style = pageHead.slice(pageHead.indexOf("<style>"));
-const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
-const termsTitle = terms.match(/^<title>[^<]*<\/title>/)?.[0];
-if (!termsTitle) throw new Error("site/terms.html must open with its <title>");
-mkdirSync(join(OUT, "terms"), { recursive: true });
-writeFileSync(
-  join(OUT, "terms", "index.html"),
-  doc(headFor({ description: "Grill Pro terms, in plain words.", url: `${SITE_URL}terms/` }), `${termsTitle}\n${style}`, terms.slice(termsTitle.length)),
-);
-console.log("built _site/index.html and _site/terms/index.html");
+function writePage(file, { description, url, outDir }) {
+  const source = readFileSync(join(ROOT, "site", file), "utf8");
+  const title = source.match(/^<title>[^<]*<\/title>/)?.[0];
+  if (!title) throw new Error(`site/${file} must open with its <title>`);
+  mkdirSync(join(OUT, outDir), { recursive: true });
+  writeFileSync(
+    join(OUT, outDir, "index.html"),
+    doc(headFor({ description, url }), `${title}\n${style}`, source.slice(title.length)),
+  );
+}
+writePage("terms.html", {
+  description: "Grill Pro terms, in plain words.",
+  url: `${SITE_URL}terms/`,
+  outDir: "terms",
+});
+writePage("contribute.html", {
+  description: "How to improve Grill.",
+  url: `${SITE_URL}contribute/`,
+  outDir: "contribute",
+});
+console.log("built _site/index.html, _site/terms/index.html and _site/contribute/index.html");

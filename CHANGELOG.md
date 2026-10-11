@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The site has a Contribute page, and the header and footer link to it. CONTRIBUTING.md covers local setup, tests, and pull requests, and says the privacy promise and the different-company judge are not negotiable. GitHub has forms for an idea and a bug report.
 - The privacy notes promise no ads, no selling your data, and no training on your decisions. Grill is paid for by subscriptions only.
 - New pitchfork logo on the site (favicon, home-screen icon, header and link previews), the README, the Claude Desktop extension, the MCP registry entry and the in-chat connector's server info.
 - In-chat Grill has two hard monthly spending caps on the free starter credit: one for the whole service (default $20) and one per person (default $1). When one is reached, the grill doesn't run and you get one plain sentence saying so; nothing is charged to you. Open sign-up is now its own switch, off by default, and an empty invite list lets nobody in. Two grills finishing at the same time no longer overwrite each other's account data, and failures now say what went wrong in plain words instead of a bare error.
