@@ -772,7 +772,8 @@ export const JUDGE_TOOL = Object.freeze({
       facts_needed: {
         type: "array",
         items: { type: "string" },
-        description: "When needs_facts is true, the one or two facts that would settle the decision. Otherwise an empty list.",
+        description:
+          "One or two facts that would flip the call. On a thin subject, the first is the single fact that would most change the answer. Otherwise an empty list.",
       },
       missing_option: {
         type: "string",
@@ -1060,7 +1061,7 @@ export function buildJudgeMessages({ subject, question = "", contextBlocks = [],
     "4. Attack what is actually there. Every challenge must quote the words it targets — from the subject, or for loaded-framing, from the question. If you cannot quote it, the subject did not say it and you are arguing with yourself. If the subject states a goal or guardrails, check whether the decision defeats the goal or crosses a guardrail, and quote them. A trade-off the subject names and accepts is not a defect. If none are stated, do not invent them.",
     "5. Make every challenge settleable. Name the premise that has to hold, and name the cheapest concrete thing that would settle it either way.",
     "6. Judge the whole on weight, not on count. One fatal challenge refutes; ten minor ones do not. Then swap sides: had someone who chose the other way written up the same facts, would your verdict be the same? If not, the framing is deciding it — decide again from the facts.",
-    "7. If the subject is near-empty — a template of blanks, a title, or a line with no facts — set needs_facts to true and name one or two facts in facts_needed. Do not use a confident verdict to criticise the blank. If an option the subject never named would change the decision, put that option in missing_option. Otherwise set missing_option to an empty string.",
+    "7. If the subject is thin — a template of blanks, a title, or a line with almost no facts — set needs_facts to true. Still return a provisional verdict and a one-sentence verdict_reason. Do not refuse, and do not scold the person for a short note. Put the single fact that would most change the answer first in facts_needed, and at most one more fact. Still name up to two challenges, each with a cheap test, and a missing_option when one would change the decision. If an option the subject never named would change the decision, put that option in missing_option. Otherwise set missing_option to an empty string.",
     "",
     "Grade severity against the decision, not the finish of the plan. Every plan can be tightened, so a way to improve it is not, by itself, a reason to doubt the choice. Serious means that, if the challenge is right, the case no longer shows the chosen option beats the alternatives, or the chosen option must become a different plan; an unsupported claim or an overreach is serious when, without it, a rejected option looks as good or better, and moderate when the choice still stands without it. Moderate means the choice stands once a condition is met, a check is added, or a detail is fixed in place, including a test, threshold or sample size that needs fixing and makes no rejected option look better. A risk the subject names, with a test that would reveal it or a way back, is not a hidden one: judge whether the test and the way back work, not whether the risk exists. A test or a way back that needs fixing is a moderate challenge that says how to fix it; only one that cannot be made to work at all is serious. The scale, on an unrelated decision (renewing a support contract for a year rather than going month to month): fatal, the contract's own terms exclude the system it is meant to cover; serious, the annual price assumes last year's usage, usage has already doubled, and the comparison with month to month has to be redone before the choice can be made; moderate, the write-up reviews response times each quarter, and a monthly look would catch a slide sooner; minor, a figure is quoted without its date.",
     "",
@@ -1286,11 +1287,21 @@ export function renderJudgeReport(result) {
   return out.join("\n");
 }
 
-/** About 150 words. The person reads this. The steelman stays in the full report. */
-export const USER_WORD_BUDGET = 150;
+/** Layer 1, including the next-step line. The person reads this first. */
+export const LAYER1_WORD_BUDGET = 50;
 
-/** The only question after a grill. The assistant adds it once, or the tool result already ends with it. */
-export const CLOSING_ASK = "Your call + confidence %? (e.g. 'delay, 70%')";
+/** Layer 2 and the decision frame. */
+export const LAYER2_WORD_BUDGET = 80;
+
+/** @deprecated Use LAYER1_WORD_BUDGET. Kept so older imports still name the layer 1 cap. */
+export const USER_WORD_BUDGET = LAYER1_WORD_BUDGET;
+
+/** The only line after layer 1. It offers the next layer. It does not ask for a percent. */
+export const CLOSING_ASK = "Say 'more', 'options', or your call.";
+
+/** After a grill the assistant stops. Identical sentence in every instruction surface. */
+export const SCOPE_GUARD =
+  "After a grill, don't start doing the decision (no code changes, no PRs, no product questions) unless the person separately asks. Grill's job ends at the verdict and the record.";
 
 const THIN_FILLER = new Set("the a an of to and or for in on is it this that with as by at from be we i you your our will are was were".split(" "));
 
@@ -1312,8 +1323,9 @@ function clipWords(text, max) {
 }
 
 /**
- * A blank template, or a line with almost no decision in it.
- * A short real choice ("drop the free tier?") is enough to judge.
+ * A blank template, or a one-liner with almost no facts.
+ * "drop the free tier?" is thin. A line that already names a fact
+ * ("raise prices 20% in Q4") is enough for a normal layer 1.
  */
 export function subjectNeedsFacts(subject) {
   const raw = String(subject || "");
@@ -1321,57 +1333,244 @@ export function subjectNeedsFacts(subject) {
   const stripped = raw.replace(/\[[^\]\n]{0,80}\]/g, " ").replace(/\{[^{}\n]{0,40}\}/g, " ");
   const words = stripped.split(/[^A-Za-z0-9%]+/).filter((word) => word.length > 1 && !THIN_FILLER.has(word.toLowerCase()));
   if (blanks >= 3 && words.length < 12) return true;
+  // "drop the free tier?" is four words. A seven-word line that already names a fact is not.
+  if (countWords(raw) < 6) return true;
   return words.length < 3;
 }
 
-function verdictSentence(result) {
+function verdictLabel(result) {
   const badge = VERDICT_BADGE[result?.verdict] || "";
-  const reason = clipWords(result?.verdictReason || "", 28);
-  if (!badge) return "**No verdict.** The judge did not judge the decision.";
-  const label =
-    badge === "solid if" ? "Solid if" : badge === "doesn't hold up" ? "Doesn't hold up" : badge.charAt(0).toUpperCase() + badge.slice(1);
+  if (!badge) return "";
+  if (badge === "solid if") return "Solid if";
+  if (badge === "doesn't hold up") return "Doesn't hold up";
+  return badge.charAt(0).toUpperCase() + badge.slice(1);
+}
+
+function verdictSentence(result, reasonWords = 14) {
+  const label = verdictLabel(result);
+  const reason = clipWords(String(result?.verdictReason || "").replace(/\?/g, ""), reasonWords);
+  if (!label) return reason ? `**Quick read.** ${reason}` : "**No verdict.** The judge did not judge the decision.";
   return reason ? `**${label}.** ${reason}` : `**${label}.**`;
 }
 
-function missingOptionLine(result) {
+function challengeList(result) {
+  return (Array.isArray(result?.challenges) ? result.challenges : []).filter((row) => row && (row.challenge || row.falsifier));
+}
+
+function factList(result) {
+  const named = Array.isArray(result?.factsNeeded)
+    ? result.factsNeeded.map((fact) => String(fact || "").trim()).filter(Boolean)
+    : [];
+  if (named.length) return named.slice(0, 2);
+  return challengeList(result)
+    .map((row) => String(row?.what_would_have_to_be_true || "").trim())
+    .filter(Boolean)
+    .slice(0, 2);
+}
+
+function missingOptionLine(result, max = 16) {
   const explicit = String(result?.missingOption || "").trim();
-  if (explicit && !/^none\b/i.test(explicit)) return clipWords(explicit, 30);
-  const simpler = (Array.isArray(result?.challenges) ? result.challenges : []).find((row) => row?.kind === "simpler-path-ignored");
-  return simpler?.challenge ? clipWords(simpler.challenge, 30) : "";
+  if (explicit && !/^none\b/i.test(explicit)) return clipWords(explicit, max);
+  const simpler = challengeList(result).find((row) => row?.kind === "simpler-path-ignored");
+  return simpler?.challenge ? clipWords(simpler.challenge, max) : "";
 }
 
 function fitBudget(text, budget) {
-  const body = String(text || "").trim();
+  const body = String(text || "").replace(/\s+/g, " ").trim();
   if (countWords(body) <= budget) return body;
   const words = body.split(/\s+/);
   return `${words.slice(0, budget).join(" ")}…`;
 }
 
-/**
- * The note a person reads. About 150 words: one verdict line, a missing option when there
- * is one, then two challenges each with one cheap test. Steelman, model name, scores and
- * quote checks stay out. A near-empty subject gets needs-facts, not a confident verdict.
- */
-export function renderUserFacing(result, { subject = "" } = {}) {
-  const thin = subjectNeedsFacts(subject) || result?.needsFacts === true;
-  const degraded = Array.isArray(result?.degraded) && result.degraded.length > 0;
-  const lead = degraded ? "The judge could not see all of this, so this is not a clean review.\n\n" : "";
-  if (thin) {
-    const named = Array.isArray(result?.factsNeeded)
-      ? result.factsNeeded.map((fact) => String(fact || "").trim()).filter(Boolean).slice(0, 2)
-      : [];
-    const facts = named.length ? named : ["what you are trying to achieve", "the main alternative you are weighing this against"];
-    const lines = facts.map((fact, index) => `${index + 1}. ${clipWords(fact, 18)}`);
-    return fitBudget(`${lead}**Needs facts.** This is too thin to judge.\n\nWhat would settle it: ${lines.join(" ")}`, USER_WORD_BUDGET);
+function sentence(text) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  return /[.?!…]$/.test(clean) ? clean : `${clean}.`;
+}
+
+/** Add judge sentences until the layer is in range, then stop. Never past the cap. */
+function joinToRange(parts, min, max) {
+  const clean = parts.map((part) => String(part || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+  const kept = [];
+  for (const part of clean) {
+    const candidate = [...kept, part].join(" ");
+    if (countWords(candidate) > max) {
+      if (countWords(kept.join(" ")) >= min) break;
+      return fitBudget(candidate, max);
+    }
+    kept.push(part);
   }
-  const lines = [verdictSentence(result)];
-  const missing = missingOptionLine(result);
-  if (missing) lines.push("", `**An option you didn't name:** ${missing}`);
-  const top = (Array.isArray(result?.challenges) ? result.challenges : []).slice(0, 2);
-  top.forEach((row, index) => {
-    const say = clipWords(row?.challenge || "A challenge.", 24);
-    const test = clipWords(row?.falsifier || "Name the cheapest check.", 18);
-    lines.push("", `${index + 1}. ${say} Cheap test: ${test}`);
-  });
-  return fitBudget(`${lead}${lines.join("\n")}`, USER_WORD_BUDGET);
+  const text = kept.join(" ");
+  return countWords(text) > max ? fitBudget(text, max) : text;
+}
+
+function withClosing(body) {
+  const askWords = countWords(CLOSING_ASK);
+  const room = Math.max(12, LAYER1_WORD_BUDGET - askWords);
+  const note = fitBudget(String(body || "").replace(/\s+/g, " ").trim(), room);
+  return `${note}\n\n${CLOSING_ASK}`;
+}
+
+function choiceLabel(subject) {
+  const line = String(subject || "")
+    .split(/\n/)
+    .map((item) => item.trim())
+    .filter(Boolean)[0];
+  const bare = String(line || "this").replace(/^(?:the )?decision:\s*/i, "");
+  const first = bare.split(/(?<=[.?!])\s+/)[0] || bare;
+  return clipWords(first, 10);
+}
+
+function lowerFirst(text) {
+  const clean = String(text || "").trim();
+  if (!clean) return "";
+  return clean.charAt(0).toLowerCase() + clean.slice(1);
+}
+
+function oneQuestion(result) {
+  const first = factList(result)[0] || "";
+  const raw = first.split(/(?<=\?)\s+/)[0] || "";
+  if (!raw) return "What single fact would change this?";
+  const words = raw.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const max = 14;
+  if (words.length <= max && raw.trim().endsWith("?")) return raw.replace(/\s+/g, " ").trim();
+  const sliced = words.slice(0, Math.min(words.length, max)).join(" ").replace(/[.?!…]+$/, "");
+  return `${sliced}?`;
+}
+
+function quickTakeSentence(result) {
+  const reason = String(result?.verdictReason || "")
+    .replace(/\?/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (reason) return sentence(clipWords(reason, 18));
+  const label = verdictLabel(result);
+  if (label) return sentence(`${label.toLowerCase()} until one fact is on the table`);
+  return "there is not enough here for a firm call.";
+}
+
+/** True when the subject is thin, or the judge marked it too thin to treat as a finished case. */
+export function isThinGrill(result, subject = "") {
+  return subjectNeedsFacts(subject) || result?.needsFacts === true;
+}
+
+export function normalizeDetail(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (["more", "why", "what else", "whatelse"].includes(raw)) return "more";
+  if (["options", "option", "help", "help me decide", "stuck", "frame"].includes(raw)) return "options";
+  if (["full", "full report", "report"].includes(raw)) return "full";
+  return "brief";
+}
+
+function renderBrief(result, subject) {
+  const degraded = Array.isArray(result?.degraded) && result.degraded.length > 0;
+  const prefix = degraded ? "Not a clean review." : "";
+  if (isThinGrill(result, subject)) {
+    const body = [prefix, `Quick take, on thin input: ${quickTakeSentence(result)} ${oneQuestion(result)}`].filter(Boolean).join(" ");
+    return withClosing(body);
+  }
+  const missing = missingOptionLine(result, 16);
+  const top = challengeList(result)[0];
+  const sharp = missing
+    ? `Missing: ${missing}`
+    : `Risk: ${clipWords(top?.challenge || result?.strongestObjection || "the case does not establish the call", 14)}`;
+  const test = clipWords(top?.falsifier || "Name the cheapest check that would settle it.", 14);
+  const body = [prefix, verdictSentence(result, 20), sentence(sharp), `Cheap test: ${sentence(test)}`].filter(Boolean).join(" ");
+  return withClosing(body);
+}
+
+function flipFacts(result) {
+  const named = (Array.isArray(result?.factsNeeded) ? result.factsNeeded : [])
+    .map((fact) => String(fact || "").trim())
+    .filter((fact) => fact && !fact.endsWith("?"));
+  const premises = challengeList(result)
+    .map((row) => String(row?.what_would_have_to_be_true || "").trim())
+    .filter(Boolean);
+  const seen = new Set();
+  const out = [];
+  for (const fact of [...named, ...premises]) {
+    const key = fact.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(fact);
+    if (out.length === 2) break;
+  }
+  return out;
+}
+
+function renderMore(result) {
+  const list = challengeList(result);
+  const second = list[1] || list[0];
+  const facts = flipFacts(result);
+  const counter = String(result?.counterSteelman || "").trim();
+  const parts = [
+    second?.challenge ? `The next challenge: ${sentence(clipWords(second.challenge, 28))}` : "The next challenge was not named.",
+    `Cheap test: ${sentence(clipWords(second?.falsifier || "Name the cheapest check.", 18))}`,
+    facts[0] ? `What would flip the call: ${sentence(clipWords(facts[0], 20))}` : "",
+    facts[1] ? sentence(clipWords(facts[1], 20)) : "",
+    result?.strongestObjection ? `The weakest joint: ${sentence(clipWords(result.strongestObjection, 18))}` : "",
+    counter && !/^none\b/i.test(counter) ? `The other side: ${sentence(clipWords(counter, 16))}` : "",
+  ];
+  return joinToRange(parts, 60, LAYER2_WORD_BUDGET);
+}
+
+function renderOptions(result, subject) {
+  const otherRaw = missingOptionLine(result, 18) || clipWords(String(result?.counterSteelman || "").replace(/^none\b.*/i, "") || "leave it as it is", 14);
+  const splitSource = factList(result)[0] || challengeList(result)[0]?.what_would_have_to_be_true || "the cheap test came back the other way";
+  const split = String(splitSource).trim().endsWith("?")
+    ? oneQuestion({ factsNeeded: [splitSource] })
+    : `Would it still be right if ${lowerFirst(clipWords(String(splitSource).replace(/[?.]+$/, ""), 14))}?`;
+  const test = clipWords(challengeList(result)[0]?.falsifier || "the cheap test", 14).replace(/[.]+$/, "");
+  const counter = String(result?.counterSteelman || "").trim();
+  const choice = choiceLabel(subject).replace(/[.?]+$/, "");
+  const parts = [
+    `Side by side: ${choice}, or ${sentence(lowerFirst(otherRaw))}`,
+    `The question that splits them: ${split}`,
+    `Rule: change the plan if this check shows the risk is real: ${test}. If it does not, the call can stand.`,
+    challengeList(result)[1]?.falsifier ? `The other check: ${sentence(clipWords(challengeList(result)[1].falsifier, 16))}` : "",
+    counter && !/^none\b/i.test(counter) ? `The other side: ${sentence(clipWords(counter, 16))}` : "",
+  ];
+  return joinToRange(parts, 60, LAYER2_WORD_BUDGET);
+}
+
+function renderFull(result, subject) {
+  const lines = [];
+  if (isThinGrill(result, subject)) {
+    lines.push(`Quick take, on thin input: ${quickTakeSentence(result)} ${oneQuestion(result)}`);
+  } else {
+    lines.push(verdictSentence(result, 40));
+  }
+  const missing = missingOptionLine(result, 40);
+  if (missing) lines.push(`Missing: ${missing}`);
+  challengeList(result)
+    .slice(0, 4)
+    .forEach((row, index) => {
+      lines.push(`${index + 1}. ${sentence(clipWords(row.challenge || "A challenge.", 40))} Cheap test: ${sentence(clipWords(row.falsifier || "Name the cheapest check.", 24))}`);
+    });
+  const facts = factList(result);
+  if (facts.length) lines.push(`What would flip the call: ${facts.map((fact) => sentence(clipWords(fact, 24))).join(" ")}`);
+  return lines.join("\n\n");
+}
+
+/**
+ * Layers from one judge result. brief is layer 1. more and options stay near 60–80 words.
+ * full is the longer note, still without the steelman, the model, a score, or a record.
+ */
+export function renderLayers(result, { subject = "" } = {}) {
+  return {
+    brief: renderBrief(result, subject),
+    more: renderMore(result),
+    options: renderOptions(result, subject),
+    full: renderFull(result, subject),
+  };
+}
+
+/**
+ * The note a person reads. detail selects a layer already stored from the judge.
+ * Steelman, model name, scores and quote checks stay out.
+ */
+export function renderUserFacing(result, { subject = "", detail = "brief" } = {}) {
+  const layers = renderLayers(result, { subject });
+  const key = normalizeDetail(detail);
+  return layers[key] || layers.brief;
 }

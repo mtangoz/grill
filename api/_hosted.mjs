@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, WELCOME_HEADERS } from "./_pro.mjs";
-import { CLOSING_ASK, renderUserFacing, subjectNeedsFacts } from "../scripts/judgeCore.mjs";
+import { isThinGrill, normalizeDetail, renderLayers } from "../scripts/judgeCore.mjs";
 import {
   REVIEW_DAYS,
   addDays,
@@ -62,6 +62,7 @@ import {
   publicOrigin,
   queryHasToken,
   recordsForLookBack,
+  savedConfirmation,
   signInUrl,
   sourceAppFromClient,
   starterCreditUsd,
@@ -661,11 +662,12 @@ function oneLine(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
 
-function draftFromGrill({ subject, parsed, sourceApp, supersedes, changed, now }) {
+function draftFromGrill({ subject, parsed, sourceApp, supersedes, changed, now, layers }) {
   const when = now instanceof Date ? now : new Date(now);
   const challenges = Array.isArray(parsed?.challenges) ? parsed.challenges : [];
   const falsifier = oneLine(challenges[0]?.falsifier) || "none named";
-  const verdict = parsed?.needsFacts || subjectNeedsFacts(subject) ? "needs facts" : plainVerdict(parsed?.verdict);
+  const thin = isThinGrill(parsed, subject);
+  const verdict = thin ? "quick take" : plainVerdict(parsed?.verdict);
   return {
     id: randomBytes(8).toString("hex"),
     createdAt: when.toISOString(),
@@ -683,6 +685,7 @@ function draftFromGrill({ subject, parsed, sourceApp, supersedes, changed, now }
       const line = `${index + 1}. ${oneLine(row.challenge)} — ${oneLine(row.falsifier)}`;
       return line.length > 400 ? `${line.slice(0, 399)}…` : line;
     }),
+    layers: layers || null,
   };
 }
 
@@ -735,10 +738,9 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
     return { text: `The grill did not finish (${deps.requestId}). Write to support@grillyour.ai.`, isError: true };
   }
   const now = typeof deps.now === "number" ? new Date(deps.now) : new Date();
-  const face = renderUserFacing(parsed || {}, { subject });
+  const layers = renderLayers(parsed || {}, { subject });
   const keep = account.records === "keep";
-  const thin = subjectNeedsFacts(subject) || parsed?.needsFacts === true;
-  if (keep && !thin) {
+  if (keep) {
     await writePending(
       account,
       deps,
@@ -749,6 +751,7 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
         supersedes: typeof supersedes === "string" ? supersedes : "",
         changed: typeof changed === "string" ? changed : "",
         now,
+        layers,
       }),
     );
   }
@@ -756,20 +759,29 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
   const model = typeof parsed?.servedModel === "string" ? parsed.servedModel : "";
   account.spend = [...(account.spend || []), { at: new Date().toISOString(), costUsd: cost, model }];
   if (account.spend.length > 400) account.spend = account.spend.slice(-400);
-  let text = face;
+  let text = layers.brief.trim();
   if (account.disclosed !== true) {
     account.disclosed = true;
     text = `${ONCE_DISCLOSURE}\n\n${text}`;
   }
   await saveAccount(account, deps);
   creditCache.delete(account.id);
-  const closing = text.includes(CLOSING_ASK) ? text : `${text}\n\n${CLOSING_ASK}`;
-  return { text: `${closing.trim()}\n`, isError: false };
+  return { text: `${text.trim()}\n`, layers, isError: false };
 }
 
 async function storeJobResult(credential, result, deps) {
-  const cipher = encryptString(JSON.stringify({ text: result.text, isError: result.isError }), credential.key);
+  const cipher = encryptString(
+    JSON.stringify({ text: result.text, layers: result.layers || null, isError: result.isError }),
+    credential.key,
+  );
   await redis(deps, ["SET", jobRedisKey(credential.id), cipher, "EX", JOB_TTL_SECONDS]);
+}
+
+function layerFromStored(stored, detail) {
+  const key = detail === "more" || detail === "options" || detail === "full" ? detail : "brief";
+  if (key === "brief") return String(stored?.text || stored?.layers?.brief || "");
+  const layer = stored?.layers?.[key];
+  return typeof layer === "string" && layer.trim() ? layer : "";
 }
 
 async function callGrill(args, account, payload, params, deps) {
@@ -841,6 +853,11 @@ async function callGrill(args, account, payload, params, deps) {
       changed: args.changed,
       deps,
     });
+    if (account.records !== "keep" && !result.isError) {
+      const credential = newJobCredential();
+      await storeJobResult(credential, result, deps);
+      return toolText(`${result.text.trim()}\n\nfollow: ${credential.jobId}\n`, false);
+    }
     return toolText(result.text, result.isError);
   }
   const pending = job.promise.then(async (outcome) => {
@@ -864,9 +881,24 @@ async function callGrill(args, account, payload, params, deps) {
   return toolText(hostedStillRunningText(credential.jobId));
 }
 
+async function layerFromPending(account, deps, detail) {
+  if (account.records !== "keep") return "";
+  const pendings = await loadPendings(account, deps);
+  const pending = pendings[pendings.length - 1];
+  const layer = pending?.layers?.[detail];
+  return typeof layer === "string" ? layer : "";
+}
+
 async function callResult(args, account, deps) {
+  const detail = normalizeDetail(args.detail);
   const credential = parseJobCredential(typeof args.job_id === "string" ? args.job_id : "");
-  if (!credential) return toolText("No grill is running with that job id. It may already have been collected.", true);
+  if (!credential) {
+    const layer = await layerFromPending(account, deps, detail);
+    if (!layer.trim()) {
+      return toolText("No stored layer for that. Pass the job id from the grill, including a follow: line, and do not show that line.", true);
+    }
+    return toolText(`${layer.trim()}\n`);
+  }
   const waitMs = Number.isInteger(deps.waitMs) ? deps.waitMs : 45_000;
   const deadline = Date.now() + waitMs;
   let cipher = null;
@@ -878,17 +910,18 @@ async function callResult(args, account, deps) {
   }
   if (typeof cipher !== "string" || !cipher) {
     const running = Number(await redis(deps, ["SISMEMBER", runningKey(account.id), credential.id])) || 0;
-    if (!running) return toolText("No grill is running with that job id. It may already have been collected.", true);
+    if (!running) return toolText("No grill is running with that job id. It may already have expired.", true);
     return toolText(hostedStillRunningText(credential.jobId));
   }
-  await redis(deps, ["DEL", jobRedisKey(credential.id)]);
   let stored;
   try {
     stored = JSON.parse(decryptString(cipher, credential.key));
   } catch {
     return toolText(`The grill did not finish (${deps.requestId}). Write to support@grillyour.ai.`, true);
   }
-  return toolText(String(stored.text || ""), Boolean(stored.isError));
+  const layer = layerFromStored(stored, detail);
+  if (!layer.trim()) return toolText("That layer is not stored for this grill.", true);
+  return toolText(layer.endsWith("\n") ? layer : `${layer}\n`, Boolean(stored.isError));
 }
 
 async function callLookBack(args, account, deps) {
@@ -948,7 +981,7 @@ async function callDecided(args, account, deps) {
     saved.block = recordBlock({ ...parsed, decided, confidence: confidence || parsed.confidence, prediction: prediction || parsed.prediction });
     saved.decided = decided;
     await writeRecord(account, deps, saved);
-    return toolText("Saved.");
+    return toolText(savedConfirmation(parsed.review));
   }
   const pendings = await loadPendings(account, deps);
   const pending = ref ? pendings.find((item) => matchesRef(item, ref)) : pendings[pendings.length - 1];
@@ -987,7 +1020,7 @@ async function callDecided(args, account, deps) {
     decided,
   });
   await deletePending(account, deps, pending.id);
-  return toolText("Saved.");
+  return toolText(savedConfirmation(review));
 }
 
 async function identity(request, deps, { audience }) {

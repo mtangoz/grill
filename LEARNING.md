@@ -21,7 +21,7 @@ A model router improves every day without reading anyone's prompts: it learns wh
 These run on a single grill. They are not the weekly eval loop above.
 
 - **Local, always on:** Grill checks every quote a challenge attacks against your write-up, and flags any it can't find. It also flags a "solid" given over a serious challenge.
-- **Jev, on by default:** a decision model from TypeSafe, on a zero-retention endpoint, scores whether each falsifier is a real test and whether the verdict fits. You are told once, the first time, that Jev may see the masked write-up. The score is not shown. Skip it for one grill by saying so, or switch it off in Grill's settings. It adds about $0.0002 a grill.
+- **Jev, on by default:** a decision model from TypeSafe, on a zero-retention endpoint, scores whether each falsifier is a real test and whether the verdict fits. The first-use line links to the privacy page, which is where that check is described. The score is not shown. Skip it for one grill by saying so, or switch it off in Grill's settings. It adds about $0.0002 a grill.
 
 The reflection at the end of a report (what you expect, how sure you are, what would prove you wrong) is not sent to the judge and is not a learning signal. Grill does not store it.
 

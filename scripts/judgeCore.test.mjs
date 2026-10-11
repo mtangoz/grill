@@ -38,11 +38,14 @@ import {
   buildJudgeMessages,
   nextAttempt,
   reconcileVerdict,
+  LAYER1_WORD_BUDGET,
+  LAYER2_WORD_BUDGET,
+  SCOPE_GUARD,
   renderJudgeReport,
+  renderLayers,
   renderUserFacing,
   subjectNeedsFacts,
   countWords,
-  USER_WORD_BUDGET,
   resolveChain,
   resolveWalkBudget,
   retryBackoffMs,
@@ -1261,25 +1264,75 @@ describe("the note a person reads", () => {
     ],
   };
 
-  it("stays near 150 words and leaves the steelman, the model and the score out", () => {
-    const note = renderUserFacing(rich, { subject: "Drop the free tier? Paid users cover the support cost, and the free tier is half of signups." });
-    assert.ok(countWords(note) <= USER_WORD_BUDGET, countWords(note));
-    assert.match(note, /^\*\*Shaky\.\*\*/);
-    assert.match(note, /An option you didn't name/);
-    assert.match(note, /Cheap test:/);
-    assert.doesNotMatch(note, /steelman|gpt-5|Quality check|0\.2|third challenge/i);
+  it("keeps layer 1 under 50 words and leaves the steelman, the model and the score out", () => {
+    const subject = "Drop the free tier? Paid users cover the support cost, and the free tier is half of signups.";
+    const layers = renderLayers(rich, { subject });
+    assert.ok(countWords(layers.brief) <= LAYER1_WORD_BUDGET, countWords(layers.brief));
+    assert.ok(countWords(layers.more) <= LAYER2_WORD_BUDGET, countWords(layers.more));
+    assert.ok(countWords(layers.options) <= LAYER2_WORD_BUDGET, countWords(layers.options));
+    assert.ok(countWords(layers.options) >= 60, countWords(layers.options));
+    assert.match(layers.brief, /^\*\*Shaky\.\*\*/);
+    assert.match(layers.brief, /Missing:/);
+    assert.match(layers.brief, /Cheap test:/);
+    assert.match(layers.brief, /Say 'more', 'options', or your call\./);
+    assert.doesNotMatch(layers.brief, /steelman|gpt-5|Quality check|0\.2|third challenge/i);
+    assert.doesNotMatch(layers.full, /steelman|gpt-5|Quality check|grill-record/i);
+    assert.equal(renderUserFacing(rich, { subject, detail: "more" }), layers.more);
   });
 
-  it("does not give a confident verdict on a blank template", () => {
+  it("gives a thin line a quick take and one question, not a fact list", () => {
     const subject = "Decision: [what]\nOptions: [a] or [b]\nGoal: [goal]\nThe strongest case against: [case]";
     assert.equal(subjectNeedsFacts(subject), true);
-    assert.equal(subjectNeedsFacts("drop the free tier?"), false);
+    assert.equal(subjectNeedsFacts("drop the free tier?"), true);
+    assert.equal(subjectNeedsFacts("We will raise prices 20% in Q4."), false);
     const note = renderUserFacing(
-      { verdict: "refuted", verdictReason: "The template is empty.", challenges: rich.challenges },
-      { subject },
+      {
+        needsFacts: true,
+        verdict: "weak",
+        verdictReason: "Shaky to drop it before you know what free users are worth",
+        factsNeeded: ["What share of free users pay within 90 days?", "what support costs per free account"],
+        challenges: rich.challenges,
+      },
+      { subject: "drop the free tier?" },
     );
-    assert.match(note, /\*\*Needs facts\.\*\*/);
-    assert.match(note, /What would settle it/);
-    assert.doesNotMatch(note, /Shaky|solid|doesn't hold up|refuted/i);
+    assert.match(note, /^Quick take, on thin input:/);
+    assert.equal((note.match(/\?/g) || []).length, 1);
+    assert.ok(countWords(note) <= LAYER1_WORD_BUDGET, countWords(note));
+    assert.doesNotMatch(note, /Needs facts|What would settle it|^\d+\. /m);
+    const layers = renderLayers(
+      {
+        needsFacts: true,
+        verdict: "weak",
+        verdictReason: "Shaky to drop it before you know what free users are worth",
+        missingOption: "Cap the free tier at one project instead of dropping it.",
+        factsNeeded: ["What share of free users pay within 90 days?"],
+        counterSteelman: "Keep a capped free tier so people can try the product without a card.",
+        strongestObjection: "Name what free users are worth before you cut them off.",
+        steelman: "A long steelman that the person should not see.",
+        servedModel: "openai/gpt-5.6-sol",
+        challenges: [
+          {
+            challenge: "Support cost is named, and the revenue you would lose is not.",
+            falsifier: "Compare support hours per free account with what those accounts later pay.",
+            what_would_have_to_be_true: "Free accounts cost more to support than they ever pay.",
+          },
+          {
+            challenge: "A hard cutoff can shrink the top of the funnel you later charge.",
+            falsifier: "Check what share of paying accounts started on the free tier.",
+            what_would_have_to_be_true: "Most paying accounts did not start free.",
+          },
+        ],
+      },
+      { subject: "drop the free tier?" },
+    );
+    assert.ok(countWords(layers.brief) <= LAYER1_WORD_BUDGET, countWords(layers.brief));
+    assert.ok(countWords(layers.more) >= 60 && countWords(layers.more) <= LAYER2_WORD_BUDGET, countWords(layers.more));
+    assert.ok(countWords(layers.options) >= 60 && countWords(layers.options) <= LAYER2_WORD_BUDGET, countWords(layers.options));
+    assert.doesNotMatch(`${layers.more}\n${layers.options}\n${layers.full}`, /steelman|gpt-5|grill-record/i);
+  });
+
+  it("the scope guard is the shared sentence", () => {
+    assert.match(SCOPE_GUARD, /no code changes, no PRs, no product questions/);
+    assert.match(SCOPE_GUARD, /Grill's job ends at the verdict and the record/);
   });
 });

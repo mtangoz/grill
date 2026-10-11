@@ -2,7 +2,7 @@
 import { createSign, generateKeyPairSync, randomBytes } from "node:crypto";
 import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAccount, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
@@ -20,10 +20,13 @@ import {
   encryptString,
   footerLine,
   linkChains,
+  ONCE_DISCLOSURE,
   parseJobCredential,
   sourceAppFromClient,
   wwwAuthenticate,
 } from "./hostedCore.mjs";
+import { countWords } from "./judgeCore.mjs";
+import { ONCE_DISCLOSURE as LOCAL_DISCLOSURE } from "../server/index.mjs";
 import { parseRecords, sourceAppLabel } from "./reflection.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -230,6 +233,8 @@ describe("hosted Grill", { concurrency: false }, () => {
       instructions,
       /If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the note arrives\. Do not ask the person to check, and do not ask them for a job id\./,
     );
+    assert.match(instructions, /no code changes, no PRs, no product questions/);
+    assert.match(instructions, /Grill's job ends at the verdict and the record/);
     assert.doesNotMatch(instructions, /call grill_result until the report arrives/);
     assert.equal(instructions.includes("—"), false);
     const listed = await postMcp(ctx, { jsonrpc: "2.0", id: 2, method: "tools/list" }, { token });
@@ -243,7 +248,7 @@ describe("hosted Grill", { concurrency: false }, () => {
     assert.doesNotMatch(grill.description, /call grill_result until the verdict arrives/);
     assert.equal(
       tools.find((tool) => tool.name === "grill_result").description,
-      "Collect the report of a grill that returned a job id. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person.",
+      "Collect a grill that returned a job id, or a later layer of one. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person. detail is brief, more, options, or full. Do not write a layer yourself.",
     );
   });
 
@@ -423,7 +428,7 @@ describe("hosted Grill", { concurrency: false }, () => {
       );
       assert.equal(kept.json.result.isError, false, textOf(kept.json));
       assert.match(textOf(kept.json), /This goes to an outside judge from a different company/);
-      assert.match(textOf(kept.json), /Your call \+ confidence %\?/);
+      assert.match(textOf(kept.json), /Say 'more', 'options', or your call\./);
       assert.doesNotMatch(textOf(kept.json), /grill-record|about \d+ grills of credit left|Quality check/);
       const savedNow = await postMcp(
         ctx,
@@ -457,9 +462,74 @@ describe("hosted Grill", { concurrency: false }, () => {
         },
         { token: offToken, deps: { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse("2026-10-03T15:00:00Z") } },
       );
-      assert.match(textOf(off.json), /Your call \+ confidence %\?/);
+      assert.match(textOf(off.json), /Say 'more', 'options', or your call\./);
       assert.doesNotMatch(textOf(off.json), /credit left|grill-record/);
       assert.equal(offCtx.writes.some((row) => row[0] === "SET" && row[1].includes(":record:")), false);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("saves a quick take when the choice has no confidence", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse("2026-10-11T15:00:00Z") };
+      const grilled = await postMcp(
+        ctx,
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "grill", arguments: { subject: "drop the free tier?", keep_records: true, quality_check: false } },
+        },
+        { token, deps },
+      );
+      const shown = textOf(grilled.json);
+      assert.equal(grilled.json.result.isError, false, shown);
+      assert.equal(LOCAL_DISCLOSURE, ONCE_DISCLOSURE);
+      assert.equal(ONCE_DISCLOSURE.includes("\n"), false);
+      assert.ok(countWords(ONCE_DISCLOSURE) <= 25, countWords(ONCE_DISCLOSURE));
+      assert.ok(countWords(ONCE_DISCLOSURE) >= 12, countWords(ONCE_DISCLOSURE));
+      assert.doesNotMatch(ONCE_DISCLOSURE, /Jev|TypeSafe|credit/i);
+      assert.equal(shown.split("\n")[0], ONCE_DISCLOSURE);
+      assert.match(shown, /^Quick take, on thin input:/m);
+      assert.doesNotMatch(shown, /Needs facts|Jev|TypeSafe/);
+      const more = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: { detail: "more" } } },
+        { token, deps },
+      );
+      assert.equal(more.json.result.isError, false, textOf(more.json));
+      assert.ok(countWords(textOf(more.json)) <= 80, countWords(textOf(more.json)));
+      const options = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "grill_result", arguments: { detail: "options" } } },
+        { token, deps },
+      );
+      assert.equal(options.json.result.isError, false, textOf(options.json));
+      assert.ok(countWords(textOf(options.json)) <= 80, countWords(textOf(options.json)));
+      const saved = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "grill_decided", arguments: { decided: "do it" } } },
+        { token, deps },
+      );
+      const confirm = textOf(saved.json).trim();
+      assert.equal(saved.json.result.isError, false, confirm);
+      assert.equal(confirm, "Saved. Look-back 25 Oct.");
+      assert.ok(countWords(confirm) <= 6, countWords(confirm));
+      assert.doesNotMatch(confirm, /confidence|%|grill-record|how sure/i);
+      const session = signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 });
+      const exported = await handleDecisions(
+        new Request("https://grillyour.ai/decisions?export=text&__route=decisions", { headers: { cookie: `__session=${session}` } }),
+        ctx,
+      );
+      const parsed = parseRecords(await exported.text());
+      assert.equal(parsed.length, 1);
+      assert.equal(parsed[0].decided, "do it");
+      assert.equal(parsed[0].confidence, "");
+      assert.equal(parsed[0].verdict, "quick take");
     } finally {
       await fake.close();
     }
@@ -540,14 +610,15 @@ describe("hosted Grill", { concurrency: false }, () => {
         { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId } } },
         { token, deps: { waitMs: 500 } },
       );
-      assert.match(textOf(collected.json), /Your call \+ confidence %\?/);
+      assert.match(textOf(collected.json), /Say 'more', 'options', or your call\./);
       assert.doesNotMatch(textOf(collected.json), /credit left|grill-record/);
       const again = await postMcp(
         ctx,
-        { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId } } },
+        { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId, detail: "more" } } },
         { token, deps: { waitMs: 50 } },
       );
-      assert.equal(again.json.result.isError, true);
+      assert.equal(again.json.result.isError, false, textOf(again.json));
+      assert.match(textOf(again.json), /challenge|Cheap test|flip/i);
     } finally {
       release();
       await fake.close();
@@ -1171,6 +1242,8 @@ describe("hosted mappings and ledger pins", () => {
         assert.doesNotMatch(match[1], /subject|report|record|args|body|token|key|email|stderr|stdout/, file);
       }
     }
+    const apiFns = readdirSync(join(ROOT, "api")).filter((name) => name.endsWith(".js") && !name.startsWith("_"));
+    assert.ok(apiFns.length <= 12, apiFns.join(", "));
     const hosted = readFileSync(join(ROOT, "api/_hosted.mjs"), "utf8");
     const urls = [...hosted.matchAll(/https?:\/\/[^\s"'`]+/g)].map((match) => match[0]);
     assert.deepEqual(urls, ["https://api.clerk.com", "https://auth.agentid.com/v0/userinfo"]);

@@ -22,7 +22,7 @@ You are helping me grill a decision: get it challenged by an outside judge, a mo
 
 1. **Send the decision as I stated it,** with whatever context is already in the chat. Do not rewrite it into a template. Do not fill in blanks. Do not write your own case against into the subject. Ask at most one short question, and only if the decision is truly unclear, such as "What's the goal?" Then go on. Do not wait for an OK.
 
-2. **The first time only,** say in one or two sentences that the prompt goes to whichever assistant I paste it into, under that app's own data settings, and that a private mode such as a temporary chat is a good idea. Do not repeat that disclosure.
+2. **The first time only,** say one line: First time: what you paste goes to that assistant, under its own settings. https://grillyour.ai/#privacy Do not repeat that disclosure.
 
 3. **Note your own maker, then give me the judge prompt.** Before the prompt, write one line naming your own maker, for example "Your assistant: ChatGPT by OpenAI." ChatGPT is OpenAI, Claude is Anthropic, Gemini is Google, Grok is xAI and Muse is Meta. If you are Copilot, which can run OpenAI, Anthropic or xAI models, write "Your assistant: Copilot, which can run OpenAI, Anthropic or xAI." Only Gemini counts as a different company for Copilot. Then give me the template between the markers below, with {THE APPROVED SUBJECT} filled with my words and {THE NEUTRAL QUESTION} left blank unless I asked a question, as one block I can copy. Tell me which assistants to paste it into: ChatGPT into Claude, Gemini or Grok; Copilot into Gemini; Gemini into Claude, ChatGPT or Grok; Grok into Claude, ChatGPT or Gemini; Muse into Claude, ChatGPT or Gemini; Claude into ChatGPT, Gemini or Grok.
 
@@ -30,14 +30,15 @@ You are helping me grill a decision: get it challenged by an outside judge, a mo
    - if the companies differ, `Judge: X by Y. Different company from your assistant ✓`, using the model and company from the judge's line;
    - if the companies match, `Warning: this verdict is NOT independent. The judge is the same company as your assistant. Paste the judge prompt into {assistants} instead.` Fill {assistants} from the list in step 3;
    - if that Judge line is missing, `Warning: this verdict is unverified. The answer has no Judge line, so this is not a confirmed outside judge. Paste the judge prompt into {assistants} instead.`
-   Then relay about 150 words and nothing more from the judge: the verdict line (solid, solid if…, shaky, or doesn't hold up; never shorten "solid if" to "solid"), any option I had not named, and at most two challenges, each with one cheap test. Do not show the steelman. Do not show the model name again. If the judge says the input is too thin, show that needs-facts note and do not turn it into a confident verdict.
-   Then exactly one line: Your call + confidence %? (e.g. 'delay, 70%')
+   Then show only layer 1, at most 50 words: the verdict line (solid, solid if…, shaky, or doesn't hold up; never shorten "solid if" to "solid"; a thin answer starts "Quick take, on thin input:" and asks one question, not a fact list), the sharpest point, and one cheap test. Do not show the steelman. Do not show the model name again.
+   Then exactly one line: Say 'more', 'options', or your call.
+   If I say more, why, or what else, show the judge's More lines, about 60 to 80 words. If I say options, help me decide, or I am stuck, show the Options lines, about 60 to 80 words. Show the whole answer only if I say full report. Use only the judge's words for each layer.
    - the verdict never becomes the decision. If I ask "so should I do it?", or ask you to choose for me, hand the choice back to me and name the deciding test. Do not answer yes or no;
    - if I push back on a challenge, don't settle it for me and don't flip the verdict unless I bring new evidence;
    - if I grill the same decision again in this chat, ask one question: "What changed?" Show the earlier verdict beside the new one. If nothing changed, it is a re-run: do not add a `supersedes` line, and do not add `changed`. If I say the choice changed, add `supersedes` as the earlier record's date and title, and `changed` as one of `evidence`, `goals`, `context` or `reweighed`, then my few words. Never invent them. Never send the earlier verdict to the judge;
    - give your own view only if I ask, labelled "same-model critique".
 
-5. **A record only after I answer.** Pre-fill the prediction from what I already said. Take the choice and the confidence from that one reply. If I never answer, write no record and set no look-back. Do not show the record before I answer, and do not explain the format. Nothing is stored. The block is decision record version 1. Write the lines in this order.
+5. **A record only after I answer, including after a quick take.** Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If I do not say a percent, leave it empty and do not ask. Pre-fill the prediction from what I already said. If I never answer, write no record and set no look-back. Do not show the record before I answer, and do not explain the format. Nothing is stored. After a grill, don't start doing the decision (no code changes, no PRs, no product questions) unless I separately ask. Grill's job ends at the verdict and the record. The block is decision record version 1. Write the lines in this order.
 
 ```grill-record
 version: 1
@@ -79,19 +80,17 @@ Judge: <model name> by <company>
 
 For the company, write OpenAI, Anthropic, Google, xAI or Meta, whichever made you.
 
-If the subject is near-empty (a template of blanks, or a line with no facts), do not give a verdict. Write only:
+If the subject is thin (a template of blanks, or a line with almost no facts), do not refuse and do not list facts. The verdict sentence starts with "Quick take, on thin input:" and you add one line, **Question:** the single question that would most change the answer.
 
-**Needs facts.** This is too thin to judge.
-What would settle it: the one or two facts that would settle it.
-
-Otherwise write at most 150 words, and nothing else. Do the steelman and the counter-steelman as your working. Do not print them.
+Write at most 150 words, and nothing else. Do the steelman and the counter-steelman as your working. Do not print them.
 
 **Verdict:** solid / solid if / shaky / doesn't hold up, and one sentence why.
 **Missing option:** an option the subject never named, or none.
-1. One challenge, in one sentence. Cheap test: the cheapest test.
-2. One challenge, in one sentence. Cheap test: the cheapest test.
+**Sharpest:** one sentence. Lead with the missing option if there is one, otherwise the biggest risk. Cheap test: the cheapest test.
+**More:** the second challenge, in one sentence. Cheap test: its cheapest test. Flips if: the one or two facts that would flip the call.
+**Options:** the options side by side, the one question that splits them, and a one-line rule.
 
-Stop after two challenges.
+Stop there. Do not add a third challenge.
 
 --- BEGIN SUBJECT ---
 {THE APPROVED SUBJECT}

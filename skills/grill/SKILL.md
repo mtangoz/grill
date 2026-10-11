@@ -24,7 +24,9 @@ Send what the user already said, plus context already in the chat. Do not rewrit
 
 Ask at most one short question, and only if the decision is truly unclear, such as "What's the goal?" Then send it. Do not wait for an OK.
 
-The first time with this person, say once, in one or two sentences: the decision goes to an outside judge from a different company, through a router that does not keep it; a quality check (Jev, from TypeSafe) may see the same write-up and does not keep it; a grill costs about a cent. After that, do not say it again. Do not mention the check, its score, the judge's model, or a balance. If they ask to skip the check, call the tool with `quality_check: false` for this grill only.
+The first time with this person, say once, as one line, and not again: This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/#privacy
+
+Do not mention the check, its score, the judge's model, or a balance. If they ask to skip the check, call the tool with `quality_check: false` for this grill only.
 
 Leave out names of people who aren't needed, and anything personal, health- or HR-related.
 
@@ -54,20 +56,21 @@ When they paste the judge's answer back, compare companies before you relay the 
 
 ## 4. Relay the result
 
-On the paste route, the company check above is the first line you show. Then show only the short note: one verdict line, any option they had not named, and at most two challenges, each with one cheap test. Do not show the steelman. A result from the `grill` tool already enforced a different company in code. Relay that note as written, and do not look for a Judge line. Do not show the judge's model, a score, a balance, a quote check, or a disclaimer.
+On the paste route, the company check above is the first line you show. Then show only layer 1, at most 50 words: one verdict line, the single sharpest point (a missing option if there is one, otherwise the biggest risk), and one cheap test. If the judge marked it thin, show the quick take and the one question, not a fact list. A result from the `grill` tool already enforced a different company in code. Relay that note as written, and do not look for a Judge line. Do not show the judge's model, a score, a balance, a quote check, or a disclaimer.
 
-Then exactly one line, and no second question:
+Layer 1 already ends with this line. If it does not, add it once. Do not add a confidence question:
 
-Your call + confidence %? (e.g. 'delay, 70%')
+Say 'more', 'options', or your call.
 
-If the note already ends with that line, do not add another.
+When they say more, why, or what else, show the next challenge, its cheap test, and the one or two facts that would flip the call. About 60 to 80 words. On the tool, call `grill_result` with `detail` `more` and relay that. Do not write it yourself. When they say options, help me decide, or they are stuck, call `grill_result` with `detail` `options`, or on the paste route show the judge's options lines. About 60 to 80 words. A full report only when they say full report (`detail` `full`). On the paste route, use only the judge's lines for each layer.
 
 - **Plain words, the same ones the website uses.** Say solid, solid if…, shaky or doesn't hold up. "Solid if" always comes with its conditions; never shorten it to "solid". Quote the judge; don't soften it: no "overall, the judge agrees with you".
-- **Needs facts.** If the note says the input is too thin, show that. Do not turn it into a confident verdict.
+- **Thin input.** If the note starts with "Quick take, on thin input:", show that and its one question. Do not turn it into a long fact list, and do not refuse.
 - **The verdict never becomes the decision.** If the user asks "so should I do it?", or asks you to choose, hand the choice back and name the deciding test. Do not answer yes or no.
 - **Pushback:** if the user disputes a challenge, don't settle it for them, and don't flip the verdict unless they bring new evidence.
 - **Grilling again:** if the same decision is grilled again in this chat, ask one question: "What changed?" Show the earlier verdict beside the new one. If nothing changed, it is a re-run: no `supersedes` line and no `changed` line. If they say the choice changed, add `supersedes` as the earlier record's date and title, and `changed` as one of `evidence`, `goals`, `context` or `reweighed`, then their few words. Never invent them. Never send the earlier verdict to the judge.
-- **A record only after they answer.** Pre-fill the prediction from what they already said. Take the choice and the confidence from that one reply. Follow `reflection.md`. If they never answer, write no record and set no look-back. Do not show the record before they answer, and do not explain the format.
+- **A record only after they answer, including after a quick take.** Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask. Pre-fill the prediction from what they already said. If the `grill_decided` tool is available, call it with their words and relay its confirmation, about five words. Do not show the record. Follow `reflection.md` on the paste route, where the block is the only copy. If they never answer, write no record and set no look-back. Do not show a record before they answer, and do not explain the format.
+- **Stop when the grill is done.** After a grill, don't start doing the decision (no code changes, no PRs, no product questions) unless the person separately asks. Grill's job ends at the verdict and the record.
 - **Your own view:** only if asked, labelled "same-model critique".
 - **Grill news:** The tool adds a line that starts with "Grill news:" only after a finished report, at most once a session, and only within 7 days of the release date in that build or on the first 3 days of a month. If the report includes that line, show it once, word for word, after the note and before the closing question. It is a statement. Do not turn it into a question, do not ask about it, and do not repeat it unless the user asks. Never ask for an email in the chat. The tool does not ask for, accept, or send an email. Outside those windows the report has no news line. Do not add one.
 
