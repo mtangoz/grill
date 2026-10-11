@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleAccount, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
+import { describeError, handleAccount, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import {
   CLAUDE_CODE_CLIENT_ID,
@@ -13,7 +13,16 @@ import {
   CONSENT_TEXT,
   INVITE_ONLY,
   OUT_OF_CREDIT,
+  SERVICE_CAP_TEXT,
+  USER_CAP_TEXT,
+  allowlistAllows,
   authorForJudge,
+  capBlock,
+  isoMonth,
+  judgeFailureText,
+  monthlyCapUsd,
+  serviceFailureText,
+  userMonthlyCapUsd,
   chainIds,
   createMemoryRedis,
   decryptString,
@@ -768,7 +777,7 @@ describe("hosted Grill", { concurrency: false }, () => {
         { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: same email.", keep_records: false, quality_check: false } } },
         { token: secondUser, deps },
       );
-      assert.match(textOf(shared.json), /already has a Grill starter credit/);
+      assert.match(textOf(shared.json), /already has Grill.s free starter credit/);
       assert.equal(ctx.management.creates.length, 1);
       resetHostedCaches();
       ctx.management.usage = 1;
@@ -1260,5 +1269,192 @@ describe("hosted mappings and ledger pins", () => {
     assert.match(ledger, /never logged or stored/);
     const principles = readFileSync(join(ROOT, "docs/PRINCIPLES.md"), "utf8");
     assert.match(principles, /passes through Grill's server in memory/);
+  });
+});
+
+describe("hosted Grill: spending caps, open sign-up, races and plain errors", () => {
+  beforeEach(() => resetHostedCaches());
+
+  const grillCall = (id, subject) => ({
+    jsonrpc: "2.0",
+    id,
+    method: "tools/call",
+    params: { name: "grill", arguments: { subject, keep_records: false, quality_check: false } },
+  });
+
+  it("reads the caps from env with safe defaults", () => {
+    assert.equal(monthlyCapUsd({}), 20);
+    assert.equal(userMonthlyCapUsd({}), 1);
+    assert.equal(monthlyCapUsd({ GRILL_MONTHLY_CAP_USD: "35" }), 35);
+    assert.equal(monthlyCapUsd({ GRILL_MONTHLY_CAP_USD: "nonsense" }), 20);
+    assert.equal(monthlyCapUsd({ GRILL_MONTHLY_CAP_USD: "-4" }), 20);
+    assert.equal(monthlyCapUsd({ GRILL_MONTHLY_CAP_USD: "0" }), 0);
+    assert.equal(capBlock({ serviceMicros: 19_999_999, userMicros: 0 }), null);
+    assert.equal(capBlock({ serviceMicros: 20_000_000, userMicros: 0 }).text, SERVICE_CAP_TEXT);
+    assert.equal(capBlock({ serviceMicros: 0, userMicros: 1_000_000 }).text, USER_CAP_TEXT);
+    for (const text of [SERVICE_CAP_TEXT, USER_CAP_TEXT]) {
+      assert.doesNotMatch(text, /\b[45]\d\d\b|error|code/i);
+      assert.match(text, /Nothing was charged to you/);
+    }
+  });
+
+  it("stops a grill with a plain message once the service cap is reached, before any judge call", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_MONTHLY_CAP_USD = "5";
+      await ctx.memory.command(["SET", `grill:hosted:capspend:all:${isoMonth()}`, "5000000"]);
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const before = fake.seen.chat.length;
+      const { json } = await postMcp(ctx, grillCall(1, "Decision: capped."), { token, deps: { ...judgeDeps(fake), waitMs: 20_000 } });
+      assert.equal(textOf(json), SERVICE_CAP_TEXT);
+      assert.equal(json.result.isError, false);
+      assert.equal(fake.seen.chat.length, before);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("counts each finished grill against the service and the person, and stops the person at their cap", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_USER_MONTHLY_CAP_USD = "0.01";
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = { ...judgeDeps(fake), waitMs: 20_000 };
+      const first = await postMcp(ctx, grillCall(1, "Decision: first of the month."), { token, deps });
+      assert.equal(first.json.result.isError, false, textOf(first.json));
+      const month = isoMonth();
+      const all = Number(await ctx.memory.command(["GET", `grill:hosted:capspend:all:${month}`]));
+      assert.ok(all > 0, "service counter moved");
+      const personKeys = ctx.writes.filter((row) => row[0] === "INCRBY" && row[1].includes(":capspend:person:"));
+      assert.equal(personKeys.length, 1);
+      assert.equal(personKeys[0][1].includes("invitee"), false, "the person key is a hash, not the email");
+      const second = await postMcp(ctx, grillCall(2, "Decision: second."), { token, deps });
+      assert.equal(textOf(second.json), USER_CAP_TEXT);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("keeps the invite list unless GRILL_OPEN_SIGNUP is on, and an empty list lets nobody in", () => {
+    assert.equal(allowlistAllows("a@example.com", { GRILL_HOSTED_ALLOWLIST: "a@example.com" }), true);
+    assert.equal(allowlistAllows("b@example.com", { GRILL_HOSTED_ALLOWLIST: "a@example.com" }), false);
+    assert.equal(allowlistAllows("b@example.com", {}), false);
+    assert.equal(allowlistAllows("b@example.com", { GRILL_HOSTED_ALLOWLIST: " " }), false);
+    assert.equal(allowlistAllows("b@example.com", { GRILL_OPEN_SIGNUP: "1" }), false);
+    assert.equal(allowlistAllows("b@example.com", { GRILL_OPEN_SIGNUP: "on" }), true);
+    assert.equal(allowlistAllows("", { GRILL_OPEN_SIGNUP: "on" }), false);
+  });
+
+  it("lets any verified email grill when open sign-up is on", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world({ email: "stranger@example.com" });
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = { ...judgeDeps(fake), waitMs: 20_000 };
+      const shut = await postMcp(ctx, grillCall(1, "Decision: closed door."), { token, deps });
+      assert.equal(textOf(shut.json), INVITE_ONLY);
+      ctx.env.GRILL_OPEN_SIGNUP = "on";
+      resetHostedCaches();
+      const open = await postMcp(ctx, grillCall(2, "Decision: open door."), { token, deps });
+      assert.equal(open.json.result.isError, false, textOf(open.json));
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("two grills finishing together keep both spend rows, show the disclosure once, and never rewrite the account", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = { ...judgeDeps(fake), waitMs: 20_000 };
+      // Create the account and starter key first, so both grills below start from the same stored record.
+      await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "grill", arguments: { subject: "" , keep_records: false } } }, { token, deps });
+      const setupWrites = ctx.writes.length;
+      const [a, b] = await Promise.all([
+        postMcp(ctx, grillCall(2, "Decision: race A."), { token, deps }),
+        postMcp(ctx, grillCall(3, "Decision: race B."), { token, deps }),
+      ]);
+      const texts = [textOf(a.json), textOf(b.json)];
+      assert.equal(texts.filter((text) => text.includes(ONCE_DISCLOSURE)).length, 1, texts.join("\n---\n"));
+      const log = await ctx.memory.command(["LRANGE", "grill:hosted:spendlog:user_invitee", "0", "-1"]);
+      assert.equal(log.length, 2);
+      const acctWritesAfterSetup = ctx.writes.slice(setupWrites).filter((row) => row[0] === "SET" && row[1] === "grill:hosted:acct:user_invitee");
+      const raw = await ctx.memory.command(["GET", "grill:hosted:acct:user_invitee"]);
+      assert.equal(JSON.parse(raw).records, "off");
+      assert.equal(acctWritesAfterSetup.length, 0, `account rewritten ${acctWritesAfterSetup.length} times`);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("two first record writes at once agree on one data key", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = { ...judgeDeps(fake), waitMs: 20_000 };
+      const keep = (id, subject) => ({
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: { name: "grill", arguments: { subject, keep_records: true, quality_check: false } },
+      });
+      await Promise.all([postMcp(ctx, keep(1, "Decision: keep A."), { token, deps }), postMcp(ctx, keep(2, "Decision: keep B."), { token, deps })]);
+      const rkeySets = ctx.writes.filter((row) => row[0] === "SET" && row[1] === "grill:hosted:rkey:user_invitee");
+      assert.ok(rkeySets.every((row) => row.includes("NX")));
+      for (const id of [3, 4]) {
+        const decided = await postMcp(
+          ctx,
+          { jsonrpc: "2.0", id, method: "tools/call", params: { name: "grill_decided", arguments: { decided: `go ${id}` } } },
+          { token, deps },
+        );
+        assert.equal(decided.json.result.isError, false, textOf(decided.json));
+      }
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("explains failures in plain words, with no codes or traces", () => {
+    const cases = [
+      ["[judge] ERROR: refusing a correlated verdict — x", /same company/],
+      ["[judge] ERROR: OpenRouter 402 insufficient credits", /out of grill credit/],
+      ["[judge] ERROR: the subject contains what looks like an API key. Nothing was sent.", /password, key or token/],
+      ["[judge] router retry: openrouter/auto · http_429", /busy/],
+      ["[judge] abandoned the walk after the deadline", /took too long/],
+      ["[judge] chain advance: transport", /couldn't reach the judge/],
+      ["", /didn't send back a verdict/],
+    ];
+    for (const [stderr, want] of cases) {
+      const text = judgeFailureText(stderr, "ab12cd34");
+      assert.match(text, want, stderr);
+      assert.doesNotMatch(text, /\[judge\]|ERROR|http_|stack/);
+    }
+    for (const code of ["store", "clerk", "starter-key", "key-encryption", "clerk-delete", ""]) {
+      const text = serviceFailureText(code, "ab12cd34");
+      assert.match(text, /Try again|write to support/);
+      assert.match(text, /reference ab12cd34/);
+    }
+  });
+
+  it("answers a broken tool call with a plain tool result, not a failed request", async () => {
+    const ctx = world();
+    const broken = { ...ctx, redis: async () => { throw new Error("boom"); } };
+    resetHostedCaches();
+    const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+    const { res, json } = await postMcp(broken, grillCall(1, "Decision: storage down."), { token });
+    assert.equal(res.status, 200);
+    assert.equal(json.result.isError, true);
+    assert.match(textOf(json), /Try again in a minute/);
+  });
+
+  it("redacts key-shaped strings from logged error messages", () => {
+    const line = describeError(new TypeError(`bad sk-or-v1-abcdefgh${"x".repeat(40)} and ${"Q".repeat(48)} end`));
+    assert.match(line, /^TypeError\/TypeError: /);
+    assert.doesNotMatch(line, /x{20}|Q{20}/);
+    assert.ok(line.length < 220);
   });
 });
