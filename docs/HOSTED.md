@@ -10,8 +10,8 @@ The judge is always OpenRouter's Auto Router (`openrouter/auto`). Grill excludes
 
 1. Add a custom connector. The URL is `https://<host>/mcp`. On a preview that host is the preview origin. `https://mcp.grillyour.ai/mcp` comes later, when the owner adds that domain.
 2. Connect. A sign-in opens. Google, or an emailed code. No key to paste, and no card.
-3. The first grill asks, before anything is sent, whether to keep decision records. Answer once.
-4. Grill a decision the usual way: the assistant shows the write-up, you say go, and the verdict comes back in the chat. If it is still running, the assistant calls `grill_result` on its own.
+3. The first grill asks, once, whether to keep decision records. Answer once. The outside-judge disclosure is shown once per account, then not again.
+4. Say the decision as you mean it. The assistant sends that. It does not show a template or wait for an OK. The note comes back in the chat. If three grills are already running, the assistant waits and retries on its own.
 
 Decisions you chose to keep are at `/decisions`. The account, the credit, and delete are at `/account`. Both pages are plain HTML, with the same content rules as the Pro pages: no analytics script.
 

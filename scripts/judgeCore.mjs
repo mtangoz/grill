@@ -764,6 +764,21 @@ export const JUDGE_TOOL = Object.freeze({
         description:
           "If the reader fixes exactly one thing, which one and why. Name it even when the verdict is \"holds\" — the weakest joint of a sound argument is still worth knowing.",
       },
+      needs_facts: {
+        type: "boolean",
+        description:
+          "True when the subject is too thin to judge: a blank template, a title with no facts, or almost no decision. When true, the verdict is not a judgement of the decision.",
+      },
+      facts_needed: {
+        type: "array",
+        items: { type: "string" },
+        description: "When needs_facts is true, the one or two facts that would settle the decision. Otherwise an empty list.",
+      },
+      missing_option: {
+        type: "string",
+        description:
+          "An option the subject never named, in one sentence, if naming it would change the decision. Otherwise an empty string.",
+      },
     },
     required: ["steelman", "counter_steelman", "challenges", "verdict", "verdict_reason", "strongest_objection"],
     additionalProperties: false,
@@ -1045,6 +1060,7 @@ export function buildJudgeMessages({ subject, question = "", contextBlocks = [],
     "4. Attack what is actually there. Every challenge must quote the words it targets — from the subject, or for loaded-framing, from the question. If you cannot quote it, the subject did not say it and you are arguing with yourself. If the subject states a goal or guardrails, check whether the decision defeats the goal or crosses a guardrail, and quote them. A trade-off the subject names and accepts is not a defect. If none are stated, do not invent them.",
     "5. Make every challenge settleable. Name the premise that has to hold, and name the cheapest concrete thing that would settle it either way.",
     "6. Judge the whole on weight, not on count. One fatal challenge refutes; ten minor ones do not. Then swap sides: had someone who chose the other way written up the same facts, would your verdict be the same? If not, the framing is deciding it — decide again from the facts.",
+    "7. If the subject is near-empty — a template of blanks, a title, or a line with no facts — set needs_facts to true and name one or two facts in facts_needed. Do not use a confident verdict to criticise the blank. If an option the subject never named would change the decision, put that option in missing_option. Otherwise set missing_option to an empty string.",
     "",
     "Grade severity against the decision, not the finish of the plan. Every plan can be tightened, so a way to improve it is not, by itself, a reason to doubt the choice. Serious means that, if the challenge is right, the case no longer shows the chosen option beats the alternatives, or the chosen option must become a different plan; an unsupported claim or an overreach is serious when, without it, a rejected option looks as good or better, and moderate when the choice still stands without it. Moderate means the choice stands once a condition is met, a check is added, or a detail is fixed in place, including a test, threshold or sample size that needs fixing and makes no rejected option look better. A risk the subject names, with a test that would reveal it or a way back, is not a hidden one: judge whether the test and the way back work, not whether the risk exists. A test or a way back that needs fixing is a moderate challenge that says how to fix it; only one that cannot be made to work at all is serious. The scale, on an unrelated decision (renewing a support contract for a year rather than going month to month): fatal, the contract's own terms exclude the system it is meant to cover; serious, the annual price assumes last year's usage, usage has already doubled, and the comparison with month to month has to be redone before the choice can be made; moderate, the write-up reviews response times each quarter, and a monthly look would catch a slide sooner; minor, a figure is quoted without its date.",
     "",
@@ -1268,4 +1284,94 @@ export function renderJudgeReport(result) {
   );
 
   return out.join("\n");
+}
+
+/** About 150 words. The person reads this. The steelman stays in the full report. */
+export const USER_WORD_BUDGET = 150;
+
+/** The only question after a grill. The assistant adds it once, or the tool result already ends with it. */
+export const CLOSING_ASK = "Your call + confidence %? (e.g. 'delay, 70%')";
+
+const THIN_FILLER = new Set("the a an of to and or for in on is it this that with as by at from be we i you your our will are was were".split(" "));
+
+export function countWords(text) {
+  return String(text || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+function clipWords(text, max) {
+  const words = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  if (words.length <= max) return words.join(" ");
+  return `${words.slice(0, max).join(" ")}…`;
+}
+
+/**
+ * A blank template, or a line with almost no decision in it.
+ * A short real choice ("drop the free tier?") is enough to judge.
+ */
+export function subjectNeedsFacts(subject) {
+  const raw = String(subject || "");
+  const blanks = (raw.match(/\[[^\]\n]{0,80}\]/g) || []).length;
+  const stripped = raw.replace(/\[[^\]\n]{0,80}\]/g, " ").replace(/\{[^{}\n]{0,40}\}/g, " ");
+  const words = stripped.split(/[^A-Za-z0-9%]+/).filter((word) => word.length > 1 && !THIN_FILLER.has(word.toLowerCase()));
+  if (blanks >= 3 && words.length < 12) return true;
+  return words.length < 3;
+}
+
+function verdictSentence(result) {
+  const badge = VERDICT_BADGE[result?.verdict] || "";
+  const reason = clipWords(result?.verdictReason || "", 28);
+  if (!badge) return "**No verdict.** The judge did not judge the decision.";
+  const label =
+    badge === "solid if" ? "Solid if" : badge === "doesn't hold up" ? "Doesn't hold up" : badge.charAt(0).toUpperCase() + badge.slice(1);
+  return reason ? `**${label}.** ${reason}` : `**${label}.**`;
+}
+
+function missingOptionLine(result) {
+  const explicit = String(result?.missingOption || "").trim();
+  if (explicit && !/^none\b/i.test(explicit)) return clipWords(explicit, 30);
+  const simpler = (Array.isArray(result?.challenges) ? result.challenges : []).find((row) => row?.kind === "simpler-path-ignored");
+  return simpler?.challenge ? clipWords(simpler.challenge, 30) : "";
+}
+
+function fitBudget(text, budget) {
+  const body = String(text || "").trim();
+  if (countWords(body) <= budget) return body;
+  const words = body.split(/\s+/);
+  return `${words.slice(0, budget).join(" ")}…`;
+}
+
+/**
+ * The note a person reads. About 150 words: one verdict line, a missing option when there
+ * is one, then two challenges each with one cheap test. Steelman, model name, scores and
+ * quote checks stay out. A near-empty subject gets needs-facts, not a confident verdict.
+ */
+export function renderUserFacing(result, { subject = "" } = {}) {
+  const thin = subjectNeedsFacts(subject) || result?.needsFacts === true;
+  const degraded = Array.isArray(result?.degraded) && result.degraded.length > 0;
+  const lead = degraded ? "The judge could not see all of this, so this is not a clean review.\n\n" : "";
+  if (thin) {
+    const named = Array.isArray(result?.factsNeeded)
+      ? result.factsNeeded.map((fact) => String(fact || "").trim()).filter(Boolean).slice(0, 2)
+      : [];
+    const facts = named.length ? named : ["what you are trying to achieve", "the main alternative you are weighing this against"];
+    const lines = facts.map((fact, index) => `${index + 1}. ${clipWords(fact, 18)}`);
+    return fitBudget(`${lead}**Needs facts.** This is too thin to judge.\n\nWhat would settle it: ${lines.join(" ")}`, USER_WORD_BUDGET);
+  }
+  const lines = [verdictSentence(result)];
+  const missing = missingOptionLine(result);
+  if (missing) lines.push("", `**An option you didn't name:** ${missing}`);
+  const top = (Array.isArray(result?.challenges) ? result.challenges : []).slice(0, 2);
+  top.forEach((row, index) => {
+    const say = clipWords(row?.challenge || "A challenge.", 24);
+    const test = clipWords(row?.falsifier || "Name the cheapest check.", 18);
+    lines.push("", `${index + 1}. ${say} Cheap test: ${test}`);
+  });
+  return fitBudget(`${lead}${lines.join("\n")}`, USER_WORD_BUDGET);
 }

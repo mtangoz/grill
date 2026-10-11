@@ -28,19 +28,19 @@ Judge: <model name> by <company>
 
 For the company, write OpenAI, Anthropic, Google, xAI or Meta, whichever made you.
 
-Answer in exactly this format:
+If the subject is near-empty (a template of blanks, or a line with no facts), do not give a verdict. Write only:
+
+**Needs facts.** This is too thin to judge.
+What would settle it: the one or two facts that would settle it.
+
+Otherwise write at most 150 words, and nothing else. Do the steelman and the counter-steelman as your working. Do not print them.
 
 **Verdict:** solid / solid if / shaky / doesn't hold up, and one sentence why.
-**Steelman:** …
-**Counter-steelman:** …
-**Challenges,** most severe first; for each:
-- Severity (fatal, serious, moderate or minor) · kind (unsupported claim, hidden assumption, missing failure mode, simpler path ignored, overreach, evidence mismatch, loaded framing, or unfalsifiable) · your confidence (high, medium or low)
-- > the quoted words it targets
-- The challenge, in one to three sentences.
-- What would have to be true: …
-- Falsifier: the cheapest test that would settle it.
+**Missing option:** an option the subject never named, or none.
+1. One challenge, in one sentence. Cheap test: the cheapest test.
+2. One challenge, in one sentence. Cheap test: the cheapest test.
 
-**If you fix one thing:** …
+Stop after two challenges.
 
 --- BEGIN SUBJECT ---
 {THE APPROVED SUBJECT}
@@ -50,4 +50,4 @@ Answer in exactly this format:
 
 ---
 
-The block above is the judge prompt only. After the user pastes the judge's answer back, add the reflection from `reflection.md`. Do not put Before you decide inside the judge prompt.
+The block above is the judge prompt only. After the user pastes the judge's answer back, relay about 150 words (the verdict line, a missing option if there is one, and two challenges), then exactly one line: Your call + confidence %? (e.g. 'delay, 70%'). Do not show the steelman, the model name, or a record. Write a record only after they answer, using `reflection.md`.

@@ -137,16 +137,10 @@ describe("look back", () => {
 
   it("asks what happened and does not score when the user has not said", () => {
     const out = lookBack({ records });
-    assert.match(out, /^## Look back/);
-    assert.match(out, /Did it come true\?/);
-    assert.match(out, /Did the thing that would prove you wrong happen\?/);
-    assert.match(out, /Did anything happen you didn't expect\?/);
-    assert.match(out, /surprise: a few words, or leave this line off/);
-    assert.match(out, /Grill uses only that mark/);
-    assert.match(out, /Prediction then: more signups by June/);
-    assert.match(out, /Move the launch to March/);
-    assert.match(out, /Hire before the pilot/);
-    assert.match(out, /Nothing is stored/);
+    assert.match(out, /^You predicted more signups by June at 70%\. What happened\?/);
+    assert.match(out, /You were 40% sure\. What happened\?/);
+    assert.doesNotMatch(out, /Did it come true\?/);
+    assert.doesNotMatch(out, /grill-record/);
     assert.doesNotMatch(out, /## Pattern/);
     assert.equal(lookBack({ records }), out);
   });
@@ -228,10 +222,9 @@ describe("look back", () => {
       "guardrails: no release without an in-house pass",
     ].join("\n");
     const asked = lookBack({ records: withLines });
-    assert.match(asked, /Did you reach the goal\? Yes, no or partly\./);
-    assert.match(asked, /Did your guardrails hold\? Yes or no\./);
-    assert.match(asked, /goal_met: no/);
-    assert.match(asked, /guardrails_held: no/);
+    assert.match(asked, /You predicted escaped bugs stay flat at 70%\. What happened\?/);
+    assert.doesNotMatch(asked, /Did you reach the goal/);
+    assert.doesNotMatch(asked, /goal_met/);
     const missed = lookBack({
       records: withLines,
       happened: "title: Outsource QA\ncame_true: yes\nfalsifier_fired: no\ngoal_met: no\nguardrails_held: no\nhappened: Cost fell and a bug shipped.",
@@ -338,7 +331,7 @@ describe("look back", () => {
       "decided: raise by 10% instead, after the challenge",
     ].join("\n");
     const asked = lookBack({ records: chosen });
-    assert.match(asked, /You chose: "raise by 10% instead, after the challenge"\./);
+    assert.match(asked, /You were 70% sure\. What happened\?/);
     const hit = lookBack({ records: chosen, happened: "came_true: yes\nfalsifier_fired: no\nhappened: Churn stayed flat." });
     assert.match(hit, /You chose "raise by 10% instead, after the challenge"\. It came true\./);
     const miss = lookBack({ records: chosen, happened: "came_true: no\nhappened: Churn jumped." });
@@ -439,7 +432,7 @@ describe("look back", () => {
     assert.equal(sourceAppLabel("Notes App"), "Notes App");
     const server = readFileSync(join(ROOT, "server/index.mjs"), "utf8");
     assert.doesNotMatch(server, /source_app|sourceApp/);
-    assert.match(server, /Goal and Guardrails lines/);
+    assert.match(server, /do not add your own case against/i);
   });
 
   it("explains the record shape when the paste has none", () => {
@@ -520,15 +513,12 @@ describe("every route carries the footer and the look-back, and the judge prompt
   const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
   const server = readFileSync(join(ROOT, "server/index.mjs"), "utf8");
 
-  it("the skill, the paste prompt and the site ask the same three questions", () => {
+  it("the skill and the prompt ask for the call in one line, and the site still shows a record", () => {
     for (const [name, text] of [
       ["skill", skill],
       ["prompt", prompt],
       ["page", page],
     ]) {
-      for (const question of BEFORE_YOU_DECIDE_QUESTIONS) {
-        assert.ok(text.includes(question), `${name} is missing a reflection question`);
-      }
       for (const key of ["version: 1", "date:", "title:", "prediction:", "verdict:", "falsifier:", "confidence:", "review:"]) {
         assert.ok(text.includes(key), `${name} is missing the record field ${key}`);
       }
@@ -536,15 +526,13 @@ describe("every route carries the footer and the look-back, and the judge prompt
       assert.match(text, /look back/i, `${name} has no look-back`);
       assert.match(text, /does not store|keeps nothing|stores nothing|Nothing is stored/i, `${name} does not say nothing is stored`);
     }
-    const combined = "What are you trying to achieve, and is there anything this must not cost or break?";
     for (const [name, text] of [
       ["skill", skill],
       ["prompt", prompt],
     ]) {
-      assert.ok(text.includes(combined), `${name} is missing the goal and guardrails question`);
-      assert.match(text, /never yields/, `${name} lets the prediction question yield`);
-      assert.match(text, /just grill it/, `${name} has no skip for just grill it`);
-      assert.match(text, /Goal: not stated/, `${name} does not record a declined goal`);
+      assert.match(text, /at most one short question/);
+      assert.match(text, /Your call \+ confidence %\?/);
+      assert.match(text, /only after they answer|only after I answer/);
       assert.match(text, /Did you reach the goal\? Yes, no or partly\./);
       assert.match(text, /Did your guardrails hold\? Yes or no\./);
       assert.match(text, /the prediction was right about the wrong target/);
@@ -600,6 +588,6 @@ describe("every route carries the footer and the look-back, and the judge prompt
     assert.ok(prompt.includes(judge));
     assert.match(skill, /Judge: <model name> by <company>/);
     assert.match(server, /grill_look_back/);
-    assert.match(server, /appendReflection/);
+    assert.match(server, /renderUserFacing/);
   });
 });
