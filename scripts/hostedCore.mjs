@@ -25,7 +25,8 @@ export const DAILY_GRILL_LIMIT = 30;
 export const RUNNING_JOB_LIMIT = 3;
 export const CREDIT_CACHE_MS = 60_000;
 export const OUT_OF_CREDIT = "You're out of grill credit. More is coming soon. Write to support@grillyour.ai for a top-up.";
-export const INVITE_ONLY = "Grill in chat is invite-only for now.";
+export const INVITE_ONLY =
+  "Grill in chat is invite-only for now, and this email isn't on the list yet. To ask for an invite, write to support@grillyour.ai.";
 export const CONSENT_TEXT = [
   "Keep a record of your decisions on your Grill account? Yes / No",
   "",
@@ -211,12 +212,139 @@ export function starterCreditUsd(env = {}) {
   return 1;
 }
 
-/** When the allowlist is unset, it does not filter. The owner sets it before anyone is invited. */
+/** Open sign-up is off unless GRILL_OPEN_SIGNUP is exactly "on". Turn it on only once the spending caps are set. */
+export function openSignup(env = {}) {
+  return env.GRILL_OPEN_SIGNUP === "on";
+}
+
+/**
+ * Who may grill. With open sign-up on, any verified email. Otherwise only the
+ * emails on GRILL_HOSTED_ALLOWLIST; an empty or unset list lets nobody in, so a
+ * missing setting can never open the door by accident.
+ */
 export function allowlistAllows(email, env = {}) {
+  const who = String(email || "").trim().toLowerCase();
+  if (!who) return false;
+  if (openSignup(env)) return true;
   const raw = typeof env.GRILL_HOSTED_ALLOWLIST === "string" ? env.GRILL_HOSTED_ALLOWLIST.trim() : "";
-  if (!raw) return true;
+  if (!raw) return false;
   const list = raw.split(",").map((part) => part.trim().toLowerCase()).filter(Boolean);
-  return list.includes(String(email || "").trim().toLowerCase());
+  return list.includes(who);
+}
+
+// ── Spending caps ────────────────────────────────────────────────────────────
+// Two hard caps on what Grill pays for starter credit, counted in Upstash in
+// micro-dollars (whole numbers, so INCRBY stays atomic and exact):
+//   - one for the whole service per calendar month (UTC), GRILL_MONTHLY_CAP_USD, default $20;
+//   - one per person per calendar month, GRILL_USER_MONTHLY_CAP_USD, default $1.
+// A person is keyed by the human email the starter credit belongs to, so an agent
+// signed in for someone shares that person's cap. Each person's router key is
+// still capped by the router itself; these counters are the second lock.
+
+export const DEFAULT_MONTHLY_CAP_USD = 20;
+export const DEFAULT_USER_MONTHLY_CAP_USD = 1;
+export const CAP_COUNTER_TTL_SECONDS = 40 * 24 * 60 * 60;
+
+export const SERVICE_CAP_TEXT =
+  "Grill has used up this month's free grills for everyone, so this one didn't run. It starts again on the 1st. Nothing was charged to you. If you need a grill sooner, write to support@grillyour.ai.";
+export const USER_CAP_TEXT =
+  "You've used this month's free grills, so this one didn't run. It starts again on the 1st. Nothing was charged to you. If you need more sooner, write to support@grillyour.ai.";
+
+function capFromEnv(value, fallback) {
+  const n = Number(value);
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(n) && n >= 0 && n <= 10_000) {
+    return Math.round(n * 100) / 100;
+  }
+  return fallback;
+}
+
+export function monthlyCapUsd(env = {}) {
+  return capFromEnv(env.GRILL_MONTHLY_CAP_USD, DEFAULT_MONTHLY_CAP_USD);
+}
+
+export function userMonthlyCapUsd(env = {}) {
+  return capFromEnv(env.GRILL_USER_MONTHLY_CAP_USD, DEFAULT_USER_MONTHLY_CAP_USD);
+}
+
+/** "2026-10" in UTC. */
+export function isoMonth(ms = Date.now()) {
+  return new Date(ms).toISOString().slice(0, 7);
+}
+
+export function toMicros(usd) {
+  const n = Number(usd);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round(n * 1_000_000);
+}
+
+/**
+ * The cost to count for one finished grill. When the judge reports no cost we
+ * count a typical grill rather than zero, so a missing number can't slip past the cap.
+ */
+export function chargeableUsd(costUsd) {
+  const n = Number(costUsd);
+  return Number.isFinite(n) && n > 0 ? n : TYPICAL_GRILL_USD;
+}
+
+/**
+ * Which cap, if any, stops the next grill. `serviceMicros` and `userMicros` are the
+ * month's counters. A grill is allowed while the spend so far is under the cap, so
+ * one grill can finish a little over; the next one is stopped.
+ */
+export function capBlock({ serviceMicros = 0, userMicros = 0, env = {} } = {}) {
+  if ((Number(serviceMicros) || 0) >= toMicros(monthlyCapUsd(env)) ) return { text: SERVICE_CAP_TEXT, which: "service" };
+  if ((Number(userMicros) || 0) >= toMicros(userMonthlyCapUsd(env))) return { text: USER_CAP_TEXT, which: "user" };
+  return null;
+}
+
+// ── Plain-language failures ──────────────────────────────────────────────────
+// What the person sees when something breaks. No codes, no stack traces. The short
+// reference at the end is only so support can find the server log line.
+
+function ref(requestId) {
+  return requestId ? ` (reference ${requestId})` : "";
+}
+
+/** For a judge run that ended without a verdict, read from the judge's own error lines. */
+export function judgeFailureText(stderr = "", requestId = "") {
+  const s = String(stderr || "");
+  if (/correlated verdict|excluded company/i.test(s)) {
+    return "The only judge available was from the same company that wrote this, so Grill held back the verdict rather than give you a biased one. Try again in a few minutes.";
+  }
+  if (/\b402\b|insufficient credits|key limit exceeded/i.test(s)) return OUT_OF_CREDIT;
+  if (/looks like .*(key|token)|Nothing was sent/i.test(s)) {
+    return "This write-up seems to contain a password, key or token, so Grill didn't send it. Take that out and try again.";
+  }
+  if (/(?:\b|_)429\b|rate.?limit/i.test(s)) {
+    return `The judge service is busy right now and turned the request away. Try again in a minute or two.${ref(requestId)}`;
+  }
+  if (/abandon|deadline|timed? ?out|timeout/i.test(s)) {
+    return `The judge took too long and Grill stopped waiting. Try again; a shorter write-up usually helps.${ref(requestId)}`;
+  }
+  if (/transport|ECONN|ENOTFOUND|fetch failed|network|(?:\b|_)50[0-9]\b/i.test(s)) {
+    return `Grill couldn't reach the judge service just now. Try again in a minute.${ref(requestId)}`;
+  }
+  return `The judge didn't send back a verdict this time. Try again; if it keeps happening, write to support@grillyour.ai${ref(requestId)}.`;
+}
+
+/** For a failure inside Grill's own server, by the internal code that was logged. */
+export function serviceFailureText(code = "", requestId = "") {
+  switch (code) {
+    case "store":
+      return `Grill's storage didn't answer just now. Try again in a minute; if it keeps happening, write to support@grillyour.ai${ref(requestId)}.`;
+    case "clerk":
+    case "jwks":
+      return `Grill couldn't check your sign-in just now. Try again in a minute; if it keeps happening, reconnect Grill in your chat app's settings${ref(requestId)}.`;
+    case "starter-key":
+      return `Grill couldn't set up your free starter credit just now. Try again in a few minutes; if it keeps happening, write to support@grillyour.ai${ref(requestId)}.`;
+    case "key-encryption":
+    case "record-key":
+      return `Grill isn't fully set up on the server right now, so it can't run this. We've logged it; write to support@grillyour.ai if you need it sooner${ref(requestId)}.`;
+    case "clerk-delete":
+      return `Grill couldn't finish deleting your sign-in. Your records are untouched. Try again in a minute, or write to support@grillyour.ai${ref(requestId)}.`;
+    default:
+      return `Something on Grill's side broke while handling this. Try again in a minute; if it keeps happening, write to support@grillyour.ai${ref(requestId)}.`;
+  }
 }
 
 export function grillsLeft(remainingUsd) {
@@ -473,6 +601,7 @@ export function createMemoryRedis() {
   const strings = new Map();
   const sets = new Map();
   const zsets = new Map();
+  const lists = new Map();
   const expiry = new Map();
   const live = (key) => {
     const exp = expiry.get(key);
@@ -480,6 +609,7 @@ export function createMemoryRedis() {
       strings.delete(key);
       sets.delete(key);
       zsets.delete(key);
+      lists.delete(key);
       expiry.delete(key);
       return false;
     }
@@ -494,13 +624,15 @@ export function createMemoryRedis() {
         case "GET":
           return strings.has(key) ? strings.get(key) : null;
         case "SET": {
+          const nx = args.some((value, index) => index > 2 && String(value).toUpperCase() === "NX");
+          if (nx && strings.has(key)) return null;
           strings.set(key, String(args[2]));
           const ex = args.findIndex((value, index) => index > 2 && String(value).toUpperCase() === "EX");
           if (ex >= 0) expiry.set(key, Date.now() + Number(args[ex + 1]) * 1000);
           return "OK";
         }
         case "DEL": {
-          const had = strings.delete(key) || sets.delete(key) || zsets.delete(key);
+          const had = strings.delete(key) || sets.delete(key) || zsets.delete(key) || lists.delete(key);
           expiry.delete(key);
           return had ? 1 : 0;
         }
@@ -508,6 +640,36 @@ export function createMemoryRedis() {
           const next = (Number(strings.get(key)) || 0) + 1;
           strings.set(key, String(next));
           return next;
+        }
+        case "INCRBY": {
+          const next = (Number(strings.get(key)) || 0) + Number(args[2]);
+          strings.set(key, String(next));
+          return next;
+        }
+        case "RPUSH": {
+          const list = lists.get(key) || [];
+          for (const value of args.slice(2)) list.push(String(value));
+          lists.set(key, list);
+          return list.length;
+        }
+        case "LTRIM": {
+          const list = lists.get(key) || [];
+          const len = list.length;
+          let start = Number(args[2]);
+          let stop = Number(args[3]);
+          if (start < 0) start = Math.max(0, len + start);
+          if (stop < 0) stop = len + stop;
+          lists.set(key, list.slice(start, stop + 1));
+          return "OK";
+        }
+        case "LRANGE": {
+          const list = lists.get(key) || [];
+          const len = list.length;
+          let start = Number(args[2]);
+          let stop = Number(args[3]);
+          if (start < 0) start = Math.max(0, len + start);
+          if (stop < 0) stop = len + stop;
+          return list.slice(start, stop + 1);
         }
         case "EXPIRE":
           expiry.set(key, Date.now() + Number(args[2]) * 1000);

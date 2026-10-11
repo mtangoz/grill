@@ -43,8 +43,11 @@ import {
   ONCE_DISCLOSURE,
   OUT_OF_CREDIT,
   RUNNING_JOB_LIMIT,
+  CAP_COUNTER_TTL_SECONDS,
   allowlistAllows,
   authorForJudge,
+  capBlock,
+  chargeableUsd,
   chainIds,
   decryptString,
   encryptString,
@@ -52,6 +55,8 @@ import {
   hostedStillRunningText,
   hostedTools,
   isoDay,
+  isoMonth,
+  judgeFailureText,
   keyFromEnv,
   linkChains,
   mcpResource,
@@ -63,9 +68,11 @@ import {
   queryHasToken,
   recordsForLookBack,
   savedConfirmation,
+  serviceFailureText,
   signInUrl,
   sourceAppFromClient,
   starterCreditUsd,
+  toMicros,
   wwwAuthenticate,
 } from "../scripts/hostedCore.mjs";
 
@@ -109,9 +116,8 @@ function notFound() {
   });
 }
 
-function fixedError(id, status = 500) {
-  logHosted(id, "error");
-  return new Response(`Something went wrong (${id}). Write to support@grillyour.ai.`, {
+function fixedError(id, status = 500, code = "") {
+  return new Response(serviceFailureText(code, id), {
     status,
     headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
   });
@@ -202,6 +208,29 @@ function pendingRedisKey(userId, id) {
   return `grill:hosted:pending:${userId}:${id}`;
 }
 const PENDING_TTL_SECONDS = 14 * 24 * 60 * 60;
+/**
+ * Fields that a running grill changes live in their own keys, written with atomic
+ * commands, so two grills finishing at once can't overwrite each other's copy of
+ * the account record.
+ */
+function spendLogKey(userId) {
+  return `grill:hosted:spendlog:${userId}`;
+}
+function disclosedKey(userId) {
+  return `grill:hosted:disclosed:${userId}`;
+}
+function recordKeyRedisKey(userId) {
+  return `grill:hosted:rkey:${userId}`;
+}
+/** Month spend counters for the caps, in micro-dollars. The person key is a hash of the email, never the email. */
+function serviceSpendKey(month) {
+  return `grill:hosted:capspend:all:${month}`;
+}
+function personSpendKey(email, month) {
+  const hash = createHash("sha256").update(String(email || "").trim().toLowerCase()).digest("hex");
+  return `grill:hosted:capspend:person:${hash}:${month}`;
+}
+const SPEND_LOG_MAX = 400;
 function dayKey(userId, day) {
   return `grill:hosted:day:${userId}:${day}`;
 }
@@ -393,11 +422,17 @@ async function admit(user, deps, userId) {
 async function loadAccount(id, deps) {
   const raw = await redis(deps, ["GET", acctKey(id)]);
   if (!raw) return null;
+  let account;
   try {
-    return JSON.parse(raw);
+    account = JSON.parse(raw);
   } catch {
     return null;
   }
+  if (!account.recordKeyCipher) {
+    const cipher = await redis(deps, ["GET", recordKeyRedisKey(id)]);
+    if (typeof cipher === "string" && cipher) account.recordKeyCipher = cipher;
+  }
+  return account;
 }
 
 async function saveAccount(account, deps) {
@@ -486,18 +521,36 @@ async function ensureAccount(userId, email, deps, human) {
   const name = `grill-h-${randomBytes(8).toString("hex")}`;
   const master = keyFromEnv(deps.env, "GRILL_KEY_ENCRYPTION_KEY");
   if (!master) throw new Coded("key-encryption");
-  const made = await createCappedKey({
-    env: deps.env,
-    fetch: deps.fetch,
-    name,
-    limit: starterCreditUsd(deps.env),
-    reset: null,
-  });
+  let made;
+  try {
+    made = await createCappedKey({
+      env: deps.env,
+      fetch: deps.fetch,
+      name,
+      limit: starterCreditUsd(deps.env),
+      reset: null,
+    });
+  } catch {
+    throw new Coded("starter-key");
+  }
+  // Claim the email atomically. If a second request for the same person got there
+  // first, switch off the key just minted so no one ends up with two starter credits.
+  const claimed = await redis(deps, ["SET", emailIndex(capEmail), userId, "NX"]);
+  const holderId = claimed === "OK" ? userId : await redis(deps, ["GET", emailIndex(capEmail)]);
+  if (holderId !== userId) {
+    await removeManagedKey(made.hash, { env: deps.env, fetch: deps.fetch }).catch(() => logHosted(deps.requestId, "key-revoke"));
+    account.creditBlocked = "email";
+    return account;
+  }
+  const fresh = await loadAccount(userId, deps);
+  if (fresh?.keyCipher && fresh.keyHash) {
+    await removeManagedKey(made.hash, { env: deps.env, fetch: deps.fetch }).catch(() => logHosted(deps.requestId, "key-revoke"));
+    return fresh;
+  }
   account.keyCipher = encryptString(made.key, master);
   account.keyHash = made.hash;
   account.keyLimitUsd = made.limitUsd;
   account.keyName = name;
-  await redis(deps, ["SET", emailIndex(capEmail), userId]);
   await saveAccount(account, deps);
   return account;
 }
@@ -528,10 +581,14 @@ async function dataKeyFor(account, deps) {
     const raw = decryptString(account.recordKeyCipher, master);
     return Buffer.from(raw, "base64");
   }
-  const dataKey = randomBytes(32);
-  account.recordKeyCipher = encryptString(dataKey.toString("base64"), master);
-  await saveAccount(account, deps);
-  return dataKey;
+  // Two grills can reach here at once. SET NX lets exactly one data key win; the
+  // other reads the winner back, so no record is ever sealed with a key that is then lost.
+  const mine = encryptString(randomBytes(32).toString("base64"), master);
+  await redis(deps, ["SET", recordKeyRedisKey(account.id), mine, "NX"]);
+  const winner = await redis(deps, ["GET", recordKeyRedisKey(account.id)]);
+  if (typeof winner !== "string" || !winner) throw new Coded("store");
+  account.recordKeyCipher = winner;
+  return Buffer.from(decryptString(winner, master), "base64");
 }
 
 async function loadRecords(account, deps) {
@@ -725,17 +782,41 @@ async function deletePending(account, deps, id) {
   await redis(deps, ["ZREM", pendingIndex(account.id), id]);
 }
 
+/** The person the starter credit and the per-person cap belong to. */
+function capPerson(account) {
+  return account.human || account.email || account.id;
+}
+
+async function countSpend(account, deps, costUsd) {
+  const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
+  const micros = toMicros(chargeableUsd(costUsd));
+  for (const key of [serviceSpendKey(month), personSpendKey(capPerson(account), month)]) {
+    await redis(deps, ["INCRBY", key, String(micros)]);
+    await redis(deps, ["EXPIRE", key, String(CAP_COUNTER_TTL_SECONDS)]);
+  }
+}
+
+async function capReached(account, deps) {
+  const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
+  const serviceMicros = Number(await redis(deps, ["GET", serviceSpendKey(month)])) || 0;
+  const userMicros = Number(await redis(deps, ["GET", personSpendKey(capPerson(account), month)])) || 0;
+  return capBlock({ serviceMicros, userMicros, env: deps.env });
+}
+
+/** True exactly once per account, even when two grills finish together. */
+async function firstDisclosure(account, deps) {
+  if (account.disclosed === true) return false;
+  const won = await redis(deps, ["SET", disclosedKey(account.id), "1", "NX"]);
+  account.disclosed = true;
+  return won === "OK";
+}
+
 async function composeReport({ outcome, subject, sourceApp, account, credit, supersedes, changed, deps }) {
   const stderr = String(outcome?.stderr || "");
   const parsed = outcome?.parsed || null;
   if (!outcome || outcome.code !== 0 || (!parsed && !String(outcome.report || "").trim())) {
-    if (/correlated verdict|excluded company/i.test(stderr)) {
-      return { text: "The judge was served by the same company that wrote this, so Grill refused the verdict.", isError: true };
-    }
-    if (/\b402\b|insufficient credits|key limit exceeded/i.test(stderr)) {
-      return { text: OUT_OF_CREDIT, isError: true };
-    }
-    return { text: `The grill did not finish (${deps.requestId}). Write to support@grillyour.ai.`, isError: true };
+    logHosted(deps.requestId, `judge-exit ${outcome?.code ?? "none"}`);
+    return { text: judgeFailureText(stderr, deps.requestId), isError: true };
   }
   const now = typeof deps.now === "number" ? new Date(deps.now) : new Date();
   const layers = renderLayers(parsed || {}, { subject });
@@ -757,14 +838,13 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
   }
   const cost = Number(parsed?.costUsd) || 0;
   const model = typeof parsed?.servedModel === "string" ? parsed.servedModel : "";
-  account.spend = [...(account.spend || []), { at: new Date().toISOString(), costUsd: cost, model }];
-  if (account.spend.length > 400) account.spend = account.spend.slice(-400);
+  // Atomic appends and counters only. The account record itself is not rewritten
+  // here, so a grill finishing in the background can't undo another one's changes.
+  await redis(deps, ["RPUSH", spendLogKey(account.id), JSON.stringify({ at: new Date().toISOString(), costUsd: cost, model })]);
+  await redis(deps, ["LTRIM", spendLogKey(account.id), String(-SPEND_LOG_MAX), "-1"]);
+  await countSpend(account, deps, cost);
   let text = layers.brief.trim();
-  if (account.disclosed !== true) {
-    account.disclosed = true;
-    text = `${ONCE_DISCLOSURE}\n\n${text}`;
-  }
-  await saveAccount(account, deps);
+  if (await firstDisclosure(account, deps)) text = `${ONCE_DISCLOSURE}\n\n${text}`;
   creditCache.delete(account.id);
   return { text: `${text.trim()}\n`, layers, isError: false };
 }
@@ -786,7 +866,12 @@ function layerFromStored(stored, detail) {
 
 async function callGrill(args, account, payload, params, deps) {
   if (account.creditBlocked === "email") {
-    return toolText("This email already has a Grill starter credit on another sign-in. Use that account, or write to support@grillyour.ai.", true);
+    return toolText("This email already has Grill's free starter credit on another sign-in. Sign in with that account instead, or write to support@grillyour.ai if you've lost it.", true);
+  }
+  const capped = await capReached(account, deps);
+  if (capped) {
+    logHosted(deps.requestId, `cap-${capped.which}`);
+    return toolText(capped.text);
   }
   const credit = await creditOf(account, deps);
   if (credit.out) return toolText(OUT_OF_CREDIT, true);
@@ -794,7 +879,7 @@ async function callGrill(args, account, payload, params, deps) {
   if (account.records !== "keep" && account.records !== "off" && typeof keepArg !== "boolean") {
     return toolText(CONSENT_TEXT);
   }
-  if (typeof keepArg === "boolean") {
+  if (typeof keepArg === "boolean" && account.records !== (keepArg ? "keep" : "off")) {
     account.records = keepArg ? "keep" : "off";
     await saveAccount(account, deps);
   }
@@ -807,7 +892,8 @@ async function callGrill(args, account, payload, params, deps) {
   const author = authorForJudge({ explicit: args.author, company: client.company });
   if (author.error) return toolText(author.error, true);
   if (account.records === "keep" && !keyFromEnv(deps.env, "GRILL_RECORD_KEY")) {
-    return toolText("Grill can't keep records right now. Write to support@grillyour.ai.", true);
+    logHosted(deps.requestId, "record-key");
+    return toolText("Grill can't save decision records right now because of a setup problem on our side. Turn records off on your account page to grill without saving, or write to support@grillyour.ai.", true);
   }
   const slotWait = Number.isInteger(deps.waitMs) ? deps.waitMs : 45_000;
   const slotDeadline = Date.now() + Math.max(0, slotWait);
@@ -820,11 +906,14 @@ async function callGrill(args, account, payload, params, deps) {
   if (running >= RUNNING_JOB_LIMIT) return toolText(CAP_RETRY_TEXT, true);
   const today = isoDay(Date.now());
   const used = Number(await redis(deps, ["GET", dayKey(account.id, today)])) || 0;
-  if (used >= DAILY_GRILL_LIMIT) return toolText("This account has used today's 30 grills. It resets tomorrow.", true);
+  if (used >= DAILY_GRILL_LIMIT) return toolText(`You've used today's ${DAILY_GRILL_LIMIT} grills on this account. It resets tomorrow (UTC).`);
   await redis(deps, ["INCR", dayKey(account.id, today)]);
   await redis(deps, ["EXPIRE", dayKey(account.id, today), 172800]);
   const apiKey = openSecret(account.keyCipher, deps.env, "GRILL_KEY_ENCRYPTION_KEY");
-  if (!apiKey) return toolText(`The grill did not finish (${deps.requestId}). Write to support@grillyour.ai.`, true);
+  if (!apiKey) {
+    logHosted(deps.requestId, "key-open");
+    return toolText(serviceFailureText("key-encryption", deps.requestId), true);
+  }
   const credential = newJobCredential();
   await redis(deps, ["SADD", runningKey(account.id), credential.id]);
   await redis(deps, ["EXPIRE", runningKey(account.id), JOB_TTL_SECONDS]);
@@ -917,7 +1006,8 @@ async function callResult(args, account, deps) {
   try {
     stored = JSON.parse(decryptString(cipher, credential.key));
   } catch {
-    return toolText(`The grill did not finish (${deps.requestId}). Write to support@grillyour.ai.`, true);
+    logHosted(deps.requestId, "job-decrypt");
+    return toolText("Grill couldn't read that stored result. Run the grill again to get a fresh one.", true);
   }
   const layer = layerFromStored(stored, detail);
   if (!layer.trim()) return toolText("That layer is not stored for this grill.", true);
@@ -977,7 +1067,10 @@ async function callDecided(args, account, deps) {
   const saved = ref ? rows.find((item) => matchesRef(item, ref)) : null;
   if (saved) {
     const parsed = parseRecords(saved.block)[0];
-    if (!parsed) return toolText(`The grill did not finish (${deps.requestId}). Write to support@grillyour.ai.`, true);
+    if (!parsed) {
+      logHosted(deps.requestId, "record-parse");
+      return toolText("That saved record couldn't be read, so nothing was changed. Open your decisions page to check it, or grill the decision again.", true);
+    }
     saved.block = recordBlock({ ...parsed, decided, confidence: confidence || parsed.confidence, prediction: prediction || parsed.prediction });
     saved.decided = decided;
     await writeRecord(account, deps, saved);
@@ -1064,6 +1157,7 @@ export async function handleMcp(request, deps) {
   const id = requestId();
   deps = { ...deps, requestId: id };
   if (!hostedEnabled(deps.env)) return notFound();
+  let toolCallId;
   try {
     const origin = publicOrigin(request);
     if (queryHasToken(pageUrl(request).href)) return unauthorized(origin);
@@ -1098,6 +1192,7 @@ export async function handleMcp(request, deps) {
       });
     }
     const rpcId = msg.id;
+    toolCallId = msg.method === "tools/call" ? rpcId : undefined;
     if (rpcId === undefined || rpcId === null) return new Response(null, { status: 202 });
     if (msg.method === "initialize") {
       return rpcResponse(
@@ -1126,7 +1221,7 @@ export async function handleMcp(request, deps) {
       else if (name === "grill_result") result = await callResult(args, account, deps);
       else if (name === "grill_look_back") result = await callLookBack(args, account, deps);
       else if (name === "grill_decided") result = await callDecided(args, account, deps);
-      else result = toolText(`Unknown tool: ${name}`, true);
+      else result = toolText(`Grill has no tool called ${JSON.stringify(String(name ?? ""))}. The tools are grill, grill_result, grill_look_back and grill_decided.`, true);
       return rpcResponse(rpcId, result, request);
     }
     return new Response(JSON.stringify({ jsonrpc: "2.0", id: rpcId, error: { code: -32601, message: `Method not found: ${msg.method}` } }), {
@@ -1134,10 +1229,27 @@ export async function handleMcp(request, deps) {
       headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   } catch (error) {
-    if (error instanceof Coded) logHosted(id, error.code);
-    else logHosted(id, "error");
-    return fixedError(id);
+    const code = error instanceof Coded ? error.code : "";
+    if (code) logHosted(id, code);
+    else logHosted(id, `error ${describeError(error)}`);
+    // Inside a tool call, answer as a tool result so the chat shows one plain sentence, not a failed request.
+    if (toolCallId !== undefined && toolCallId !== null) {
+      return rpcResponse(toolCallId, toolText(serviceFailureText(code, id), true), request);
+    }
+    return fixedError(id, 500, code);
   }
+}
+
+/**
+ * Error name and a clipped message for the server log only. Anything shaped like a
+ * key, token or long secret is cut before it is written. Never request or response bodies.
+ */
+export function describeError(error) {
+  const message = String(error?.message || "")
+    .replace(/(sk-[A-Za-z0-9_-]{8})[A-Za-z0-9_-]+/g, "$1…")
+    .replace(/[A-Za-z0-9+/_=-]{32,}/g, "<redacted>")
+    .slice(0, 160);
+  return `${error?.name || "Error"}/${error?.constructor?.name || "?"}: ${message}`;
 }
 
 export async function handleProtectedResource(request, deps) {
@@ -1145,7 +1257,11 @@ export async function handleProtectedResource(request, deps) {
   if (request.method === "DELETE") return methodNotAllowed();
   const origin = publicOrigin(request);
   const issuer = typeof deps.env.CLERK_ISSUER === "string" ? deps.env.CLERK_ISSUER.trim() : "";
-  if (!issuer) return fixedError(requestId());
+  if (!issuer) {
+    const id = requestId();
+    logHosted(id, "clerk-issuer");
+    return fixedError(id, 500, "clerk");
+  }
   return new Response(JSON.stringify(protectedResourceMetadata(origin, issuer)), {
     status: 200,
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
@@ -1328,6 +1444,9 @@ async function deleteAccount(account, deps) {
   for (const id of pendingIds) await deletePending(account, deps, id);
   await redis(deps, ["DEL", pendingIndex(account.id)]);
   await redis(deps, ["DEL", acctKey(account.id)]);
+  await redis(deps, ["DEL", spendLogKey(account.id)]);
+  await redis(deps, ["DEL", disclosedKey(account.id)]);
+  await redis(deps, ["DEL", recordKeyRedisKey(account.id)]);
   // A borrowing agent does not hold the cap, so their delete leaves the shared key and its index.
   if (!account.capFrom) {
     const indexEmail = account.human || account.email;
@@ -1375,9 +1494,10 @@ export async function handleDecisions(request, deps) {
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
     return html(200, renderDecisions(session.account, rows, credit));
   } catch (error) {
-    if (error instanceof Coded) logHosted(id, error.code);
-    else logHosted(id, "error");
-    return fixedError(id);
+    const code = error instanceof Coded ? error.code : "";
+    if (code) logHosted(id, code);
+    else logHosted(id, `error ${describeError(error)}`);
+    return fixedError(id, 500, code);
   }
 }
 
@@ -1408,9 +1528,10 @@ export async function handleAccount(request, deps) {
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
     return html(200, renderAccount(session.account, credit));
   } catch (error) {
-    if (error instanceof Coded) logHosted(id, error.code);
-    else logHosted(id, "error");
-    return fixedError(id);
+    const code = error instanceof Coded ? error.code : "";
+    if (code) logHosted(id, code);
+    else logHosted(id, `error ${describeError(error)}`);
+    return fixedError(id, 500, code);
   }
 }
 

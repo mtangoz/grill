@@ -1,6 +1,8 @@
 # Grill inside your chat
 
-Not live yet. The code is off unless `GRILL_HOSTED=on`. When it is on, it is invite-only: set `GRILL_HOSTED_ALLOWLIST` to the emails that may grill. Anyone else gets a short message and no grill.
+Not live yet. The code is off unless `GRILL_HOSTED=on`. When it is on, it is invite-only: set `GRILL_HOSTED_ALLOWLIST` to the emails that may grill. Anyone else gets a short message and no grill. Open sign-up is a separate switch, `GRILL_OPEN_SIGNUP=on`, and is off by default.
+
+Grill pays for the starter credit, so two hard monthly caps sit in front of every grill: one for the whole service and one per person. When either is reached, the grill does not run and the person gets one plain sentence saying the free grills for the month are used up and nothing was charged to them. Each person's router key is also hard-capped by the router itself.
 
 This is a connector, not the installed tool. The installed tool is unchanged: your key, on your computer, and the write-up goes only to the model router.
 
@@ -22,17 +24,22 @@ On the preview environment only, until the spike in [hosted-spike.md](hosted-spi
 | Variable | What it is |
 |---|---|
 | `GRILL_HOSTED` | `on` to serve `/mcp`, the sign-in metadata, `/decisions` and `/account`. Anything else, including unset, is a 404. |
-| `GRILL_HOSTED_ALLOWLIST` | Comma-separated emails. If unset, the list does not filter. Set it before anyone is invited. |
+| `GRILL_HOSTED_ALLOWLIST` | Comma-separated emails that may grill while sign-up is invite-only. If unset or empty, nobody is let in. |
+| `GRILL_OPEN_SIGNUP` | `on` lets any verified email grill, ignoring the list. Anything else, including unset, keeps it invite-only. Turn it on only with the caps below set. |
+| `GRILL_MONTHLY_CAP_USD` | Optional. Hard cap on what Grill pays for all hosted grills in a calendar month (UTC). Default `20`. `0` stops every grill. |
+| `GRILL_USER_MONTHLY_CAP_USD` | Optional. Hard cap per person per calendar month (UTC), keyed to a hash of the email the starter credit belongs to, so an agent shares its owner's cap. Default `1`. |
 | `CLERK_ISSUER` | Clerk Frontend API URL, no trailing slash. This is the authorization server in the protected-resource metadata. It does not serve the sign-in page. |
 | `CLERK_SIGN_IN_URL` | Optional. Absolute URL of the Clerk Account Portal sign-in page. When unset, Grill derives it from `CLERK_ISSUER`: `name.clerk.accounts.dev` becomes `https://name.accounts.dev/sign-in`, `name.clerk.accountsstage.dev` becomes `https://name.accountsstage.dev/sign-in`, and `clerk.example.com` becomes `https://accounts.example.com/sign-in`. Set this when the Frontend API host does not follow those shapes. |
 | `CLERK_JWKS_URL` | Optional. Defaults to `<CLERK_ISSUER>/.well-known/jwks.json`. |
 | `CLERK_SECRET_KEY` | Clerk secret key. Used to read the verified email, to read an AgentID access token when the sign-in is an agent, and to delete the user when they delete the account. |
 | `OPENROUTER_MANAGEMENT_KEY` | Creates one capped key per person. Never put this where a visitor can read it. |
 | `GRILL_STARTER_CREDIT_USD` | Optional. Hard limit on that key. Default `1.00`. No monthly reset. |
-| `UPSTASH_REDIS_REST_URL` | Redis for the account, the short-lived report, and the records. |
+| `UPSTASH_REDIS_REST_URL` | Redis for the account, the short-lived report, the records, and the spend counters for the caps. |
 | `UPSTASH_REDIS_REST_TOKEN` | Redis token. |
 | `GRILL_KEY_ENCRYPTION_KEY` | 32 bytes, base64. Encrypts the model-router key at rest. |
 | `GRILL_RECORD_KEY` | 32 bytes, base64. Wraps the per-person key that encrypts records. |
+
+The caps count each finished grill's cost in micro-dollars with atomic `INCRBY` counters. A grill that reports no cost counts as a typical grill ($0.03). A grill may start while spend is under the cap, so the last one can finish slightly over; the next one is stopped. Fields a running grill changes (its spend row, the once-only disclosure, the per-person record key) are written to their own keys with atomic commands, so two grills finishing at once cannot overwrite each other's account data.
 
 Generate the two encryption keys with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Store them as secrets. Losing `GRILL_RECORD_KEY` makes stored records unreadable. Rotating it needs a re-wrap, which this slice does not do.
 
