@@ -104,14 +104,20 @@ cpSync(join(ROOT, "site/brand"), join(OUT, "brand"), { recursive: true });
 cpSync(join(ROOT, "site/brand/favicon.ico"), join(OUT, "favicon.ico"));
 writeFileSync(join(OUT, "index.html"), doc(headFor({ description: DESCRIPTION, url: SITE_URL }), pageHead, homeBody));
 
-// Other pages (site/terms.html) are a <title> and a body; they borrow the main page's styles.
+// Other pages (site/terms.html, site/privacy.html) are a <title> and a body; they borrow the main page's styles.
 const style = pageHead.slice(pageHead.indexOf("<style>"));
-const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
-const termsTitle = terms.match(/^<title>[^<]*<\/title>/)?.[0];
-if (!termsTitle) throw new Error("site/terms.html must open with its <title>");
-mkdirSync(join(OUT, "terms"), { recursive: true });
-writeFileSync(
-  join(OUT, "terms", "index.html"),
-  doc(headFor({ description: "Grill Pro terms, in plain words.", url: `${SITE_URL}terms/` }), `${termsTitle}\n${style}`, terms.slice(termsTitle.length)),
-);
-console.log("built _site/index.html and _site/terms/index.html");
+const PAGES = [
+  { file: "terms", description: "Grill terms, in plain words." },
+  { file: "privacy", description: "What happens to your decision with Grill, in plain words." },
+];
+for (const { file, description } of PAGES) {
+  const source = readFileSync(join(ROOT, `site/${file}.html`), "utf8");
+  const title = source.match(/^<title>[^<]*<\/title>/)?.[0];
+  if (!title) throw new Error(`site/${file}.html must open with its <title>`);
+  mkdirSync(join(OUT, file), { recursive: true });
+  writeFileSync(
+    join(OUT, file, "index.html"),
+    doc(headFor({ description, url: `${SITE_URL}${file}/` }), `${title}\n${style}`, source.slice(title.length)),
+  );
+}
+console.log(`built _site/index.html and ${PAGES.map(({ file }) => `_site/${file}/index.html`).join(", ")}`);
