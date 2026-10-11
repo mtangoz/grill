@@ -5,6 +5,22 @@
   "description": "A second opinion on your decisions, from a different AI company.",
   "version": "0.1.1",
   "websiteUrl": "https://grillyour.ai",
+  "icons": [
+    {
+      "src": "https://grillyour.ai/brand/icon-512.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "512x512"
+      ]
+    },
+    {
+      "src": "https://grillyour.ai/brand/icon-192.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "192x192"
+      ]
+    }
+  ],
   "_meta": {
     "io.modelcontextprotocol.registry/publisher-provided": {
       "contactEmail": "support@grillyour.ai"

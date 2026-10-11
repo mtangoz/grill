@@ -2,6 +2,7 @@
   "manifest_version": "0.3",
   "name": "grill",
   "display_name": "Grill",
+  "icon": "icon.png",
   "version": "0.1.1",
   "license": "MIT",
   "description": "Grill your decisions: an outside AI judge from a different company than Claude argues the strongest case against a decision or forecast.",
