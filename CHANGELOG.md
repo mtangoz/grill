@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A layer that drops a clause no longer ends on a dangling dash, comma, colon, or semicolon. It keeps the previous full sentence, or closes the clause that remains.
 - In-chat Grill's decisions page has a "Your habits" section, which only you see. It shows how many grills you answered with a choice, how many are still waiting for one, how often you said how sure you were, how often you changed course, and how many look-backs you have done. It also gives one suggestion. It is worked out from the records already on that page each time you open it. Nothing new is stored, and the maintainers see nothing new.
 - In-chat Grill now keeps an approximate count of distinct active people per day, week and month, so the maintainers can see whether people come back. Each count is a HyperLogLog of a salted hash: it can't list who was counted and holds no email, account id or decision text. A failed count never blocks a grill. docs/DATA-LEDGER.md and docs/PRIVACY.md say so.
 - A quick take stays within about 50 words by ending on a whole sentence and one grammatical question. The longer note, the options, and the full note do the same: each ends on a whole sentence, and none is cut off mid-sentence.
