@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- A quick take stays within about 50 words by ending on a whole sentence and one grammatical question. It is no longer cut off mid-sentence.
+- A quick take stays within about 50 words by ending on a whole sentence and one grammatical question. The longer note, the options, and the full note do the same: each ends on a whole sentence, and none is cut off mid-sentence.
 - The site has a Contribute page, and the header and footer link to it. CONTRIBUTING.md covers local setup, tests, and pull requests, and says the privacy promise and the different-company judge are not negotiable. GitHub has forms for an idea and a bug report.
 - The privacy notes promise no ads, no selling your data, and no training on your decisions. Grill is paid for by subscriptions only.
 - New pitchfork logo on the site (favicon, home-screen icon, header and link previews), the README, the Claude Desktop extension, the MCP registry entry and the in-chat connector's server info.

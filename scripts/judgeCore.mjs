@@ -722,16 +722,16 @@ export const JUDGE_TOOL = Object.freeze({
               description:
                 "MANDATORY. The exact words you are attacking, quoted — from the subject, or for a loaded-framing challenge, from the question put to you. If you cannot quote it, you are attacking something that was not said — drop the challenge.",
             },
-            challenge: { type: "string", description: "The attack itself, in one to three sentences." },
+            challenge: { type: "string", description: "The attack itself, in one or two complete sentences." },
             what_would_have_to_be_true: {
               type: "string",
               description:
-                "MANDATORY. The premise the subject needs for its claim to survive this challenge, stated so a reader can go and check it.",
+                "MANDATORY. One complete sentence: the premise the subject needs for its claim to survive this challenge, stated so a reader can go and check it.",
             },
             falsifier: {
               type: "string",
               description:
-                "MANDATORY. The cheapest concrete thing that would settle this either way — a query to run, a document to read, a person to ask, a number to look up. Not 'more research'.",
+                "MANDATORY. One complete sentence: the cheapest concrete thing that would settle this either way — a query to run, a document to read, a person to ask, a number to look up. Not 'more research'.",
             },
             confidence: {
               type: "string",
@@ -766,7 +766,7 @@ export const JUDGE_TOOL = Object.freeze({
       strongest_objection: {
         type: "string",
         description:
-          "If the reader fixes exactly one thing, which one and why. Name it even when the verdict is \"holds\" — the weakest joint of a sound argument is still worth knowing.",
+          "One complete sentence. If the reader fixes exactly one thing, which one and why. Name it even when the verdict is \"holds\" — the weakest joint of a sound argument is still worth knowing.",
       },
       needs_facts: {
         type: "boolean",
@@ -1066,6 +1066,7 @@ export function buildJudgeMessages({ subject, question = "", contextBlocks = [],
     "5. Make every challenge settleable. Name the premise that has to hold, and name the cheapest concrete thing that would settle it either way.",
     "6. Judge the whole on weight, not on count. One fatal challenge refutes; ten minor ones do not. Then swap sides: had someone who chose the other way written up the same facts, would your verdict be the same? If not, the framing is deciding it — decide again from the facts.",
     "7. If the subject is thin — a template of blanks, a title, or a line with almost no facts — set needs_facts to true. Still return a provisional verdict and one complete verdict_reason sentence of at most 20 words. Do not refuse, and do not scold the person for a short note. Put one grammatical question of at most 15 words, ending in a question mark, first in facts_needed: the single fact that would most change the answer. At most one more fact. Still name up to two challenges, each with a cheap test, and a missing_option when one would change the decision. If an option the subject never named would change the decision, put that option in missing_option. Otherwise set missing_option to an empty string.",
+    "8. Finish every sentence. A challenge, its falsifier, the verdict reason, the strongest objection, a missing option, and a fact that would flip the call are each one or two complete sentences. Do not stop mid-sentence.",
     "",
     "Grade severity against the decision, not the finish of the plan. Every plan can be tightened, so a way to improve it is not, by itself, a reason to doubt the choice. Serious means that, if the challenge is right, the case no longer shows the chosen option beats the alternatives, or the chosen option must become a different plan; an unsupported claim or an overreach is serious when, without it, a rejected option looks as good or better, and moderate when the choice still stands without it. Moderate means the choice stands once a condition is met, a check is added, or a detail is fixed in place, including a test, threshold or sample size that needs fixing and makes no rejected option look better. A risk the subject names, with a test that would reveal it or a way back, is not a hidden one: judge whether the test and the way back work, not whether the risk exists. A test or a way back that needs fixing is a moderate challenge that says how to fix it; only one that cannot be made to work at all is serious. The scale, on an unrelated decision (renewing a support contract for a year rather than going month to month): fatal, the contract's own terms exclude the system it is meant to cover; serious, the annual price assumes last year's usage, usage has already doubled, and the comparison with month to month has to be redone before the choice can be made; moderate, the write-up reviews response times each quarter, and a monthly look would catch a slide sooner; minor, a figure is quoted without its date.",
     "",
@@ -1316,16 +1317,6 @@ export function countWords(text) {
     .filter(Boolean).length;
 }
 
-function clipWords(text, max) {
-  const words = String(text || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(" ")
-    .filter(Boolean);
-  if (words.length <= max) return words.join(" ");
-  return `${words.slice(0, max).join(" ")}…`;
-}
-
 /**
  * A blank template, or a one-liner with almost no facts.
  * "drop the free tier?" is thin. A line that already names a fact
@@ -1352,7 +1343,7 @@ function verdictLabel(result) {
 
 function verdictSentence(result, reasonWords = 14) {
   const label = verdictLabel(result);
-  const reason = clipWords(String(result?.verdictReason || "").replace(/\?/g, ""), reasonWords);
+  const reason = sentenceWithin(String(result?.verdictReason || "").replace(/\?/g, ""), reasonWords);
   if (!label) return reason ? `**Quick read.** ${reason}` : "**No verdict.** The judge did not judge the decision.";
   return reason ? `**${label}.** ${reason}` : `**${label}.**`;
 }
@@ -1374,22 +1365,19 @@ function factList(result) {
 
 function missingOptionLine(result, max = 16) {
   const explicit = String(result?.missingOption || "").trim();
-  if (explicit && !/^none\b/i.test(explicit)) return clipWords(explicit, max);
+  if (explicit && !/^none\b/i.test(explicit)) return sentenceWithin(explicit, max);
   const simpler = challengeList(result).find((row) => row?.kind === "simpler-path-ignored");
-  return simpler?.challenge ? clipWords(simpler.challenge, max) : "";
-}
-
-function fitBudget(text, budget) {
-  const body = String(text || "").replace(/\s+/g, " ").trim();
-  if (countWords(body) <= budget) return body;
-  const words = body.split(/\s+/);
-  return `${words.slice(0, budget).join(" ")}…`;
+  return simpler?.challenge ? sentenceWithin(simpler.challenge, max) : "";
 }
 
 function sentence(text) {
-  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  const clean = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/(?:\.{3}|…)+$/g, "")
+    .trim();
   if (!clean) return "";
-  return /[.?!…]$/.test(clean) ? clean : `${clean}.`;
+  return /[.?!]$/.test(clean) ? clean : `${clean}.`;
 }
 
 function endsSentence(text) {
@@ -1415,16 +1403,37 @@ function takeCompleteSentences(text, maxWords) {
   return kept.join(" ");
 }
 
+function closeClause(cut, maxWords) {
+  if (!cut) return "";
+  const done = endsSentence(cut) ? cut : `${cut}.`;
+  return countWords(done) <= maxWords ? done : "";
+}
+
 /** When the first sentence is too long, keep its opening clause and close it. */
 function openingClause(text, maxWords) {
   const clean = String(text || "")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[.!?]+$/, "");
-  const cut = clean.split(/\s*;\s*|\s*,\s+but\s+|\s+but\s+/i)[0]?.trim() ?? "";
-  if (!cut || cut.toLowerCase() === clean.toLowerCase()) return "";
-  const done = endsSentence(cut) ? cut : `${cut}.`;
-  return countWords(done) <= maxWords ? done : "";
+  if (!clean || maxWords <= 0) return "";
+  const marked = clean.split(/\s*;\s*|\s*,\s+but\s+|\s+but\s+/i)[0]?.trim() ?? "";
+  const broke = marked && marked.toLowerCase() !== clean.toLowerCase();
+  const head = broke ? marked : clean;
+  if (broke) {
+    const closed = closeClause(head, maxWords);
+    if (closed) return closed;
+  }
+  const bits = head.split(/,\s+/);
+  if (bits.length < 2) return "";
+  let acc = "";
+  let best = "";
+  for (let i = 0; i < bits.length - 1; i++) {
+    const next = acc ? `${acc}, ${bits[i]}` : bits[i];
+    if (countWords(`${next}.`) > maxWords) break;
+    acc = next;
+    if (countWords(next) >= 3) best = next;
+  }
+  return closeClause(best, maxWords);
 }
 
 /** Whole sentences inside the cap. Empty when no complete sentence fits. */
@@ -1435,20 +1444,26 @@ function sentenceWithin(text, maxWords) {
   return takeCompleteSentences(clean, maxWords) || openingClause(clean, maxWords);
 }
 
-/** Add judge sentences until the layer is in range, then stop. Never past the cap. */
-function joinToRange(parts, min, max) {
+/**
+ * Add judge sentences until the layer is in range, then stop. Never past the cap, and never
+ * by cutting a sentence. `min` is the length we would like; a shorter complete note is kept.
+ */
+function joinToRange(parts, _min, max) {
   const clean = parts.map((part) => String(part || "").replace(/\s+/g, " ").trim()).filter(Boolean);
   const kept = [];
   for (const part of clean) {
-    const candidate = [...kept, part].join(" ");
-    if (countWords(candidate) > max) {
-      if (countWords(kept.join(" ")) >= min) break;
-      return fitBudget(candidate, max);
+    const soFar = kept.join(" ");
+    const candidate = [soFar, part].filter(Boolean).join(" ");
+    if (countWords(candidate) <= max) {
+      kept.push(part);
+      continue;
     }
-    kept.push(part);
+    const room = max - countWords(soFar);
+    const shortened = sentenceWithin(part, room);
+    if (shortened) kept.push(shortened);
+    break;
   }
-  const text = kept.join(" ");
-  return countWords(text) > max ? fitBudget(text, max) : text;
+  return kept.join(" ");
 }
 
 function withClosing(body) {
@@ -1464,7 +1479,9 @@ function choiceLabel(subject) {
     .filter(Boolean)[0];
   const bare = String(line || "this").replace(/^(?:the )?decision:\s*/i, "");
   const first = bare.split(/(?<=[.?!])\s+/)[0] || bare;
-  return clipWords(first, 10);
+  const taken = sentenceWithin(first, 12);
+  const label = (taken || "this").replace(/[.!?]+$/, "").trim();
+  return label || "this";
 }
 
 function lowerFirst(text) {
@@ -1547,13 +1564,13 @@ function renderBrief(result, subject) {
   const degraded = Array.isArray(result?.degraded) && result.degraded.length > 0;
   const prefix = degraded ? "Not a clean review." : "";
   if (isThinGrill(result, subject)) return withClosing(thinLayer(result, prefix));
-  const missing = sentenceWithin(explicitMissing(result), 16);
+  const missing = sentenceWithin(explicitMissing(result), 40);
   const top = challengeList(result)[0];
   const sharp = missing
     ? `Missing: ${missing}`
-    : `Risk: ${sentenceWithin(top?.challenge || result?.strongestObjection || "the case does not establish the call", 14) || "the case does not establish the call."}`;
-  const test = sentenceWithin(top?.falsifier || "Name the cheapest check that would settle it.", 14) || "Name the cheapest check that would settle it.";
-  const reason = sentenceWithin(String(result?.verdictReason || "").replace(/\?/g, ""), 20);
+    : `Risk: ${sentenceWithin(top?.challenge || result?.strongestObjection || "", 40) || "the case does not establish the call."}`;
+  const test = sentenceWithin(top?.falsifier || "", 40) || "Name the cheapest check that would settle it.";
+  const reason = sentenceWithin(String(result?.verdictReason || "").replace(/\?/g, ""), 40);
   const label = verdictLabel(result);
   const verdict = label
     ? reason
@@ -1585,37 +1602,60 @@ function flipFacts(result) {
   return out;
 }
 
+const SPLIT_QUESTION = "Would it still be right if the cheap test came back the other way?";
+
+function bounded(text, maxWords, fallback = "") {
+  const taken = sentenceWithin(text, maxWords);
+  if (taken) return sentence(taken);
+  return fallback ? sentence(fallback) : "";
+}
+
+function prefixed(prefix, text, maxWords, fallback = "") {
+  const body = bounded(text, maxWords, fallback);
+  return body ? `${prefix} ${body}` : "";
+}
+
+function optionsSplit(splitSource) {
+  const raw = String(splitSource || "").replace(/\s+/g, " ").trim();
+  if (!raw) return SPLIT_QUESTION;
+  if (raw.endsWith("?")) return grammaticalQuestion(raw, 22) || SPLIT_QUESTION;
+  const clause = sentenceWithin(raw.replace(/[?.]+$/, ""), 14);
+  if (!clause) return SPLIT_QUESTION;
+  const question = `Would it still be right if ${lowerFirst(clause.replace(/[.]+$/, ""))}?`;
+  return countWords(question) <= 28 ? question : SPLIT_QUESTION;
+}
+
 function renderMore(result) {
   const list = challengeList(result);
   const second = list[1] || list[0];
   const facts = flipFacts(result);
   const counter = String(result?.counterSteelman || "").trim();
   const parts = [
-    second?.challenge ? `The next challenge: ${sentence(clipWords(second.challenge, 28))}` : "The next challenge was not named.",
-    `Cheap test: ${sentence(clipWords(second?.falsifier || "Name the cheapest check.", 18))}`,
-    facts[0] ? `What would flip the call: ${sentence(clipWords(facts[0], 20))}` : "",
-    facts[1] ? sentence(clipWords(facts[1], 20)) : "",
-    result?.strongestObjection ? `The weakest joint: ${sentence(clipWords(result.strongestObjection, 18))}` : "",
-    counter && !/^none\b/i.test(counter) ? `The other side: ${sentence(clipWords(counter, 16))}` : "",
+    second?.challenge
+      ? prefixed("The next challenge:", second.challenge, 40, "It was not stated in one sentence.")
+      : "The next challenge was not named.",
+    prefixed("Cheap test:", second?.falsifier, 40, "Name the cheapest check."),
+    facts[0] ? prefixed("What would flip the call:", facts[0], 40) : "",
+    facts[1] ? bounded(facts[1], 40) : "",
+    result?.strongestObjection ? prefixed("The weakest joint:", result.strongestObjection, 40) : "",
+    counter && !/^none\b/i.test(counter) ? prefixed("The other side:", counter, 40) : "",
   ];
   return joinToRange(parts, 60, LAYER2_WORD_BUDGET);
 }
 
 function renderOptions(result, subject) {
-  const otherRaw = missingOptionLine(result, 18) || clipWords(String(result?.counterSteelman || "").replace(/^none\b.*/i, "") || "leave it as it is", 14);
-  const splitSource = factList(result)[0] || challengeList(result)[0]?.what_would_have_to_be_true || "the cheap test came back the other way";
-  const split = String(splitSource).trim().endsWith("?")
-    ? oneQuestion({ factsNeeded: [splitSource] })
-    : `Would it still be right if ${lowerFirst(clipWords(String(splitSource).replace(/[?.]+$/, ""), 14))}?`;
-  const test = clipWords(challengeList(result)[0]?.falsifier || "the cheap test", 14).replace(/[.]+$/, "");
   const counter = String(result?.counterSteelman || "").trim();
+  const counterBody = counter.replace(/^none\b.*/i, "").trim();
+  const otherRaw = missingOptionLine(result, 40) || sentenceWithin(counterBody, 40) || "leave it as it is.";
+  const splitSource = factList(result)[0] || challengeList(result)[0]?.what_would_have_to_be_true || "";
+  const test = (sentenceWithin(challengeList(result)[0]?.falsifier || "", 40) || "the cheap test").replace(/[.]+$/, "");
   const choice = choiceLabel(subject).replace(/[.?]+$/, "");
   const parts = [
     `Side by side: ${choice}, or ${sentence(lowerFirst(otherRaw))}`,
-    `The question that splits them: ${split}`,
+    `The question that splits them: ${optionsSplit(splitSource)}`,
     `Rule: change the plan if this check shows the risk is real: ${test}. If it does not, the call can stand.`,
-    challengeList(result)[1]?.falsifier ? `The other check: ${sentence(clipWords(challengeList(result)[1].falsifier, 16))}` : "",
-    counter && !/^none\b/i.test(counter) ? `The other side: ${sentence(clipWords(counter, 16))}` : "",
+    challengeList(result)[1]?.falsifier ? prefixed("The other check:", challengeList(result)[1].falsifier, 40) : "",
+    counter && !/^none\b/i.test(counter) ? prefixed("The other side:", counter, 40) : "",
   ];
   return joinToRange(parts, 60, LAYER2_WORD_BUDGET);
 }
@@ -1627,15 +1667,19 @@ function renderFull(result, subject) {
   } else {
     lines.push(verdictSentence(result, 40));
   }
-  const missing = missingOptionLine(result, 40);
-  if (missing) lines.push(`Missing: ${missing}`);
+  const missing = missingOptionLine(result, 80);
+  if (missing) lines.push(`Missing: ${sentence(missing)}`);
   challengeList(result)
     .slice(0, 4)
     .forEach((row, index) => {
-      lines.push(`${index + 1}. ${sentence(clipWords(row.challenge || "A challenge.", 40))} Cheap test: ${sentence(clipWords(row.falsifier || "Name the cheapest check.", 24))}`);
+      const attack = bounded(row.challenge, 80, "A challenge was named.");
+      const check = bounded(row.falsifier, 80, "Name the cheapest check.");
+      lines.push(`${index + 1}. ${attack} Cheap test: ${check}`);
     });
-  const facts = factList(result);
-  if (facts.length) lines.push(`What would flip the call: ${facts.map((fact) => sentence(clipWords(fact, 24))).join(" ")}`);
+  const facts = factList(result)
+    .map((fact) => bounded(fact, 80))
+    .filter((fact) => fact && fact !== ".");
+  if (facts.length) lines.push(`What would flip the call: ${facts.join(" ")}`);
   return lines.join("\n\n");
 }
 

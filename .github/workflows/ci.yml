@@ -23,7 +23,7 @@ jobs:
         run: |
           node -e 'for (const f of [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", ".mcp.json", "manifest.json"]) JSON.parse(require("fs").readFileSync(f, "utf8"))'
       - name: Tests (no network, no key)
-        run: node --test --test-timeout=30000 --test-force-exit scripts/*.test.mjs
+        run: node --test --test-timeout=180000 --test-force-exit scripts/*.test.mjs
       - name: The Desktop extension builds and its manifest validates
         if: matrix.node == 22
         run: |

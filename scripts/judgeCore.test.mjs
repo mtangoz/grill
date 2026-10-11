@@ -1382,6 +1382,50 @@ describe("the note a person reads", () => {
     assert.match(settled, /[.!?]\n\nSay 'more', 'options', or your call\.$/);
   });
 
+  it("ends every layer on a full sentence and never hard-truncates with an ellipsis", () => {
+    const runOn = Array.from({ length: 90 }, (_, i) => `w${i + 1}`).join(" ");
+    const clause =
+      "The evidence-first sequencing is sound and no fatal flaw appears, but the twenty dollar overall cap is in direct tension with the one dollar per-user cap when both can bind in the same month and nobody has said which unit they use or when the window resets.";
+    const question =
+      "What the twenty dollar overall and one dollar per-user caps are denominated in, over what window, and do they reset each month?";
+    const result = {
+      verdict: "weak",
+      verdictReason: clause,
+      counterSteelman: runOn,
+      missingOption: runOn,
+      strongestObjection: runOn,
+      factsNeeded: [question, runOn],
+      challenges: [
+        { challenge: runOn, falsifier: runOn, what_would_have_to_be_true: runOn },
+        { challenge: clause, falsifier: clause, what_would_have_to_be_true: "Free accounts cost more to support than they ever pay." },
+      ],
+    };
+    const subject = "We will cap hosted spend at twenty dollars overall and one dollar per person each month, counted before the judge runs.";
+    const layers = renderLayers(result, { subject });
+    const whole = (name, text) => {
+      assert.doesNotMatch(text, /…|\.\.\./, name);
+      const paras = String(text).split(/\n+/).map((para) => para.trim()).filter(Boolean);
+      assert.ok(paras.length > 0, name);
+      for (const para of paras) assert.match(para, /[.!?]["']?$/, `${name}: ${para}`);
+    };
+    whole("brief", layers.brief);
+    whole("more", layers.more);
+    whole("options", layers.options);
+    whole("full", layers.full);
+    assert.ok(countWords(layers.brief) <= LAYER1_WORD_BUDGET, `${countWords(layers.brief)}: ${layers.brief}`);
+    assert.ok(countWords(layers.more) <= LAYER2_WORD_BUDGET, `${countWords(layers.more)}: ${layers.more}`);
+    assert.ok(countWords(layers.options) <= LAYER2_WORD_BUDGET, `${countWords(layers.options)}: ${layers.options}`);
+    assert.match(layers.brief, /[.!?]\n\nSay 'more', 'options', or your call\.$/);
+    assert.match(layers.more, /appears\./);
+    assert.doesNotMatch(layers.more, /in direct/);
+    assert.match(layers.options, /\?/);
+    assert.doesNotMatch(layers.options, /,\s*\?/);
+    assert.match(layers.full, /when the window resets\./);
+    for (const [name, text] of Object.entries(layers)) {
+      assert.doesNotMatch(text, /\bw90\b/, `${name} kept a clipped run-on: ${text}`);
+    }
+  });
+
   it("the scope guard is the shared sentence", () => {
     assert.match(SCOPE_GUARD, /no code changes, no PRs, no product questions/);
     assert.match(SCOPE_GUARD, /Grill's job ends at the verdict and the record/);
