@@ -49,6 +49,7 @@ import {
   capBlock,
   chargeableUsd,
   chainIds,
+  decisionHabits,
   decryptString,
   encryptString,
   hostedEnabled,
@@ -1382,7 +1383,18 @@ function chainNote(row, byId) {
   return parts.join(" ");
 }
 
-function renderDecisions(account, rows, credit) {
+function renderHabits(habits) {
+  if (!habits || habits.decided + habits.waiting === 0) return "";
+  const h = habits;
+  return `<section class="banner">
+    <h2>Your habits</h2>
+    <p>Only you see this. It is worked out from the records on this page each time you open it, and is not stored.</p>
+    <p>Grills you answered with a choice: ${h.decided}. Waiting for your choice: ${h.waiting} (these expire after 14 days). Said how sure you were: ${h.withConfidence} of ${h.decided}. Changed course on an earlier call: ${h.changedCourse}. Look-backs done: ${h.lookedBack} of ${h.due} due.</p>
+    ${h.prompt ? `<p>${esc(h.prompt)}</p>` : ""}
+  </section>`;
+}
+
+function renderDecisions(account, rows, credit, habits) {
   const linked = linkChains(rows);
   const byId = new Map(linked.map((row) => [row.id, row]));
   const cards = [...linked].reverse().map((row) => {
@@ -1410,6 +1422,7 @@ function renderDecisions(account, rows, credit) {
       <button type="submit" name="value" value="off">Don't keep records</button>
     </form>
     <p class="row"><a class="button" href="/decisions?export=text">Export as text</a> <a class="button" href="/decisions?export=json">Export as JSON</a> <a href="/account">Account</a></p>
+    ${renderHabits(habits)}
     ${cards.join("\n") || "<p>No records yet.</p>"}
     <form method="post" action="/decisions"><input type="hidden" name="action" value="delete-all"><input type="hidden" name="confirm" value="delete"><button type="submit">Delete all records</button></form>`,
   );
@@ -1545,7 +1558,9 @@ export async function handleDecisions(request, deps) {
     }
     const rows = await loadRecords(session.account, deps);
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
-    return html(200, renderDecisions(session.account, rows, credit));
+    const waiting = (await loadPendings(session.account, deps)).length;
+    const habits = decisionHabits({ records: rows, waiting, now: typeof deps.now === "number" ? deps.now : Date.now() });
+    return html(200, renderDecisions(session.account, rows, credit, habits));
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);

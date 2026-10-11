@@ -32,6 +32,7 @@ The decision, as you stated it, passes through Grill's server in memory. It is n
 
 - The write-up is not logged, and not stored.
 - A token in the query string is rejected. Grill reads a bearer token from the header only.
+- The "Your habits" section on `/decisions` is worked out from that person's own records and drafts each time the page loads. It is not stored, not logged and not counted, and only that person sees it.
 - Account pages load no analytics script. The website's visit counter is not on `/decisions` or `/account`.
 - The judge is not the host chat's model. The request is `openrouter/auto`, with one company excluded, and no pinned model list.
 - Records you did not agree to keep are not written. A record is not written until you state a choice. If you never answer, the draft expires and no look-back is scheduled.
