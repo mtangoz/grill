@@ -1,4 +1,4 @@
-# 🔥 Grill
+# <img src="https://raw.githubusercontent.com/mtangoz/grill/main/site/brand/logo-256.png" alt="" width="40" height="40" align="top"> Grill
 
 **Hear the strongest case against your plan, then decide for yourself.**
 

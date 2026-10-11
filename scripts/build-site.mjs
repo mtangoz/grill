@@ -8,7 +8,7 @@
  *
  *   node scripts/build-site.mjs        # writes _site/index.html
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { billingMode, couponId, starterAllowanceUsd } from "../api/_pro.mjs";
@@ -19,13 +19,13 @@ const OUT = join(ROOT, "_site");
 const SITE_URL = "https://grillyour.ai/";
 const DESCRIPTION =
   "Get a second opinion before you decide. A different AI finds the weak spots in your plan, with a quick way to check each one. Works with ChatGPT, Claude, Gemini and more.";
-// The verdict scale's dot, ink on paper, inverted when the device is dark.
-const FAVICON =
-  "data:image/svg+xml," +
-  encodeURIComponent(
-    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><style>circle{fill:#1c1b19}" +
-      "@media (prefers-color-scheme:dark){circle{fill:#ece7df}}</style><circle cx='16' cy='16' r='9'/></svg>",
-  );
+// The pitchfork mark. Sizes are generated from the owner's logo into site/brand/ and copied to _site/brand/.
+const ICONS = [
+  '<link rel="icon" href="/favicon.ico" sizes="any">',
+  '<link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png">',
+  '<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">',
+];
+const OG_IMAGE = `${SITE_URL}brand/og-image.png`;
 
 // Cookieless page counts for the website only. Not added to site/page.html itself: that file is also
 // published as a Claude artifact, and the Grill tool never loads this script.
@@ -41,14 +41,19 @@ const headFor = ({ description, url }) => [
   '<meta name="color-scheme" content="light dark">',
   '<meta name="theme-color" content="#f7f4ef" media="(prefers-color-scheme: light)">',
   '<meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">',
-  `<link rel="icon" href="${FAVICON}">`,
+  ...ICONS,
   `<meta name="description" content="${description}">`,
   `<link rel="canonical" href="${url}">`,
   `<meta property="og:url" content="${url}">`,
   '<meta property="og:title" content="Grill">',
   `<meta property="og:description" content="${description}">`,
   '<meta property="og:type" content="website">',
-  '<meta name="twitter:card" content="summary">',
+  `<meta property="og:image" content="${OG_IMAGE}">`,
+  '<meta property="og:image:width" content="1200">',
+  '<meta property="og:image:height" content="630">',
+  '<meta property="og:image:alt" content="Grill: a pitchfork mark and the words A second opinion before you decide.">',
+  '<meta name="twitter:card" content="summary_large_image">',
+  `<meta name="twitter:image" content="${OG_IMAGE}">`,
   "<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>",
 ].join("\n");
 
@@ -95,6 +100,8 @@ if (notifyOn(process.env)) {
 }
 
 mkdirSync(OUT, { recursive: true });
+cpSync(join(ROOT, "site/brand"), join(OUT, "brand"), { recursive: true });
+cpSync(join(ROOT, "site/brand/favicon.ico"), join(OUT, "favicon.ico"));
 writeFileSync(join(OUT, "index.html"), doc(headFor({ description: DESCRIPTION, url: SITE_URL }), pageHead, homeBody));
 
 // Other pages (site/terms.html) are a <title> and a body; they borrow the main page's styles.

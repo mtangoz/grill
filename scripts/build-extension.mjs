@@ -27,5 +27,7 @@ for (const file of FILES) {
   mkdirSync(dirname(join(OUT, file)), { recursive: true });
   cpSync(join(ROOT, file), join(OUT, file));
 }
+// The extension's icon, named in manifest.json as icon.png.
+cpSync(join(ROOT, "site/brand/icon-512.png"), join(OUT, "icon.png"));
 stampReleaseDateFile(join(OUT, "server/index.mjs"));
 console.log(`staged ${FILES.length} files in dist/extension`);

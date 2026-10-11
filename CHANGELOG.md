@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New pitchfork logo on the site (favicon, home-screen icon, header and link previews), the README, the Claude Desktop extension, the MCP registry entry and the in-chat connector's server info.
 - A grill opens with about 50 words: a verdict line, the sharpest point, and one cheap test. Say more, options, or your call for the next layer. A thin line gets a quick take and one question, and it can still be saved. The first-use disclosure is one line with a link to the privacy page. After a grill, the assistant does not start doing the decision unless you ask.
 - The mission and vision say Grill is for stronger judgement: a different company's AI argues the other side, the person decides, and a later look-back shows how that judgement did, including when to change course. The lead line is "Hear the strongest case against your plan, then decide for yourself."
 - Evidenced look-backs are reported beside the 100 real users, and never added to that count. The count is public signal issues with Event `resolved`, plus outreach replies that confirm a look-back. No new tracking.

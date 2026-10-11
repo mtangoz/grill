@@ -128,6 +128,15 @@ function unauthorized(origin) {
   });
 }
 
+/** MCP Implementation.icons: the pitchfork mark, served from this same site. */
+function serverIcons(origin) {
+  return [
+    { src: `${origin}/brand/icon-512.png`, mimeType: "image/png", sizes: ["512x512"] },
+    { src: `${origin}/brand/icon-192.png`, mimeType: "image/png", sizes: ["192x192"] },
+    { src: `${origin}/brand/favicon-32.png`, mimeType: "image/png", sizes: ["32x32"] },
+  ];
+}
+
 function methodNotAllowed() {
   return new Response("That request isn't supported.", {
     status: 405,
@@ -1105,7 +1114,7 @@ export async function handleMcp(request, deps) {
         {
           protocolVersion: negotiateProtocol(msg.params?.protocolVersion),
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: "grill", title: "Grill", version: VERSION },
+          serverInfo: { name: "grill", title: "Grill", version: VERSION, websiteUrl: origin, icons: serverIcons(origin) },
           instructions: HOSTED_INSTRUCTIONS,
         },
         request,
