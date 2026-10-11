@@ -1,0 +1,41 @@
+<title>Grill privacy</title>
+<main id="top">
+  <div class="top"><a class="mark" href="/">grill</a></div>
+
+  <h1>Grill privacy</h1>
+  <p class="lede">What happens to your decision, in plain words. Last updated 10 October 2026.</p>
+
+  <h2>The short version</h2>
+  <ul class="note">
+    <li>No ads. No selling your data. No training on your decisions. Grill is paid for by subscriptions only.</li>
+    <li>Grill sends the decision you approve to an outside AI judge, from a different company than the assistant you use, on endpoints that don’t keep it.</li>
+    <li>Email addresses, phone numbers and card numbers are hidden before anything is sent. If Grill spots a password, key or token, it stops and sends nothing.</li>
+    <li>Grill gets better by practicing on made-up examples, never on your decisions.</li>
+    <li>You decide. Grill advises and never acts on a verdict.</li>
+  </ul>
+
+  <h2>The free tool</h2>
+  <p class="note">The installed tool, the skill and the copy-and-paste prompt have no account, and Grill keeps nothing. The write-up goes from your computer to the model router and the judge, on your own key, or stays in the AI you paste it into. Anonymous usage stats are off unless you turn them on, and never include decision words.</p>
+
+  <h2>Grill inside your chat</h2>
+  <p class="note">The connector at <code>grillyour.ai/mcp</code> is invite-only for now. It needs a sign-in (through Clerk: Google, an emailed code, or AgentID for an agent).</p>
+  <ul class="note">
+    <li><strong>Your decision</strong> passes through Grill’s server in memory for the length of the grill. It is never logged or stored.</li>
+    <li><strong>The note you see</strong> is kept encrypted for at most 15 minutes, so a follow-up doesn’t need a second judge call. The key to read it is held only by your chat.</li>
+    <li><strong>Decision records</strong> are kept only if you say yes, only after you state a choice, and encrypted. You can export or delete one, a chain, or all of them, from your decisions page.</li>
+    <li><strong>What we keep about you:</strong> your verified email, a model-router key Grill holds for you (encrypted, never shown), the cost, time and model of each grill, and numeric counters for the daily and monthly limits. Never the words of a decision outside records you chose to keep.</li>
+    <li><strong>Who could read records:</strong> Grill’s operators hold the encryption keys, so they could decrypt records you chose to keep. We don’t, and we’ll say so if you ask.</li>
+    <li><strong>Deleting your account</strong> removes your records, switches off the router key, and deletes the sign-in. A monthly spend counter, keyed to a one-way hash of your email and holding only a number, expires on its own within about 40 days.</li>
+  </ul>
+
+  <h2>This website</h2>
+  <p class="note">This website counts visits anonymously, with no cookies and nothing that identifies you. If you join the Pro launch list, we keep your email address, and only that, in Resend until Pro launches, and you can unsubscribe with one click.</p>
+
+  <h2>Who handles your data</h2>
+  <p class="note">OpenRouter (the model router), the judge’s model provider on zero-retention endpoints, TypeSafe for the optional quality check, Clerk for sign-in, Upstash for the encrypted store, Vercel for hosting and anonymous visit counts, and Resend only if you join the launch list. The full list, with what each one sees and how long anything stays, is in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a> and the <a href="https://github.com/mtangoz/grill/blob/main/docs/DATA-LEDGER.md">data ledger</a>. Grill is open source, so you can check every promise against the code.</p>
+
+  <h2>Questions or deletion</h2>
+  <p class="note">Write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>. You can also delete your in-chat account yourself from the account page.</p>
+
+  <div class="footer"><span>Made at <a href="https://hold.quest">Hold</a></span><span><a href="/terms/">Terms</a> · <a href="/">Back to Grill</a></span></div>
+</main>

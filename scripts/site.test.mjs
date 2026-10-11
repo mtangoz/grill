@@ -205,6 +205,15 @@ describe("the terms page", () => {
     assert.doesNotMatch(readFileSync(join(ROOT, "SECURITY.md"), "utf8"), /hello@/);
     assert.doesNotMatch(readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8"), /hello@/);
     assert.ok(!terms.includes("—"), "no em dashes");
+    assert.match(terms, /<h2>Grill inside your chat<\/h2>/);
+    assert.match(terms, /Nothing is charged to you/);
+    assert.match(terms, /Grill advises, you decide/);
+    const privacySrc = readFileSync(join(ROOT, "site/privacy.html"), "utf8");
+    assert.match(privacySrc, /No ads\. No selling your data\. No training on your decisions\. Grill is paid for by subscriptions only\./);
+    assert.match(privacySrc, /passes through Grill’s server in memory for the length of the grill\. It is never logged or stored\./);
+    assert.match(page, /No ads\. No selling your data\. No training on your decisions\. Grill is paid for by subscriptions only\./);
+    assert.ok(privacySrc.includes("This website counts visits anonymously, with no cookies and nothing that identifies you."));
+    assert.ok(!privacySrc.includes("—"), "no em dashes");
     assert.ok(!page.includes("—"), "no em dashes");
   });
 });
@@ -224,13 +233,17 @@ describe("the site build", () => {
     assert.match(head, /--paper:/);
     assert.match(rest, /<body>[\s\S]*id="setup"/);
     const terms = readFileSync(join(ROOT, "_site/terms/index.html"), "utf8");
-    assert.match(terms, /<title>Grill Pro terms<\/title>/);
+    assert.match(terms, /<title>Grill terms<\/title>/);
     assert.match(terms, /<link rel="canonical" href="https:\/\/grillyour\.ai\/terms\/">/);
     assert.match(terms, /--paper:/, "the terms page borrows the site's styles");
     const snippet = '<script defer src="/_vercel/insights/script.js"></script>';
     assert.ok(html.includes("window.va"), "the home page counts visits");
     assert.ok(html.includes(snippet));
     assert.ok(terms.includes(snippet), "the terms page counts visits");
+    const privacyPage = readFileSync(join(ROOT, "_site/privacy/index.html"), "utf8");
+    assert.match(privacyPage, /<title>Grill privacy<\/title>/);
+    assert.match(privacyPage, /<link rel="canonical" href="https:\/\/grillyour\.ai\/privacy\/">/);
+    assert.match(privacyPage, /never logged or stored/);
     assert.ok(!page.includes(snippet), "the artifact source does not count visits");
     assert.ok(!readFileSync(join(ROOT, "site/terms.html"), "utf8").includes(snippet));
     for (const f of ["server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/build-extension.mjs"]) {
