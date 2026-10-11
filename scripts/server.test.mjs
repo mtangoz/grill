@@ -34,6 +34,7 @@ function connect(env) {
   const notifications = [];
   let buffer = "";
   let transcript = "";
+  child.stderr.on("data", () => {});
   child.stdout.on("data", (chunk) => {
     transcript += chunk;
     buffer += chunk;
@@ -52,20 +53,46 @@ function connect(env) {
   });
   let nextId = 1;
   const request = (method, params) =>
-    new Promise((resolve) => {
+    new Promise((resolve, reject) => {
       const id = nextId++;
-      waiting.set(id, resolve);
+      const timer = setTimeout(() => {
+        waiting.delete(id);
+        reject(new Error(`timed out waiting for ${method}`));
+      }, 4_000);
+      waiting.set(id, (msg) => {
+        clearTimeout(timer);
+        resolve(msg);
+      });
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     });
   const raw = (line) =>
-    new Promise((resolve) => {
-      waiting.set(null, resolve);
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("timed out waiting for a raw line")), 4_000);
+      waiting.set(null, (msg) => {
+        clearTimeout(timer);
+        resolve(msg);
+      });
       child.stdin.write(`${line}\n`);
     });
   const close = () =>
     new Promise((resolve) => {
-      child.on("close", resolve);
-      child.stdin.end();
+      let settled = false;
+      let killTimer;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(killTimer);
+        child.stdin.destroy();
+        child.stdout.destroy();
+        child.stderr.destroy();
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        child.unref();
+        resolve();
+      };
+      killTimer = setTimeout(finish, 500);
+      child.once("close", finish);
+      if (child.exitCode !== null || child.signalCode !== null) finish();
+      else child.stdin.end();
     });
   return { request, raw, close, notifications, transcript: () => transcript };
 }
@@ -168,30 +195,44 @@ describe("a grill end to end (fixture, no network)", () => {
       name: "grill",
       arguments: { subject: "We will raise prices 20% in Q4.", question: "Which way, and on what grounds?" },
     });
-    assert.equal(res.result.isError, false);
-    const report = textOf(res);
-    assert.match(report, /\*\*Shaky\.\*\*/);
-    assert.match(report, /Pull the signup curve from the last comparable launch/);
-    assert.match(report, /Say 'more', 'options', or your call\./);
-    assert.doesNotMatch(report, /grill-record|## Steelman|## Quality check|gpt-/);
-    assert.ok(report.indexOf("**Shaky.**") < report.indexOf("Say 'more'"));
-    await c.close();
+    try {
+      assert.equal(res.result.isError, false);
+      const report = textOf(res);
+      assert.match(report, /\*\*Shaky\.\*\*/);
+      assert.doesNotMatch(report, /\*\*Shaky\. \*\*/);
+      assert.match(report, /Pull the signup curve from the last comparable launch/);
+      assert.match(report, /Say 'more', 'options', or your call\./);
+      assert.doesNotMatch(report, /grill-record|## Steelman|## Quality check|gpt-/);
+      assert.ok(report.indexOf("**Shaky.**") < report.indexOf("Say 'more'"));
+    } finally {
+      await c.close();
+    }
     assert.ok(!c.transcript().includes(KEY), "the key must never be echoed");
   });
 
-  it("hands back a job id when the judge outlasts the wait, and grill_result collects it", async () => {
-    const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_WAIT_MS: "1" });
-    const first = await c.request("tools/call", { name: "grill", arguments: { subject: "s" } });
-    const match = textOf(first).match(/job_id "([0-9a-f]{8})"/);
-    assert.ok(match, textOf(first));
-    let report = "";
-    for (let i = 0; i < 40 && !/Quick take|\*\*Shaky\.\*\*/.test(report); i++) {
-      report = textOf(await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1] } }));
+  it("hands back a job id when the judge outlasts the wait, and grill_result collects it", { timeout: 5_000 }, async () => {
+    // The clock jumps past the wait on the second read, so the fixture cannot finish first.
+    const c = await initialized({
+      GRILL_API_KEY: KEY,
+      JUDGE_FIXTURE: USABLE,
+      GRILL_WAIT_MS: "1000",
+      GRILL_CLOCK_MS: "0",
+      GRILL_CLOCK_STEP_MS: "10000",
+    });
+    try {
+      const first = await c.request("tools/call", { name: "grill", arguments: { subject: "s" } });
+      const match = textOf(first).match(/job_id "([0-9a-f]{8})"/);
+      assert.ok(match, textOf(first));
+      let report = "";
+      for (let i = 0; i < 5 && !/Quick take|\*\*Shaky\.\*\*/.test(report); i++) {
+        report = textOf(await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1] } }));
+      }
+      assert.match(report, /Quick take|Shaky/);
+      const again = await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1], detail: "more" } });
+      assert.equal(again.result.isError, false, textOf(again));
+    } finally {
+      await c.close();
     }
-    assert.match(report, /Quick take|Shaky/);
-    const again = await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1], detail: "more" } });
-    assert.equal(again.result.isError, false, textOf(again));
-    await c.close();
   });
 });
 
@@ -447,11 +488,21 @@ describe("the Grill news line", () => {
     assert.doesNotMatch(textOf(missing), /Grill news/);
     await setup.close();
 
-    const slow = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_WAIT_MS: "1", GRILL_CHECK: "false" });
-    const pending = await slow.request("tools/call", { name: "grill", arguments: { subject } });
-    assert.match(textOf(pending), /Still grilling/);
-    assert.doesNotMatch(textOf(pending), /Grill news/);
-    await slow.close();
+    const slow = await initialized({
+      GRILL_API_KEY: KEY,
+      JUDGE_FIXTURE: USABLE,
+      GRILL_CHECK: "false",
+      GRILL_WAIT_MS: "1000",
+      GRILL_CLOCK_MS: "0",
+      GRILL_CLOCK_STEP_MS: "10000",
+    });
+    try {
+      const pending = await slow.request("tools/call", { name: "grill", arguments: { subject } });
+      assert.match(textOf(pending), /Still grilling/);
+      assert.doesNotMatch(textOf(pending), /Grill news/);
+    } finally {
+      await slow.close();
+    }
   });
 
   it("stays on for an unset value or an unfilled placeholder, and off only when switched off", async () => {

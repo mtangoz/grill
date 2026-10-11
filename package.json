@@ -28,7 +28,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test scripts/*.test.mjs",
+    "test": "node --test --test-timeout=180000 --test-force-exit scripts/*.test.mjs",
     "build:extension": "node scripts/build-extension.mjs && npx -y @anthropic-ai/mcpb pack dist/extension dist/grill.mcpb && node scripts/build-smithery-bundle.mjs dist/grill.mcpb dist/grill-smithery.mcpb",
     "eval": "node scripts/eval.mjs",
     "upstream": "node scripts/upstream-check.mjs",
