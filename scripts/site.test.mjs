@@ -100,6 +100,7 @@ describe("site/page.html", () => {
     const privacy = readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8");
     assert.ok(privacy.includes(visits));
     assert.match(privacy, /does not track you unless you turn on optional anonymous usage stats/);
+    assert.match(privacy, /No ads\. No selling your data\. No training on your decisions\. Grill is paid for by subscriptions only\./);
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     assert.match(readme, /docs\/PRIVACY\.md/);
     assert.doesNotMatch(readme, /saving copies/);
