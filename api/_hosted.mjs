@@ -8,7 +8,7 @@
  * Request and response bodies are not logged. Errors return a fixed sentence and a
  * request id.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -240,6 +240,49 @@ function personSpendKey(email, month) {
   return `grill:hosted:capspend:person:${hash}:${month}`;
 }
 const SPEND_LOG_MAX = 400;
+/**
+ * Active-user counts for the operator's metrics summary. Each key is an Upstash HyperLogLog:
+ * it holds an approximate count of distinct members and cannot list them back. The member is
+ * a keyed hash (HMAC-SHA256) of the person the starter cap belongs to, salted with
+ * GRILL_METRICS_SALT (or GRILL_RECORD_KEY when that isn't set), so it isn't an email, an
+ * account id, or a hash anyone could match to an email without the salt. No content, no model.
+ */
+const ACTIVE_TTL_SECONDS = { day: 120 * 86400, week: 400 * 86400, month: 800 * 86400 };
+export function isoWeek(ms = Date.now()) {
+  const d = new Date(ms);
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const dow = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - dow);
+  const year = t.getUTCFullYear();
+  const week = Math.ceil(((t - Date.UTC(year, 0, 1)) / 86400000 + 1) / 7);
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+export function activeKeys(ms = Date.now()) {
+  return {
+    day: `grill:hosted:active:day:${isoDay(ms)}`,
+    week: `grill:hosted:active:week:${isoWeek(ms)}`,
+    month: `grill:hosted:active:month:${isoMonth(ms)}`,
+  };
+}
+export function activeMember(person, env = {}) {
+  const salt = String(env.GRILL_METRICS_SALT || env.GRILL_RECORD_KEY || "").trim();
+  if (!salt || !person) return "";
+  return createHmac("sha256", salt).update(`active:${String(person).trim().toLowerCase()}`).digest("hex").slice(0, 32);
+}
+/** Best effort: a counting failure never blocks or fails a tool call. */
+async function countActive(account, deps) {
+  try {
+    const member = activeMember(capPerson(account), deps.env);
+    if (!member) return;
+    const keys = activeKeys(typeof deps.now === "number" ? deps.now : Date.now());
+    for (const period of ["day", "week", "month"]) {
+      await redis(deps, ["PFADD", keys[period], member]);
+      await redis(deps, ["EXPIRE", keys[period], String(ACTIVE_TTL_SECONDS[period])]);
+    }
+  } catch {
+    // ignored on purpose
+  }
+}
 function dayKey(userId, day) {
   return `grill:hosted:day:${userId}:${day}`;
 }
@@ -1223,6 +1266,7 @@ export async function handleMcp(request, deps) {
       if (!gate.email) return rpcResponse(rpcId, toolText("Grill needs a verified email on this account before it can run.", true), request);
       if (!gate.allowed) return rpcResponse(rpcId, toolText(INVITE_ONLY, true), request);
       const account = await ensureAccount(who.payload.sub, gate.email, deps, gate.human);
+      await countActive(account, deps);
       const name = msg.params?.name;
       const args = msg.params?.arguments ?? {};
       let result;
