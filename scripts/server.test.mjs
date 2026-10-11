@@ -34,6 +34,7 @@ function connect(env) {
   const notifications = [];
   let buffer = "";
   let transcript = "";
+  child.stderr.on("data", () => {});
   child.stdout.on("data", (chunk) => {
     transcript += chunk;
     buffer += chunk;
@@ -65,25 +66,33 @@ function connect(env) {
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     });
   const raw = (line) =>
-    new Promise((resolve) => {
-      waiting.set(null, resolve);
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("timed out waiting for a raw line")), 4_000);
+      waiting.set(null, (msg) => {
+        clearTimeout(timer);
+        resolve(msg);
+      });
       child.stdin.write(`${line}\n`);
     });
   const close = () =>
     new Promise((resolve) => {
       let settled = false;
+      let killTimer;
       const finish = () => {
         if (settled) return;
         settled = true;
         clearTimeout(killTimer);
+        child.stdin.destroy();
+        child.stdout.destroy();
+        child.stderr.destroy();
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        child.unref();
         resolve();
       };
-      const killTimer = setTimeout(() => {
-        child.kill();
-        setTimeout(finish, 200).unref();
-      }, 1_000);
-      child.on("close", finish);
-      child.stdin.end();
+      killTimer = setTimeout(finish, 500);
+      child.once("close", finish);
+      if (child.exitCode !== null || child.signalCode !== null) finish();
+      else child.stdin.end();
     });
   return { request, raw, close, notifications, transcript: () => transcript };
 }
@@ -211,7 +220,7 @@ describe("a grill end to end (fixture, no network)", () => {
       const match = textOf(first).match(/job_id "([0-9a-f]{8})"/);
       assert.ok(match, textOf(first));
       let report = "";
-      for (let i = 0; i < 40 && !/Quick take|\*\*Shaky\.\*\*/.test(report); i++) {
+      for (let i = 0; i < 5 && !/Quick take|\*\*Shaky\.\*\*/.test(report); i++) {
         report = textOf(await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1] } }));
       }
       assert.match(report, /Quick take|Shaky/);
