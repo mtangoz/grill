@@ -209,7 +209,9 @@ describe("the terms page", () => {
     assert.match(terms, /Nothing is charged to you/);
     assert.match(terms, /Grill advises, you decide/);
     const privacySrc = readFileSync(join(ROOT, "site/privacy.html"), "utf8");
+    assert.match(privacySrc, /No ads\. No selling your data\. No training on your decisions\. Grill is paid for by subscriptions only\./);
     assert.match(privacySrc, /passes through Grill’s server in memory for the length of the grill\. It is never logged or stored\./);
+    assert.match(page, /No ads\. No selling your data\. No training on your decisions\. Grill is paid for by subscriptions only\./);
     assert.ok(privacySrc.includes("This website counts visits anonymously, with no cookies and nothing that identifies you."));
     assert.ok(!privacySrc.includes("—"), "no em dashes");
     assert.ok(!page.includes("—"), "no em dashes");
