@@ -39,6 +39,10 @@ import {
   nextAttempt,
   reconcileVerdict,
   renderJudgeReport,
+  renderUserFacing,
+  subjectNeedsFacts,
+  countWords,
+  USER_WORD_BUDGET,
   resolveChain,
   resolveWalkBudget,
   retryBackoffMs,
@@ -1220,5 +1224,62 @@ describe("renderJudgeReport — the grounding footer and the Jev section", () =>
   it("has no Jev section when the check was not asked for", () => {
     assert.doesNotMatch(renderJudgeReport({ ...base, quality: null }), /Quality check/);
     assert.doesNotMatch(renderJudgeReport(base), /Quality check/);
+  });
+});
+
+describe("the note a person reads", () => {
+  const rich = {
+    verdict: "weak",
+    verdictReason: "The core direction is reasonable but the headline number is asserted rather than supported.",
+    steelman: "A long steelman that the person should not see.",
+    counterSteelman: "Keep a capped free tier.",
+    missingOption: "Keep the free tier, but cap it at one project.",
+    servedModel: "openai/gpt-5.6-sol",
+    quality: { scores: { verdictFits: 0.2 } },
+    challenges: [
+      {
+        kind: "unsupported-claim",
+        severity: "serious",
+        challenge: "No baseline is cited for the multiplier.",
+        falsifier: "Pull the signup curve from the last comparable launch.",
+        confidence: "high",
+      },
+      {
+        kind: "missing-failure-mode",
+        severity: "moderate",
+        challenge: "Churn from the free users is uncounted.",
+        falsifier: "Count how many free accounts paid last quarter.",
+        confidence: "medium",
+      },
+      {
+        kind: "minor",
+        severity: "minor",
+        challenge: "A third challenge that should stay off the page.",
+        falsifier: "Ignore this one.",
+        confidence: "low",
+      },
+    ],
+  };
+
+  it("stays near 150 words and leaves the steelman, the model and the score out", () => {
+    const note = renderUserFacing(rich, { subject: "Drop the free tier? Paid users cover the support cost, and the free tier is half of signups." });
+    assert.ok(countWords(note) <= USER_WORD_BUDGET, countWords(note));
+    assert.match(note, /^\*\*Shaky\.\*\*/);
+    assert.match(note, /An option you didn't name/);
+    assert.match(note, /Cheap test:/);
+    assert.doesNotMatch(note, /steelman|gpt-5|Quality check|0\.2|third challenge/i);
+  });
+
+  it("does not give a confident verdict on a blank template", () => {
+    const subject = "Decision: [what]\nOptions: [a] or [b]\nGoal: [goal]\nThe strongest case against: [case]";
+    assert.equal(subjectNeedsFacts(subject), true);
+    assert.equal(subjectNeedsFacts("drop the free tier?"), false);
+    const note = renderUserFacing(
+      { verdict: "refuted", verdictReason: "The template is empty.", challenges: rich.challenges },
+      { subject },
+    );
+    assert.match(note, /\*\*Needs facts\.\*\*/);
+    assert.match(note, /What would settle it/);
+    assert.doesNotMatch(note, /Shaky|solid|doesn't hold up|refuted/i);
   });
 });

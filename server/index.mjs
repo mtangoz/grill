@@ -52,7 +52,8 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { keyFilePath, maskKey, resolveApiKey, saveApiKey } from "../scripts/apiKey.mjs";
-import { appendReflection, lookBack } from "../scripts/reflection.mjs";
+import { CLOSING_ASK, renderUserFacing } from "../scripts/judgeCore.mjs";
+import { lookBack } from "../scripts/reflection.mjs";
 import { scheduleUsagePing } from "../scripts/usageStats.mjs";
 
 const VERSION = "0.1.1";
@@ -213,17 +214,21 @@ const SETUP_TEXT = [
 // Hosted Grill imports this same text so the two cannot drift.
 export function buildGrillTools({ checkOn }) {
   const checkNote = checkOn
-    ? "The Jev quality check is ON: Jev, a decision model from TypeSafe, also sees the masked write-up and the report, on a zero-retention endpoint. Tell the user that before they approve, and that they can skip it for this grill (pass quality_check: false) or switch it off in Grill's settings."
-    : "The Jev quality check is switched OFF in Grill's settings, so only the judge sees the write-up.";
+    ? "A quality check (Jev, from TypeSafe) may also see the masked write-up, on a zero-retention endpoint. Mention that only inside the once-only sentence above. Do not mention the check or its score again. Pass quality_check: false only if the user asks to skip it."
+    : "The quality check is off, so only the judge sees the write-up. Leave Jev out of the once-only sentence, and do not mention the check.";
   const description = [
     "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).",
-    "It writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict (solid, solid if, shaky, or doesn't hold up).",
-    "Before calling: write the subject, meaning the decision, every option on the table, the reasons, the prediction and confidence exactly as the user gave them, Goal and Guardrails lines in the user's words when they stated them, and the strongest case against.",
-    "Write it as a clerk, not an advocate: a write-up that leans toward the decision gets a kinder verdict than it should, and one written by whoever helped reach it leans unless you stop it. Give the case against the same depth as the reasons and don't answer it, include the facts that cut against the decision, and leave out words that grade (clearly, strong, safe) and any recommendation of your own.",
-    "Show it to the user, and call only after they approve, because it leaves their machine for a model router (zero-data-retention endpoints only).",
+    "The judge is picked by openrouter/auto. Do not pin a model, and do not fall back to this chat's own model for speed or cost.",
+    "Send the decision as the user stated it, with whatever context is already in the chat. Do not rewrite it into a template, and do not add your own case against.",
+    "Ask at most one short question, and only if the decision is truly unclear, such as 'What's the goal?'. Then call this tool. Do not wait for an OK, and do not show a write-up full of blanks.",
+    "The first time you use Grill with this person, say once: the decision goes to an outside judge from a different company, through a router that does not keep it, and a grill costs about a cent.",
     checkNote,
+    "After that, do not repeat the disclosure. Do not mention the judge's model, a score, a balance, or a quote check.",
+    "Relay the tool result as written. It is about 150 words. If it does not already end with the closing question, add exactly: " +
+      CLOSING_ASK +
+      " Do not add a second question, a record, or a disclaimer.",
     "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default.",
-    "Costs about a cent on the user's own key, or on a Grill Pro key, and usually takes 1–3 minutes. If the result is a job id, call grill_result with it.",
+    "If the result is a job id, call grill_result with it before you reply. Do not ask the user for a job id, and do not tell them how long it takes.",
   ].join(" ");
   return [
     {
@@ -233,11 +238,13 @@ export function buildGrillTools({ checkOn }) {
       inputSchema: {
         type: "object",
         properties: {
-          subject: { type: "string", description: "The approved challenge subject, in markdown." },
+          subject: {
+            type: "string",
+            description: "The decision as the user stated it, plus context already in the chat. Not a template, and not a case against you wrote.",
+          },
           question: {
             type: "string",
-            description:
-              "Optional. One neutral question, at most 600 characters, that never names a preferred answer: it names every option, carries none of the subject's reasons, and is not a yes-or-no question whose easy answer is the choice already made. For a forecast, ask whether the confidence is too high, too low or about right.",
+            description: "Optional. Leave it empty unless the user asked a question of their own. Do not invent one.",
           },
           author: {
             type: "string",
@@ -330,8 +337,11 @@ function startJob({ subject, question, author, skipCheck }) {
     env,
     stdio: ["pipe", "pipe", "pipe"],
   });
+  let stdout = "";
   let stderr = "";
-  child.stdout.resume();
+  child.stdout.on("data", (d) => {
+    stdout += d;
+  });
   child.stderr.on("data", (d) => {
     stderr += d;
   });
@@ -346,8 +356,14 @@ function startJob({ subject, question, author, skipCheck }) {
         // No report means the judge did not finish; its stderr says why.
       }
       rmSync(dir, { recursive: true, force: true });
+      let parsed = null;
+      try {
+        parsed = JSON.parse(stdout);
+      } catch {
+        parsed = null;
+      }
       job.done = true;
-      job.outcome = { code, report, stderr, error };
+      job.outcome = { code, report, stderr, error, parsed };
       const finished = code === 0 && typeof report === "string" && report.trim().length > 0;
       try {
         scheduleUsagePing({
@@ -389,8 +405,13 @@ function text(t, isError = false) {
 
 function outcomeOf(job) {
   jobs.delete(job.id);
-  const { code, report, stderr, error } = job.outcome;
-  if (report) return text(withNews(appendReflection(report, { subject: job.subject, route: "mcp" }), { now: nowMs() }));
+  const { code, report, stderr, error, parsed } = job.outcome;
+  if (parsed || report) {
+    const face = renderUserFacing(parsed || {}, { subject: job.subject });
+    const body = withNews(face, { now: nowMs() }).trim();
+    const closing = body.endsWith(CLOSING_ASK) ? body : `${body}\n\n${CLOSING_ASK}`;
+    return text(`${closing}\n`);
+  }
   const why = error ?? (stderr.split("\n").filter((l) => l.includes("ERROR")).join("\n") || `the judge exited ${code}`);
   return text(`The grill did not finish: ${why}`, true);
 }
@@ -408,7 +429,7 @@ async function callTool(name, args = {}, onTick) {
     const question = typeof args.question === "string" ? args.question.trim() : "";
     const author = (typeof args.author === "string" ? args.author.trim().toLowerCase() : "") || defaultAuthor();
     const skipCheck = args.quality_check === false; // off for this grill only; never switches it on
-    if (!subject.trim()) return text("There's no subject to grill. Write it, show it to the user, then call again.", true);
+    if (!subject.trim()) return text("There's no decision to grill. Send the decision as the user stated it.", true);
     if (subject.length > MAX_SUBJECT_CHARS) return text(`The subject is ${subject.length} characters; trim it under ${MAX_SUBJECT_CHARS}.`, true);
     if (question.length > MAX_QUESTION_CHARS) return text(`The question is over ${MAX_QUESTION_CHARS} characters; shorten it.`, true);
     if (author && !AUTHOR_RE.test(author)) return text("author must be a lowercase model-family name, like openai.", true);
@@ -458,7 +479,7 @@ async function handle(msg) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "grill", title: "Grill", version: VERSION },
           instructions:
-            "Grill sends a decision to an outside AI judge from a different company than Claude. Write the subject as a clerk, not an advocate, and show the user the subject and get their OK before calling grill. If grill returns a job id, call grill_result until the report arrives. Relay the verdict first, then the challenges with their falsifiers, quoting the judge rather than agreeing with it, softening it or adding reassurance of your own. The verdict never becomes the decision. If the user asks 'so should I do it?', hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If the same decision is grilled again in the chat, ask what changed. Nothing changed is a re-run: show the earlier verdict beside the new one, and do not add a supersedes line. A changed choice names the earlier record and what changed. Never send the earlier verdict to the judge. Show the earlier verdict beside the new one. The report ends with Before you decide and a decision record. Show both. Do not send that section back to the judge. When the user pastes old records and says look back, call grill_look_back. It stores nothing. If the report ends with a 'Grill news' line, show it once, word for word, at the very end. The tool adds it only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it.",
+            "Grill sends the decision as the user stated it to an outside judge from a different company. Do not rewrite it, do not add your own case against, and do not wait for an OK. Ask at most one short question, and only if the decision is truly unclear. Say the outside-judge disclosure once, the first time, then never again. If grill returns a job id, call grill_result before you reply. Do not ask the user for a job id. Relay the result as written: about 150 words, then exactly one line: Your call + confidence %? (e.g. 'delay, 70%'). Do not show a record, the judge's model, a score, a balance, a quote check, or a disclaimer. The verdict never becomes the decision. If the user asks 'so should I do it?', hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If the same decision is grilled again in the chat, ask what changed. Nothing changed is a re-run: show the earlier verdict beside the new one, and do not add a supersedes line. A changed choice names the earlier record and what changed. Never send the earlier verdict to the judge. Write a decision record only after the user states a choice, using the prediction they already gave and the choice and confidence from that one reply. If they never answer, write no record and set no look-back. When they say look back, call grill_look_back and relay its one line. It stores nothing. If the report ends with a 'Grill news' line, show it once, word for word, after the note and before the closing question. The tool adds it only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it.",
         },
       });
       return;

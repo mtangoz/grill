@@ -15,8 +15,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, WELCOME_HEADERS } from "./_pro.mjs";
-import { appendReflection, lookBack, parseRecords, recordBlock } from "../scripts/reflection.mjs";
+import { CLOSING_ASK, renderUserFacing, subjectNeedsFacts } from "../scripts/judgeCore.mjs";
 import {
+  REVIEW_DAYS,
+  addDays,
+  decisionTitle,
+  goalFromSubject,
+  guardrailsFromSubject,
+  isoDate,
+  lookBack,
+  parseRecords,
+  plainVerdict,
+  predictionFromSubject,
+  recordBlock,
+} from "../scripts/reflection.mjs";
+import {
+  CAP_RETRY_TEXT,
   CONSENT_TEXT,
   CREDIT_CACHE_MS,
   DAILY_GRILL_LIMIT,
@@ -26,6 +40,7 @@ import {
   MAX_PASTE_CHARS,
   MAX_QUESTION_CHARS,
   MAX_SUBJECT_CHARS,
+  ONCE_DISCLOSURE,
   OUT_OF_CREDIT,
   RUNNING_JOB_LIMIT,
   allowlistAllows,
@@ -33,7 +48,6 @@ import {
   chainIds,
   decryptString,
   encryptString,
-  footerLine,
   hostedEnabled,
   hostedStillRunningText,
   hostedTools,
@@ -47,12 +61,10 @@ import {
   protectedResourceMetadata,
   publicOrigin,
   queryHasToken,
-  recordFence,
   recordsForLookBack,
   signInUrl,
   sourceAppFromClient,
   starterCreditUsd,
-  topChallengeLines,
   wwwAuthenticate,
 } from "../scripts/hostedCore.mjs";
 
@@ -182,6 +194,13 @@ function jobRedisKey(id) {
 function runningKey(userId) {
   return `grill:hosted:running:${userId}`;
 }
+function pendingIndex(userId) {
+  return `grill:hosted:pendings:${userId}`;
+}
+function pendingRedisKey(userId, id) {
+  return `grill:hosted:pending:${userId}:${id}`;
+}
+const PENDING_TTL_SECONDS = 14 * 24 * 60 * 60;
 function dayKey(userId, day) {
   return `grill:hosted:day:${userId}:${day}`;
 }
@@ -397,6 +416,7 @@ async function saveAccount(account, deps) {
     })),
     createdAt: account.createdAt,
   };
+  if (account.disclosed === true) copy.disclosed = true;
   // The person the starter cap belongs to, when this sign-in is an agent.
   if (account.human && account.human !== account.email) copy.human = account.human;
   // Set when this sign-in spends a key minted for someone else. Deleting it must not revoke that key.
@@ -637,9 +657,75 @@ function clientFromToken(payload, params) {
   });
 }
 
+function oneLine(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function draftFromGrill({ subject, parsed, sourceApp, supersedes, changed, now }) {
+  const when = now instanceof Date ? now : new Date(now);
+  const challenges = Array.isArray(parsed?.challenges) ? parsed.challenges : [];
+  const falsifier = oneLine(challenges[0]?.falsifier) || "none named";
+  const verdict = parsed?.needsFacts || subjectNeedsFacts(subject) ? "needs facts" : plainVerdict(parsed?.verdict);
+  return {
+    id: randomBytes(8).toString("hex"),
+    createdAt: when.toISOString(),
+    date: isoDate(when),
+    title: decisionTitle(subject),
+    prediction: predictionFromSubject(subject),
+    verdict: verdict === "unknown" ? "" : verdict,
+    falsifier,
+    goal: goalFromSubject(subject),
+    guardrails: guardrailsFromSubject(subject),
+    sourceApp: sourceApp || "unknown",
+    supersedes: oneLine(supersedes),
+    changed: oneLine(changed),
+    challenges: challenges.slice(0, 2).map((row, index) => {
+      const line = `${index + 1}. ${oneLine(row.challenge)} — ${oneLine(row.falsifier)}`;
+      return line.length > 400 ? `${line.slice(0, 399)}…` : line;
+    }),
+  };
+}
+
+async function loadPendings(account, deps) {
+  if (!account.recordKeyCipher && account.records !== "keep") return [];
+  const ids = (await redis(deps, ["ZRANGE", pendingIndex(account.id), "0", "-1"])) || [];
+  if (!ids.length) return [];
+  let dataKey;
+  try {
+    dataKey = await dataKeyFor(account, deps);
+  } catch {
+    return [];
+  }
+  const rows = [];
+  for (const id of ids) {
+    const cipher = await redis(deps, ["GET", pendingRedisKey(account.id, id)]);
+    if (typeof cipher !== "string" || !cipher) continue;
+    try {
+      rows.push(JSON.parse(decryptString(cipher, dataKey)));
+    } catch {
+      // A draft we cannot read is skipped. It is not logged.
+    }
+  }
+  return rows;
+}
+
+async function writePending(account, deps, row) {
+  const dataKey = await dataKeyFor(account, deps);
+  const cipher = encryptString(JSON.stringify(row), dataKey);
+  await redis(deps, ["SET", pendingRedisKey(account.id, row.id), cipher, "EX", PENDING_TTL_SECONDS]);
+  await redis(deps, ["ZADD", pendingIndex(account.id), Date.parse(row.createdAt) || Date.now(), row.id]);
+  await redis(deps, ["EXPIRE", pendingIndex(account.id), PENDING_TTL_SECONDS]);
+}
+
+async function deletePending(account, deps, id) {
+  await redis(deps, ["DEL", pendingRedisKey(account.id, id)]);
+  await redis(deps, ["ZREM", pendingIndex(account.id), id]);
+}
+
 async function composeReport({ outcome, subject, sourceApp, account, credit, supersedes, changed, deps }) {
   const stderr = String(outcome?.stderr || "");
-  if (!outcome || outcome.code !== 0 || !String(outcome.report || "").trim()) {
+  const parsed = outcome?.parsed || null;
+  if (!outcome || outcome.code !== 0 || (!parsed && !String(outcome.report || "").trim())) {
     if (/correlated verdict|excluded company/i.test(stderr)) {
       return { text: "The judge was served by the same company that wrote this, so Grill refused the verdict.", isError: true };
     }
@@ -648,46 +734,37 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
     }
     return { text: `The grill did not finish (${deps.requestId}). Write to support@grillyour.ai.`, isError: true };
   }
+  const now = typeof deps.now === "number" ? new Date(deps.now) : new Date();
+  const face = renderUserFacing(parsed || {}, { subject });
   const keep = account.records === "keep";
-  const report = appendReflection(outcome.report, {
-    subject,
-    now: typeof deps.now === "number" ? new Date(deps.now) : new Date(),
-    route: keep ? "account" : "mcp",
-      sourceApp: sourceApp || "unknown",
-      supersedes: keep && typeof supersedes === "string" ? supersedes : "",
-      changed: keep && typeof changed === "string" ? changed : "",
-  });
-  const cost = Number(outcome.parsed?.costUsd) || 0;
-  const model = typeof outcome.parsed?.servedModel === "string" ? outcome.parsed.servedModel : "";
+  const thin = subjectNeedsFacts(subject) || parsed?.needsFacts === true;
+  if (keep && !thin) {
+    await writePending(
+      account,
+      deps,
+      draftFromGrill({
+        subject,
+        parsed,
+        sourceApp,
+        supersedes: typeof supersedes === "string" ? supersedes : "",
+        changed: typeof changed === "string" ? changed : "",
+        now,
+      }),
+    );
+  }
+  const cost = Number(parsed?.costUsd) || 0;
+  const model = typeof parsed?.servedModel === "string" ? parsed.servedModel : "";
   account.spend = [...(account.spend || []), { at: new Date().toISOString(), costUsd: cost, model }];
   if (account.spend.length > 400) account.spend = account.spend.slice(-400);
+  let text = face;
+  if (account.disclosed !== true) {
+    account.disclosed = true;
+    text = `${ONCE_DISCLOSURE}\n\n${text}`;
+  }
   await saveAccount(account, deps);
   creditCache.delete(account.id);
-  const parsed = parseRecords(report)[0] || {};
-  if (keep) {
-    const block = recordFence(report);
-    if (block) {
-      await writeRecord(account, deps, {
-        id: randomBytes(8).toString("hex"),
-        createdAt: new Date().toISOString(),
-        block,
-        sourceApp: sourceApp || "unknown",
-        challenges: topChallengeLines(report, 3),
-        lookback: null,
-        date: parsed.date || "",
-        title: parsed.title || "",
-        verdict: parsed.verdict || "",
-        review: parsed.review || "",
-        supersedes: parsed.supersedes || "",
-      });
-    }
-  }
-  const footer = footerLine({
-    saved: keep,
-    review: parsed.review || "",
-    remainingUsd: Math.max(0, (credit?.remaining || 0) - cost),
-  });
-  return { text: `${report.trim()}\n\n${footer}\n`, isError: false };
+  const closing = text.includes(CLOSING_ASK) ? text : `${text}\n\n${CLOSING_ASK}`;
+  return { text: `${closing.trim()}\n`, isError: false };
 }
 
 async function storeJobResult(credential, result, deps) {
@@ -720,10 +797,15 @@ async function callGrill(args, account, payload, params, deps) {
   if (account.records === "keep" && !keyFromEnv(deps.env, "GRILL_RECORD_KEY")) {
     return toolText("Grill can't keep records right now. Write to support@grillyour.ai.", true);
   }
-  const running = Number(await redis(deps, ["SCARD", runningKey(account.id)])) || 0;
-  if (running >= RUNNING_JOB_LIMIT) {
-    return toolText("Three grills are already running on this account. Collect one with grill_result, then try again.", true);
+  const slotWait = Number.isInteger(deps.waitMs) ? deps.waitMs : 45_000;
+  const slotDeadline = Date.now() + Math.max(0, slotWait);
+  let running = Number(await redis(deps, ["SCARD", runningKey(account.id)])) || 0;
+  while (running >= RUNNING_JOB_LIMIT && Date.now() < slotDeadline) {
+    const pause = Math.min(250, slotDeadline - Date.now());
+    if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));
+    running = Number(await redis(deps, ["SCARD", runningKey(account.id)])) || 0;
   }
+  if (running >= RUNNING_JOB_LIMIT) return toolText(CAP_RETRY_TEXT, true);
   const today = isoDay(Date.now());
   const used = Number(await redis(deps, ["GET", dayKey(account.id, today)])) || 0;
   if (used >= DAILY_GRILL_LIMIT) return toolText("This account has used today's 30 grills. It resets tomorrow.", true);
@@ -843,23 +925,69 @@ async function callLookBack(args, account, deps) {
   return toolText(savedAny ? `${text}\n\nSaved with your decision record.` : text);
 }
 
+function matchesRef(item, ref) {
+  const needle = String(ref || "").trim().toLowerCase();
+  if (!needle) return false;
+  const title = String(item.title || "").toLowerCase();
+  const stamp = `${item.date || ""} ${item.title || ""}`.trim().toLowerCase();
+  return item.id === ref || stamp === needle || (title && (title === needle || needle.includes(title)));
+}
+
 async function callDecided(args, account, deps) {
   if (account.records !== "keep") return toolText("Decision records are off for this account, so there is nowhere to add that.", true);
   const decided = typeof args.decided === "string" ? args.decided.replace(/\s+/g, " ").trim() : "";
   if (!decided) return toolText("Add the decided line only in the person's own words. Grill will not invent one.", true);
+  const confidence = typeof args.confidence === "string" ? args.confidence.replace(/\s+/g, " ").trim() : "";
+  const prediction = typeof args.prediction === "string" ? args.prediction.replace(/\s+/g, " ").trim() : "";
   const ref = typeof args.record_ref === "string" ? args.record_ref.trim() : "";
   const rows = await loadRecords(account, deps);
-  const needle = ref.toLowerCase();
-  const row = rows.find(
-    (item) => item.id === ref || `${item.date} ${item.title}`.toLowerCase() === needle || String(item.title || "").toLowerCase() === needle,
-  );
-  if (!row) return toolText("No saved record matched that reference.", true);
-  const parsed = parseRecords(row.block)[0];
-  if (!parsed) return toolText(`The grill did not finish (${deps.requestId}). Write to support@grillyour.ai.`, true);
-  row.block = recordBlock({ ...parsed, decided });
-  row.decided = decided;
-  await writeRecord(account, deps, row);
-  return toolText(`Added your words to the decided line of "${row.title}".`);
+  const saved = ref ? rows.find((item) => matchesRef(item, ref)) : null;
+  if (saved) {
+    const parsed = parseRecords(saved.block)[0];
+    if (!parsed) return toolText(`The grill did not finish (${deps.requestId}). Write to support@grillyour.ai.`, true);
+    saved.block = recordBlock({ ...parsed, decided, confidence: confidence || parsed.confidence, prediction: prediction || parsed.prediction });
+    saved.decided = decided;
+    await writeRecord(account, deps, saved);
+    return toolText("Saved.");
+  }
+  const pendings = await loadPendings(account, deps);
+  const pending = ref ? pendings.find((item) => matchesRef(item, ref)) : pendings[pendings.length - 1];
+  if (!pending) return toolText("No grill is waiting for a choice. A record is saved only after the person states one.", true);
+  const now = typeof deps.now === "number" ? new Date(deps.now) : new Date();
+  const anchor = /^\d{4}-\d{2}-\d{2}$/.test(pending.date) ? new Date(`${pending.date}T00:00:00Z`) : now;
+  const review = isoDate(addDays(anchor, REVIEW_DAYS));
+  const fields = {
+    date: pending.date || isoDate(now),
+    title: pending.title,
+    prediction: prediction || pending.prediction || "",
+    verdict: pending.verdict || "unknown",
+    falsifier: pending.falsifier || "none named",
+    confidence,
+    review,
+    goal: pending.goal || "",
+    guardrails: pending.guardrails || "",
+    source_app: pending.sourceApp || "",
+    decided,
+    supersedes: pending.supersedes || "",
+    changed: pending.changed || "",
+  };
+  const block = recordBlock(fields);
+  await writeRecord(account, deps, {
+    id: pending.id,
+    createdAt: pending.createdAt || now.toISOString(),
+    block,
+    sourceApp: pending.sourceApp || "unknown",
+    challenges: pending.challenges || [],
+    lookback: null,
+    date: fields.date,
+    title: fields.title,
+    verdict: fields.verdict,
+    review,
+    supersedes: fields.supersedes,
+    decided,
+  });
+  await deletePending(account, deps, pending.id);
+  return toolText("Saved.");
 }
 
 async function identity(request, deps, { audience }) {
@@ -1163,6 +1291,9 @@ async function deleteAccount(account, deps) {
   const ids = (await redis(deps, ["ZRANGE", recordIndex(account.id), "0", "-1"])) || [];
   await deleteRecordIds(account, deps, ids);
   await redis(deps, ["DEL", recordIndex(account.id)]);
+  const pendingIds = (await redis(deps, ["ZRANGE", pendingIndex(account.id), "0", "-1"])) || [];
+  for (const id of pendingIds) await deletePending(account, deps, id);
+  await redis(deps, ["DEL", pendingIndex(account.id)]);
   await redis(deps, ["DEL", acctKey(account.id)]);
   // A borrowing agent does not hold the cap, so their delete leaves the shared key and its index.
   if (!account.capFrom) {

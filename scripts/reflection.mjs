@@ -550,60 +550,22 @@ function pasteEarlierNote(records) {
   return missing ? "If this replaced an earlier record, paste that too to see both." : "";
 }
 
-function questionsFor(records, all = records) {
-  const lines = [];
-  for (const record of records) {
-    const confidence = record.confidence ? ` Confidence then: ${record.confidence}.` : " Confidence was not written down.";
-    const prediction = record.prediction ? `Prediction then: ${record.prediction}.` : "";
-    const goal = statedValue(record.goal);
-    const guardrails = statedValue(record.guardrails);
-    lines.push(
-      `### ${record.title}`,
-      "",
-      [prediction, `Verdict then: ${plainVerdict(record.verdict)}.${confidence} Review date: ${record.review || "not set"}.`]
-        .filter(Boolean)
-        .join(" "),
-      `Falsifier: ${record.falsifier || "none named"}.`,
-    );
-    if (goal) lines.push(`Goal then: ${goal}.`);
-    if (guardrails) lines.push(`Guardrails then: ${guardrails}.`);
-    const decided = statedValue(record.decided);
-    if (decided) lines.push(`You chose: "${decided}".`);
-    lines.push(...revisionLines(record, all));
-    lines.push("- Did it come true? Yes or no.", "- Did the thing that would prove you wrong happen? Yes or no.");
-    if (goal) lines.push("- Did you reach the goal? Yes, no or partly.");
-    if (guardrails) lines.push("- Did your guardrails hold? Yes or no.");
-    lines.push("- What happened, in one sentence?");
-    lines.push("- Did anything happen you didn't expect? A few words, or leave it blank.", "");
-  }
-  lines.push("Answer in words. A pasted block with came_true, falsifier_fired and happened still counts. surprise is optional:", "");
-  lines.push("```text");
-  lines.push(`title: ${records[0].title}`);
-  lines.push("came_true: no");
-  lines.push("falsifier_fired: yes");
-  if (statedValue(records[0].goal)) lines.push("goal_met: no");
-  if (statedValue(records[0].guardrails)) lines.push("guardrails_held: no");
-  lines.push("happened: one sentence on what actually happened");
-  lines.push("surprise: a few words, or leave this line off");
-  lines.push("```", "");
-  lines.push(
-    "Leave surprise off when nothing unexpected happened. If it matches challenge N or the falsifier, add `| matches challenge 2` or `| matches falsifier`. Grill uses only that mark. If the decision is still open and the surprise bears on it, add `| still live`.",
-    "",
-  );
-  return lines.join("\n");
+/** One line. No checklist, and no record format. */
+export function lookBackPrompt(record) {
+  const prediction = oneLine(record?.prediction);
+  const confidence = oneLine(record?.confidence);
+  if (prediction && confidence) return `You predicted ${prediction} at ${confidence}. What happened?`;
+  if (prediction) return `You predicted ${prediction}. What happened?`;
+  if (confidence) return `You were ${confidence} sure. What happened?`;
+  return "You didn't write a prediction. What happened?";
+}
+
+function questionsFor(records) {
+  return records.map((record) => lookBackPrompt(record)).join("\n");
 }
 
 function askWhatHappened(records) {
-  const lines = [
-    "## Look back",
-    "",
-    "Nothing is stored. For each decision, say what actually happened. Then paste the answers the same way.",
-    "",
-    questionsFor(records),
-  ];
-  const note = pasteEarlierNote(records);
-  if (note) lines.push(note, "");
-  return lines.join("\n");
+  return questionsFor(records);
 }
 
 function callReading(record, outcome, records) {

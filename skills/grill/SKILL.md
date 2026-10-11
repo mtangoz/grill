@@ -18,49 +18,21 @@ If they set up the one-click route with their own model-router key (not Grill Pr
 - **Input & Output Logging** (Observability settings): leave it off, or list their Grill key under "Excluded API Keys".
 - **Use of inputs/outputs** (Privacy settings, the 1% discount): leave it off.
 
-## 1. Write the subject
+## 1. Send the decision as stated
 
-You have usually helped reach this decision, and even when you haven't, a write-up in the user's own terms leans toward it. The judge tends to agree with whatever the write-up leans toward: that is the usual reason a grill comes back kinder than it should. Write as a clerk, not an advocate.
+Send what the user already said, plus context already in the chat. Do not rewrite it into a template. Do not fill in blanks. Do not write your own case against into the subject.
 
-Ask only for what's missing, at most two questions, in this order. Stop after two.
-1. What is being decided, and only if that is unclear.
-2. The prediction and confidence. This one never yields. If there's none, ask: "What do you expect to happen, by when, and how sure are you?" A band stays a band. Never invent either.
-3. Only if a slot is left, one combined question: "What are you trying to achieve, and is there anything this must not cost or break?" Skip it when both are already clear, or when the user says "just grill it".
+Ask at most one short question, and only if the decision is truly unclear, such as "What's the goal?" Then send it. Do not wait for an OK.
 
-Then write:
-- **The decision,** and every option that was on the table, including "not now" or "keep things as they are" when that was one. On a re-grill, the earlier choice may be one of those options, in the same neutral voice. Never label it "what I decided before". Never put the earlier verdict in the write-up. The judge does not see it.
-- **The reasons given,** in the user's words where you have them. Only reasons the user gave or agreed with; if one started with you, say so.
-- **The prediction and confidence,** exactly as the user gave them.
-- **Goal and guardrails,** in the user's words, on their own lines: `Goal:` and, when they named any, `Guardrails:`. If they decline, or say "just grill it" without naming a goal, write `Goal: not stated`. Never invent either. If one started with you and they agreed, mark it `(from the assistant)`.
-- **The strongest case against,** written as its best advocate would put it, as long and as specific as the reasons for. Use any dissent you know of (a co-founder, a customer); if there's none, make the best case for the main alternative. State it and stop: don't answer it, not even with the user's answer. Their answer goes with their reasons, and the judge weighs both.
-- **The facts that cut against it,** as well as the ones that support it: the number that looks bad, the time it went wrong before, what nobody knows yet.
-- **Every number with its date,** read fresh where you can. The judge builds its case on the figures you give it.
-- **A neutral question,** at most 300 characters, that never names a preferred answer:
-  - name every option, not only the chosen one;
-  - keep the reasons out of it: "to win back churned users" inside a question is a reason, not a question;
-  - don't ask a question whose easy answer is the choice already made: "Should we…?", "Does it make sense to…?", or "How fast should we…?" when the real question is whether.
-
-  A good default: "Between A and B, which do these facts support, and what would have to be true for the other to be the better call?" For a forecast, ask whether the confidence is too high, too low or about right, and for the earliest sign **in either direction**.
-
-Then check the framing before you show it:
-- **Report, don't grade.** Cut words that grade the evidence instead of stating it (clearly, obviously, strong, safe, a no-brainer), and any recommendation of your own.
-- **The swap test.** Would someone who chose the other option sign this as a fair account? If not, fix it.
+The first time with this person, say once, in one or two sentences: the decision goes to an outside judge from a different company, through a router that does not keep it; a quality check (Jev, from TypeSafe) may see the same write-up and does not keep it; a grill costs about a cent. After that, do not say it again. Do not mention the check, its score, the judge's model, or a balance. If they ask to skip the check, call the tool with `quality_check: false` for this grill only.
 
 Leave out names of people who aren't needed, and anything personal, health- or HR-related.
 
-## 2. Get the user's OK
-
-Show the subject and question, and say where they will go before sending anything:
-- **One-click route:** a model router, zero-data-retention endpoints only. About a cent, on their own key.
-  - **Say who else sees it.** If the `grill` tool's description says the Jev quality check is on, tell them: Jev, a decision model from TypeSafe, also sees the masked write-up and the report, on the same zero-retention terms. It checks the judge's work. They can skip it for this grill, or switch it off in Grill's settings (Claude Desktop: Settings → Extensions → Grill).
-  - If they say skip it, call the tool with `quality_check: false`. That covers this grill only.
-- **Paste route:** the assistant they paste it into, under that app's own data settings.
-
-## 3. Send it
+## 2. Send it
 
 **If you have the `grill` tool** (from the Grill extension in Claude Desktop, or the plugin in Claude Code):
 1. Call it with `subject` and `question`. If the subject came from another assistant, add `author`, for example `openai`, so that family is excluded too.
-2. If it returns a job id, call `grill_result` with it until the report arrives. It usually takes 1–3 minutes; tell the user it's working.
+2. If it returns a job id, call `grill_result` with it until the note arrives, before you reply. Do not ask the user for a job id, and do not tell them how long it takes.
 3. If it says Grill isn't set up, relay its steps. Never ask the user to paste their key into the chat. A Grill Pro key goes in the same settings field as their own key. If Grill's settings name a judge model, the tool already uses it. That judge has to be a different company from the assistant they think with. If they name one from the same company, say so and don't treat it as the outside judge.
 
 **If you don't have the tool** (claude.ai on the web or phone, or no extension yet), use the paste route. Claude Desktop and Claude Code enforce a different company in code. This route cannot, so you check it and warn.
@@ -82,25 +54,26 @@ When they paste the judge's answer back, compare companies before you relay the 
 
 ## 4. Relay the result
 
-On the paste route, the company check above is the first line you show. A result from the `grill` tool already enforced a different company in code; relay that report as written, and do not look for a Judge line.
+On the paste route, the company check above is the first line you show. Then show only the short note: one verdict line, any option they had not named, and at most two challenges, each with one cheap test. Do not show the steelman. A result from the `grill` tool already enforced a different company in code. Relay that note as written, and do not look for a Judge line. Do not show the judge's model, a score, a balance, a quote check, or a disclaimer.
 
-You're the model the user has been thinking with, so the way you relay the verdict can undo it.
-- **Plain words, the same ones the website uses.** Say solid, solid if…, shaky or doesn't hold up for the four verdicts (holds, holds-with-conditions, weak, refuted). Call a challenge a weak spot and a falsifier a quick check. Change the words, never the substance.
-- **Verdict first,** with its one-line reason. "Solid if" always comes with its conditions; never shorten it to "solid". If the report says the verdict doesn't match the challenges, say that too. On the paste route the verdict comes after the company-check line.
-- **The top challenges by severity,** each with its falsifier. Quote the judge; don't soften it or argue it into agreement. Add nothing that takes the edge off: no "overall, the judge agrees with you", no rebuttal beside a challenge, and no leading with the steelman when the verdict is shaky or doesn't hold up.
-- **Degradation:** if the report carries a warning banner (a clipped subject, a failed provider, a judge from an excluded family), say so plainly. "The judge found nothing" and "the judge couldn't see it" must never read the same.
-- **The verdict never becomes the decision.** If the user asks "so should I do it?", or asks you to choose, hand the choice back and name the deciding test: the quick check that would settle the strongest doubt. Do not answer yes or no.
-- **Pushback:** if the user disputes a challenge, don't settle it for them, and don't flip the verdict unless they bring new evidence. Its quick check settles it.
-- **Grilling again:** if the same decision is grilled again in this chat, ask one question: "What changed?" If they already said, don't ask again. Show the earlier verdict beside the new one. The new record is a new dated call. The earlier one stays. Changing their mind is part of the record, not a mark against it. If nothing changed, label it a re-run: no `supersedes` line and no `changed` line. If they say the choice changed, add `supersedes` as the earlier record's date and title, and `changed` as one of `evidence`, `goals`, `context` or `reweighed`, then their few words. `reweighed` means the same facts weighed differently. Fill those lines only from what they say. Never invent them. Never write a `superseded-by` line. Never send the earlier verdict to the judge. A second grill may add facts, never drop them or soften the framing.
-- **Next steps:** the report's own "Before you decide" section, when the tool included one. Show it. Do not add a second copy, and do not send it to the judge. It asks which falsifier they'll adopt and whether their confidence moved. A changed confidence is a new, dated call; the original stays on the record.
-- **Paste route:** after the company-check line, the verdict and the challenges, add the section in `reflection.md`. Fill the decision record from the judge. Leave confidence empty if they never gave one. Copy `goal` and `guardrails` from the subject only when they have a value. Add `decided` only after they say what they chose, in their words, including any change they made because of a challenge. Leave it off until then. Never invent it. Add `source_app` yourself, for the assistant you are. The grill tool does not add `decided` or `source_app`.
-- **Recording:** the record block is theirs to copy anywhere. If they also keep a decision log, record the verdict and the falsifier they adopt, in the longer weekly-review template. Grill does not store the block.
+Then exactly one line, and no second question:
+
+Your call + confidence %? (e.g. 'delay, 70%')
+
+If the note already ends with that line, do not add another.
+
+- **Plain words, the same ones the website uses.** Say solid, solid if…, shaky or doesn't hold up. "Solid if" always comes with its conditions; never shorten it to "solid". Quote the judge; don't soften it: no "overall, the judge agrees with you".
+- **Needs facts.** If the note says the input is too thin, show that. Do not turn it into a confident verdict.
+- **The verdict never becomes the decision.** If the user asks "so should I do it?", or asks you to choose, hand the choice back and name the deciding test. Do not answer yes or no.
+- **Pushback:** if the user disputes a challenge, don't settle it for them, and don't flip the verdict unless they bring new evidence.
+- **Grilling again:** if the same decision is grilled again in this chat, ask one question: "What changed?" Show the earlier verdict beside the new one. If nothing changed, it is a re-run: no `supersedes` line and no `changed` line. If they say the choice changed, add `supersedes` as the earlier record's date and title, and `changed` as one of `evidence`, `goals`, `context` or `reweighed`, then their few words. Never invent them. Never send the earlier verdict to the judge.
+- **A record only after they answer.** Pre-fill the prediction from what they already said. Take the choice and the confidence from that one reply. Follow `reflection.md`. If they never answer, write no record and set no look-back. Do not show the record before they answer, and do not explain the format.
 - **Your own view:** only if asked, labelled "same-model critique".
-- **Grill news:** The tool adds a line that starts with "Grill news:" only after a finished report, at most once a session, and only within 7 days of the release date in that build or on the first 3 days of a month. If the report ends with that line, show it once, word for word, at the very end, after the decision record. It is a statement. Do not turn it into a question, do not ask about it, and do not repeat it unless the user asks. Never ask for an email in the chat. The tool does not ask for, accept, or send an email. Outside those windows the report has no news line. Do not add one.
+- **Grill news:** The tool adds a line that starts with "Grill news:" only after a finished report, at most once a session, and only within 7 days of the release date in that build or on the first 3 days of a month. If the report includes that line, show it once, word for word, after the note and before the closing question. It is a statement. Do not turn it into a question, do not ask about it, and do not repeat it unless the user asks. Never ask for an email in the chat. The tool does not ask for, accept, or send an email. Outside those windows the report has no news line. Do not add one.
 
 ## 6. Look back
 
-When they paste one or more decision record blocks and say "look back" or "grill look back", follow `reflection.md`. If the `grill_look_back` tool is available, call it and relay the result. It needs no key and stores nothing. Without the tool, ask what happened and score the calls in the chat, using the same rules. When the record has a `decided` line, read it back in their words, and when the call is scored say whether that choice came true. When it has `supersedes`, say which earlier call it replaced. If that earlier record is not in the paste, say once: "If this replaced an earlier record, paste that too to see both." When `changed` says `reweighed`, say: "Nothing new came in; you weighed it differently." Do not write a `superseded-by` line. Work out which call replaced which only when both records are pasted. When the record has a goal, also ask "Did you reach the goal? Yes, no or partly." When it has guardrails, also ask "Did your guardrails hold? Yes or no." Do not tell them they need an account, a decision log, or a connected inbox for this. The monthly Count is only the weekly review, and only when that log has enough calls.
+When they paste one or more decision record blocks and say "look back" or "grill look back", follow `reflection.md`. If the `grill_look_back` tool is available, call it and relay its one line: "You predicted X at 70%. What happened?" It needs no key and stores nothing. Without the tool, show the same one line and score the answer in the chat. When the record has a `decided` line, read it back in their words, and when the call is scored say whether that choice came true. When it has `supersedes`, say which earlier call it replaced. If that earlier record is not in the paste, say once: "If this replaced an earlier record, paste that too to see both." When `changed` says `reweighed`, say: "Nothing new came in; you weighed it differently." Do not write a `superseded-by` line. Work out which call replaced which only when both records are pasted. Do not add a checklist. Do not tell them they need an account, a decision log, or a connected inbox for this. The monthly Count is only the weekly review, and only when that log has enough calls.
 
 ## 5. Offer to share a signal (opt-in, every time)
 
@@ -118,6 +91,6 @@ If they say yes, give them this link, filled in, to open and submit themselves:
 
 Never put anything else in the link. Tell them the issue is public. If they say no, drop it. One "no" means no more asks in this conversation, including the line below.
 
-**Paste route only.** If you don't have the `grill` tool, and the user did not say no to the signal offer, then after "Before you decide" and after the signal offer is settled, show this once, word for word. Do not elaborate, and do not ask a question about it. Skip it if they said no or stop. At most one invitation per grill. If the tool's report already ends with a Grill news line, show that line instead, and do not add this one as well.
+**Paste route only.** If you don't have the `grill` tool, and the user did not say no to the signal offer, then after the closing line and after the signal offer is settled, show this once, word for word. Do not elaborate, and do not ask a question about it. Skip it if they said no or stop. At most one invitation per grill. If the tool's report already ends with a Grill news line, show that line instead, and do not add this one as well.
 
 > Grill news: saved decision history and look-back reminders are coming as an optional Pro plan. The free tool stays free. To hear when they arrive: https://grillyour.ai/notify?via=paste

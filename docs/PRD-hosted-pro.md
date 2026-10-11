@@ -29,7 +29,7 @@ Browser apps can only reach an MCP server on the internet. So Pro needs a hosted
 
 ### What the hosted route adds (the honest new sentence)
 
-> On the hosted route, your approved write-up passes through Grill's relay on its way to the judge. The relay holds it in memory for the length of the grill. It is not logged or written to disk. The report waits, encrypted with a key only your assistant holds, for at most 15 minutes so your assistant can collect it.
+> On the hosted route, the decision as you stated it passes through Grill's relay on its way to the judge. The relay holds it in memory for the length of the grill. It is not logged or written to disk. The short note waits, encrypted with a key only your assistant holds, for at most 15 minutes so your assistant can collect it.
 
 ### How the relay earns that sentence
 

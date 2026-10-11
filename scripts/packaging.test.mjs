@@ -259,14 +259,15 @@ describe("the skills", () => {
     assert.match(text, /can be fixed in place, and makes no rejected option look better, is moderate/);
   });
 
-  it("the grill skill writes the subject as a clerk and relays the verdict without softening it", () => {
+  it("the grill skill sends the decision as stated and relays the short note", () => {
     const text = readFileSync(join(ROOT, "skills/grill/SKILL.md"), "utf8");
-    assert.match(text, /Write as a clerk, not an advocate/);
-    assert.match(text, /State it and stop: don't answer it/);
-    assert.match(text, /name every option, not only the chosen one/);
-    assert.match(text, /\*\*The swap test\.\*\*/);
+    assert.match(text, /Send the decision as stated/);
+    assert.match(text, /Do not write your own case against/);
+    assert.match(text, /at most one short question/);
+    assert.match(text, /Do not wait for an OK/);
     assert.match(text, /never shorten it to "solid"/);
     assert.match(text, /no "overall, the judge agrees with you"/);
+    assert.match(text, /Your call \+ confidence %\?/);
   });
 });
 
@@ -301,10 +302,11 @@ describe("the any-assistant prompt", () => {
     }
   });
 
-  it("writes the subject as a clerk, not an advocate, in any assistant too", () => {
-    assert.match(prompt, /Write the subject as a clerk, not an advocate/);
-    assert.match(prompt, /Don't answer it;/);
-    assert.match(prompt, /names every option/);
+  it("sends the decision as stated, in any assistant too", () => {
+    assert.match(prompt, /Send the decision as I stated it/);
+    assert.match(prompt, /Do not write your own case against/);
+    assert.match(prompt, /at most one short question/);
+    assert.match(prompt, /Do not wait for an OK/);
   });
 
   it("names the assistants people start from, and pairs Copilot only with a company it can't run", () => {

@@ -86,7 +86,7 @@ describe("the MCP handshake", () => {
     assert.equal(known.result.protocolVersion, "2025-03-26");
     assert.equal(known.result.serverInfo.name, "grill");
     assert.ok(known.result.capabilities.tools);
-    assert.match(known.result.instructions, /OK before calling grill/);
+    assert.match(known.result.instructions, /do not wait for an OK/);
     await a.close();
     const b = connect({});
     const unknown = await b.request("initialize", { protocolVersion: "1999-01-01", capabilities: {} });
@@ -105,18 +105,18 @@ describe("the MCP handshake", () => {
     await c.close();
   });
 
-  it("tells Claude, before every call, to write the subject as a clerk and keep the question from leaning", async () => {
-    // With the extension alone there is no skill: this text is all Claude reads about framing.
+  it("tells Claude to send the decision as stated, and not to wait for an OK", async () => {
     const c = await initialized({});
     const res = await c.request("tools/list", {});
     const grill = res.result.tools.find((t) => t.name === "grill");
-    assert.match(grill.description, /clerk, not an advocate/);
-    assert.match(grill.description, /kinder verdict than it should/);
-    assert.match(grill.description, /don't answer it/);
-    assert.match(grill.description, /Goal and Guardrails lines/);
+    assert.match(grill.description, /Send the decision as the user stated it/);
+    assert.match(grill.description, /Do not wait for an OK/);
+    assert.match(grill.description, /at most one short question/);
+    assert.match(grill.description, /do not add your own case against/i);
     assert.deepEqual(Object.keys(grill.inputSchema.properties).sort(), ["author", "quality_check", "question", "subject"]);
-    assert.match(grill.inputSchema.properties.question.description, /names every option/);
-    assert.match(grill.inputSchema.properties.question.description, /easy answer is the choice already made/);
+    assert.match(grill.inputSchema.properties.question.description, /Leave it empty/);
+    assert.match(grill.description, /do not show a write-up full of blanks/i);
+    assert.doesNotMatch(grill.description, /\[[a-z][^\]\n]{1,40}\]/);
     await c.close();
   });
 
@@ -168,14 +168,11 @@ describe("a grill end to end (fixture, no network)", () => {
     });
     assert.equal(res.result.isError, false);
     const report = textOf(res);
-    assert.match(report, /^# 🔥 Grill — \(stdin\)/);
-    assert.match(report, /Verdict:/);
-    assert.match(report, /Which way, and on what grounds\?/);
-    assert.match(report, /## Before you decide/);
-    assert.match(report, /^verdict: shaky$/m);
+    assert.match(report, /\*\*Shaky\.\*\*/);
     assert.match(report, /Pull the signup curve from the last comparable launch/);
-    assert.match(report, /^confidence: $/m);
-    assert.ok(report.indexOf("**Verdict:") < report.indexOf("## Before you decide"));
+    assert.match(report, /Your call \+ confidence %\?/);
+    assert.doesNotMatch(report, /grill-record|## Steelman|## Quality check|gpt-/);
+    assert.ok(report.indexOf("**Shaky.**") < report.indexOf("Your call"));
     await c.close();
     assert.ok(!c.transcript().includes(KEY), "the key must never be echoed");
   });
@@ -186,10 +183,10 @@ describe("a grill end to end (fixture, no network)", () => {
     const match = textOf(first).match(/job_id "([0-9a-f]{8})"/);
     assert.ok(match, textOf(first));
     let report = "";
-    for (let i = 0; i < 200 && !report.startsWith("# "); i++) {
+    for (let i = 0; i < 40 && !/Needs facts|\*\*Shaky\.\*\*/.test(report); i++) {
       report = textOf(await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1] } }));
     }
-    assert.match(report, /^# 🔥 Grill/);
+    assert.match(report, /Needs facts|Shaky/);
     const again = await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1] } });
     assert.equal(again.result.isError, true, "a collected job is gone");
     await c.close();
@@ -240,7 +237,7 @@ describe("the Jev quality check setting", () => {
       assert.equal(res.result.isError, false, textOf(res));
       assert.equal(fake.seen.decisions.length, 1, `GRILL_CHECK=${JSON.stringify(on)}`);
       assert.equal(fake.seen.decisions[0].body.model, "typesafe/jev-1.13");
-      assert.match(textOf(res), /## Quality check \(Jev\)/);
+      assert.doesNotMatch(textOf(res), /Quality check|Jev score/);
     }
   });
 
@@ -275,8 +272,8 @@ describe("the Jev quality check setting", () => {
 
   it("tells Claude, before every call, whether Jev will see the write-up and how to skip it", async () => {
     for (const [env, want] of [
-      [{}, /quality check is ON[\s\S]*sees the masked write-up[\s\S]*quality_check: false/],
-      [{ GRILL_CHECK: "false" }, /quality check is switched OFF/],
+      [{}, /quality check \(Jev, from TypeSafe\)[\s\S]*once-only[\s\S]*quality_check: false/],
+      [{ GRILL_CHECK: "false" }, /quality check is off/],
     ]) {
       const c = await initialized({ GRILL_API_KEY: KEY, ...env });
       const res = await c.request("tools/list", {});
@@ -370,7 +367,7 @@ describe("grill_look_back", () => {
     const c = await initialized({});
     const asked = await c.request("tools/call", { name: "grill_look_back", arguments: { records } });
     assert.equal(asked.result.isError, false);
-    assert.match(textOf(asked), /Did it come true/);
+    assert.match(textOf(asked), /You were 70% sure\. What happened\?/);
     assert.doesNotMatch(textOf(asked), /## Pattern/);
     const scored = await c.request("tools/call", {
       name: "grill_look_back",
@@ -427,9 +424,9 @@ describe("the Grill news line", () => {
     const report = textOf(first);
     assert.equal(first.result.isError, false);
     assert.match(report, /Grill news:/);
-    assert.ok(report.indexOf("**Verdict:") < report.indexOf("## Before you decide"));
-    assert.ok(report.indexOf("## Before you decide") < report.indexOf("Grill news:"));
-    assert.ok(report.indexOf("version: 1") < report.indexOf("Grill news:"));
+    assert.ok(report.indexOf("**Shaky.**") < report.indexOf("Grill news:"));
+    assert.ok(report.indexOf("Grill news:") < report.indexOf("Your call"));
+    assert.doesNotMatch(report, /version: 1/);
     assert.equal((report.match(/Grill news:/g) ?? []).length, 1);
     const second = await c.request("tools/call", { name: "grill", arguments: { subject } });
     assert.doesNotMatch(textOf(second), /Grill news/);

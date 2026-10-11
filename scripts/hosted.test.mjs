@@ -209,8 +209,9 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.equal(typeof tool.annotations.readOnlyHint, "boolean");
     }
     const grill = tools[0];
-    assert.match(grill.description, /clerk, not an advocate/);
-    assert.match(grill.description, /Show it to the user, and call only after they approve/);
+    assert.match(grill.description, /Send the decision as the user stated it/);
+    assert.match(grill.description, /Do not wait for an OK/);
+    assert.match(grill.description, /Do not add a disclosure of your own/);
     assert.match(grill.description, /openrouter\/auto/);
     assert.match(grill.description, /never falls back to this chat's own model/);
     assert.equal(typeof grill.inputSchema.properties.keep_records, "object");
@@ -227,14 +228,14 @@ describe("hosted Grill", { concurrency: false }, () => {
     const instructions = init.json.result.instructions;
     assert.match(
       instructions,
-      /If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the report arrives\. Do not ask the person to check\./,
+      /If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the note arrives\. Do not ask the person to check, and do not ask them for a job id\./,
     );
     assert.doesNotMatch(instructions, /call grill_result until the report arrives/);
     assert.equal(instructions.includes("—"), false);
     const listed = await postMcp(ctx, { jsonrpc: "2.0", id: 2, method: "tools/list" }, { token });
     const tools = listed.json.result.tools;
     const grill = tools.find((tool) => tool.name === "grill");
-    assert.match(grill.description, /A grill usually takes 1–3 minutes, which you cover by calling grill_result\. Do not tell the person that time\./);
+    assert.match(grill.description, /Do not tell them the balance or how long it takes/);
     assert.match(
       grill.description,
       /If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives\./,
@@ -421,10 +422,25 @@ describe("hosted Grill", { concurrency: false }, () => {
         { token, deps: { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse("2026-10-03T15:00:00Z") } },
       );
       assert.equal(kept.json.result.isError, false, textOf(kept.json));
-      assert.match(textOf(kept.json), /Saved to your decisions · look-back on 17 Oct · about \d+ grills of credit left/);
-      const parsed = parseRecords(textOf(kept.json));
+      assert.match(textOf(kept.json), /This goes to an outside judge from a different company/);
+      assert.match(textOf(kept.json), /Your call \+ confidence %\?/);
+      assert.doesNotMatch(textOf(kept.json), /grill-record|about \d+ grills of credit left|Quality check/);
+      const savedNow = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "grill_decided", arguments: { decided: "Ship it.", confidence: "70%" } } },
+        { token, deps: { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse("2026-10-03T15:00:00Z") } },
+      );
+      assert.match(textOf(savedNow.json), /Saved\./);
+      const session = signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 });
+      const exported = await handleDecisions(
+        new Request("https://grillyour.ai/decisions?export=text&__route=decisions", { headers: { cookie: `__session=${session}` } }),
+        ctx,
+      );
+      const parsed = parseRecords(await exported.text());
       assert.equal(parsed[0].source_app, "claude");
       assert.equal(parsed[0].title, CANARY);
+      assert.equal(parsed[0].decided, "Ship it.");
+      assert.equal(parsed[0].confidence, "70%");
       assert.equal(ctx.writes.some((row) => row.join(" ").includes(CANARY)), false);
       assert.equal(ctx.writes.some((row) => row.join(" ").includes(USER_KEY)), false);
       assert.equal(ctx.writes.some((row) => row.join(" ").includes("headline number")), false);
@@ -441,8 +457,35 @@ describe("hosted Grill", { concurrency: false }, () => {
         },
         { token: offToken, deps: { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse("2026-10-03T15:00:00Z") } },
       );
-      assert.match(textOf(off.json), /^Not saved · about \d+ grills of credit left/m);
+      assert.match(textOf(off.json), /Your call \+ confidence %\?/);
+      assert.doesNotMatch(textOf(off.json), /credit left|grill-record/);
       assert.equal(offCtx.writes.some((row) => row[0] === "SET" && row[1].includes(":record:")), false);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("at the running cap, waits, then tells the assistant to retry without asking for a job id", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      for (const id of ["a", "b", "c"]) ctx.memory.command(["SADD", "grill:hosted:running:user_invitee", id]);
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const res = await postMcp(
+        ctx,
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "grill", arguments: { subject: "Decision: drop the free tier? Paid users cover support.", keep_records: false, quality_check: false } },
+        },
+        { token, deps: { ...judgeDeps(fake), waitMs: 300 } },
+      );
+      assert.equal(res.json.result.isError, true);
+      assert.match(textOf(res.json), /Wait about 2 minutes, then call grill again yourself/);
+      assert.match(textOf(res.json), /Do not ask the person for a job id/);
+      assert.doesNotMatch(textOf(res.json), /grill_result/);
+      assert.equal(fake.seen.chat.length, 0);
     } finally {
       await fake.close();
     }
@@ -491,13 +534,14 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.equal(stored.some((row) => row.join(" ").includes(CANARY) || row.join(" ").includes("headline number")), false);
       const cipher = stored.at(-1)[2];
       const opened = JSON.parse(decryptString(cipher, credential.key));
-      assert.match(opened.text, /headline number/);
+      assert.match(opened.text, /headline number|Shaky|Needs facts/);
       const collected = await postMcp(
         ctx,
         { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId } } },
         { token, deps: { waitMs: 500 } },
       );
-      assert.match(textOf(collected.json), /Saved to your decisions/);
+      assert.match(textOf(collected.json), /Your call \+ confidence %\?/);
+      assert.doesNotMatch(textOf(collected.json), /credit left|grill-record/);
       const again = await postMcp(
         ctx,
         { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId } } },
@@ -527,6 +571,12 @@ describe("hosted Grill", { concurrency: false }, () => {
         { token, deps },
       );
       assert.equal(first.json.result.isError, false, textOf(first.json));
+      const choseFirst = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "grill_decided", arguments: { decided: "Hire the contractor.", confidence: "60%" } } },
+        { token, deps },
+      );
+      assert.match(textOf(choseFirst.json), /Saved\./);
       const second = await postMcp(
         ctx,
         {
@@ -546,9 +596,18 @@ describe("hosted Grill", { concurrency: false }, () => {
         },
         { token, deps: { ...deps, now: Date.parse("2026-02-01T15:00:00Z") } },
       );
-      assert.match(textOf(second.json), /supersedes: 2026-01-10 Hire contractor/);
-      assert.match(textOf(second.json), /changed: evidence — the pilot failed/);
-      assert.doesNotMatch(textOf(second.json), /^superseded-by:/m);
+      assert.doesNotMatch(textOf(second.json), /supersedes:|grill-record|superseded-by:/);
+      const choseSecond = await postMcp(
+        ctx,
+        {
+          jsonrpc: "2.0",
+          id: 9,
+          method: "tools/call",
+          params: { name: "grill_decided", arguments: { decided: "We hired in house.", confidence: "55%" } },
+        },
+        { token, deps: { ...deps, now: Date.parse("2026-02-01T15:00:00Z") } },
+      );
+      assert.match(textOf(choseSecond.json), /Saved\./);
       const session = signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 });
       const page = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${session}` } }), ctx);
       const html = await page.text();
@@ -575,7 +634,7 @@ describe("hosted Grill", { concurrency: false }, () => {
         { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "grill_decided", arguments: { record_ref: "2026-02-01 Hire in house", decided: "We hired in house." } } },
         { token },
       );
-      assert.match(textOf(decided.json), /Added your words/);
+      assert.match(textOf(decided.json), /Saved\./);
       const empty = await postMcp(
         ctx,
         { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "grill_decided", arguments: { record_ref: "2026-02-01 Hire in house", decided: "   " } } },

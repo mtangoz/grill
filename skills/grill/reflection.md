@@ -1,22 +1,18 @@
-# Before you decide
+# After the note
 
-Add this after you relay the judge. Do not put it inside the judge prompt, and do not change the judge's verdict or a `Judge:` line.
+Relay the short note as written. Then exactly one line:
 
-If the report already contains `## Before you decide`, show that section as written. Do not add a second one.
+Your call + confidence %? (e.g. 'delay, 70%')
 
-## The section
+Do not add the old three questions. Do not show a record yet. Grill does not store the note and does not send this reply to the judge.
 
-## Before you decide
+Write the record only after they answer. Pre-fill `prediction` from what they already said. Take `decided` and `confidence` from that one reply. If they never answer, write no record and set no look-back date.
 
-These stay in your notes. Grill does not store them and does not send them to the judge.
+The falsifier line is the judge's first cheap test. A goal or guardrail line is copied from what they already said. Leave the line off if they did not state one. Do not invent one. A `decided` line is what they chose, in their words. Add it only after they say it. Never invent it. `supersedes` and `changed` are added only when they say this choice replaced an earlier one. `supersedes` is that record's date and title. `changed` is `evidence`, `goals`, `context` or `reweighed`, then their few words. `reweighed` means the same facts weighed differently. A re-run, where nothing changed, leaves both lines off. Never invent them. Never write a `superseded-by` line.
 
-1. What do you expect to happen, and by when? Write the prediction you will stand behind.
-2. How sure are you now, as a percent? A band is fine. This is your confidence, not the judge.
-3. What would prove you wrong? Name the one result you will treat as decisive.
+The verdict never becomes the decision. If they ask "so should I do it?", hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If this same decision was already grilled in the chat, ask one question, "What changed?", and show the earlier verdict beside this one. Nothing changed is a re-run. A changed choice is a new dated call that names the earlier one. Changing their mind is part of the record, not a mark against it. Never send the earlier verdict to the judge.
 
-The prediction line is what they expect, and by when. Fill it from what they already said, and leave it empty if they have not said. Do not invent one. The falsifier line is the judge's sharpest check. The confidence line is what you said before the verdict, when you said one. Change the confidence if the verdict moved you, and keep the earlier number beside it. A change is a new call. A goal or guardrail line is copied from what they already said. Leave the line off if they did not state one. Do not invent one. A `decided` line is what they chose, in their words, including any change they made because of a challenge. Add it only after they say it. Leave it off until then. Never invent it. `supersedes` and `changed` are added only when they say this choice replaced an earlier one. `supersedes` is that record's date and title. `changed` is `evidence`, `goals`, `context` or `reweighed`, then their few words. `reweighed` means the same facts weighed differently. A re-run, where nothing changed, leaves both lines off. Never invent them. Never write a `superseded-by` line.
-
-The verdict never becomes the decision. If they ask "so should I do it?", hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If this same decision was already grilled in the chat, ask one question, "What changed?", and show the earlier verdict beside this one. Nothing changed is a re-run. A changed choice is a new dated call that names the earlier one. Changing their mind is part of the record, not a mark against it. Never send the earlier verdict to the judge. The earlier choice may be one neutral option in the write-up, never labeled "what I decided before".
+Look back with one line: You predicted X at 70%. What happened? If they mention something they did not expect, you may add `surprise:`. Do not ask "Did anything happen you didn't expect?" as its own question. When a scored record has a goal, the scale is "Did you reach the goal? Yes, no or partly." When it has guardrails, the scale is "Did your guardrails hold? Yes or no." Do not add those questions to the prompt.
 
 The block is decision record version 1. Write the lines in this order, inside a fence tagged `grill-record`. The field list is [docs/DECISION-RECORD.md](../../docs/DECISION-RECORD.md). A look-back reads `version: 1` only and skips any other version. A block with no version line is not a record.
 
