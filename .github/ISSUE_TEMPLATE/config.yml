@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Good first issues
+    url: https://github.com/mtangoz/grill/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22
+    about: Small, already scoped work.
