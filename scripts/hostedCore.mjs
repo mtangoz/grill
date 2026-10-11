@@ -685,6 +685,22 @@ export function createMemoryRedis() {
           if (!set) return 0;
           return set.delete(String(args[2])) ? 1 : 0;
         }
+        case "PFADD": {
+          // Exact stand-in for a HyperLogLog in tests: a set of members, read back only as a count.
+          const set = sets.get(key) || new Set();
+          const before = set.size;
+          for (const value of args.slice(2)) set.add(String(value));
+          sets.set(key, set);
+          return set.size > before ? 1 : 0;
+        }
+        case "PFCOUNT": {
+          const union = new Set();
+          for (const name of args.slice(1)) {
+            live(String(name));
+            for (const value of sets.get(String(name)) || []) union.add(value);
+          }
+          return union.size;
+        }
         case "SCARD":
           return sets.get(key)?.size || 0;
         case "SISMEMBER":

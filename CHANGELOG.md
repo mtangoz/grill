@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- In-chat Grill now keeps an approximate count of distinct active people per day, week and month, so the maintainers can see whether people come back. Each count is a HyperLogLog of a salted hash: it can't list who was counted and holds no email, account id or decision text. A failed count never blocks a grill. docs/DATA-LEDGER.md and docs/PRIVACY.md say so.
 - A quick take stays within about 50 words by ending on a whole sentence and one grammatical question. The longer note, the options, and the full note do the same: each ends on a whole sentence, and none is cut off mid-sentence.
 - The site has a Contribute page, and the header and footer link to it. CONTRIBUTING.md covers local setup, tests, and pull requests, and says the privacy promise and the different-company judge are not negotiable. GitHub has forms for an idea and a bug report.
 - The privacy notes promise no ads, no selling your data, and no training on your decisions. Grill is paid for by subscriptions only.

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describeError, handleAccount, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
+import { activeKeys, activeMember, describeError, handleAccount, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import {
   CLAUDE_CODE_CLIENT_ID,
@@ -151,6 +151,44 @@ async function postMcp(ctx, body, { token, url = RESOURCE, accept, deps = {} } =
 
 describe("hosted Grill", { concurrency: false }, () => {
   beforeEach(() => resetHostedCaches());
+
+  it("counts distinct active people per day, week and month without storing who they are", async () => {
+    const ctx = world();
+    const now = Date.parse("2026-10-11T12:00:00Z");
+    const call = (id) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "no_such_tool", arguments: {} } });
+    const token = signJwt(claims());
+    await postMcp(ctx, call(1), { token, deps: { now } });
+    await postMcp(ctx, call(2), { token, deps: { now } });
+    const keys = activeKeys(now);
+    assert.deepEqual(keys, {
+      day: "grill:hosted:active:day:2026-10-11",
+      week: "grill:hosted:active:week:2026-W41",
+      month: "grill:hosted:active:month:2026-10",
+    });
+    for (const key of Object.values(keys)) assert.equal(ctx.memory.command(["PFCOUNT", key]), 1);
+    const member = activeMember("invitee@example.com", ctx.env);
+    assert.match(member, /^[0-9a-f]{32}$/);
+    const pfadds = ctx.writes.filter((args) => args[0] === "PFADD");
+    assert.ok(pfadds.length >= 3);
+    for (const args of pfadds) {
+      assert.equal(args[2], member);
+      assert.ok(!args.join(" ").includes("invitee@example.com"));
+      assert.ok(!args.join(" ").includes("user_invitee"));
+    }
+    assert.notEqual(member, activeMember("invitee@example.com", { GRILL_METRICS_SALT: "another-salt" }));
+    assert.equal(activeMember("invitee@example.com", {}), "");
+  });
+
+  it("still answers a tool call when the active count can't be written", async () => {
+    const ctx = world();
+    const redis = ctx.redis;
+    ctx.redis = async (args) => {
+      if (args[0] === "PFADD") throw new Error("boom");
+      return redis(args);
+    };
+    const out = await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "no_such_tool", arguments: {} } }, { token: signJwt(claims()) });
+    assert.match(textOf(out.json), /no tool called/);
+  });
 
   it("stays dark until GRILL_HOSTED=on", async () => {
     const env = { ...baseEnv(), GRILL_HOSTED: "" };
