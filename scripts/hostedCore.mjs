@@ -3,7 +3,7 @@
  * The installed local tool does not import this file.
  */
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { parseRecords } from "./reflection.mjs";
+import { confidenceValue, parseRecords } from "./reflection.mjs";
 import { SCOPE_GUARD } from "./judgeCore.mjs";
 import { buildGrillTools } from "../server/index.mjs";
 
@@ -726,4 +726,26 @@ export function createMemoryRedis() {
       }
     },
   };
+}
+
+/**
+ * "Your habits" on /decisions: how the person answers grills, counted from what the account
+ * already holds (saved records and undecided drafts). Shown only to that person. Nothing here
+ * is stored, logged or counted for the operator; it is recomputed on each page load.
+ */
+export function decisionHabits({ records = [], waiting = 0, now = Date.now() } = {}) {
+  const today = new Date(now).toISOString().slice(0, 10);
+  const decided = records.length;
+  const withConfidence = records.filter((row) => {
+    const parsed = parseRecords(row.block || "")[0];
+    return parsed && confidenceValue(parsed.confidence) != null;
+  }).length;
+  const changedCourse = records.filter((row) => String(row.supersedes || "").trim()).length;
+  const due = records.filter((row) => row.review && row.review <= today).length;
+  const lookedBack = records.filter((row) => row.lookback?.happened).length;
+  let prompt = "";
+  if (waiting > decided) prompt = "Most of your grills end without a choice. One line saying what you chose, after the verdict, is what makes a look-back possible.";
+  else if (decided && withConfidence * 2 < decided) prompt = "You rarely say how sure you are. A rough percent makes a look-back show whether your confidence matches what happens.";
+  else if (due > lookedBack) prompt = `${due - lookedBack} look-back${due - lookedBack === 1 ? " is" : "s are"} due. Say "look back" in your chat.`;
+  return { decided, waiting, withConfidence, changedCourse, due, lookedBack, prompt };
 }

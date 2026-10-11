@@ -25,6 +25,7 @@ import {
   userMonthlyCapUsd,
   chainIds,
   createMemoryRedis,
+  decisionHabits,
   decryptString,
   encryptString,
   footerLine,
@@ -733,6 +734,9 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.match(html, /Hire in house/);
       assert.match(html, /Replaces 2026-01-10 Hire contractor/);
       assert.doesNotMatch(html, /flip-flop|consistency score/i);
+      assert.match(html, /Your habits/);
+      assert.match(html, /Grills you answered with a choice: 2\./);
+      assert.match(html, /Changed course on an earlier call: 1\./);
       assert.doesNotMatch(html, new RegExp(USER_KEY));
       const exported = await handleDecisions(
         new Request("https://grillyour.ai/decisions?export=text&__route=decisions", { headers: { cookie: `__session=${session}` } }),
@@ -1262,6 +1266,27 @@ describe("hosted mappings and ledger pins", () => {
     assert.equal(authorForJudge({ company: "" }).author, "none");
     assert.equal(sourceAppLabel("claude-code"), "claude-code");
     assert.equal(sourceAppLabel("Claude by Anthropic"), "claude");
+  });
+
+  it("counts decision habits from the person's own records only", () => {
+    const block = (confidence) => `version: 1\ndate: 2026-01-10\ntitle: T\nverdict: shaky\nconfidence: ${confidence}\nreview: 2026-01-20`;
+    const now = Date.parse("2026-02-01T00:00:00Z");
+    const habits = decisionHabits({
+      records: [
+        { block: block("70%"), review: "2026-01-20", supersedes: "", lookback: { happened: "it held" } },
+        { block: block(""), review: "2026-03-01", supersedes: "2026-01-10 T" },
+      ],
+      waiting: 1,
+      now,
+    });
+    assert.deepEqual(
+      { ...habits, prompt: undefined },
+      { decided: 2, waiting: 1, withConfidence: 1, changedCourse: 1, due: 1, lookedBack: 1, prompt: undefined },
+    );
+    assert.equal(habits.prompt, "");
+    assert.match(decisionHabits({ records: [], waiting: 3, now }).prompt, /end without a choice/);
+    assert.match(decisionHabits({ records: [{ block: block("") }, { block: block("") }], now }).prompt, /how sure you are/);
+    assert.match(decisionHabits({ records: [{ block: block("60%"), review: "2026-01-20" }], now }).prompt, /1 look-back is due/);
   });
 
   it("links chains without a superseded-by line", () => {
