@@ -267,7 +267,7 @@ describe("the skills", () => {
     assert.match(text, /Do not wait for an OK/);
     assert.match(text, /never shorten it to "solid"/);
     assert.match(text, /no "overall, the judge agrees with you"/);
-    assert.match(text, /Your call \+ confidence %\?/);
+    assert.match(text, /Say 'more', 'options', or your call\./);
   });
 });
 

@@ -1,12 +1,14 @@
 # After the note
 
-Relay the short note as written. Then exactly one line:
+Relay layer 1 as written. It is at most 50 words. Then exactly one line, if it is not already last:
 
-Your call + confidence %? (e.g. 'delay, 70%')
+Say 'more', 'options', or your call.
 
-Do not add the old three questions. Do not show a record yet. Grill does not store the note and does not send this reply to the judge.
+Do not add a confidence question. Do not show a record yet. On the paste route, Grill does not store the note and does not send this reply to the judge. When they say more, why, or what else, show the next challenge only. When they say options, or they are stuck, show the short frame only. A full report only when they ask.
 
-Write the record only after they answer. Pre-fill `prediction` from what they already said. Take `decided` and `confidence` from that one reply. If they never answer, write no record and set no look-back date.
+Write the record only after they answer, including after a quick take. Any stated choice counts, such as do it, yes, keep it, or delay. Pre-fill `prediction` from what they already said. Take `decided` from that reply. Confidence is optional. If they did not say a percent, leave it empty and do not ask. If they never answer, write no record and set no look-back date.
+
+After a grill, don't start doing the decision (no code changes, no PRs, no product questions) unless the person separately asks. Grill's job ends at the verdict and the record.
 
 The falsifier line is the judge's first cheap test. A goal or guardrail line is copied from what they already said. Leave the line off if they did not state one. Do not invent one. A `decided` line is what they chose, in their words. Add it only after they say it. Never invent it. `supersedes` and `changed` are added only when they say this choice replaced an earlier one. `supersedes` is that record's date and title. `changed` is `evidence`, `goals`, `context` or `reweighed`, then their few words. `reweighed` means the same facts weighed differently. A re-run, where nothing changed, leaves both lines off. Never invent them. Never write a `superseded-by` line.
 

@@ -52,7 +52,11 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { keyFilePath, maskKey, resolveApiKey, saveApiKey } from "../scripts/apiKey.mjs";
-import { CLOSING_ASK, renderUserFacing } from "../scripts/judgeCore.mjs";
+import { CLOSING_ASK, SCOPE_GUARD, normalizeDetail, renderLayers } from "../scripts/judgeCore.mjs";
+
+/** First use only. One line. The privacy page holds the rest. Same words as the hosted connector. */
+export const ONCE_DISCLOSURE =
+  "This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/#privacy";
 import { lookBack } from "../scripts/reflection.mjs";
 import { scheduleUsagePing } from "../scripts/usageStats.mjs";
 
@@ -214,19 +218,22 @@ const SETUP_TEXT = [
 // Hosted Grill imports this same text so the two cannot drift.
 export function buildGrillTools({ checkOn }) {
   const checkNote = checkOn
-    ? "A quality check (Jev, from TypeSafe) may also see the masked write-up, on a zero-retention endpoint. Mention that only inside the once-only sentence above. Do not mention the check or its score again. Pass quality_check: false only if the user asks to skip it."
+    ? "A quality check (Jev, from TypeSafe) may also see the masked write-up, on a zero-retention endpoint. Do not put that into the once-only line. The privacy link covers it. Do not mention the check or its score again. Pass quality_check: false only if the user asks to skip it."
     : "The quality check is off, so only the judge sees the write-up. Leave Jev out of the once-only sentence, and do not mention the check.";
   const description = [
     "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).",
     "The judge is picked by openrouter/auto. Do not pin a model, and do not fall back to this chat's own model for speed or cost.",
     "Send the decision as the user stated it, with whatever context is already in the chat. Do not rewrite it into a template, and do not add your own case against.",
     "Ask at most one short question, and only if the decision is truly unclear, such as 'What's the goal?'. Then call this tool. Do not wait for an OK, and do not show a write-up full of blanks.",
-    "The first time you use Grill with this person, say once: the decision goes to an outside judge from a different company, through a router that does not keep it, and a grill costs about a cent.",
+    `The first time you use Grill with this person, say once, as one line, and not again: ${ONCE_DISCLOSURE}`,
     checkNote,
     "After that, do not repeat the disclosure. Do not mention the judge's model, a score, a balance, or a quote check.",
-    "Relay the tool result as written. It is about 150 words. If it does not already end with the closing question, add exactly: " +
+    "Relay layer 1 as written. It is at most 50 words and already ends with: " +
       CLOSING_ASK +
-      " Do not add a second question, a record, or a disclaimer.",
+      " Do not add a fact list, a confidence question, a record, or a disclaimer.",
+    "When the user says more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Do not write a layer yourself.",
+    "Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask.",
+    SCOPE_GUARD,
     "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default.",
     "If the result is a job id, call grill_result with it before you reply. Do not ask the user for a job id, and do not tell them how long it takes.",
   ].join(" ");
@@ -265,11 +272,19 @@ export function buildGrillTools({ checkOn }) {
     {
       name: "grill_result",
       title: "Collect a grill that was still running",
-      description: "Collect the report of a grill that returned a job id. Waits up to 45 seconds; call again if it is still running.",
+      description:
+        "Collect a grill that returned a job id, or a later layer of one. detail is brief (the default), more, options, or full. Pass job_id when you have one. Omit it to use the latest grill. Waits up to 45 seconds if it is still running. Do not write a layer yourself.",
       inputSchema: {
         type: "object",
-        properties: { job_id: { type: "string", description: "The job id the grill tool returned." } },
-        required: ["job_id"],
+        properties: {
+          job_id: { type: "string", description: "The job id the grill tool returned. Omit it to use the latest grill in this session." },
+          detail: {
+            type: "string",
+            enum: ["brief", "more", "options", "full"],
+            description:
+              "brief is layer 1. more is the next challenge, for more, why, or what else. options is a short decision frame. full is only when they ask for a full report.",
+          },
+        },
         additionalProperties: false,
       },
       annotations: { title: "Collect a grill", readOnlyHint: true, openWorldHint: false },
@@ -403,15 +418,38 @@ function text(t, isError = false) {
   return { content: [{ type: "text", text: t }], isError };
 }
 
-function outcomeOf(job) {
-  jobs.delete(job.id);
+function latestJob() {
+  let best = null;
+  for (const job of jobs.values()) {
+    if (!best || job.startedAt >= best.startedAt) best = job;
+  }
+  return best;
+}
+
+function rememberLayers(job) {
+  if (job.layers) return job.layers;
+  const parsed = job.outcome?.parsed || {};
+  job.layers = renderLayers(parsed, { subject: job.subject || "" });
+  return job.layers;
+}
+
+function finishBrief(brief) {
+  const body = String(brief || "").trim();
+  const note = body.endsWith(CLOSING_ASK) ? body.slice(0, -CLOSING_ASK.length).trim() : body;
+  const lined = withNews(note, { now: nowMs() }).trim();
+  return `${lined}\n\n${CLOSING_ASK}\n`;
+}
+
+function outcomeOf(job, detail = "brief") {
   const { code, report, stderr, error, parsed } = job.outcome;
   if (parsed || report) {
-    const face = renderUserFacing(parsed || {}, { subject: job.subject });
-    const body = withNews(face, { now: nowMs() }).trim();
-    const closing = body.endsWith(CLOSING_ASK) ? body : `${body}\n\n${CLOSING_ASK}`;
-    return text(`${closing}\n`);
+    const layers = rememberLayers(job);
+    const key = normalizeDetail(detail);
+    if (key !== "brief") return text(`${String(layers[key] || "").trim()}\n`);
+    if (!job.briefText) job.briefText = finishBrief(layers.brief);
+    return text(job.briefText);
   }
+  jobs.delete(job.id);
   const why = error ?? (stderr.split("\n").filter((l) => l.includes("ERROR")).join("\n") || `the judge exited ${code}`);
   return text(`The grill did not finish: ${why}`, true);
 }
@@ -442,12 +480,14 @@ async function callTool(name, args = {}, onTick) {
       );
     }
     const job = startJob({ subject, question, author, skipCheck });
-    return (await waitFor(job, waitMs(), onTick)) ? outcomeOf(job) : pending(job);
+    return (await waitFor(job, waitMs(), onTick)) ? outcomeOf(job, "brief") : pending(job);
   }
   if (name === "grill_result") {
-    const job = jobs.get(typeof args.job_id === "string" ? args.job_id.trim() : "");
-    if (!job) return text("No grill is running with that job id. It may already have been collected; start a new one with the grill tool.", true);
-    return (await waitFor(job, waitMs(), onTick)) ? outcomeOf(job) : pending(job);
+    const id = typeof args.job_id === "string" ? args.job_id.trim() : "";
+    const job = id ? jobs.get(id) : latestJob();
+    if (!job) return text("No grill is waiting. Start one with the grill tool.", true);
+    const detail = normalizeDetail(args.detail);
+    return (await waitFor(job, waitMs(), onTick)) ? outcomeOf(job, detail) : pending(job);
   }
   if (name === "grill_look_back") {
     const records = typeof args.records === "string" ? args.records : "";
@@ -479,7 +519,8 @@ async function handle(msg) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "grill", title: "Grill", version: VERSION },
           instructions:
-            "Grill sends the decision as the user stated it to an outside judge from a different company. Do not rewrite it, do not add your own case against, and do not wait for an OK. Ask at most one short question, and only if the decision is truly unclear. Say the outside-judge disclosure once, the first time, then never again. If grill returns a job id, call grill_result before you reply. Do not ask the user for a job id. Relay the result as written: about 150 words, then exactly one line: Your call + confidence %? (e.g. 'delay, 70%'). Do not show a record, the judge's model, a score, a balance, a quote check, or a disclaimer. The verdict never becomes the decision. If the user asks 'so should I do it?', hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If the same decision is grilled again in the chat, ask what changed. Nothing changed is a re-run: show the earlier verdict beside the new one, and do not add a supersedes line. A changed choice names the earlier record and what changed. Never send the earlier verdict to the judge. Write a decision record only after the user states a choice, using the prediction they already gave and the choice and confidence from that one reply. If they never answer, write no record and set no look-back. When they say look back, call grill_look_back and relay its one line. It stores nothing. If the report ends with a 'Grill news' line, show it once, word for word, after the note and before the closing question. The tool adds it only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it.",
+            "Grill sends the decision as the user stated it to an outside judge from a different company. Do not rewrite it, do not add your own case against, and do not wait for an OK. Ask at most one short question, and only if the decision is truly unclear. The first time, say the outside-judge disclosure once, as one line, then never again. If grill returns a job id, call grill_result before you reply. Do not ask the user for a job id. Relay layer 1 as written. It is at most 50 words and already ends with the next-step line. Do not add a fact list or a confidence question. When the user says more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Do not write a layer yourself. Do not show a record, the judge's model, a score, a balance, a quote check, or a disclaimer. The verdict never becomes the decision. If the user asks 'so should I do it?', hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If the same decision is grilled again in the chat, ask what changed. Nothing changed is a re-run: show the earlier verdict beside the new one, and do not add a supersedes line. A changed choice names the earlier record and what changed. Never send the earlier verdict to the judge. Write a decision record only after the user states a choice, including a quick take. Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask. If they never answer, write no record and set no look-back. When they say look back, call grill_look_back and relay its one line. It stores nothing. If the report ends with a 'Grill news' line, show it once, word for word, after the note and before the next-step line. The tool adds it only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it. " +
+              SCOPE_GUARD,
         },
       });
       return;

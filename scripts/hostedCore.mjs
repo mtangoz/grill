@@ -4,7 +4,14 @@
  */
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { parseRecords } from "./reflection.mjs";
+import { SCOPE_GUARD } from "./judgeCore.mjs";
 import { buildGrillTools } from "../server/index.mjs";
+
+export { SCOPE_GUARD };
+
+/** First use only. One line. The privacy page holds the rest. Same words as the local server. */
+export const ONCE_DISCLOSURE =
+  "This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/#privacy";
 
 export const HOSTED_PROTOCOLS = Object.freeze(["2025-11-25", "2025-06-18", "2025-03-26"]);
 export const CLAUDE_WEB_REDIRECT = "https://claude.ai/api/mcp/auth_callback";
@@ -24,10 +31,6 @@ export const CONSENT_TEXT = [
   "",
   "Ask that once, then call grill again with keep_records true or false. Do not send the decision until they answer.",
 ].join("\n");
-
-/** Shown once per account, then the flag on the account row stops it. */
-export const ONCE_DISCLOSURE =
-  "This goes to an outside judge from a different company, through a router that does not keep the write-up. A quality check (Jev, from TypeSafe) may see the same write-up and does not keep it. A grill uses a little of your credit.";
 
 /** When three grills are still running after the wait. The assistant retries. The person is not asked for a job id. */
 export const CAP_RETRY_TEXT =
@@ -229,6 +232,12 @@ export function formatDay(iso) {
   return `${Number(match[3])} ${month}`;
 }
 
+/** About five words. No confidence nag, and no credit line. */
+export function savedConfirmation(review) {
+  const day = formatDay(review);
+  return day ? `Saved. Look-back ${day}.` : "Saved.";
+}
+
 export function footerLine({ saved, review = "", remainingUsd = 0 } = {}) {
   const left = grillsLeft(remainingUsd);
   const credit = `about ${left} grill${left === 1 ? "" : "s"} of credit left`;
@@ -353,11 +362,12 @@ export function recordsForLookBack(saved, { records = "", now = Date.now() } = {
 }
 
 const HOSTED_COST_LINE =
-  "Uses a little of the person's Grill credit. Do not tell them the balance or how long it takes. The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. Do not ask the person for a job id. The first time, Grill asks whether to keep decision records before anything is sent: show that one question, and call again with keep_records true or false only after they answer Yes or No. Do not add your own disclosure. If the result starts with the outside-judge sentence, show it once. Later results leave it off.";
+  "Uses a little of the person's Grill credit. Do not tell them the balance or how long it takes. The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. Do not ask the person for a job id. The first time, Grill asks whether to keep decision records before anything is sent: show that one question, and call again with keep_records true or false only after they answer Yes or No. Do not add your own disclosure. If the result starts with the outside-judge sentence, show that one line once. Later results leave it off. Layer 1 is at most 50 words. When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Do not write a layer yourself. A follow: line is a job id for you. Never show it. " +
+  SCOPE_GUARD;
 
 /** What the assistant reads from grill_result. The next step, if the job is still running, is another call. */
 const HOSTED_RESULT_DESCRIPTION =
-  "Collect the report of a grill that returned a job id. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person.";
+  "Collect a grill that returned a job id, or a later layer of one. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person. detail is brief, more, options, or full. Do not write a layer yourself.";
 
 /** The tool result while a hosted job is still running. The next step is another grill_result call. */
 export function hostedStillRunningText(jobId) {
@@ -369,7 +379,7 @@ export function hostedStillRunningText(jobId) {
 export function hostedTools() {
   const [grill, result, look] = buildGrillTools({ checkOn: true });
   const localDisclosure =
-    /The first time you use Grill with this person, say once:.*?Do not mention the judge's model, a score, a balance, or a quote check\. /;
+    /The first time you use Grill with this person, say once\b.*?Do not mention the judge's model, a score, a balance, or a quote check\. /;
   const hostedDisclosure =
     "Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Do not mention the judge's model, a Jev score, a credit balance, or a quote check. ";
   return [
@@ -413,7 +423,7 @@ export function hostedTools() {
       name: "grill_decided",
       title: "Add what you decided",
       description:
-        "Save a decision record only after the person states a choice. Pass their words as decided, and the confidence from that same reply. The prediction is already filled from what they said. Omit record_ref to use the latest grill they have not answered. Never invent the choice or the confidence. If they never answer, do not call this.",
+        "Save a decision record after the person states a choice, including a quick take. Pass their words as decided. Confidence is optional: omit it if they did not say a percent, and do not ask. Omit record_ref to use the latest grill they have not answered. Never invent the choice. If they never answer, do not call this.",
       inputSchema: {
         type: "object",
         properties: {
@@ -424,7 +434,7 @@ export function hostedTools() {
           decided: { type: "string", description: "What they chose, in their words." },
           confidence: {
             type: "string",
-            description: "How sure they are, from the same reply, such as 70%. Leave it off if they did not say.",
+            description: "Optional. How sure they are, only if that same reply said so, such as 70%. Omit it when they did not, and do not ask.",
           },
           prediction: {
             type: "string",
@@ -445,15 +455,17 @@ export const HOSTED_INSTRUCTIONS = [
   "Do not rewrite the decision, do not add your own case against, and do not wait for an OK.",
   "Ask at most one short question, and only if the decision is truly unclear, such as what the goal is.",
   "The first time, grill asks whether to keep decision records before anything is sent. Relay that one question and call again with keep_records true or false only after they answer.",
-  "If the result starts with the outside-judge sentence, show that once. Do not add a disclosure of your own, and do not repeat it later.",
+  "If the result starts with the outside-judge sentence, show that one line once. Do not add a disclosure of your own, and do not repeat it later.",
   "If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the note arrives. Do not ask the person to check, and do not ask them for a job id.",
   "If three grills are still running, wait about 2 minutes and call grill again yourself. Do not ask the person for a job id.",
-  "Relay the note as written. It is about 150 words. Then exactly one line: Your call + confidence %? (e.g. 'delay, 70%'). If that line is already last, do not add a second one.",
+  "Relay layer 1 as written. It is at most 50 words and already ends with the next-step line. Do not add a fact list, a confidence question, or a second line.",
+  "When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Pass job_id if you have one. A follow: line is a job id for you. Never show it. Do not write a layer yourself.",
   "Do not show a record, the judge's model, a Jev score, a credit balance, a quote check, format rules, or a disclaimer.",
   "The verdict never becomes the decision. If they ask whether they should do it, hand the choice back and name the cheap test.",
-  "When they answer with a choice, call grill_decided with their words and the confidence from that same reply. Do not invent either. If they never answer, do not call it, and there is no record and no look-back.",
+  "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation, about five words. If they never answer, do not call it, and there is no record and no look-back.",
   "Add supersedes and changed only when they say the choice changed, in their words. A re-run with nothing changed leaves those off.",
   "When they say look back, call grill_look_back and relay its one line. With a Grill account it can read saved records, so they do not have to paste.",
+  SCOPE_GUARD,
 ].join(" ");
 
 /** A tiny Redis used by tests. Production talks to Upstash over fetch instead. */

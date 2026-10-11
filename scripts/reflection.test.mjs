@@ -531,7 +531,7 @@ describe("every route carries the footer and the look-back, and the judge prompt
       ["prompt", prompt],
     ]) {
       assert.match(text, /at most one short question/);
-      assert.match(text, /Your call \+ confidence %\?/);
+      assert.match(text, /Say 'more', 'options', or your call\./);
       assert.match(text, /only after they answer|only after I answer/);
       assert.match(text, /Did you reach the goal\? Yes, no or partly\./);
       assert.match(text, /Did your guardrails hold\? Yes or no\./);
@@ -588,6 +588,6 @@ describe("every route carries the footer and the look-back, and the judge prompt
     assert.ok(prompt.includes(judge));
     assert.match(skill, /Judge: <model name> by <company>/);
     assert.match(server, /grill_look_back/);
-    assert.match(server, /renderUserFacing/);
+    assert.match(server, /renderLayers/);
   });
 });
