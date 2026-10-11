@@ -1427,6 +1427,47 @@ describe("the note a person reads", () => {
     }
   });
 
+  it("does not leave a dangling dash when a dropped clause ends the line", () => {
+    const live = "**Solid if.** A beats a priced-out B, an unsolicited C and a forfeiting D, and the subject names its own assumptions —.";
+    const repaired = live.replace(/ —\.$/, ".");
+    const result = {
+      verdict: "holds-with-conditions",
+      verdictReason:
+        "A beats a priced-out B, an unsolicited C and a forfeiting D, and the subject names its own assumptions — but the priced comparison never got a number, the forfeited option was not costed, and the unsolicited one was never asked for by anyone who would pay.",
+      challenges: [{ challenge: "One check is enough.", falsifier: "Price B once." }],
+    };
+    const subject = "Choose A over a priced-out B and a forfeiting D this quarter.";
+    const layers = renderLayers(result, { subject });
+    assert.equal(layers.brief.includes(live), false, layers.brief);
+    assert.equal(layers.full.includes(live), false, layers.full);
+    assert.ok(layers.brief.includes(repaired), layers.brief);
+    assert.ok(layers.full.includes(repaired), layers.full);
+    assert.doesNotMatch(layers.brief, /[—–,:;]\s*\./);
+    assert.doesNotMatch(layers.full, /[—–,:;]\s*\./);
+    for (const tail of [",", ":", ";", " –", " —"]) {
+      const closed = renderLayers(
+        {
+          verdict: "holds-with-conditions",
+          verdictReason: `The subject names its own assumptions${tail}`,
+          challenges: [{ challenge: "One check is enough.", falsifier: "Price B once." }],
+        },
+        { subject },
+      );
+      assert.match(closed.full, /The subject names its own assumptions\./, tail);
+      assert.doesNotMatch(closed.full, /assumptions\s*[—–,:;]\s*\./, tail);
+    }
+    const prior = renderLayers(
+      {
+        verdict: "holds-with-conditions",
+        verdictReason: "The comparison is already priced. The subject names its own assumptions —",
+        challenges: [{ challenge: "One check is enough.", falsifier: "Price B once." }],
+      },
+      { subject },
+    );
+    assert.match(prior.full, /\*\*Solid if\.\*\* The comparison is already priced\./);
+    assert.doesNotMatch(prior.full, /assumptions/);
+  });
+
   it("the scope guard is the shared sentence", () => {
     assert.match(SCOPE_GUARD, /no code changes, no PRs, no product questions/);
     assert.match(SCOPE_GUARD, /Grill's job ends at the verdict and the record/);

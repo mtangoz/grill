@@ -1370,18 +1370,34 @@ function missingOptionLine(result, max = 16) {
   return simpler?.challenge ? sentenceWithin(simpler.challenge, max) : "";
 }
 
-function sentence(text) {
-  const clean = String(text || "")
-    .replace(/\s+/g, " ")
+/** A dash, comma, colon, or semicolon left behind when a later clause was dropped. */
+function endsMidClause(text) {
+  return /[—–,:;]\s*[.!?]?["'*]*$/.test(String(text || "").trim());
+}
+
+function stripClauseTail(text) {
+  return String(text || "")
     .trim()
-    .replace(/(?:\.{3}|…)+$/g, "")
+    .replace(/(?:\s*[—–]|[,:;])+(?:\s*[.!?])?["'*]*$/g, "")
     .trim();
+}
+
+function sentence(text) {
+  const clean = stripClauseTail(
+    String(text || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/(?:\.{3}|…)+$/g, "")
+      .trim(),
+  );
   if (!clean) return "";
   return /[.?!]$/.test(clean) ? clean : `${clean}.`;
 }
 
 function endsSentence(text) {
-  return /[.!?]["'*]*$/.test(String(text || "").trim());
+  const clean = String(text || "").trim();
+  if (!clean || endsMidClause(clean)) return false;
+  return /[.!?]["'*]*$/.test(clean);
 }
 
 /** A period inside **bold.** is not a sentence boundary. The closing marks stay on that sentence. */
@@ -1421,7 +1437,9 @@ function takeCompleteSentences(text, maxWords) {
 
 function closeClause(cut, maxWords) {
   if (!cut) return "";
-  const done = endsSentence(cut) ? cut : `${cut}.`;
+  const stripped = endsMidClause(cut) ? stripClauseTail(cut) : cut;
+  if (!stripped) return "";
+  const done = endsSentence(stripped) ? stripped : `${stripped}.`;
   return countWords(done) <= maxWords ? done : "";
 }
 
@@ -1456,6 +1474,13 @@ function openingClause(text, maxWords) {
 function sentenceWithin(text, maxWords) {
   const clean = String(text || "").replace(/\s+/g, " ").trim();
   if (!clean || maxWords <= 0) return "";
+  // A kept fragment that stops mid-clause is not a sentence. Prefer the previous
+  // complete sentence. If there isn't one, drop the dangling dash or comma and close it.
+  if (endsMidClause(clean)) {
+    const prior = takeCompleteSentences(clean, maxWords);
+    if (prior) return prior;
+    return sentenceWithin(stripClauseTail(clean), maxWords);
+  }
   if (countWords(clean) <= maxWords) return endsSentence(clean) ? clean : sentence(clean);
   return takeCompleteSentences(clean, maxWords) || openingClause(clean, maxWords);
 }
