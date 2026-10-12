@@ -535,8 +535,13 @@ if (opts.dryRun) {
   console.log(`[judge] prompt: ${promptChars} chars`);
   for (const d of degraded) console.log(`[judge] DEGRADED: ${d}`);
   for (const note of notes) console.log(`[judge] note: ${note}`);
+  const payload = JSON.stringify(bodyFor(primaryModel), null, 2);
   console.log("\n--- payload (truncated to 20k chars for display) ---");
-  console.log(JSON.stringify(bodyFor(primaryModel), null, 2).slice(0, 20000));
+  console.log(payload.slice(0, 20000));
+  // The provider block sits at the end. A longer prompt must not hide the privacy fields.
+  if (payload.length > 20000) {
+    console.log(`[judge] provider (past the display cap): ${JSON.stringify(bodyFor(primaryModel).provider)}`);
+  }
   process.exit(0);
 }
 

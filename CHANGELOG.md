@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Each verdict lists challenges in two groups: "Checked for you" (bugs, facts, figures, consistency the judge could settle) and "Your call" (what turns on your own values or unwritten rules). The judge tags each challenge; untagged ones count as your call.
+- A dry run that clips the payload still prints the zero-data-retention provider fields.
 - Speed rule: Grill never adds a required question before the verdict on a quick or bulk grill. A forecast is an optional one-line offer after the verdict, for decisions you mark as big. The prediction question no longer blocks a grill.
 - docs/PRINCIPLES.md links every promise to the code and test that enforce it, and marks promises that are prompt instructions only. `node --test scripts/principles.test.mjs` checks them. The README has a "What Grill promises" section.
 - A layer that drops a clause no longer ends on a dangling dash, comma, colon, or semicolon. It keeps the previous full sentence, or closes the clause that remains.
