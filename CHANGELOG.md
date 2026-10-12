@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Each verdict lists challenges in two groups: "Checked for you" (bugs, facts, figures, consistency the judge could settle) and "Your call" (what turns on your own values or unwritten rules). The judge tags each challenge; untagged ones count as your call.
+- A dry run that clips the payload still prints the zero-data-retention provider fields.
+- Speed rule: Grill never adds a required question before the verdict on a quick or bulk grill. A forecast is an optional one-line offer after the verdict, for decisions you mark as big. The prediction question no longer blocks a grill.
+- docs/PRINCIPLES.md links every promise to the code and test that enforce it, and marks promises that are prompt instructions only. `node --test scripts/principles.test.mjs` checks them. The README has a "What Grill promises" section.
 - A layer that drops a clause no longer ends on a dangling dash, comma, colon, or semicolon. It keeps the previous full sentence, or closes the clause that remains.
 - In-chat Grill's decisions page has a "Your habits" section, which only you see. It shows how many grills you answered with a choice, how many are still waiting for one, how often you said how sure you were, how often you changed course, and how many look-backs you have done. It also gives one suggestion. It is worked out from the records already on that page each time you open it. Nothing new is stored, and the maintainers see nothing new.
 - In-chat Grill now keeps an approximate count of distinct active people per day, week and month, so the maintainers can see whether people come back. Each count is a HyperLogLog of a salted hash: it can't list who was counted and holds no email, account id or decision text. A failed count never blocks a grill. docs/DATA-LEDGER.md and docs/PRIVACY.md say so.

@@ -140,6 +140,7 @@ describe("the MCP handshake", () => {
     assert.match(grill.description, /Do not wait for an OK/);
     assert.match(grill.description, /at most one short question/);
     assert.match(grill.description, /do not add your own case against/i);
+    assert.match(grill.description, /quick or bulk/);
     assert.deepEqual(Object.keys(grill.inputSchema.properties).sort(), ["author", "quality_check", "question", "subject"]);
     assert.match(grill.inputSchema.properties.question.description, /Leave it empty/);
     assert.match(grill.description, /no code changes, no PRs, no product questions/);

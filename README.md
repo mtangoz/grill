@@ -9,6 +9,15 @@ Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, G
 > **Verdict: shaky.** The plan assumes customers stay at the new price, and nothing in it tests that.
 > **Falsifier:** show the new price to one in ten new signups for two weeks, and compare how many start paying.
 
+## What Grill promises
+
+The verdict never becomes the decision. You decide.
+Your values and judgment calls are yours: each verdict lists what the judge checked for you separately from what is your call.
+The judge is a model from a different company.
+Grill uses OpenRouter's Auto Router, and it does not pin models.
+Only the write-up you approve leaves your machine.
+Every promise, and the code and test that enforce it: [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
+
 ## Set up
 
 Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes check it and warn you. Who to paste into is in the table below.
