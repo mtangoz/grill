@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- "What has Grill done for me?" `grill_look_back` takes `view: changes` and shows where your calls changed after a challenge: before, after, what moved it, and how it turned out so far, in your words. It gives counts only, compares rates only when each side has at least 10 calls back, and never claims a saving or what would have happened. Calls kept after a flagged challenge that then missed are listed too. In-chat Grill reads your saved records for it, and the decisions page has a "Where your calls changed" section with up to three examples. The record gains an optional `proposed_by` line (`ai` or `me`), and `decided` can end with `| after challenge N` or `| after falsifier`. Both are only in your words. Version stays 1.
 - Each verdict lists challenges in two groups: "Checked for you" (bugs, facts, figures, consistency the judge could settle) and "Your call" (what turns on your own values or unwritten rules). The judge tags each challenge; untagged ones count as your call.
 - A dry run that clips the payload still prints the zero-data-retention provider fields.
 - Speed rule: Grill never adds a required question before the verdict on a quick or bulk grill. A forecast is an optional one-line offer after the verdict, for decisions you mark as big. The prediction question no longer blocks a grill.

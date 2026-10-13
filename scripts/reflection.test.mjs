@@ -5,7 +5,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   BEFORE_YOU_DECIDE_QUESTIONS,
+  MIN_COMPARE,
   appendReflection,
+  changeSummary,
+  changesView,
+  decidedLine,
+  outcomesForSaved,
+  parseDecided,
+  parseOutcomes,
+  proposedByLabel,
+  recordBlock,
   confidenceFromSubject,
   decisionTitle,
   goalFromSubject,
@@ -80,7 +89,7 @@ describe("the reflection footer", () => {
   });
 
   it("copies a stated goal and guardrails, and omits the lines when they were not said", () => {
-    assert.deepEqual(OPTIONAL_RECORD_FIELDS, ["goal", "guardrails", "source_app", "decided", "supersedes", "changed"]);
+    assert.deepEqual(OPTIONAL_RECORD_FIELDS, ["goal", "guardrails", "source_app", "proposed_by", "decided", "supersedes", "changed"]);
     assert.equal(goalFromSubject("Our goal is to grow.\nWe will not break the API."), "");
     assert.equal(guardrailsFromSubject("Our goal is to grow.\nWe will not break the API."), "");
     assert.equal(goalFromSubject("Goal: not stated"), "not stated");
@@ -595,5 +604,98 @@ describe("every route carries the footer and the look-back, and the judge prompt
     assert.match(skill, /Judge: <model name> by <company>/);
     assert.match(server, /grill_look_back/);
     assert.match(server, /renderLayers/);
+  });
+});
+
+describe("what changed", () => {
+  const rec = (fields) => recordBlock({ verdict: "shaky", falsifier: "x", review: "2026-10-15", ...fields });
+
+  it("keeps who proposed the call and the challenge that moved it, in their words", () => {
+    assert.equal(proposedByLabel("AI"), "ai");
+    assert.equal(proposedByLabel("me"), "me");
+    assert.equal(proposedByLabel("my cousin"), "");
+    assert.deepEqual(parseDecided("Trial first. | after challenge 2"), { text: "Trial first.", after: "challenge 2" });
+    assert.deepEqual(parseDecided("Ship it."), { text: "Ship it.", after: "" });
+    assert.equal(decidedLine("Trial first.", "2"), "Trial first. | after challenge 2");
+    assert.equal(decidedLine("Trial first.", "falsifier"), "Trial first. | after falsifier");
+    assert.equal(decidedLine("Ship it.", "nonsense"), "Ship it.");
+    const block = rec({ date: "2026-10-01", title: "Switch vendor", proposed_by: "ai", decided: decidedLine("Trial first", "1") });
+    assert.match(block, /^proposed_by: ai$/m);
+    assert.match(block, /^decided: Trial first \| after challenge 1$/m);
+    const [parsed] = parseRecords(block);
+    assert.equal(parsed.proposed_by, "ai");
+    assert.doesNotMatch(rec({ date: "2026-10-01", title: "t" }), /proposed_by/);
+    const read = lookBack({ records: block, happened: "came_true: yes" });
+    assert.match(read, /You chose "Trial first"\. It came true\. You changed it after challenge 1\./);
+  });
+
+  it("shows examples before and after, counts only, and flagged calls that went ahead", () => {
+    const records = [
+      rec({ date: "2026-10-01", title: "Switch vendor", proposed_by: "ai", decided: "Trial first | after challenge 1" }),
+      rec({ date: "2026-10-02", title: "Hire contractor", proposed_by: "me", decided: "Do it" }),
+      rec({ date: "2026-10-03", title: "Raise prices", decided: "" }),
+    ].join("\n");
+    const happened = "title: Switch vendor\ncame_true: yes\n\ntitle: Hire contractor\ncame_true: no\nsurprise: budget cut | matches challenge 2";
+    const out = changesView({ records, happened });
+    assert.match(out, /^## What changed/);
+    assert.match(out, /Nothing is stored/);
+    assert.match(out, /2 calls with a choice\. 1 changed after a challenge or a later rethink; 1 went ahead as first stated\./);
+    assert.match(out, /Of the changed calls, 1 started as AI suggestion\./);
+    assert.match(out, /\*\*Switch vendor\*\* \(AI suggestion\)\. Before: "Switch vendor", as brought to the grill\. After: "Trial first", after challenge 1\. So far: it came true\./);
+    assert.match(out, /\*\*Hire contractor\*\*: challenge 2 named it, you kept the call, and it did not come true\./);
+    assert.match(out, /1 record with no choice stated is not counted\./);
+    assert.match(out, /Fewer than 10 calls on each side are back, so there is no rate to compare/);
+    assert.match(out, /These are your calls\. Grill argued the other side; you chose\./);
+    assert.doesNotMatch(out, /\d+%|saved you|fewer misses|improv|streak|score/i);
+    assert.equal(changesView({ records, happened }), out);
+  });
+
+  it("names a later rethink once, and does not count the call it replaced as kept", () => {
+    const records = [
+      rec({ date: "2026-01-10", title: "Hire contractor", decided: "Hire them" }),
+      rec({ date: "2026-02-01", title: "Hire in house", decided: "We hired in house", supersedes: "2026-01-10 Hire contractor", changed: "evidence — the pilot failed" }),
+    ].join("\n");
+    const out = changesView({ records });
+    assert.match(out, /1 call with a choice\. 1 changed after a challenge or a later rethink; 0 went ahead as first stated\./);
+    assert.match(out, /Before: the call of 2026-01-10 Hire contractor\. After: "We hired in house"\. What changed: evidence — the pilot failed\. So far: not looked back yet\./);
+  });
+
+  it("compares rates only when each side has at least 10 calls back, and says it compares calls, not causes", () => {
+    const records = [];
+    const notes = [];
+    for (let i = 0; i < 20; i += 1) {
+      const changed = i < 10;
+      const title = `Call ${i}`;
+      records.push(rec({ date: `2026-09-${String(i + 1).padStart(2, "0")}`, title, decided: changed ? "Smaller | after challenge 1" : "As stated" }));
+      notes.push(`title: ${title}\ncame_true: ${i % 3 === 0 ? "no" : "yes"}`);
+    }
+    const summary = changeSummary({ records: parseRecords(records.join("\n")), outcomes: parseOutcomes(notes.join("\n\n")) });
+    assert.equal(MIN_COMPARE, 10);
+    assert.deepEqual(summary.compare, { changedHits: 6, changedBack: 10, keptHits: 7, keptBack: 10 });
+    const out = changesView({ records: records.join("\n"), happened: notes.join("\n\n") });
+    assert.match(out, /Changed calls came true 6 of 10; calls kept as stated came true 7 of 10\. This compares calls, not causes\./);
+    assert.match(out, /more changed calls? not shown|Call 0/);
+    const few = changeSummary({ records: parseRecords(records.slice(0, 19).join("\n")), outcomes: parseOutcomes(notes.join("\n\n")) });
+    assert.equal(few.compare, null);
+  });
+
+  it("says so when no record has a choice, or none was pasted", () => {
+    assert.match(changesView({ records: rec({ date: "2026-10-01", title: "t" }) }), /None of these records says what you chose yet/);
+    assert.match(changesView({ records: "notes" }), /No decision record was in that paste/);
+  });
+
+  it("reads a saved record's untitled look-back note as its own", () => {
+    const outcomes = outcomesForSaved([
+      { title: "A", lookback: { happened: "came_true: yes" } },
+      { title: "B", lookback: { happened: "title: Other\ncame_true: no" } },
+      { title: "C" },
+    ]);
+    assert.deepEqual(outcomes.map((item) => [item.title, item.cameTrue]), [["A", "yes"]]);
+  });
+
+  it("the local look-back tool offers the changes view", () => {
+    const server = readFileSync(join(ROOT, "server/index.mjs"), "utf8");
+    assert.match(server, /enum: \["score", "changes"\]/);
+    assert.match(server, /changesView\(/);
   });
 });

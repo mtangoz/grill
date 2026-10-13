@@ -80,6 +80,8 @@ When they say more, why, or what else, show the next challenge, its cheap test, 
 
 When they paste one or more decision record blocks and say "look back" or "grill look back", follow `reflection.md`. If the `grill_look_back` tool is available, call it and relay its one line: "You predicted X at 70%. What happened?" It needs no key and stores nothing. Without the tool, show the same one line and score the answer in the chat. When the record has a `decided` line, read it back in their words, and when the call is scored say whether that choice came true. When it has `supersedes`, say which earlier call it replaced. If that earlier record is not in the paste, say once: "If this replaced an earlier record, paste that too to see both." When `changed` says `reweighed`, say: "Nothing new came in; you weighed it differently." Do not write a `superseded-by` line. Work out which call replaced which only when both records are pasted. Do not add a checklist. Do not tell them they need an account, a decision log, or a connected inbox for this. The monthly Count is only the weekly review, and only when that log has enough calls.
 
+When they ask what Grill has done for them, or where their calls changed, call `grill_look_back` with `view: changes` and relay it as written. On the paste route, follow "What changed" in `reflection.md`.
+
 ## 5. Offer to share a signal (opt-in, every time)
 
 Grill improves under the same privacy controls as a grill: from a few shared choices, never from content. After they answer "worth engaging?", offer once: *"Want to help Grill get better? This shares only a few choices, no words from your decision."*

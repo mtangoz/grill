@@ -19,11 +19,18 @@ import { isThinGrill, normalizeDetail, renderLayers } from "../scripts/judgeCore
 import {
   REVIEW_DAYS,
   addDays,
+  changeCountLines,
+  changeExample,
+  changeSummary,
+  changesText,
+  changesView,
+  decidedLine,
   decisionTitle,
   goalFromSubject,
   guardrailsFromSubject,
   isoDate,
   lookBack,
+  outcomesForSaved,
   parseRecords,
   plainVerdict,
   predictionFromSubject,
@@ -1074,6 +1081,7 @@ async function callLookBack(args, account, deps) {
     return toolText("That paste is too long. Split it under 100,000 characters.", true);
   }
   const saved = account.records === "keep" ? await loadRecords(account, deps) : [];
+  if (args.view === "changes") return toolText(changesForAccount(records, happened, account, saved));
   if (!records.trim() && account.records !== "keep") {
     return toolText("Paste one or more decision records. Saving is off on this account, so Grill has none to read. Grill stores nothing either way.", true);
   }
@@ -1101,6 +1109,19 @@ async function callLookBack(args, account, deps) {
   return toolText(savedAny ? `${text}\n\nSaved with your decision record.` : text);
 }
 
+/** "What has Grill done for me?" A paste wins; otherwise every saved record, with its own look-back notes. */
+function changesForAccount(records, happened, account, saved) {
+  if (parseRecords(records).length) return changesView({ records, happened });
+  if (account.records !== "keep") {
+    return "Saving is off on this account, so Grill has no records to read. Paste one or more decision records. Grill stores nothing either way.";
+  }
+  const rows = saved.slice(-200);
+  const parsed = rows.map((row) => parseRecords(row.block || "")[0]).filter(Boolean);
+  if (!parsed.length) return "No saved decisions yet. After a grill, say what you chose and it is saved here.";
+  const summary = changeSummary({ records: parsed, outcomes: outcomesForSaved(rows) });
+  return changesText(summary, { storedNote: "Read from the records you chose to keep. Nothing new is stored." });
+}
+
 function matchesRef(item, ref) {
   const needle = String(ref || "").trim().toLowerCase();
   if (!needle) return false;
@@ -1115,6 +1136,9 @@ async function callDecided(args, account, deps) {
   if (!decided) return toolText("Add the decided line only in the person's own words. Grill will not invent one.", true);
   const confidence = typeof args.confidence === "string" ? args.confidence.replace(/\s+/g, " ").trim() : "";
   const prediction = typeof args.prediction === "string" ? args.prediction.replace(/\s+/g, " ").trim() : "";
+  const proposedBy = typeof args.proposed_by === "string" ? args.proposed_by : "";
+  const after = typeof args.after === "string" || typeof args.after === "number" ? String(args.after) : "";
+  const decidedText = decidedLine(decided, after);
   const ref = typeof args.record_ref === "string" ? args.record_ref.trim() : "";
   const rows = await loadRecords(account, deps);
   const saved = ref ? rows.find((item) => matchesRef(item, ref)) : null;
@@ -1124,7 +1148,13 @@ async function callDecided(args, account, deps) {
       logHosted(deps.requestId, "record-parse");
       return toolText("That saved record couldn't be read, so nothing was changed. Open your decisions page to check it, or grill the decision again.", true);
     }
-    saved.block = recordBlock({ ...parsed, decided, confidence: confidence || parsed.confidence, prediction: prediction || parsed.prediction });
+    saved.block = recordBlock({
+      ...parsed,
+      decided: decidedText,
+      proposed_by: proposedBy || parsed.proposed_by,
+      confidence: confidence || parsed.confidence,
+      prediction: prediction || parsed.prediction,
+    });
     saved.decided = decided;
     await writeRecord(account, deps, saved);
     return toolText(savedConfirmation(parsed.review));
@@ -1146,7 +1176,8 @@ async function callDecided(args, account, deps) {
     goal: pending.goal || "",
     guardrails: pending.guardrails || "",
     source_app: pending.sourceApp || "",
-    decided,
+    proposed_by: proposedBy,
+    decided: decidedText,
     supersedes: pending.supersedes || "",
     changed: pending.changed || "",
   };
@@ -1394,6 +1425,24 @@ function renderHabits(habits) {
   </section>`;
 }
 
+function inlineBold(text) {
+  return esc(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+/** Where your calls changed: one count line and at most three examples, worked out on each visit. */
+export function renderChanges(rows) {
+  const parsed = (rows || []).map((row) => parseRecords(row.block || "")[0]).filter(Boolean);
+  const summary = changeSummary({ records: parsed, outcomes: outcomesForSaved(rows || []) });
+  if (!summary.changed.length) return "";
+  const examples = summary.changed.slice(0, 3).map((item) => `<li>${inlineBold(changeExample(item))}</li>`).join("");
+  return `<section class="banner">
+    <h2>Where your calls changed</h2>
+    <p>${esc(changeCountLines(summary).join(" "))}</p>
+    <ul>${examples}</ul>
+    <p>These are your calls. Grill argued the other side; you chose.</p>
+  </section>`;
+}
+
 function renderDecisions(account, rows, credit, habits) {
   const linked = linkChains(rows);
   const byId = new Map(linked.map((row) => [row.id, row]));
@@ -1423,6 +1472,7 @@ function renderDecisions(account, rows, credit, habits) {
     </form>
     <p class="row"><a class="button" href="/decisions?export=text">Export as text</a> <a class="button" href="/decisions?export=json">Export as JSON</a> <a href="/account">Account</a></p>
     ${renderHabits(habits)}
+    ${renderChanges(rows)}
     ${cards.join("\n") || "<p>No records yet.</p>"}
     <form method="post" action="/decisions"><input type="hidden" name="action" value="delete-all"><input type="hidden" name="confirm" value="delete"><button type="submit">Delete all records</button></form>`,
   );
