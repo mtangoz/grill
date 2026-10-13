@@ -793,6 +793,55 @@ describe("hosted Grill", { concurrency: false }, () => {
     }
   });
 
+  it("records who proposed a call and the challenge that changed it, and shows where calls changed", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse("2026-10-03T15:00:00Z") };
+      const grilled = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: Switch vendor now", keep_records: true, quality_check: false } } },
+        { token, deps },
+      );
+      assert.equal(grilled.json.result.isError, false, textOf(grilled.json));
+      const chose = await postMcp(
+        ctx,
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { name: "grill_decided", arguments: { decided: "Trial two weeks first.", proposed_by: "ai", after: "1" } },
+        },
+        { token, deps },
+      );
+      assert.match(textOf(chose.json), /Saved\./);
+      const changes = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "grill_look_back", arguments: { view: "changes" } } },
+        { token, deps },
+      );
+      const text = textOf(changes.json);
+      assert.match(text, /## What changed/);
+      assert.match(text, /Read from the records you chose to keep/);
+      assert.match(text, /\*\*Switch vendor now\*\* \(AI suggestion\)\. Before: "Switch vendor now", as brought to the grill\. After: "Trial two weeks first\.", after challenge 1\./);
+      const session = signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 });
+      const exported = await handleDecisions(
+        new Request("https://grillyour.ai/decisions?export=text&__route=decisions", { headers: { cookie: `__session=${session}` } }),
+        ctx,
+      );
+      const [parsed] = parseRecords(await exported.text());
+      assert.equal(parsed.proposed_by, "ai");
+      assert.equal(parsed.decided, "Trial two weeks first. | after challenge 1");
+      const html = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${session}` } }), ctx)).text();
+      assert.match(html, /Where your calls changed/);
+      assert.match(html, /<strong>Switch vendor now<\/strong> \(AI suggestion\)/);
+      assert.doesNotMatch(html, /saved you|streak/i);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("creates one starter key, hides it, and says so when credit is gone", async () => {
     const fake = await startFakeOpenRouter();
     try {

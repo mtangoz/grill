@@ -15,7 +15,7 @@ export const RECORD_FENCE = "grill-record";
 export const RECORD_FIELDS = ["version", "date", "title", "prediction", "verdict", "falsifier", "confidence", "review"];
 export const RECORD_KEYS = ["date", "title", "prediction", "verdict", "falsifier", "confidence", "review"];
 /** Written after `review`, and only when the line has a value. Absent lines do not change version 1. */
-export const OPTIONAL_RECORD_FIELDS = ["goal", "guardrails", "source_app", "decided", "supersedes", "changed"];
+export const OPTIONAL_RECORD_FIELDS = ["goal", "guardrails", "source_app", "proposed_by", "decided", "supersedes", "changed"];
 
 export const BEFORE_YOU_DECIDE_QUESTIONS = [
   "What do you expect to happen, and by when? Write the prediction you will stand behind.",
@@ -158,6 +158,62 @@ export function sourceAppLabel(raw) {
   return clip(text, 40);
 }
 
+/**
+ * Who first proposed the call: `ai` when an assistant recommended it, `me` when the person did.
+ * Anything else is left off. Never guessed.
+ */
+export function proposedByLabel(raw) {
+  const text = oneLine(raw).toLowerCase().replace(/[.!]$/, "");
+  if (!text) return "";
+  if (/^(?:ai|the ai|an ai|assistant|the assistant|ai suggestion|ai recommendation)$/.test(text)) return "ai";
+  if (/^(?:me|i|i did|mine|myself|user|the user|human|my own|my call)$/.test(text)) return "me";
+  return "";
+}
+
+/**
+ * A `decided` line is the person's words, plus an optional mark after `|` naming what moved
+ * the choice: `after challenge 2` or `after falsifier`. The words are never rewritten.
+ */
+export function parseDecided(raw) {
+  const full = oneLine(raw);
+  if (!full) return { text: "", after: "" };
+  const words = [];
+  let after = "";
+  for (const part of full.split(/\s*\|\s*/)) {
+    const piece = oneLine(part);
+    const mark = piece.replace(/\.$/, "");
+    const challenge = mark.match(/^after challenge ([1-9]\d*)$/i);
+    if (challenge) {
+      if (!after) after = `challenge ${challenge[1]}`;
+      continue;
+    }
+    if (/^after(?: the)? falsifier$/i.test(mark)) {
+      if (!after) after = "falsifier";
+      continue;
+    }
+    if (piece) words.push(piece);
+  }
+  const text = words.join(" | ").trim();
+  return text ? { text, after } : { text: "", after: "" };
+}
+
+/** The mark a person gave for what moved the choice, as written on the decided line. Empty when none. */
+export function afterMark(raw) {
+  const text = oneLine(raw).toLowerCase().replace(/^after\s+/, "").replace(/\.$/, "");
+  const challenge = text.match(/^(?:challenge\s*)?#?([1-9]\d*)$/);
+  if (challenge) return `challenge ${challenge[1]}`;
+  if (/^(?:the )?falsifier$/.test(text)) return "falsifier";
+  return "";
+}
+
+/** The decided line: their words, then ` | after challenge N` when they said a challenge moved it. */
+export function decidedLine(words, after = "") {
+  const text = parseDecided(words).text;
+  if (!text) return "";
+  const mark = afterMark(after) || parseDecided(words).after;
+  return mark ? `${text} | after ${mark}` : text;
+}
+
 function sourceAppFromSubject(subject) {
   return sourceAppLabel(labeledLine(subject, "source_app", 80));
 }
@@ -226,7 +282,8 @@ export function recordBlock(fields) {
     goal: oneLine(fields.goal ?? ""),
     guardrails: oneLine(fields.guardrails ?? ""),
     source_app: sourceAppLabel(fields.source_app),
-    decided: oneLine(fields.decided ?? ""),
+    proposed_by: proposedByLabel(fields.proposed_by),
+    decided: decidedLine(fields.decided ?? ""),
     supersedes: oneLine(fields.supersedes ?? ""),
     changed: oneLine(fields.changed ?? ""),
   };
@@ -326,7 +383,7 @@ function takeRecord(current) {
   return record;
 }
 
-const RECORD_LINE = /^(version|date|title|prediction|verdict|falsifier|confidence|review|goal|guardrails|source_app|decided|supersedes|changed)\s*:\s*(.*)$/i;
+const RECORD_LINE = /^(version|date|title|prediction|verdict|falsifier|confidence|review|goal|guardrails|source_app|proposed_by|decided|supersedes|changed)\s*:\s*(.*)$/i;
 
 /**
  * Read version 1 records out of a paste. Field order does not matter. Any other version is
@@ -573,10 +630,11 @@ function callReading(record, outcome, records) {
   const came = outcome.cameTrue;
   const parts = [`**${record.title}.** Verdict then: ${verdict}.`];
   if (oneLine(record.prediction)) parts.push(`Prediction then: ${record.prediction}.`);
-  const decided = statedValue(record.decided);
+  const { text: decided, after } = parseDecided(statedValue(record.decided));
   if (decided && came === "yes") parts.push(`You chose "${decided}". It came true.`);
   else if (decided && came === "no") parts.push(`You chose "${decided}". It did not come true.`);
   else if (decided) parts.push(`You chose: "${decided}".`);
+  if (decided && after) parts.push(`You changed it after ${after}.`);
   for (const line of revisionLines(record, records)) parts.push(line);
   if (came === "not yet" || !came) {
     parts.push(outcome.happened ? `Not scored yet. ${outcome.happened}` : "Not back yet, so this call is not scored.");
@@ -739,5 +797,158 @@ export function lookBack({ records = "", happened = "" } = {}) {
   const note = pasteEarlierNote(parsed);
   if (note) lines.push(note, "");
   if (pending.length) lines.push("Still to answer:", "", questionsFor(pending, parsed));
+  return lines.join("\n");
+}
+
+/** Rates are compared only when each side has at least this many calls back. Below it, examples only. */
+export const MIN_COMPARE = 10;
+
+const PROPOSER_PLAIN = { ai: "AI suggestion", me: "your call" };
+
+/**
+ * Where the calls changed, as data. A call changed when its decided line names a challenge or the
+ * falsifier, or when it replaced an earlier record. Every example is a call the person made.
+ * No counterfactual, no trend, and no rate below MIN_COMPARE on each side.
+ */
+export function changeSummary({ records = [], outcomes = [] } = {}) {
+  const items = records.map((record) => {
+    const { text: decided, after } = parseDecided(statedValue(record.decided));
+    const outcome = matchOutcome(record, outcomes);
+    const came = outcome?.cameTrue === "yes" || outcome?.cameTrue === "no" ? outcome.cameTrue : "";
+    return {
+      record,
+      title: record.title,
+      date: record.date,
+      decided,
+      after,
+      supersedes: oneLine(record.supersedes),
+      changed: oneLine(record.changed),
+      proposedBy: proposedByLabel(record.proposed_by),
+      came,
+      flagged: came === "no" && Boolean(outcome?.surprise && outcome?.surpriseMatch),
+      flaggedBy: outcome?.surpriseMatch || "",
+    };
+  });
+  const replaced = new Set(records.map((record) => earlierInPaste(record, records)).filter(Boolean));
+  const withChoice = items.filter((item) => item.decided && !replaced.has(item.record));
+  const changed = withChoice.filter((item) => item.after || item.supersedes);
+  const kept = withChoice.filter((item) => !item.after && !item.supersedes);
+  const byProposer = { ai: 0, me: 0, unmarked: 0 };
+  for (const item of changed) byProposer[item.proposedBy || "unmarked"] += 1;
+  const back = (list) => list.filter((item) => item.came);
+  const hits = (list) => list.filter((item) => item.came === "yes").length;
+  const changedBack = back(changed);
+  const keptBack = back(kept);
+  const comparable = changedBack.length >= MIN_COMPARE && keptBack.length >= MIN_COMPARE;
+  return {
+    total: items.length,
+    noChoice: items.filter((item) => !item.decided && !replaced.has(item.record)).length,
+    replaced: replaced.size,
+    withChoice: withChoice.length,
+    changed: [...changed].sort((a, b) => String(b.date).localeCompare(String(a.date))),
+    kept: kept.length,
+    keptHeld: hits(keptBack),
+    keptBack: keptBack.length,
+    flagged: kept.filter((item) => item.flagged),
+    byProposer,
+    compare: comparable
+      ? { changedHits: hits(changedBack), changedBack: changedBack.length, keptHits: hits(keptBack), keptBack: keptBack.length }
+      : null,
+  };
+}
+
+/** One example, before → after → outcome so far, in the person's own words. */
+export function changeExample(item) {
+  const who = PROPOSER_PLAIN[item.proposedBy];
+  const head = who ? `**${item.title}** (${who}).` : `**${item.title}**.`;
+  const parts = [head];
+  if (item.supersedes) {
+    parts.push(`Before: the call of ${item.supersedes}.`);
+    parts.push(`After: "${item.decided}"${item.after ? `, after ${item.after}` : ""}.`);
+    if (item.changed) parts.push(`What changed: ${item.changed}.`);
+  } else {
+    parts.push(`Before: "${item.title}", as brought to the grill.`);
+    parts.push(`After: "${item.decided}", after ${item.after}.`);
+  }
+  if (item.came === "yes") parts.push("So far: it came true.");
+  else if (item.came === "no") parts.push("So far: it did not come true.");
+  else parts.push("So far: not looked back yet.");
+  return parts.join(" ");
+}
+
+function plural(count, word) {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+/** The count lines. Counts only, never a rate below MIN_COMPARE on each side, never a trend. */
+export function changeCountLines(summary) {
+  const lines = [];
+  lines.push(
+    `${plural(summary.withChoice, "call")} with a choice. ${summary.changed.length} changed after a challenge or a later rethink; ${summary.kept} went ahead as first stated.`,
+  );
+  const { ai, me, unmarked } = summary.byProposer;
+  if (summary.changed.length && ai + me > 0) {
+    const parts = [];
+    if (ai) parts.push(`${ai} started as AI suggestion${ai === 1 ? "" : "s"}`);
+    if (me) parts.push(`${me} as your own call${me === 1 ? "" : "s"}`);
+    if (unmarked) parts.push(`${unmarked} not marked`);
+    lines.push(`Of the changed calls, ${parts.join(", ")}.`);
+  }
+  if (summary.keptBack) lines.push(`Of the calls kept as stated, ${summary.keptHeld} of ${summary.keptBack} back so far came true.`);
+  if (summary.compare) {
+    const c = summary.compare;
+    lines.push(`Changed calls came true ${c.changedHits} of ${c.changedBack}; calls kept as stated came true ${c.keptHits} of ${c.keptBack}. This compares calls, not causes.`);
+  } else if (summary.changed.length) {
+    lines.push(`Fewer than ${MIN_COMPARE} calls on each side are back, so there is no rate to compare. Read the examples.`);
+  }
+  return lines;
+}
+
+/**
+ * "What has Grill done for me?" Read pasted records (and what happened, if given) and show where
+ * the calls changed. Nothing is stored. The same input always returns the same text.
+ */
+export function changesView({ records = "", happened = "", limit = 10 } = {}) {
+  const parsed = parseRecords(records).slice(0, 30);
+  if (!parsed.length) {
+    return ["## What changed", "", "No decision record was in that paste. Nothing is stored either way.", ""].join("\n");
+  }
+  const summary = changeSummary({ records: parsed, outcomes: oneLine(happened) ? parseOutcomes(happened) : [] });
+  return changesText(summary, { limit, storedNote: "Nothing is stored. This stays in the chat." });
+}
+
+/** Saved records with their own look-back notes. An untitled note belongs to its own record only. */
+export function outcomesForSaved(rows = []) {
+  const outcomes = [];
+  for (const row of rows) {
+    const note = row?.lookback?.happened;
+    if (!note || !row.title) continue;
+    for (const outcome of parseOutcomes(note)) {
+      if (!outcome.title) outcomes.push({ ...outcome, title: row.title });
+      else if (outcome.title.trim().toLowerCase() === String(row.title).trim().toLowerCase()) outcomes.push(outcome);
+    }
+  }
+  return outcomes;
+}
+
+/** The text of the changes view, from a summary. */
+export function changesText(summary, { limit = 10, storedNote = "" } = {}) {
+  const lines = ["## What changed", ""];
+  if (storedNote) lines.push(storedNote, "");
+  if (!summary.withChoice) {
+    lines.push("None of these records says what you chose yet, so there is nothing to show changing. Say your choice after a grill and it is added.", "");
+    return lines.join("\n");
+  }
+  lines.push(changeCountLines(summary).join(" "), "");
+  const shown = summary.changed.slice(0, limit);
+  for (const item of shown) lines.push(changeExample(item), "");
+  if (summary.changed.length > shown.length) lines.push(`${summary.changed.length - shown.length} more changed call${summary.changed.length - shown.length === 1 ? "" : "s"} not shown.`, "");
+  if (summary.flagged.length) {
+    lines.push("Flagged and you went ahead:", "");
+    for (const item of summary.flagged) lines.push(`- **${item.title}**: ${item.flaggedBy} named it, you kept the call, and it did not come true.`);
+    lines.push("");
+  }
+  if (summary.noChoice) lines.push(`${plural(summary.noChoice, "record")} with no choice stated ${summary.noChoice === 1 ? "is" : "are"} not counted.`, "");
+  lines.push("These are your calls. Grill argued the other side; you chose.", "");
   return lines.join("\n");
 }

@@ -57,7 +57,7 @@ import { CLOSING_ASK, SCOPE_GUARD, normalizeDetail, renderLayers } from "../scri
 /** First use only. One line. The privacy page holds the rest. Same words as the hosted connector. */
 export const ONCE_DISCLOSURE =
   "This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/#privacy";
-import { lookBack } from "../scripts/reflection.mjs";
+import { changesView, lookBack } from "../scripts/reflection.mjs";
 import { scheduleUsagePing } from "../scripts/usageStats.mjs";
 
 const VERSION = "0.1.1";
@@ -315,7 +315,7 @@ export function buildGrillTools({ checkOn }) {
       name: "grill_look_back",
       title: "Look back at a decision record",
       description:
-        "Score one or more decision records the user pasted, against what actually happened. If they have not said what happened, ask. Stores nothing, sends nothing, and needs no key. The judge's verdict is not revised.",
+        "Score one or more decision records the user pasted, against what actually happened. If they have not said what happened, ask. With view changes, show where their calls changed after a challenge instead. Stores nothing, sends nothing, and needs no key. The judge's verdict is not revised.",
       inputSchema: {
         type: "object",
         properties: {
@@ -327,6 +327,12 @@ export function buildGrillTools({ checkOn }) {
             type: "string",
             description:
               "Optional. What actually happened, including whether each call came true, whether the falsifier fired, and an optional surprise line. Omit it to get the questions first.",
+          },
+          view: {
+            type: "string",
+            enum: ["score", "changes"],
+            description:
+              "Optional. score is the usual look-back. changes is for 'what has Grill done for me?': where a call changed after a challenge, before and after in their words, and how it turned out so far. Relay it as written.",
           },
         },
         required: ["records"],
@@ -520,7 +526,7 @@ async function callTool(name, args = {}, onTick) {
     if (records.length > MAX_PASTE_CHARS || happened.length > MAX_PASTE_CHARS) {
       return text("That paste is too long. Split it under 100,000 characters.", true);
     }
-    return text(lookBack({ records, happened }));
+    return text(args.view === "changes" ? changesView({ records, happened }) : lookBack({ records, happened }));
   }
   return text(`Unknown tool: ${name}`, true);
 }

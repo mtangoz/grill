@@ -63,11 +63,25 @@ A later Grill has to keep reading records people already copied, and an older Gr
 | goal | What you are trying to achieve, in your words. `not stated` when you declined. Omit the line when there is nothing to write. Never invent a goal. |
 | guardrails | What this must not cost or break, in your words. Omit the line when you named none. A trade-off you name and accept is not a guardrail you failed. |
 | source_app | The assistant that wrote the record, such as `claude`, `claude-code` or `chatgpt`. You or the assistant add it. The installed Grill tool does not. A Grill account in chat fills it from the connector you used. |
-| decided | What you chose, in your words, including any change you made because of a challenge. Omit the line until you have chosen. Never invent it. |
+| proposed_by | Who first proposed the call that was grilled: `ai` when an assistant recommended it, `me` when it was your own. Omit the line when that is not plain. Never guessed. |
+| decided | What you chose, in your words, including any change you made because of a challenge. Omit the line until you have chosen. Never invent it. When a challenge moved the choice, a mark after `\|` says which: `Trial two weeks first \| after challenge 1`, or `\| after falsifier`. Only you say that. Grill never adds it from comparing words. |
 | supersedes | The earlier record this one replaces, as its date and title: `2026-01-10 Hire contractor`. Add it only when you say the choice changed. Omit it on a re-run, when nothing changed. Never invent it. There is no `superseded-by` line. |
 | changed | Why the choice changed, in the shape `evidence — your few words`, `goals — your few words`, `context — your few words`, or `reweighed — your few words`. `reweighed` means the same facts weighed differently. Add it only with `supersedes`, and only in your words. Never invent it. |
 
 Look-back uses a goal when the line is present and is not `not stated`. It asks "Did you reach the goal? Yes, no or partly." A guardrails line asks "Did your guardrails hold? Yes or no." The answers use `goal_met` and `guardrails_held`. When the call came true and the goal was missed, the reading says the prediction was right about the wrong target. When a guardrail did not hold, it says "A guardrail broke." The pattern line counts goals met and guardrails held. A `decided` line is read back as what you chose. When the call is scored, the reading says whether that choice came true. The line is omitted when you have not chosen. It is never invented. A `supersedes` line is read back as the call this one replaced. If that earlier record is not in the paste, the look-back says once: "If this replaced an earlier record, paste that too to see both." A `changed` line is read back as what changed. When it says `reweighed`, the reading is: "Nothing new came in; you weighed it differently."
+
+## What changed
+
+"What has Grill done for me?" is a reading of the same records, with `grill_look_back` and `view: changes`. It stores nothing. A call changed when its `decided` line has an `after` mark, or when it has a `supersedes` line. The call a later record replaced is shown as that change's "before", and is not counted again.
+
+- Each change is one example, in your words: before, after, what moved it, and how it turned out so far.
+- Who proposed it is shown when the record has `proposed_by`: "AI suggestion" or "your call".
+- Counts only: calls with a choice, how many changed, how many went ahead as stated. Kept calls that came true are counted too, so changing your mind is not the only thing that shows.
+- Calls kept after a challenge or the falsifier was marked as matching, and that then missed, are listed as "flagged and you went ahead".
+- Changed and kept calls are compared as rates only when each side has at least 10 calls back, and then the reading says it compares calls, not causes. Below that, examples only.
+- No savings figure, no "would have" claim, no trend over time, and no score. The calls are yours: Grill argued the other side.
+
+In-chat Grill's decisions page shows the same reading as "Where your calls changed": the count line and at most three examples, worked out from the saved records each time you open it.
 
 ## What can be added later, without changing this block
 

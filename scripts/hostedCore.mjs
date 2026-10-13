@@ -540,7 +540,7 @@ export function hostedTools() {
     {
       ...look,
       description:
-        "Score decision records against what actually happened. If they have not said what happened, ask. With no records argument, read this account's saved records that are due, or the ones they named. When they chose to keep records, save the look-back answers. The judge's verdict is not revised.",
+        "Score decision records against what actually happened. If they have not said what happened, ask. With no records argument, read this account's saved records that are due, or the ones they named. With view changes, read all saved records and show where their calls changed after a challenge. When they chose to keep records, save the look-back answers. The judge's verdict is not revised.",
       inputSchema: {
         type: "object",
         properties: look.inputSchema.properties,
@@ -568,6 +568,15 @@ export function hostedTools() {
             type: "string",
             description: "Only if they stated a prediction and it is not already in the decision. Do not invent one.",
           },
+          proposed_by: {
+            type: "string",
+            enum: ["ai", "me"],
+            description: "Optional. ai when an assistant first recommended the call that was grilled, me when it was the person's own. Only when the chat makes it plain. Omit it otherwise.",
+          },
+          after: {
+            type: "string",
+            description: "Optional. Only when they changed the call because of a challenge: the challenge number, such as 2, or falsifier. Omit it when the call went ahead as stated.",
+          },
         },
         required: ["decided"],
         additionalProperties: false,
@@ -593,6 +602,7 @@ export const HOSTED_INSTRUCTIONS = [
   "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation, about five words. If they never answer, do not call it, and there is no record and no look-back.",
   "Add supersedes and changed only when they say the choice changed, in their words. A re-run with nothing changed leaves those off.",
   "When they say look back, call grill_look_back and relay its one line. With a Grill account it can read saved records, so they do not have to paste.",
+  "When they ask what Grill has done for them, call grill_look_back with view changes and relay it as written.",
   SCOPE_GUARD,
 ].join(" ");
 
