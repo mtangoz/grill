@@ -22,6 +22,8 @@ import {
   budgetText,
   challengeScore,
   checkGrounding,
+  findCitedSources,
+  sourcesLine,
   CHALLENGE_KINDS,
   CONFIDENCES,
   CONTEXT_BUDGET,
@@ -1551,5 +1553,73 @@ describe("the note a person reads", () => {
   it("the scope guard is the shared sentence", () => {
     assert.match(SCOPE_GUARD, /no code changes, no PRs, no product questions/);
     assert.match(SCOPE_GUARD, /Grill's job ends at the verdict and the record/);
+  });
+});
+
+// A grill once passed a write-up whose citation did not exist: the judge cannot open sources, and
+// checkGrounding only checks the judge's quotes. These pin the other side: what the write-up cites.
+describe("cited sources the judge cannot open", () => {
+  const cited =
+    "We cut SDR headcount. Per the Q3 Pipeline Review deck, reply rates rose 18%. According to Gong, meetings held were flat. See https://example.com/x [1]. The Bridge Group benchmark says ramp is 3 months.";
+
+  it("finds links, 'per the', 'according to', footnotes and named reports, once each", () => {
+    const found = findCitedSources(cited);
+    for (const s of ["https://example.com/x", "Gong", "footnote [1]", "The Bridge Group benchmark"]) {
+      assert.ok(found.includes(s), `${s} not in ${JSON.stringify(found)}`);
+    }
+    assert.equal(found.filter((s) => /Q3 Pipeline Review deck/.test(s)).length, 1, JSON.stringify(found));
+  });
+
+  it("does not read rates and units as sources", () => {
+    assert.deepEqual(findCitedSources("Raise the price 20% per month in Q4; the vendor charges $3.10 per check."), []);
+    assert.deepEqual(findCitedSources(""), []);
+    assert.equal(sourcesLine([]), "");
+  });
+
+  it("layer 1 says the sources were not checked and stays within budget", () => {
+    const result = {
+      verdict: "weak",
+      verdictReason: "The lift is not tied to the change, because reply rates moved before the cut and nothing in the write-up separates the two.",
+      missingOption: "Keep headcount and change the sequence instead, then compare reply rates over the same window.",
+      challenges: [{ challenge: "The deck may not show this figure for this period.", falsifier: "Open the deck and find the line that says reply rates rose 18%." }],
+    };
+    const layers = renderLayers(result, { subject: cited });
+    assert.match(layers.brief, /Not checked: the 5 sources this cites\. Open each and confirm it says this\.\n\nSay 'more'/);
+    assert.ok(countWords(layers.brief) <= LAYER1_WORD_BUDGET, `${countWords(layers.brief)}: ${layers.brief}`);
+    assert.match(layers.full, /nobody here opened these sources/);
+    const plain = renderLayers(result, { subject: "We cut SDR headcount by two and expect reply rates to hold at 4% over the quarter." });
+    assert.doesNotMatch(plain.brief, /Not checked/);
+    assert.doesNotMatch(plain.full, /Not checked/);
+  });
+
+  it("one source reads in the singular", () => {
+    assert.equal(sourcesLine(["Gong"]), "Not checked: the source this cites. Open it and confirm it says this.");
+  });
+
+  it("the full report footer lists them", () => {
+    const report = renderJudgeReport({ verdict: "weak", challenges: [], citedSources: ["Gong", "Q3 deck"] });
+    assert.match(report, /not opened by the judge or by Grill: 2 \(`Gong`, `Q3 deck`\)/);
+    assert.doesNotMatch(renderJudgeReport({ verdict: "weak", challenges: [] }), /not opened by the judge/);
+  });
+
+  it("tells the judge a named source is not evidence it has seen, on every route", () => {
+    const sentence = "A source the subject names but does not show (a report, a dashboard, a call, a link) is not evidence you have seen";
+    assert.ok(KIND_DESCRIPTIONS["unsupported-claim"].includes(sentence));
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    for (const file of ["skills/grill/paste-prompt.md", "prompts/grill.md"]) {
+      assert.ok(readFileSync(join(root, file), "utf8").includes(sentence), `${file} is missing the cited-source rule`);
+    }
+  });
+
+  it("the skill and the any-assistant prompt check sources on the version that goes out", () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const skill = readFileSync(join(root, "skills/grill/SKILL.md"), "utf8");
+    assert.match(skill, /## 3\. Check the sources/);
+    assert.match(skill, /Run it on the version that goes out, not the draft you grilled/);
+    assert.match(skill, /\*\*answers this question\*\*/);
+    assert.match(skill, /Do not send the sources to the judge/);
+    const prompt = readFileSync(join(root, "prompts/grill.md"), "utf8");
+    assert.match(prompt, /5\. \*\*Check the sources before the work goes out\.\*\*/);
+    assert.match(prompt, /Check the version that goes out, not the draft that was grilled/);
   });
 });

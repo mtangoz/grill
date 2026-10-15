@@ -452,7 +452,7 @@ export const CHALLENGE_KINDS = Object.freeze([
 /** Read by the model, verbatim, inside the tool schema — definitions, not labels. */
 export const KIND_DESCRIPTIONS = Object.freeze({
   "unsupported-claim":
-    "an assertion the conclusion leans on, stated with no evidence behind it and no source named. The test is load-bearing-ness: if the claim were false, would the conclusion still stand? If yes, it is colour, not a finding.",
+    "an assertion the conclusion leans on, stated with no evidence behind it and no source named. The test is load-bearing-ness: if the claim were false, would the conclusion still stand? If yes, it is colour, not a finding. A source the subject names but does not show (a report, a dashboard, a call, a link) is not evidence you have seen: you cannot open it, and it may not exist or may not say this. When the conclusion leans on what such a source says, file it here; the falsifier is to open that source, find the line, and confirm it answers this question.",
   "hidden-assumption":
     "a premise the argument requires but never states, so it was never examined. Name it in one sentence and say what breaks if it is false.",
   "contradicted-by-context":
@@ -1060,6 +1060,59 @@ function describeGrounding(grounding) {
     .join(", ")}); weigh ${one ? "it" : "those"} with care`;
 }
 
+/**
+ * Sources the write-up names: links, "according to X", "per the X", "Source: X", footnote marks,
+ * and named reports, studies, surveys and dashboards. Deterministic and local; it sends nothing.
+ *
+ * The judge sees only the write-up, so it can never open these. `checkGrounding` checks that the
+ * JUDGE quoted the write-up; this is the other side: what the WRITE-UP leans on that nobody here
+ * has opened. A found source is not a fault, just a thing to check before the work goes out.
+ * Errs toward listing too much: a false "check this" costs a glance, a missed one let a made-up
+ * citation reach a founder.
+ */
+export function findCitedSources(subject) {
+  const text = String(subject || "");
+  const found = [];
+  const seen = new Set();
+  const add = (raw) => {
+    const clean = String(raw || "")
+      .replace(/\s+/g, " ")
+      .replace(/^[\s"'“‘(]+|[\s"'”’),.;:]+$/g, "")
+      .trim()
+      .slice(0, 80);
+    if (clean.length < 2) return;
+    const key = clean.toLowerCase().replace(/^the\s+/, "");
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push(clean);
+  };
+  for (const m of text.matchAll(/\bhttps?:\/\/[^\s)>\]]+/gi)) add(m[0]);
+  for (const m of text.matchAll(/\b(?:according to|as reported (?:by|in)|cited in|sourced from)\s+([^,.;:\n]{2,60})/gi)) add(m[1]);
+  // "per the Q3 board deck" or "per Gong", never "per month" or "per check".
+  for (const m of text.matchAll(/\b[Pp]er\s+((?:the\s+)?[A-Z][^,.;:\n]{1,60})/g)) add(m[1]);
+  for (const m of text.matchAll(/\bsources?:\s*([^\n]{2,80})/gi)) add(m[1]);
+  for (const m of text.matchAll(/(?<![\w\]])\[(\d{1,2})\](?!\()/g)) add(`footnote [${m[1]}]`);
+  for (const m of text.matchAll(/\b((?:[A-Z0-9][\w&'’.-]*\s+){1,4}(?:report|study|survey|benchmark|whitepaper|analysis|dashboard|research|deck))\b/g)) add(m[1]);
+  return found;
+}
+
+/** The report's footer line for cited sources, or "" when the write-up names none. */
+function describeCitedSources(sources) {
+  const list = Array.isArray(sources) ? sources.filter((s) => typeof s === "string" && s) : [];
+  if (list.length === 0) return "";
+  const shown = list.slice(0, 5).map((s) => `\`${s.replace(/`/g, "'")}\``).join(", ");
+  const more = list.length > 5 ? `, and ${list.length - 5} more` : "";
+  return `sources the write-up names, not opened by the judge or by Grill: ${list.length} (${shown}${more}). Open each and confirm it exists, says this, and answers this question before the work goes out`;
+}
+
+/** Layer 1's sources line: one short sentence pair, or "" when the write-up names none. */
+export function sourcesLine(sources) {
+  const n = Array.isArray(sources) ? sources.length : 0;
+  if (n === 0) return "";
+  if (n === 1) return "Not checked: the source this cites. Open it and confirm it says this.";
+  return `Not checked: the ${n} sources this cites. Open each and confirm it says this.`;
+}
+
 /** The messages array sent as the chat request. */
 export function buildJudgeMessages({ subject, question = "", contextBlocks = [], subjectLabel = "the subject" } = {}) {
   const system = [
@@ -1185,6 +1238,7 @@ export function renderJudgeReport(result) {
     decorrelated = null,
     costUsd = null,
     grounding = null,
+    citedSources = [],
     quality = null,
   } = result ?? {};
 
@@ -1299,6 +1353,8 @@ export function renderJudgeReport(result) {
   // challenge whose quote drifted may still be right. The banner is reserved for blind runs.
   const groundingLine = describeGrounding(grounding);
   if (groundingLine) meta.push(groundingLine);
+  const sourcesFooter = describeCitedSources(citedSources);
+  if (sourcesFooter) meta.push(sourcesFooter);
   if (rejected.length > 0) {
     meta.push(
       `dropped as malformed: ${rejected.length} (${rejected.map((r) => r.reason).join(", ")}) — the judge broke the output contract on these, so they are not visible above`,
@@ -1530,10 +1586,10 @@ function joinToRange(parts, _min, max) {
   return kept.join(" ");
 }
 
-function withClosing(body) {
+function withClosing(body, tail = "") {
   const room = Math.max(12, LAYER1_WORD_BUDGET - countWords(CLOSING_ASK));
-  const note = sentenceWithin(String(body || "").replace(/\s+/g, " ").trim(), room);
-  return `${note || "The judge did not finish the note."}\n\n${CLOSING_ASK}`;
+  const note = sentenceWithin(String(body || "").replace(/\s+/g, " ").trim(), Math.max(12, room - countWords(tail)));
+  return `${[note || "The judge did not finish the note.", tail].filter(Boolean).join(" ")}\n\n${CLOSING_ASK}`;
 }
 
 function choiceLabel(subject) {
@@ -1627,7 +1683,8 @@ function thinLayer(result, prefix) {
 function renderBrief(result, subject) {
   const degraded = Array.isArray(result?.degraded) && result.degraded.length > 0;
   const prefix = degraded ? "Not a clean review." : "";
-  if (isThinGrill(result, subject)) return withClosing(thinLayer(result, prefix));
+  const sources = sourcesLine(findCitedSources(subject));
+  if (isThinGrill(result, subject)) return withClosing(thinLayer(result, prefix), sources);
   const missing = sentenceWithin(explicitMissing(result), 16);
   const top = challengeList(result)[0];
   const sharp = missing
@@ -1644,7 +1701,7 @@ function renderBrief(result, subject) {
       ? `**Quick read.** ${reason}`
       : "**No verdict.** The judge did not judge the decision.";
   const body = [prefix, verdict, sentence(sharp), `Cheap test: ${sentence(test)}`].filter(Boolean).join(" ");
-  return withClosing(body);
+  return withClosing(body, sources);
 }
 
 function flipFacts(result) {
@@ -1744,6 +1801,12 @@ function renderFull(result, subject) {
     .map((fact) => bounded(fact, 80))
     .filter((fact) => fact && fact !== ".");
   if (facts.length) lines.push(`What would flip the call: ${facts.join(" ")}`);
+  const sources = findCitedSources(subject);
+  if (sources.length) {
+    lines.push(
+      `Not checked: the judge sees only the write-up, so nobody here opened ${sources.length === 1 ? "this source" : "these sources"}: ${sources.slice(0, 5).join("; ")}. Open each and confirm it exists, says this, and answers this question.`,
+    );
+  }
   return lines.join("\n\n");
 }
 

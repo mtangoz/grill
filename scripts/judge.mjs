@@ -134,6 +134,7 @@ import {
   MIN_LINK_TIMEOUT_MS,
   buildJudgeMessages,
   checkGrounding,
+  findCitedSources,
   decorrelationOf,
   nextAttempt,
   reconcileVerdict,
@@ -845,6 +846,8 @@ const result = {
   costUsd,
   masked,
   grounding,
+  // What the write-up cites that nobody here opened. Local, sends nothing.
+  citedSources: findCitedSources(subject.text),
   // null: not asked for. Otherwise readCheck's summary, or `{unavailable: reason}`.
   quality: null,
 };

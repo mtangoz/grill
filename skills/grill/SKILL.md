@@ -54,9 +54,25 @@ When they paste the judge's answer back, compare companies before you relay the 
 - If the companies match, the first line you show is `Warning: this verdict is NOT independent. The judge is the same company as your assistant. Paste the judge prompt into ChatGPT, Gemini or Grok instead.`
 - If the Judge line is missing, the first line you show is `Warning: this verdict is unverified. The answer has no Judge line, so this is not a confirmed outside judge. Paste the judge prompt into ChatGPT, Gemini or Grok instead.`
 
+## 3. Check the sources
+
+The judge sees only the write-up. It cannot open a report, a dashboard, a call or a link, so it cannot tell you a cited source exists or says what the write-up claims. Grill checks the judge's quotes against the write-up, never the write-up's sources. You can open them, so you do this part.
+
+Run it when the subject cites a source, when the user says check the sources, and every time a grilled piece of work goes to someone else (a founder, a board, a customer). Run it on the version that goes out, not the draft you grilled: a citation added after the grill was never checked.
+
+1. List each claim the conclusion leans on that points at a source, with the source as written.
+2. Open each source with your own tools. Quote the exact line or figure. If you cannot open it, it is **not found**, not true.
+3. Mark each one on three checks: **exists** (you opened it); **says it** (the same number, metric, period and population as the claim); **answers this question** (it is about the change and the outcome being asked about, not a neighbouring one).
+4. If you can start a fresh agent, give it only the list and the question, and have it do steps 2 and 3. You wrote the claims, so your check shares their blind spots.
+5. Show a short table: claim, source, quoted line, exists, says it, answers this question. Any row that fails is cut from the work or marked unverified in it. Never replace a failed source with one you did not open.
+
+Do not send the sources to the judge. Only the approved write-up leaves the machine.
+
 ## 4. Relay the result
 
 On the paste route, the company check above is the first line you show. Then show only layer 1, at most 50 words: one verdict line, the single sharpest point (a missing option if there is one, otherwise the biggest risk), and one cheap test. If the judge marked it thin, show the quick take and the one question, not a fact list. A result from the `grill` tool already enforced a different company in code. Relay that note as written, and do not look for a Judge line. Do not show the judge's model, a score, a balance, a quote check, or a disclaimer.
+
+If layer 1 says sources were not checked, run section 3 before the user acts on the verdict or sends the work.
 
 Layer 1 already ends with this line. If it does not, add it once. Do not add a confidence question:
 
