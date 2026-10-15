@@ -1,0 +1,11 @@
+{
+  "id": "evidence-mismatch-outreach-copy-counts",
+  "kind": "flawed",
+  "subject": "Lindenfield, a B2B events firm, changed its cold outreach to HR leaders in September. The July and August copy asked prospects to contribute to a research project with a 15-minute call. The September copy invites them to a dated roundtable. The team proposes keeping the roundtable copy for Q4 and cutting the third email from the sequence. The evidence in the write-up: interest went up, with 28 positive replies in September against 13 in July and August. The A/B test on the first email is conclusive: variant B more than doubled A, 7 replies to 3, from about 1,270 sends each. The third email is dead weight: 0 replies from 1,350 sends in September, counted from data pulled on 30 September, the day the last third emails went out. For context, the team contacted about 2,900 prospects in July and August and about 6,700 in September. Prediction, offered at 75% confidence: keeping the roundtable copy and dropping the third email will lift positive replies again in Q4.",
+  "question": "Should Lindenfield keep the roundtable copy for Q4 and cut the third email?",
+  "expect": {
+    "must_target": ["interest went up", "more than doubled", "0 replies from 1,350", "28 positive replies", "7 replies to 3", "dead weight"],
+    "verdict_not": ["holds"]
+  },
+  "why": "Synthetic. Counts are compared across periods with 2.3x the contacts (28/6,700 vs 13/2,900 is flat), the A/B call rests on 10 replies, and the third email's reply window closed the day its sends ended."
+}
