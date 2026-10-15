@@ -126,4 +126,26 @@ writePage("contribute.html", {
   url: `${SITE_URL}contribute/`,
   outDir: "contribute",
 });
-console.log("built _site/index.html, _site/terms/index.html and _site/contribute/index.html");
+// The miss page is built only when GRILL_MISS=1, the same switch that opens /miss/send. Its fields
+// and its in-browser check come from scripts/missCore.mjs, the module the server checks with.
+if (process.env.GRILL_MISS === "1") {
+  const core = await import("./missCore.mjs");
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const fields = Object.entries(core.MISS_CHOICES)
+    .map(([key, values]) => {
+      const options = values.map((v) => `      <option value="${v}">${esc(core.MISS_LABELS[key][v])}</option>`).join("\n");
+      return `    <label for="miss-${key}">${esc(core.MISS_QUESTIONS[key])}</label>\n    <select id="miss-${key}" name="${key}" required>\n      <option value="">Choose one</option>\n${options}\n    </select>`;
+    })
+    .join("\n");
+  const inlined = readFileSync(join(ROOT, "scripts/missCore.mjs"), "utf8").replace(/^export /gm, "");
+  const source = readFileSync(join(ROOT, "site/miss.html"), "utf8")
+    .replace("<!-- MISS_FIELDS -->", fields)
+    .replace("/* MISS_CORE */", () => inlined);
+  const title = source.match(/^<title>[^<]*<\/title>/)[0];
+  mkdirSync(join(OUT, "miss"), { recursive: true });
+  writeFileSync(
+    join(OUT, "miss", "index.html"),
+    doc(headFor({ description: "Share how AI got a decision wrong, without the decision.", url: `${SITE_URL}miss/` }), `${title}\n${style}`, source.slice(title.length)),
+  );
+}
+console.log(`built _site/index.html, _site/terms/index.html and _site/contribute/index.html${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}`);

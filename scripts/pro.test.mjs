@@ -441,7 +441,7 @@ describe("the endpoints", () => {
     }
   });
 
-  it("/welcome, /checkout and /notify are routed to their functions, and the site build is what Vercel runs", () => {
+  it("/welcome, /checkout, /notify and /miss/send are routed to their functions, and the site build is what Vercel runs", () => {
     const config = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
     assert.deepEqual(config, {
       fluid: true,
@@ -456,6 +456,7 @@ describe("the endpoints", () => {
         { source: "/pro/reports", destination: "/api/pro-reports" },
         { source: "/notify", destination: "/api/notify" },
         { source: "/notify/confirm", destination: "/api/notify-confirm" },
+        { source: "/miss/send", destination: "/api/miss" },
         { source: "/mcp", destination: "/api/hosted?__route=mcp" },
         { source: "/.well-known/oauth-protected-resource", destination: "/api/hosted?__route=prm" },
         { source: "/.well-known/oauth-protected-resource/:extra*", destination: "/api/hosted?__route=prm" },

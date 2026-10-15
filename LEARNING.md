@@ -2,7 +2,7 @@
 
 A model router improves every day without reading anyone's prompts: it learns which models people choose for each kind of task. Grill copies that idea one layer up, and runs its whole loop under the same privacy controls as a grill: masked text, zero-retention routing, nothing kept.
 
-**The rule:** Grill learns from synthetic cases, public metadata and choices people share. Never from a decision.
+**The rule:** contribute the miss, never the decision. Grill learns from synthetic cases, public metadata, choices people share, and **miss cards**: how AI got a decision wrong, written in made-up names and numbers. Never from a decision.
 
 ## Three loops
 
@@ -40,6 +40,14 @@ The reflection at the end of a report (what you expect, how sure you are, what w
    - A change prompted by a real-world failure also adds a synthetic case that reproduces it, so the evals grow with what's learned.
    - Evals are a gate, never the goal. Tuning the prompt to the cases would only teach the judge the test.
 4. **Ship.** A tagged release rebuilds the extension, with provenance.
+
+## Miss cards: the fourth input
+
+When AI gets a decision wrong, the person can share how, at [grillyour.ai/miss/](https://grillyour.ai/miss/) (off until `GRILL_MISS=1`). A card is choices (what went wrong, where it got in, who caught it, the stakes, the cost, whether it was really grilled), one sentence on what would have caught it, and a made-up example with the same mistake.
+
+- **Checked in code, twice.** `scripts/missCore.mjs` runs in the browser against the person's real text, which stays on the page, and blocks real names, numbers of three or more digits, and any four-word phrase from it. The server runs it again without that text: no emails, links, phone numbers, handles or keys.
+- **A private queue, not a dataset.** Cards hold the UTC day only: no IP, no account, no install ID. Maintainers read them. Nothing is published as written.
+- **Each card becomes a case.** A maintainer writes a synthetic eval case with the same flaw and, where it fits, one skill or judge rule (step 3 above). What compounds is the rate at which misses become checks, not the size of a pile.
 
 ## What the signals can and can't tell us
 

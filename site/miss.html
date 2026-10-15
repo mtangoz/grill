@@ -1,0 +1,65 @@
+<title>Share a miss | Grill</title>
+<style>
+  .miss select { display: block; font: 0.95rem var(--sans); padding: 8px 10px; border: 1px solid var(--rule); border-radius: 8px; background: transparent; color: var(--ink); margin: 0 0 0.9rem; max-width: 100%; }
+  .miss .local { border: 1px dashed var(--rule); border-radius: 10px; padding: 12px 14px; margin: 1.2rem 0; }
+  .miss .problems { color: var(--accent, #b2401c); }
+</style>
+<main id="top">
+  <div class="top">
+    <a class="mark" href="/"><img src="/brand/favicon-32.png" alt="" width="24" height="24">grill</a>
+    <nav aria-label="Sections">
+      <a href="/#setup">Get started</a>
+      <a href="/#how">How it works</a>
+      <a href="/#privacy">Privacy</a>
+      <a href="/contribute/">Contribute</a>
+      <a href="https://github.com/mtangoz/grill">GitHub</a>
+    </nav>
+  </div>
+
+  <h1>Share a miss, not your decision.</h1>
+  <p class="lede">When AI got a decision wrong, tell Grill how it went wrong. Grill turns it into a made-up test case, and the judge has to catch it from then on.</p>
+
+  <h2>What you send</h2>
+  <p class="note">A few choices, one sentence on what would have caught it, and a short example in made-up names and numbers with the same mistake. Not your decision, not your chat, and no real names or numbers. Your assistant can write the card for you: say "draft a miss card".</p>
+  <p class="note">Cards go to a private queue that only Grill's maintainers read. No IP address, no account, no install ID. Nothing is published as you wrote it. Details: <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md#helping-grill-improve">Privacy</a>.</p>
+
+  <form class="miss paste" method="post" action="/miss/send" id="miss-form">
+<!-- MISS_FIELDS -->
+    <label for="miss-check">What would have caught it? (one sentence)</label>
+    <textarea id="miss-check" name="check" class="short" maxlength="300" required></textarea>
+    <label for="miss-repro">A made-up example with the same mistake</label>
+    <textarea id="miss-repro" name="repro" maxlength="1500" required placeholder="A firm compared 28 replies in one month with 13 in the two before, but contacted twice as many people, so the rate was flat."></textarea>
+
+    <div class="local">
+      <label for="miss-original">Optional: paste the real text to check against. It stays on this page.</label>
+      <textarea id="miss-original" class="short" autocomplete="off"></textarea>
+      <p class="note">This box has no name, so the browser never sends it. The page checks your card against it and stops you if a real name, number or phrase slipped in.</p>
+    </div>
+    <p hidden><label>Leave this blank <input type="text" name="leave_blank" tabindex="-1" autocomplete="off"></label></p>
+    <ul class="problems" id="miss-problems" aria-live="polite"></ul>
+    <p class="cta"><button class="button" type="submit">Send the miss card</button></p>
+  </form>
+
+  <div class="footer">
+    <span>Open source · <a href="/contribute/">Contribute</a> · <a href="https://github.com/mtangoz/grill">GitHub</a></span>
+    <span>Made at <a href="https://hold.quest">Hold</a></span>
+  </div>
+</main>
+<script type="module">
+/* MISS_CORE */
+const form = document.getElementById("miss-form");
+const list = document.getElementById("miss-problems");
+form.addEventListener("submit", (event) => {
+  const card = Object.fromEntries(new FormData(form));
+  const original = document.getElementById("miss-original").value;
+  const { ok, problems } = checkMissCard(card, { original });
+  list.textContent = "";
+  if (ok) return;
+  event.preventDefault();
+  for (const p of problems) {
+    const li = document.createElement("li");
+    li.textContent = p.reason;
+    list.append(li);
+  }
+});
+</script>
