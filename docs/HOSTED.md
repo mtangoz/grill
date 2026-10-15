@@ -81,6 +81,25 @@ Then `/mcp`, choose grill, Authenticate, and sign in with an allowlisted email.
 
 Grok is not part of the pass rule in the spike. When you try it, add a custom connector at the same `/mcp` URL and sign in with an allowlisted email. Grill treats a redirect on `grok.com` or `grok.x.ai` as Grok and excludes x-ai from the judge. If Grok's redirect host is different, the client is unknown and nothing is excluded until the call names an author. Do not pin Grok's own model to save time.
 
+## Grill IDs, and leaving Clerk
+
+Grill owns the account ID. Clerk's user ID is only a pointer to it, so a change of sign-in company doesn't strand anyone.
+
+- A new account gets a Grill ID (`g_` and a UUID). Accounts made before Grill IDs keep the Clerk ID they were filed under as their Grill ID, so no data moves.
+- Two links point at the Grill ID: `grill:hosted:ident:<issuer hash>:<provider user id>`, one per issuer, and `grill:hosted:person:<email hash>`, from the verified email. Everything else (account row, records, drafts, spend, key) is filed under the Grill ID.
+- On a call, Grill resolves the person in this order: the provider ID already linked; else the person with this verified email; else an account made before Grill IDs, found under this provider's ID or through the starter-credit claim for this email; else a new Grill ID. Only a verified email links. A changed email moves the link, so the old address can't reach the account.
+- Deleting the account removes every link, from every issuer.
+
+**Moving from the development instance to production, or to any new provider:**
+
+1. Deploy this code first, while the old issuer is still live. Nothing changes for anyone.
+2. Point `CLERK_ISSUER` (and `CLERK_SECRET_KEY`) at the new instance, and redeploy.
+3. Each person signs in once more. Their verified email finds their account. Assistants reconnect once, because the issuer URL changed.
+
+The new provider must return verified emails only. If it can return an unverified one, it must not be used, or anyone could claim another person's records.
+
+Still Clerk-specific: Clerk issues the access tokens, and Clerk's API is used for the email and for account delete. Running Grill's own authorization server, with Clerk only as the upstream login, would make a provider change invisible to assistants. It is deferred until a switch is actually planned, or until a mass reconnect would cost real users.
+
 ## Still to do before this is on
 
 The pull request lists these. Do them on the preview, then run [hosted-spike.md](hosted-spike.md). Do not point `grillyour.ai` or `mcp.grillyour.ai` at this until that spike passes.
