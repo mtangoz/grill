@@ -468,7 +468,7 @@ export const KIND_DESCRIPTIONS = Object.freeze({
   overreach:
     "the conclusion is stated more widely, more certainly, or more permanently than the evidence offered supports. Name the narrower claim the evidence actually buys.",
   "evidence-mismatch":
-    "evidence is cited but does not support the claim made from it — wrong scope, wrong population, a sample generalised past what it can carry, or a number that does not mean what it is being used to mean.",
+    "evidence is cited but does not support the claim made from it — wrong scope, wrong population, a sample generalised past what it can carry, or a number that does not mean what it is being used to mean. Common forms: a count compared across periods or groups of different size with no rate; a difference read from a handful of events; an outcome counted before it had time to arrive; a metric that measures something next to the claim, not the claim; one member's figure given as the group's.",
   "loaded-framing":
     "the question put to you, or the subject's own framing of its decision, presupposes the conclusion, hands you the alternative it prefers, or argues on the wrong axis — evidence sufficiency when the decision is which way to fail, build cost when it is reversibility. The target is the framing sentence or the question itself, quoted. what_would_have_to_be_true names the argument the framing kept off the page. The falsifier is the reframed question, stated so it can be re-run.",
 });

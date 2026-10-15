@@ -54,7 +54,7 @@ When they paste the judge's answer back, compare companies before you relay the 
 - If the companies match, the first line you show is `Warning: this verdict is NOT independent. The judge is the same company as your assistant. Paste the judge prompt into ChatGPT, Gemini or Grok instead.`
 - If the Judge line is missing, the first line you show is `Warning: this verdict is unverified. The answer has no Judge line, so this is not a confirmed outside judge. Paste the judge prompt into ChatGPT, Gemini or Grok instead.`
 
-## 3. Check the sources
+## 3. Check the sources and the numbers
 
 The judge sees only the write-up. It cannot open a report, a dashboard, a call or a link, so it cannot tell you a cited source exists or says what the write-up claims. Grill checks the judge's quotes against the write-up, never the write-up's sources. You can open them, so you do this part.
 
@@ -67,6 +67,21 @@ Run it when the subject cites a source, when the user says check the sources, an
 5. Show a short table: claim, source, quoted line, exists, says it, answers this question. Any row that fails is cut from the work or marked unverified in it. Never replace a failed source with one you did not open.
 
 Do not send the sources to the judge. Only the approved write-up leaves the machine.
+
+**Then check the numbers.** Most wrong claims in an analysis are not missing sources. They are numbers that don't mean what the sentence says. Before the work goes out, check each claim against these, and fix or soften any that fails:
+- **Rate beside count.** A count compared across periods or groups of different size needs its rate beside it (per contact, per send).
+- **Enough events.** With fewer than 20 events on either side, say the numbers are too few to compare. Don't call a winner.
+- **Read the thing itself.** Before you claim what a campaign, page or message said, open one real instance of it. A name is not its content.
+- **Time for the outcome.** Replies, sign-ups and renewals lag the action. Don't end the outcome window on the day the action window ends.
+- **The metric measures the claim.** "The copy did better" needs counts of the copy actually delivered, not requests or sends around it.
+- **Recompute totals.** Work out a group's figure from the raw rows. One member's figure is not the group's.
+- **Quote, with a date.** Quote a tool's or report's verdict word for word, with the date it ran. Anything no longer in view, fetch again or say unknown. Never from memory.
+- **Say the coverage.** n read of N, and any known gap in the method.
+- **Summaries keep the caveats.** A short version keeps the long version's doubts and adds no cause the long version didn't claim.
+- **Answer what was asked.** Map each question the person asked to an answer, or say it was not answered.
+
+**Don't call it grilled unless it was.** Say Grill reviewed something, or label it grilled, only when the `grill` tool returned a note in this chat, or on the paste route the judge's answer came back with a Judge line. A check you ran yourself is a same-model check, and you say so. Say which version was grilled, and what changed after it.
+
 
 ## 4. Relay the result
 

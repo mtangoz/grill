@@ -1622,4 +1622,23 @@ describe("cited sources the judge cannot open", () => {
     assert.match(prompt, /5\. \*\*Check the sources before the work goes out\.\*\*/);
     assert.match(prompt, /Check the version that goes out, not the draft that was grilled/);
   });
+
+  // From a real miss: a memo was labelled "re-derived with /grill" after a same-model self-check,
+  // and its count comparisons, a 10-reply A/B call and a reply window cut at the send date all shipped.
+  it("checks the numbers, and never calls work grilled unless a judge answered", () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const skill = readFileSync(join(root, "skills/grill/SKILL.md"), "utf8");
+    for (const rule of [/\*\*Rate beside count\.\*\*/, /fewer than 20 events/, /A name is not its content/, /Don't end the outcome window on the day the action window ends/, /Never from memory/, /n read of N/, /Summaries keep the caveats/, /Answer what was asked/]) {
+      assert.match(skill, rule);
+    }
+    assert.match(skill, /\*\*Don't call it grilled unless it was\.\*\*/);
+    assert.match(skill, /A check you ran yourself is a same-model check/);
+    const prompt = readFileSync(join(root, "prompts/grill.md"), "utf8");
+    assert.match(prompt, /Never call work grilled unless a judge's answer with a Judge line came back/);
+    const sentence = "A number is evidence only as a rate on a comparable base, from enough events, over a window long enough for the outcome to arrive.";
+    for (const file of ["skills/grill/paste-prompt.md", "prompts/grill.md"]) {
+      assert.ok(readFileSync(join(root, file), "utf8").includes(sentence), `${file} is missing the numbers rule`);
+    }
+    assert.match(KIND_DESCRIPTIONS["evidence-mismatch"], /a count compared across periods or groups of different size with no rate/);
+  });
 });
