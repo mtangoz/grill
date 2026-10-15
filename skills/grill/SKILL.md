@@ -83,6 +83,17 @@ Do not send the sources to the judge. Only the approved write-up leaves the mach
 **Don't call it grilled unless it was.** Say Grill reviewed something, or label it grilled, only when the `grill` tool returned a note in this chat, or on the paste route the judge's answer came back with a Judge line. A check you ran yourself is a same-model check, and you say so. Say which version was grilled, and what changed after it.
 
 
+## Share a miss
+
+When AI got a decision wrong (the user says "that was wrong", a grilled piece of work went out wrong, or a look-back missed), offer once, after the fix, never during it: "Want to share how it went wrong, not what? It helps the judge catch it next time." One "no" ends it for the conversation.
+
+If they say yes, draft a miss card in the chat:
+- the choices: what went wrong, where it got in, who caught it, who it was for, the kind of decision, what it cost, and whether it was really grilled;
+- one sentence: what would have caught it;
+- a made-up example with the same mistake. Use invented names, companies and numbers. Never a real name, a real number, a phrase from their material, an email or a link.
+
+Then point them to https://grillyour.ai/miss/ to paste it in and send it themselves. Tell them the page can check the card against their real text in their browser, and that text is never sent. You never send it for them. The card is also theirs to keep: its one sentence is a check for their own next time.
+
 ## 4. Relay the result
 
 On the paste route, the company check above is the first line you show. Then show only layer 1, at most 50 words: one verdict line, the single sharpest point (a missing option if there is one, otherwise the biggest risk), and one cheap test. If the judge marked it thin, show the quick take and the one question, not a fact list. A result from the `grill` tool already enforced a different company in code. Relay that note as written, and do not look for a Judge line. Do not show the judge's model, a score, a balance, a quote check, or a disclaimer.

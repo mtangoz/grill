@@ -46,6 +46,10 @@ Grill never collects decision text, notes, reflections, or keys. It does not col
 
 Enforced by: [scripts/usageStats.mjs](../scripts/usageStats.mjs), test "posts exactly the allowed keys to the ping URL, with no decision text" in [scripts/usageStats.test.mjs](../scripts/usageStats.test.mjs), and test "secrets never leave" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs).
 
+Contribute the miss, never the decision. A miss card shared at grillyour.ai/miss/ holds choices, one sentence and a made-up example. The page checks it against your real text in your browser, and that text is never sent. The server keeps the card with the UTC day only: no IP, no account, no install ID.
+
+Enforced by: [scripts/missCore.mjs](../scripts/missCore.mjs) and [api/_miss.mjs](../api/_miss.mjs), test "blocks real names, real numbers and real phrases when the real text is given", test "stores only the card's fields and the UTC day: no IP, no account, no time of day", and test "is built only with GRILL_MISS=1, from the same module, and the real-text box is never sent" in [scripts/miss.test.mjs](../scripts/miss.test.mjs).
+
 The free tool has no account. It stores nothing about a decision. The opt-in usage-stats file on your computer holds only that random ID and when a ping was sent, and only if you turned the setting on.
 
 Enforced by: [scripts/usageStats.mjs](../scripts/usageStats.mjs), test "sends on the first success and never again, including on a later day" in [scripts/usageStats.test.mjs](../scripts/usageStats.test.mjs).

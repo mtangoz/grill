@@ -42,3 +42,14 @@ The decision, as you stated it, passes through Grill's server in memory. It is n
 The installed tool has no account. The only thing that leaves your machine is the decision as you stated it, and it goes to the model router (and to Jev, if the quality check is on). Grill does not see it. There is no look-back database.
 
 The in-chat account adds a server in the middle, a sign-in company (Clerk), a store (Upstash), and a key Grill holds. It adds those so a chat can grill without a key on your computer, and so you can keep records if you say yes. It does not add a copy of the write-up. That sentence is the line that must stay true: the decision, as you stated it, passes through Grill's server in memory. It is never logged or stored.
+
+## Miss cards (grillyour.ai/miss/)
+
+Off unless `GRILL_MISS=1`. Separate from the account: a card is never joined to an account, a record or a usage count.
+
+| What | Where it goes | How long | Who can delete it | Installed tool, for comparison |
+|---|---|---|---|---|
+| The real text you paste to check the card against | Nowhere. The box has no name, so the browser never sends it. The check runs on the page. | The life of the page | Close the page | Not used. |
+| The card: seven choices, one sentence, one made-up example, and the UTC day | Upstash Redis list `grill:miss:queue`. No IP, no account, no install ID, no user agent, no time of day. | The latest 5,000 cards; older ones drop off | Grill's maintainers, on request to support@grillyour.ai | Not sent. |
+| A daily count of cards | Upstash `grill:miss:count:<day>`, a number only | Two days | It expires on its own | None. |
+
