@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Build the public onboarding site from its one source, site/page.html.
+ * Build the public onboarding site. The home page's one source is site/page.html; the other pages
+ * (terms, contribute, look-back, privacy) borrow its styles.
  *
  * site/page.html is a page body (title, styles, markup, script) with no document skeleton, so the
  * same file publishes as a Claude artifact unchanged. This wraps it into a full document with the
@@ -126,6 +127,16 @@ writePage("contribute.html", {
   url: `${SITE_URL}contribute/`,
   outDir: "contribute",
 });
+writePage("look-back.html", {
+  description: "Turn a judge's answer into a decision record, and look back on how it turned out. Nothing is stored.",
+  url: `${SITE_URL}look-back/`,
+  outDir: "look-back",
+});
+writePage("privacy.html", {
+  description: "What Grill sends, what it counts, and what it never keeps.",
+  url: `${SITE_URL}privacy/`,
+  outDir: "privacy",
+});
 // The miss page is built only when GRILL_MISS=1, the same switch that opens /miss/send. Its fields
 // and its in-browser check come from scripts/missCore.mjs, the module the server checks with.
 if (process.env.GRILL_MISS === "1") {
@@ -148,4 +159,4 @@ if (process.env.GRILL_MISS === "1") {
     doc(headFor({ description: "Share how AI got a decision wrong, without the decision.", url: `${SITE_URL}miss/` }), `${title}\n${style}`, source.slice(title.length)),
   );
 }
-console.log(`built _site/index.html, _site/terms/index.html and _site/contribute/index.html${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}`);
+console.log(`built _site/index.html and the terms, contribute, look-back and privacy pages${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}`);

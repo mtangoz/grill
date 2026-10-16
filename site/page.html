@@ -44,8 +44,8 @@
   .top { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; font-size: 0.9rem; }
   .mark { font: 700 1.1rem/1 var(--sans); letter-spacing: -0.01em; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
   .mark img { display: block; width: 24px; height: 24px; border-radius: 5px; }
-  .top nav { display: flex; gap: 18px; }
-  .top nav a { color: var(--muted); text-decoration: none; }
+  .top nav { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  .top nav a { color: var(--muted); text-decoration: none; white-space: nowrap; }
   .top nav a:hover { color: var(--ink); }
 
   h1 { font-size: clamp(2.1rem, 5.6vw, 3rem); font-weight: 650; letter-spacing: -0.025em; line-height: 1.08; margin: 3.2rem 0 1rem; text-wrap: balance; max-width: 16ch; }
@@ -135,6 +135,42 @@
     dl { grid-template-columns: 1fr; gap: 2px 0; }
     dd { margin-bottom: 10px; }
   }
+
+  /* The homepage is shaped like a grill: one example, three steps, one choice, three promises. */
+  .chat { border-top: 1px solid var(--ink); padding-top: 14px; margin: 0 0 1.4rem; max-width: 36rem; }
+  .chat p { margin: 0 0 0.7rem; }
+  .chat .who { display: block; font: 600 0.72rem/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--quiet); }
+  .chat .you { color: var(--muted); }
+  .chat .grill { font-size: 1.05rem; }
+  .chat .grill small { display: block; font-size: 0.86rem; color: var(--quiet); margin-top: 0.3rem; }
+
+  .three { list-style: none; counter-reset: step; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; padding: 0; margin: 0 0 2.8rem; }
+  .three li { counter-increment: step; color: var(--muted); font-size: 0.96rem; }
+  .three li::before { content: counter(step); display: block; font: 650 1.5rem/1.1 var(--sans); color: var(--ink); margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+  .three strong { display: block; color: var(--ink); }
+
+  .routes { border-top: 1px solid var(--rule); margin: 0 0 1rem; }
+  .routes details { border-bottom: 1px solid var(--rule); }
+  .routes summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 14px 0; font-weight: 600; }
+  .routes summary::-webkit-details-marker { display: none; }
+  .routes summary::after { content: "+"; font: 400 1.2rem/1 var(--sans); color: var(--quiet); }
+  .routes details[open] summary::after { content: "\2212"; }
+  .routes summary span { font-weight: 400; font-size: 0.9rem; color: var(--quiet); margin-left: auto; }
+  .routes .steps { margin-bottom: 1.1rem; }
+  .routes .pairs { margin-bottom: 1.2rem; }
+  .routes .note { margin-bottom: 1.1rem; }
+
+  .promises { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; border-block: 1px solid var(--rule); padding-block: 18px; margin: 0 0 1rem; }
+  .promises strong { display: block; font: 650 1.05rem/1.25 var(--sans); letter-spacing: -0.01em; margin-bottom: 4px; }
+  .promises span { font-size: 0.9rem; color: var(--muted); }
+  .more { font-size: 0.95rem; color: var(--muted); margin: 0 0 2.8rem; }
+  .prose h2 { margin-top: 2.2rem; }
+  .prose .note { margin-bottom: 0.8rem; }
+
+  @media (max-width: 560px) {
+    .three, .promises { grid-template-columns: 1fr; gap: 14px; }
+    .routes summary span { display: none; }
+  }
 </style>
 
 <main id="top" data-notify>
@@ -143,7 +179,7 @@
     <nav aria-label="Sections">
       <a href="#setup">Get started</a>
       <a href="#how">How it works</a>
-      <a href="#privacy">Privacy</a>
+      <a href="/privacy/">Privacy</a>
       <a href="/contribute/">Contribute</a>
       <a href="https://github.com/mtangoz/grill">GitHub</a>
     </nav>
@@ -153,151 +189,84 @@
   <p class="lede">Hear the strongest case against your plan, then decide for yourself.</p>
   <p class="cta"><a class="button" href="#setup">Get started</a><span>Free, with the AI you already use</span></p>
 
-  <h2 id="setup">Get started</h2>
-  <p class="note">Four free ways in. The same steps are in the <a href="https://github.com/mtangoz/grill#set-up">README</a>.</p>
-  <dl>
-    <dt>Any AI (easiest)</dt><dd>Copy <a href="https://github.com/mtangoz/grill/blob/main/prompts/grill.md" data-track="copy_prompt">the Grill prompt</a> into ChatGPT, Copilot, Gemini, Grok or Muse, then tell it what you’re deciding. Free.</dd>
-    <dt>Claude on the web or phone</dt><dd>Add <a href="https://github.com/mtangoz/grill/releases/latest/download/grill-skill.zip" data-track="download_skill">the Grill skill</a> under Customize → Skills. Free.</dd>
-    <dt>Claude Desktop</dt><dd>About 2 minutes if you already have an OpenRouter key. About 10 minutes if you need to create one ($5 credit). Prefer free first? Use Any AI above. <a href="https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb" data-track="download_mcpb">Download Grill</a>, double-click it, and paste in your key. Grill talks to OpenRouter once per check (about 1 to 2 cents). <a href="https://openrouter.ai/keys" data-track="openrouter_key_click">Create a key</a> and add a few dollars of credit. The tools can list without a key. The first grill needs credit.</dd>
-    <dt>Claude Code</dt><dd><code>/plugin marketplace add mtangoz/grill</code>, then <code>/plugin install grill@grill</code></dd>
-  </dl>
-
-  <div class="scale" role="img" aria-label="The four possible results: solid, solid if, shaky, and doesn't hold up. The example below came back shaky.">
+  <div class="chat" aria-label="An example grill">
+    <p class="you"><span class="who">You</span>Grill this: I’m taking the job in Denver. I’m 80% sure it’s right.</p>
+    <p class="grill"><span class="who">Grill</span><strong>Shaky.</strong> It assumes you’ll love living there, and nothing checks that. Cheap test: spend a long weekend there and do the commute at rush hour.<small>Say ‘more’, ‘options’, or your call.</small></p>
+  </div>
+  <div class="scale" role="img" aria-label="The four possible results: solid, solid if, shaky, and doesn't hold up. The example above came back shaky.">
     <div class="line"><i style="left:0"></i><i style="left:33.333%"></i><b style="left:66.667%"></b><i style="left:100%;margin-left:-1px"></i></div>
     <div class="labels" aria-hidden="true"><span>Solid</span><span>Solid, if…</span><span class="here">Shaky</span><span>Doesn’t hold up</span></div>
   </div>
 
-  <div class="facts">
-    <div><strong>1¢</strong><span>about a cent per check, or free by copy and paste</span></div>
-    <div><strong>0</strong><span>decisions kept by Grill. Your plans stay yours.</span></div>
-    <div><strong>Any AI</strong><span>works with ChatGPT, Claude, Gemini, Copilot, Grok and Muse</span></div>
-  </div>
-
-  <div class="report" id="paste-result" aria-label="A paste-route result">
-    <p><span class="k">decision</span><span>Take the job in Denver. I’m 80% sure it’s right.</span></p>
-    <p><span class="k">result</span><span>shaky · it assumes you’ll love living there, and nothing checks that</span></p>
-    <p><span class="k">weak spot</span><span>“we’ll figure out the city once we’re there”</span></p>
-    <p><span class="k">quick check</span><span>spend a long weekend there and do the commute at rush hour</span></p>
-    <h2>Before you decide</h2>
-    <ol id="reflect-questions">
-      <li>What do you expect to happen, and by when? Write the prediction you will stand behind.</li>
-      <li>How sure are you now, as a percent? A band is fine. This is your confidence, not the judge.</li>
-      <li>What would prove you wrong? Name the one result you will treat as decisive.</li>
-    </ol>
-    <pre id="sample-record">```grill-record
-version: 1
-date: 2026-09-27
-title: Take the job in Denver
-prediction: I will still want the job after a month in Denver
-verdict: shaky
-falsifier: spend a long weekend there and do the commute at rush hour
-confidence: 80%
-review: 2026-10-11
-```</pre>
-    <p class="cta"><button class="button" type="button" id="copy-sample">Copy the record</button></p>
-    <p><span class="k">keep it</span><span>Copy the block. To look back, paste it below and say what happened. This page does not store it.</span></p>
-  </div>
-
   <h2 id="how">How it works</h2>
-  <p class="note">It’s called Grill because a good plan can take a few tough questions.</p>
-  <ol class="steps">
-    <li>Tell your AI what you’re deciding.</li>
-    <li>It sends that, as you said it. It asks one short question only if the decision is unclear.</li>
-    <li>A second AI, from a different company, comes back with a short note: a verdict, any option you had not named, and one or two cheap tests.</li>
-    <li>You get a simple result: solid, solid if…, shaky, or doesn’t hold up. If there is almost nothing to judge, it says it needs facts instead.</li>
-    <li>One line asks for your call and how sure you are. A record is written only after you answer. Grill does not store it.</li>
+  <ol class="three">
+    <li><strong>Say “grill this”</strong>Tell the AI you already use what you’re deciding.</li>
+    <li><strong>A different AI pushes back</strong>A model from another company gives a verdict and one cheap test.</li>
+    <li><strong>You make the call</strong>The verdict never becomes the decision. Grill keeps nothing.</li>
   </ol>
 
-  <h2 id="paste">Paste a judge answer on this page</h2>
-  <p class="note">The copy-and-paste route, with nothing sent and nothing stored. Paste the judge’s answer. The page adds the same footer. Then paste a saved record to look back. This box scores the first record. To score several, paste them into the Grill prompt and say look back.</p>
-  <form class="paste" id="paste-form">
-    <label for="judge-answer">Judge’s answer</label>
-    <textarea id="judge-answer">Judge: Gemini 2.5 Pro by Google
+  <h2 id="setup">Get started: pick the AI you use</h2>
+  <div class="routes">
+    <details open>
+      <summary>Any AI (easiest)<span>ChatGPT, Copilot, Gemini, Grok, Muse · free</span></summary>
+      <ol class="steps">
+        <li>Copy <a href="https://github.com/mtangoz/grill/blob/main/prompts/grill.md" data-track="copy_prompt">the Grill prompt</a> into the AI you use, and say what you’re deciding.</li>
+        <li>It writes a prompt for the judge. Paste that into an AI from a different company:</li>
+      </ol>
+      <table class="pairs">
+        <thead><tr><th scope="col">If you use</th><th scope="col">Judge with</th></tr></thead>
+        <tbody>
+          <tr><td>ChatGPT</td><td>Claude, Gemini or Grok</td></tr>
+          <tr><td>Copilot</td><td>Gemini. Copilot can use AI from several companies, so Gemini is the safe pick</td></tr>
+          <tr><td>Gemini</td><td>Claude, ChatGPT or Grok</td></tr>
+          <tr><td>Grok, GrokBot</td><td>Claude, ChatGPT or Gemini</td></tr>
+          <tr><td>Muse</td><td>Claude, ChatGPT or Gemini</td></tr>
+          <tr><td>Claude</td><td>Grill’s one-click check, or ChatGPT, Gemini or Grok</td></tr>
+        </tbody>
+      </table>
+      <ol class="steps" start="3">
+        <li>Paste the judge’s answer back. To keep a record and look back later, use the <a href="/look-back/">look-back page</a>.</li>
+      </ol>
+    </details>
+    <details>
+      <summary>Claude on the web or phone<span>free</span></summary>
+      <ol class="steps">
+        <li>Download <a href="https://github.com/mtangoz/grill/releases/latest/download/grill-skill.zip" data-track="download_skill">the Grill skill</a>.</li>
+        <li>In Claude, open Customize → Skills, upload it, and switch it on.</li>
+        <li>Say “grill this: …”.</li>
+      </ol>
+    </details>
+    <details>
+      <summary>Claude Desktop<span>one click · about 1 to 2 cents a check</span></summary>
+      <ol class="steps">
+        <li><a href="https://openrouter.ai/keys" data-track="openrouter_key_click">Create an OpenRouter key</a> and add a few dollars of credit. Grill talks to OpenRouter once per check (about 1 to 2 cents).</li>
+        <li><a href="https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb" data-track="download_mcpb">Download Grill</a>, double-click it, and paste in your key.</li>
+        <li>Say “grill this: …”. The tools can list without a key. The first grill needs credit.</li>
+      </ol>
+      <p class="note">About 2 minutes if you already have an OpenRouter key. About 10 minutes if you need to create one ($5 credit). Prefer free first? Use Any AI above.</p>
+    </details>
+    <details>
+      <summary>Claude Code<span>plugin</span></summary>
+      <ol class="steps">
+        <li><code>/plugin marketplace add mtangoz/grill</code></li>
+        <li><code>/plugin install grill@grill</code></li>
+      </ol>
+    </details>
+  </div>
+  <p class="more">Cursor, VS Code and other apps: see the <a href="https://github.com/mtangoz/grill#set-up">README</a>.</p>
 
-**Verdict:** shaky, it assumes you will love living there, and nothing checks that.
-**Falsifier:** spend a long weekend there and do the commute at rush hour</textarea>
-    <label for="decision-title">Decision title</label>
-    <textarea id="decision-title">Take the job in Denver. I'm 80% sure it's right.</textarea>
-    <label for="prediction">What you expect</label>
-    <textarea id="prediction">I will still want the job after a month in Denver.</textarea>
-    <p class="cta"><button class="button" type="button" id="show-record">Show the record</button></p>
-    <pre id="made-record" hidden></pre>
-    <pre id="made-block" hidden></pre>
-    <p class="cta"><button class="button" type="button" id="copy-made" hidden>Copy the record</button></p>
-    <label for="saved-records">Saved records</label>
-    <textarea id="saved-records">```grill-record
-version: 1
-date: 2026-09-27
-title: Take the job in Denver
-prediction: I will still want the job after a month in Denver
-verdict: shaky
-falsifier: spend a long weekend there and do the commute at rush hour
-confidence: 80%
-review: 2026-10-11
-```</textarea>
-    <div class="ask" id="came-true-ask">
-      <p class="ask-q" id="came-true-label">Did it come true?</p>
-      <div class="ask-choices" role="group" aria-labelledby="came-true-label">
-        <button type="button" class="choice" data-value="yes" aria-pressed="false">Yes</button>
-        <button type="button" class="choice" data-value="no" aria-pressed="false">No</button>
-      </div>
-    </div>
-    <div class="ask" id="falsifier-ask">
-      <p class="ask-q" id="falsifier-label">Did the thing that would prove you wrong happen?</p>
-      <div class="ask-choices" role="group" aria-labelledby="falsifier-label">
-        <button type="button" class="choice" data-value="yes" aria-pressed="false">Yes</button>
-        <button type="button" class="choice" data-value="no" aria-pressed="false">No</button>
-      </div>
-    </div>
-    <label for="surprise">Did anything happen you didn’t expect?</label>
-    <textarea id="surprise" class="short" placeholder="A few words. Optional. This page does not store it."></textarea>
-    <div class="ask" id="surprise-match-ask">
-      <p class="ask-q" id="surprise-match-label">Does that match a challenge or the falsifier?</p>
-      <div class="ask-choices" role="group" aria-labelledby="surprise-match-label">
-        <button type="button" class="choice" data-value="none" aria-pressed="false">No</button>
-        <button type="button" class="choice" data-value="falsifier" aria-pressed="false">The falsifier</button>
-        <button type="button" class="choice" data-value="challenge" aria-pressed="false">A challenge</button>
-      </div>
-    </div>
-    <p id="surprise-challenge-row" hidden>
-      <label for="surprise-challenge">Which challenge? A number.</label>
-      <input id="surprise-challenge" type="text" inputmode="numeric" autocomplete="off" placeholder="2">
-    </p>
-    <div class="ask" id="surprise-live-ask">
-      <p class="ask-q" id="surprise-live-label">Is the decision still open, and does this surprise bear on it?</p>
-      <div class="ask-choices" role="group" aria-labelledby="surprise-live-label">
-        <button type="button" class="choice" data-value="yes" aria-pressed="false">Yes</button>
-        <button type="button" class="choice" data-value="no" aria-pressed="false">No</button>
-      </div>
-    </div>
-    <label for="what-happened">What happened</label>
-    <textarea id="what-happened" placeholder="One sentence. This page does not store it."></textarea>
-    <p class="cta"><button class="button" type="button" id="run-look-back">Look back</button></p>
-    <pre id="look-back-out" hidden></pre>
-  </form>
-
-  <h2 id="anywhere">Works with the AI you already use</h2>
-  <p class="note">The second opinion comes from a different company than the AI you normally use. That’s the point: it won’t share the same blind spots. Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes check it and warn you.</p>
-  <table class="pairs">
-    <thead><tr><th scope="col">If you use</th><th scope="col">Get the second opinion from</th></tr></thead>
-    <tbody>
-      <tr><td>ChatGPT</td><td>Claude, Gemini or Grok</td></tr>
-      <tr><td>Copilot</td><td>Gemini. Copilot can use AI from several companies, so Gemini is the safe pick</td></tr>
-      <tr><td>Gemini</td><td>Claude, ChatGPT or Grok</td></tr>
-      <tr><td>Grok, GrokBot</td><td>Claude, ChatGPT or Gemini</td></tr>
-      <tr><td>Muse</td><td>Claude, ChatGPT or Gemini</td></tr>
-      <tr><td>Claude</td><td>Grill’s one-click check, or ChatGPT, Gemini or Grok</td></tr>
-    </tbody>
-  </table>
-
-  <h2 id="privacy">Your privacy</h2>
-  <p class="privacy">The free tool has no account and keeps nothing. The reflection at the end of a grill stays in your notes. This page does not store it. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions. An account is only for a key we manage. A starter allowance needs no card. Bring your own key and there is no account. We see your email, the assistant and judge you pick, and your key’s usage (cost and model, never the text). We count sign-ups, keys issued, first grills, allowances used up and upgrade clicks. We don’t keep what you decide unless you turn on saving copies of reports on that account, and you can delete them. This website counts visits anonymously, with no cookies and nothing that identifies you. The installed tool can optionally send one anonymous usage ping to this site after the first successful grill, if you turn that on at install; off by default; never again; never decision words. If you join the Pro launch list, we keep your email address, and only that, in Resend until Pro launches, and you can unsubscribe with one click. The same count can record that a decision record was shown or copied, that a look-back started or finished, and how many records were pasted. It can also record a click on a download, the paste prompt, or the OpenRouter keys page, and an optional channel tag (<code>ref</code>) from a fixed list. A missing tag is left off. It never includes the words of a decision. The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>.</p>
+  <h2 id="privacy">What Grill promises</h2>
+  <div class="promises">
+    <div><strong>A different company</strong><span>The judge never comes from the company behind your AI, so it won’t share its blind spots. Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes check it and warn you.</span></div>
+    <div><strong>Nothing kept</strong><span>The free tool has no account and keeps none of your decisions. Only the summary you approve is sent.</span></div>
+    <div><strong>You decide</strong><span>Grill gives you the case against and a cheap test. The call stays yours.</span></div>
+  </div>
+  <p class="more" id="paste">Every detail of what is sent and counted is in <a href="/privacy/">Privacy</a>. Already grilled a decision? <a href="/look-back/">Look back</a> at how it turned out.</p>
 
   <section id="pro">
     <div class="notify">
       <h2>Coming later: saved history and look-back reminders</h2>
-      <p class="note">An optional Pro plan will keep your decision records across the assistants you use (Claude, ChatGPT, Gemini, Grok), remind you when a look-back is due, and send a monthly look-back report. The free tool stays free, with no account.</p>
-      <p class="note">Want to hear when it's ready? Leave your email.</p>
+      <p class="note">An optional Pro plan will keep your decision records across assistants and remind you when a look-back is due. The free tool stays free. Want to hear when it’s ready?</p>
       <form method="post" action="/notify">
         <input type="hidden" name="via" value="site">
         <p hidden><label>Leave this blank <input type="text" name="leave_blank" tabindex="-1" autocomplete="off"></label></p>
@@ -325,64 +294,13 @@ review: 2026-10-11
   </section>
 
   <div class="footer">
-    <span>Open source · <a href="/contribute/">Contribute</a> · <a href="https://github.com/mtangoz/grill">GitHub</a></span>
+    <span>Open source · <a href="/contribute/">Contribute</a> · <a href="https://github.com/mtangoz/grill">GitHub</a> · <a href="/privacy/">Privacy</a> · <a href="/look-back/">Look back</a></span>
     <span>Made at <a href="https://hold.quest">Hold</a></span>
   </div>
 </main>
 <script>
+// Counts clicks on the setup links, with an optional channel tag. Never any words.
 (function () {
-  function iso(d) { return d.toISOString().slice(0, 10); }
-  function plus(d, n) {
-    var x = new Date(d.getTime());
-    x.setUTCDate(x.getUTCDate() + n);
-    return x;
-  }
-  function one(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
-  function show(id, text) {
-    var el = document.getElementById(id);
-    el.hidden = false;
-    el.textContent = text;
-  }
-  function questions() {
-    return Array.prototype.map.call(document.querySelectorAll("#reflect-questions li"), function (li, i) {
-      return (i + 1) + ". " + li.textContent;
-    }).join("\n");
-  }
-  function confidence(text) {
-    var m = String(text || "").match(/(\d{1,3})\s*(?:%|percent)\s+sure/i);
-    return m && Number(m[1]) <= 100 ? Number(m[1]) + "%" : "";
-  }
-  function titleOf(text) {
-    var cut = one(text).replace(/\.\s+I(?:'|\u2019)m[\s\S]*$/, "");
-    return cut || "this decision";
-  }
-  function verdictOf(text) {
-    var m = String(text || "").match(/\*\*Verdict:\*\*\s*([^\n,]+)/i) || String(text || "").match(/\*\*Verdict:\s*([^*\n,]+)/i);
-    var word = m ? one(m[1]).toLowerCase() : "";
-    if (word.indexOf("doesn") === 0 || word.indexOf("does not hold") === 0) return "doesn't hold up";
-    if (word.indexOf("solid if") === 0) return "solid if";
-    if (word.indexOf("solid") === 0) return "solid";
-    if (word.indexOf("shaky") === 0) return "shaky";
-    return word || "unknown";
-  }
-  function falsifierOf(text) {
-    var m = String(text || "").match(/\*\*Falsifier:\*\*\s*(.+)/i);
-    return m ? one(m[1]) : "none named";
-  }
-  function yn(raw) {
-    var s = one(raw).toLowerCase();
-    if (!s) return "";
-    if (s === "yes" || s === "y" || s.indexOf("yes") === 0) return "yes";
-    if (s === "no" || s === "n" || s.indexOf("no") === 0) return "no";
-    if (s.indexOf("not yet") !== -1) return "not yet";
-    return "";
-  }
-  function track(name, records) {
-    var count = Number(records);
-    if (!Number.isInteger(count) || count < 0) count = 0;
-    if (typeof window.va !== "function") return;
-    window.va("event", { name: name, data: { records: count } });
-  }
   var CLICK_EVENTS = { download_mcpb: 1, download_skill: 1, copy_prompt: 1, openrouter_key_click: 1 };
   var CHANNEL_REFS = {
     smithery: 1, glama: 1, mcpservers: 1, tensorblock: 1, "mcp-registry": 1,
@@ -402,215 +320,6 @@ review: 2026-10-11
   }
   document.querySelectorAll("a[data-track]").forEach(function (link) {
     link.addEventListener("click", function () { trackClick(link.getAttribute("data-track")); });
-  });
-  function versionedCount(text) {
-    var n = 0;
-    String(text || "").split(/\n/).forEach(function (raw) {
-      if (/^version\s*:\s*1\s*$/i.test(raw.trim())) n += 1;
-    });
-    return n;
-  }
-  function recordFence(fields) {
-    return [
-      "```grill-record",
-      "version: 1",
-      "date: " + fields.date,
-      "title: " + fields.title,
-      "prediction: " + fields.prediction,
-      "verdict: " + fields.verdict,
-      "falsifier: " + fields.falsifier,
-      "confidence: " + fields.confidence,
-      "review: " + fields.review,
-      "```"
-    ].join("\n");
-  }
-  function parseSiteRecords(text) {
-    var records = [];
-    var current = null;
-    function finish() {
-      if (current && current.version === "1" && current.date && current.title) records.push(current);
-      current = null;
-    }
-    String(text || "").split(/\n/).forEach(function (raw) {
-      var line = raw.trim();
-      if (!line || line === "---") return;
-      if (line.indexOf("```") === 0) { finish(); return; }
-      var m = line.match(/^(version|date|title|prediction|verdict|falsifier|confidence|review|decided)\s*:\s*(.*)$/i);
-      if (!m) return;
-      var key = m[1].toLowerCase();
-      if (key === "version") {
-        if (current && current.version) finish();
-        current = current || {};
-        current.version = one(m[2]);
-      } else {
-        current = current || {};
-        current[key] = one(m[2]);
-      }
-    });
-    finish();
-    return records;
-  }
-  function copyBlock(id, count) {
-    var text = document.getElementById(id).textContent;
-    var done = function () { track("reflection_record_copied", count); };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done);
-    else done();
-  }
-  window.addEventListener("load", function () {
-    track("reflection_record_shown", versionedCount(document.getElementById("sample-record").textContent));
-  });
-  document.getElementById("copy-sample").addEventListener("click", function () {
-    copyBlock("sample-record", versionedCount(document.getElementById("sample-record").textContent));
-  });
-  document.getElementById("copy-made").addEventListener("click", function () {
-    copyBlock("made-block", versionedCount(document.getElementById("made-block").textContent));
-  });
-  document.getElementById("show-record").addEventListener("click", function () {
-    var now = new Date();
-    var answer = document.getElementById("judge-answer").value;
-    var subject = document.getElementById("decision-title").value;
-    var block = recordFence({
-      date: iso(now),
-      title: titleOf(subject),
-      prediction: one(document.getElementById("prediction").value),
-      verdict: verdictOf(answer),
-      falsifier: falsifierOf(answer),
-      confidence: confidence(subject),
-      review: iso(plus(now, 14))
-    });
-    show("made-record", "Before you decide\n\n" + questions() + "\n\nThese stay in your notes. Grill does not store them and does not send them to the judge.\n\nCopy the block. To look back, paste it below. Nothing is stored.");
-    show("made-block", block);
-    document.getElementById("copy-made").hidden = false;
-    document.getElementById("saved-records").value = block;
-    track("reflection_record_shown", 1);
-  });
-  document.querySelectorAll(".ask-choices").forEach(function (group) {
-    group.addEventListener("click", function (event) {
-      var btn = event.target.closest(".choice");
-      if (!btn || !group.contains(btn)) return;
-      var on = btn.getAttribute("aria-pressed") === "true";
-      group.querySelectorAll(".choice").forEach(function (el) { el.setAttribute("aria-pressed", "false"); });
-      if (!on) btn.setAttribute("aria-pressed", "true");
-    });
-  });
-  document.getElementById("surprise-match-ask").addEventListener("click", function () {
-    document.getElementById("surprise-challenge-row").hidden = choice("surprise-match-ask") !== "challenge";
-  });
-  function choice(groupId) {
-    var pressed = document.querySelector("#" + groupId + " .choice[aria-pressed='true']");
-    return pressed ? pressed.getAttribute("data-value") : "";
-  }
-  // A mark is its own clause after "|". The words are never compared with the record.
-  function parseSurprise(raw) {
-    var full = one(raw);
-    if (!full) return { text: "", match: "", live: false };
-    var words = [];
-    var match = "";
-    var live = false;
-    full.split(/\s*\|\s*/).forEach(function (part) {
-      var piece = one(part).replace(/\.$/, "");
-      var challenge = piece.match(/^matches challenge ([1-9]\d*)$/i);
-      if (challenge) {
-        if (!match) match = "challenge " + challenge[1];
-        return;
-      }
-      if (/^matches(?: the)? falsifier$/i.test(piece)) {
-        if (!match) match = "falsifier";
-        return;
-      }
-      if (/^still live$/i.test(piece)) {
-        live = true;
-        return;
-      }
-      if (piece) words.push(piece);
-    });
-    var text = words.join(" | ").trim();
-    if (!text) return { text: "", match: "", live: false };
-    return { text: text, match: match, live: live };
-  }
-  function surpriseLine() {
-    var field = one(document.getElementById("surprise").value);
-    var raw = document.getElementById("what-happened").value;
-    var typed = one((String(raw).match(/^surprise\s*:\s*(.+)$/im) || [])[1] || "");
-    if (!field) return typed;
-    var bits = [field];
-    var match = choice("surprise-match-ask");
-    if (match === "falsifier") bits.push("matches falsifier");
-    if (match === "challenge") {
-      var n = one(document.getElementById("surprise-challenge").value).match(/[1-9]\d*/);
-      if (n) bits.push("matches challenge " + n[0]);
-    }
-    if (choice("surprise-live-ask") === "yes") bits.push("still live");
-    return bits.join(" | ");
-  }
-  document.getElementById("run-look-back").addEventListener("click", function () {
-    var pasted = document.getElementById("saved-records").value;
-    var records = parseSiteRecords(pasted);
-    track("reflection_lookback_started", records.length);
-    var raw = document.getElementById("what-happened").value;
-    var came = choice("came-true-ask");
-    var fired = choice("falsifier-ask");
-    var typedCame = yn((raw.match(/came_true\s*:\s*(.+)/i) || [])[1] || "");
-    var typedFired = yn((raw.match(/falsifier_fired\s*:\s*(.+)/i) || [])[1] || "");
-    var typedWhat = one((raw.match(/happened\s*:\s*(.+)/i) || [])[1] || "");
-    if (!came) came = typedCame;
-    if (!fired) fired = typedFired;
-    var what = typedWhat || (/came_true\s*:|falsifier_fired\s*:|happened\s*:|surprise\s*:/i.test(raw) ? "" : one(raw));
-    if (!records.length) {
-      var other = [];
-      String(pasted).split(/\n/).forEach(function (raw) {
-        var m = raw.trim().match(/^version\s*:\s*(\S+)/i);
-        if (!m || m[1] === "1" || other.indexOf(m[1]) !== -1) return;
-        other.push(m[1]);
-      });
-      show("look-back-out", other.length
-        ? "That paste uses record version " + other.join(", ") + ". This Grill reads version 1 only. Nothing is stored."
-        : "No decision record was in that paste. Nothing is stored either way.");
-      return;
-    }
-    if (!came) {
-      var ask = ["Look back", "", "Nothing is stored. For each decision, say what actually happened.", ""];
-      records.forEach(function (r) {
-        ask.push(r.title);
-        if (r.prediction) ask.push("Prediction then: " + r.prediction + ".");
-        ask.push("Verdict then: " + (r.verdict || "unknown") + ".");
-        if (r.decided) ask.push("You chose: \"" + r.decided + "\".");
-        ask.push("Did it come true? Yes or no.");
-        ask.push("Did anything happen you didn't expect? A few words, or leave it blank.");
-        ask.push("");
-      });
-      show("look-back-out", ask.join("\n"));
-      return;
-    }
-    var record = records[0];
-    var surprise = parseSurprise(surpriseLine());
-    var word = one(record.verdict).toLowerCase();
-    var doubt = word === "shaky" || word.indexOf("doesn") === 0 || word.indexOf("does not") === 0;
-    var line = record.title + ". Verdict then: " + record.verdict + ". ";
-    if (record.prediction) line += "Prediction then: " + record.prediction + ". ";
-    if (record.decided && came === "yes") line += "You chose \"" + record.decided + "\". It came true. ";
-    else if (record.decided && came === "no") line += "You chose \"" + record.decided + "\". It did not come true. ";
-    else if (record.decided) line += "You chose: \"" + record.decided + "\". ";
-    if (came === "not yet") line += "Not back yet, so this call is not scored. ";
-    else if (came === "no" && doubt) line += "It did not come true, and the verdict had doubted it. The doubt matched what happened. ";
-    else if (came === "yes" && doubt) line += "It came true, and the verdict had doubted it. You were righter than the doubt. ";
-    else if (came === "yes") line += "It came true, and the verdict had let it stand. The call and the verdict agreed. ";
-    else line += "It did not come true, and the verdict had let it stand. The outcome was harder than the verdict. ";
-    if (came === "no" && surprise.text && surprise.match) line += "This was flagged and you went ahead. ";
-    else if (came === "no" && surprise.text) line += "The world moved in a way the record didn't foresee. ";
-    if (fired === "yes" && came === "yes") line += "You marked it true, and the falsifier fired. Those two disagree. ";
-    else if (fired === "yes") line += "The falsifier fired. ";
-    if (what) line += "What happened: " + what + " ";
-    if (surprise.text) line += "Surprise: " + surprise.text + ". ";
-    if (surprise.text && surprise.live) line += "Grill the revised plan; the new record will say it replaces this one.";
-    var hits = came === "yes" ? 1 : 0;
-    var pattern = "1 call back, " + hits + " came true. ";
-    var pct = parseInt(record.confidence, 10);
-    if (!isNaN(pct) && pct >= 70 && came === "no") pattern += "Your confidence ran hot: you were surer than the calls turned out. ";
-    else if (!isNaN(pct) && pct <= 40 && came === "yes") pattern += "Your confidence ran cold: the calls came true more often than your confidence said. ";
-    pattern += "Fewer than four calls are back. Read the direction, not a score.";
-    if (came === "yes" || came === "no") track("reflection_lookback_completed", records.length);
-    show("look-back-out", "Look back\n\nNothing is stored. This reading stays in the browser.\n\n" + line + "\n\nPattern\n\n" + pattern);
   });
 })();
 </script>

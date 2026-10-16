@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
+// The home page stays short. The paste-and-look-back tool and the full privacy text have their own pages.
+const lookBack = readFileSync(join(ROOT, "site/look-back.html"), "utf8");
+const privacyPage = readFileSync(join(ROOT, "site/privacy.html"), "utf8");
 
 describe("site/page.html", () => {
   it("is a body with no document skeleton, so it publishes as an artifact unchanged", () => {
@@ -94,9 +97,11 @@ describe("site/page.html", () => {
     const visits = "This website counts visits anonymously, with no cookies and nothing that identifies you.";
     const tool = "The installed tool can optionally send one anonymous usage ping to this site after the first successful grill, if you turn that on at install; off by default; never again; never decision words.";
     const launch = "If you join the Pro launch list, we keep your email address, and only that, in Resend until Pro launches, and you can unsubscribe with one click.";
-    assert.ok(page.includes(visits));
-    assert.ok(page.includes(tool));
-    assert.ok(page.includes(launch));
+    assert.ok(privacyPage.includes(visits));
+    assert.ok(privacyPage.includes(tool));
+    assert.ok(privacyPage.includes(launch));
+    assert.match(page, /<a href="\/privacy\/">Privacy<\/a>/, "the home page links the privacy page");
+    assert.match(page, /The free tool has no account and keeps none of your decisions/);
     const privacy = readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8");
     assert.ok(privacy.includes(visits));
     assert.match(privacy, /does not track you unless you turn on optional anonymous usage stats/);
@@ -116,28 +121,32 @@ describe("site/page.html", () => {
     assert.ok(readFileSync(join(ROOT, "docs/pro-development.md"), "utf8").includes("UPSTASH_REDIS_REST_URL"));
     assert.ok(readFileSync(join(ROOT, "docs/TROUBLESHOOTING.md"), "utf8").includes("Still grilling"));
     assert.ok(readFileSync(join(ROOT, "LEARNING.md"), "utf8").includes("Quality checks on one grill"));
-    assert.match(page, /Before you decide/);
-    assert.match(page, /id="paste-result"/);
+    assert.match(lookBack, /Before you decide/);
+    assert.match(lookBack, /id="paste-result"/);
     assert.match(page, /\.button \{[^}]*white-space:\s*nowrap/);
-    assert.match(page, /\.report p:not\(\.cta\)/);
-    assert.match(page, /grill-record/);
-    assert.match(page, /version: 1/);
-    assert.match(page, /prediction:/);
-    assert.match(page, /Did it come true\?/);
-    assert.match(page, /Did the thing that would prove you wrong happen\?/);
+    assert.match(page, /\.report p:not\(\.cta\)/, "the look-back page borrows the home page's report styles");
+    assert.match(lookBack, /grill-record/);
+    assert.match(lookBack, /version: 1/);
+    assert.match(lookBack, /prediction:/);
+    assert.match(lookBack, /Did it come true\?/);
+    assert.match(lookBack, /Did the thing that would prove you wrong happen\?/);
+    assert.match(page, /href="\/look-back\/"/, "the home page links the look-back page");
     assert.ok(readFileSync(join(ROOT, "docs/DECISION-RECORD.md"), "utf8").includes("version: 1"));
   });
 
   it("counts reflection use as a number of records and never the words", () => {
-    assert.match(page, /reflection_record_shown/);
-    assert.match(page, /reflection_record_copied/);
-    assert.match(page, /reflection_lookback_started/);
-    assert.match(page, /reflection_lookback_completed/);
-    assert.match(page, /window\.va\("event", \{ name: name, data: \{ records: count \} \}\)/);
-    assert.match(page, /It never includes the words of a decision/);
-    assert.match(page, /Did anything happen you didn['\u2019]t expect\?/);
-    assert.doesNotMatch(page, /window\.va\([^)]*(judge-answer|saved-records|what-happened|decision-title|surprise)/);
-    assert.doesNotMatch(page, /track\([^)]*surprise/);
+    assert.match(lookBack, /reflection_record_shown/);
+    assert.match(lookBack, /reflection_record_copied/);
+    assert.match(lookBack, /reflection_lookback_started/);
+    assert.match(lookBack, /reflection_lookback_completed/);
+    assert.match(lookBack, /window\.va\("event", \{ name: name, data: \{ records: count \} \}\)/);
+    assert.match(privacyPage, /It never includes the words of a decision/);
+    assert.match(lookBack, /Did anything happen you didn['\u2019]t expect\?/);
+    for (const text of [page, lookBack]) {
+      assert.doesNotMatch(text, /window\.va\([^)]*(judge-answer|saved-records|what-happened|decision-title|surprise)/);
+      assert.doesNotMatch(text, /track\([^)]*surprise/);
+    }
+    assert.doesNotMatch(page, /reflection_/, "the home page has no reflection events");
     for (const file of ["server/index.mjs", "scripts/reflection.mjs"]) {
       const source = readFileSync(join(ROOT, file), "utf8");
       assert.ok(!source.includes("window.va"), `${file} must not send website analytics`);
@@ -175,8 +184,8 @@ describe("site/page.html", () => {
     const privacy = readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8");
     assert.match(privacy, /click on a download, the paste prompt, or the OpenRouter keys page/);
     assert.match(privacy, /optional channel tag \(`ref`\)/);
-    assert.match(page, /optional channel tag \(<code>ref<\/code>\) from a fixed list/);
-    assert.match(page, /A missing tag is left off/);
+    assert.match(privacyPage, /optional channel tag \(<code>ref<\/code>\) from a fixed list/);
+    assert.match(privacyPage, /A missing tag is left off/);
     assert.match(readFileSync(join(ROOT, "README.md"), "utf8"), /about 2 minutes with a key, about 10 if you need one/);
   });
 
@@ -207,6 +216,8 @@ describe("the terms page", () => {
     assert.doesNotMatch(readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8"), /hello@/);
     assert.ok(!terms.includes("—"), "no em dashes");
     assert.ok(!page.includes("—"), "no em dashes");
+    assert.ok(!lookBack.includes("—"), "no em dashes");
+    assert.ok(!privacyPage.includes("—"), "no em dashes");
   });
 });
 
@@ -278,6 +289,13 @@ describe("the site build", () => {
     assert.match(contribute, /How to improve Grill\./);
     assert.match(contribute, /--paper:/, "the contribute page borrows the site's styles");
     assert.match(contribute, /src="\/brand\/favicon-32\.png"/);
+    for (const [dir, title] of [["look-back", "Look back on a decision"], ["privacy", "Grill privacy"]]) {
+      const built = readFileSync(join(ROOT, `_site/${dir}/index.html`), "utf8");
+      assert.match(built, new RegExp(`<title>${title}</title>`));
+      assert.match(built, new RegExp(`<link rel="canonical" href="https://grillyour\\.ai/${dir}/">`));
+      assert.match(built, /--paper:/, `the ${dir} page borrows the site's styles`);
+      assert.ok(built.includes('<script defer src="/_vercel/insights/script.js"></script>'), `the ${dir} page counts visits`);
+    }
     const snippet = '<script defer src="/_vercel/insights/script.js"></script>';
     assert.ok(html.includes("window.va"), "the home page counts visits");
     assert.ok(html.includes(snippet));

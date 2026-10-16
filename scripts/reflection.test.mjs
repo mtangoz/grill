@@ -519,7 +519,7 @@ describe("every route carries the footer and the look-back, and the judge prompt
   ].join("\n");
   const prompt = readFileSync(join(ROOT, "prompts/grill.md"), "utf8");
   const paste = readFileSync(join(ROOT, "skills/grill/paste-prompt.md"), "utf8");
-  const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
+  const page = readFileSync(join(ROOT, "site/look-back.html"), "utf8");
   const server = readFileSync(join(ROOT, "server/index.mjs"), "utf8");
 
   it("the skill and the prompt ask for the call in one line, and the site still shows a record", () => {
