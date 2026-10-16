@@ -2168,6 +2168,45 @@ describe("look-back reminders", { concurrency: false }, () => {
     }
   });
 
+  it("asks on a page before deleting every record or the account", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Keep the stand", JAN);
+      const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
+      assert.equal(html.includes('type="hidden" name="confirm"'), false);
+      assert.match(html, /href="\/decisions\?confirm=delete-all"/);
+      assert.match(html, /Keep the stand/);
+
+      const ask = await handleDecisions(
+        new Request("https://grillyour.ai/decisions?confirm=delete-all", { headers: { cookie: `__session=${session()}` } }),
+        { ...ctx, now: FEB },
+      );
+      assert.equal(ask.status, 200);
+      const askHtml = await ask.text();
+      assert.match(askHtml, /Delete all records\?/);
+      assert.match(askHtml, /<button type="submit" name="confirm" value="delete">Delete all records<\/button>/);
+      assert.equal(askHtml.includes('type="hidden" name="confirm"'), false);
+      assert.match(await page(ctx, handleDecisions, "/decisions", { now: FEB }), /Keep the stand/);
+
+      const account = await page(ctx, handleAccount, "/account", { now: FEB });
+      assert.equal(account.includes('type="hidden" name="confirm"'), false);
+      assert.match(account, /href="\/account\?confirm=delete"/);
+      const askAccount = await handleAccount(
+        new Request("https://grillyour.ai/account?confirm=delete", { headers: { cookie: `__session=${session()}` } }),
+        { ...ctx, now: FEB },
+      );
+      const askAccountHtml = await askAccount.text();
+      assert.match(askAccountHtml, /Delete this account\?/);
+      assert.match(askAccountHtml, /<button type="submit" name="confirm" value="delete">Delete this account<\/button>/);
+      assert.equal(askAccountHtml.includes('type="hidden" name="confirm"'), false);
+      assert.match(await page(ctx, handleAccount, "/account", { now: FEB }), /invitee@example.com/);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("answers 404 for a malformed link, and for every link while hosted is off", async () => {
     const ctx = world();
     assert.equal((await feed(ctx, "https://grillyour.ai/decisions/calendar/short.ics")).status, 404);

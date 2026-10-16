@@ -2021,7 +2021,22 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
     ${renderHabits(habits)}
     ${renderChanges(rows)}
     ${cards.join("\n") || "<p>No records yet.</p>"}
-    <form method="post" action="/decisions"><input type="hidden" name="action" value="delete-all"><input type="hidden" name="confirm" value="delete"><button type="submit">Delete all records</button></form>`,
+    <p><a class="button" href="/decisions?confirm=delete-all">Delete all records</a></p>`,
+  );
+}
+
+/** A page the person has to read. The confirm value is the button they press, not a hidden field. */
+function renderDeleteAllConfirm() {
+  return page(
+    "Delete all records? · Grill",
+    `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
+    <h1>Delete all records?</h1>
+    <p>This removes every saved decision on this page. Export first if you want a copy. This cannot be undone.</p>
+    <form method="post" action="/decisions">
+      <input type="hidden" name="action" value="delete-all">
+      <button type="submit" name="confirm" value="delete">Delete all records</button>
+    </form>
+    <p><a href="/decisions">Keep them</a></p>`,
   );
 }
 
@@ -2041,12 +2056,22 @@ function renderAccount(account, credit, extra = {}) {
     </form>
     <p><a href="/decisions">Your decisions</a></p>
     ${renderCalendar("/account", extra.calendar, extra.freshUrl || "")}
+    <p><a class="button" href="/account?confirm=delete">Delete this account</a></p>
+    <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
+  );
+}
+
+function renderDeleteAccountConfirm() {
+  return page(
+    "Delete this account? · Grill",
+    `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
+    <h1>Delete this account?</h1>
+    <p>This removes your records, switches off the model-router key, and deletes the sign-in. This cannot be undone.</p>
     <form method="post" action="/account">
       <input type="hidden" name="action" value="delete-account">
-      <input type="hidden" name="confirm" value="delete">
-      <button type="submit">Delete this account</button>
+      <button type="submit" name="confirm" value="delete">Delete this account</button>
     </form>
-    <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
+    <p><a href="/account">Keep this account</a></p>`,
   );
 }
 
@@ -2144,6 +2169,7 @@ export async function handleDecisions(request, deps) {
     let fresh = "";
     if (request.method === "GET" && url.searchParams.get("export") === "text") return exportRecords(session.account, deps, "text");
     if (request.method === "GET" && url.searchParams.get("export") === "json") return exportRecords(session.account, deps, "json");
+    if (request.method === "GET" && url.searchParams.get("confirm") === "delete-all") return html(200, renderDeleteAllConfirm());
     if (request.method === "POST") {
       const form = new URLSearchParams(await request.text());
       const action = form.get("action") || "";
@@ -2191,6 +2217,7 @@ export async function handleAccount(request, deps) {
     if (session.redirect) return session.redirect;
     if (session.missing) return html(200, page("Grill", "<h1>This account has been deleted.</h1>"));
     if (session.html) return html(200, session.html);
+    if (request.method === "GET" && pageUrl(request).searchParams.get("confirm") === "delete") return html(200, renderDeleteAccountConfirm());
     let fresh = "";
     if (request.method === "POST") {
       const form = new URLSearchParams(await request.text());
