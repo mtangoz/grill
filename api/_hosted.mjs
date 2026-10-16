@@ -2008,6 +2008,7 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
     "Your decisions · Grill",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Your decisions</h1>
+    ${renderDue(rows, extra.now)}
     <p>${credit?.out ? esc(OUT_OF_CREDIT) : `About ${Math.max(0, Math.floor((credit?.remaining || 0) / 0.03))} grills of credit left.`}</p>
     <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them.</p>
     <form method="post" action="/decisions" class="row">
@@ -2016,7 +2017,6 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
       <button type="submit" name="value" value="off">Don't keep records</button>
     </form>
     <p class="row"><a class="button" href="/decisions?export=text">Export as text</a> <a class="button" href="/decisions?export=json">Export as JSON</a> <a href="/account">Account</a></p>
-    ${renderDue(rows, extra.now)}
     ${renderCalendar("/decisions", extra.calendar, extra.freshUrl || "")}
     ${renderHabits(habits)}
     ${renderChanges(rows)}

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The due list on `/decisions` sits under the title, before credit, the records switch and the export links.
 - Delete all records, and delete this account, each open a confirm page first. The button on that page is what confirms it. One tap on the decisions or account page no longer removes them. Deleting one record, or one chain, is still one tap.
 - Signing in to `/decisions` and `/account` on grillyour.ai now works. Grill's pages run no Clerk script, so a production Clerk instance never handed them a session, and every return said "Sign-in didn't come back to this page." Grill now does Clerk's server-side handshake (nonce format) when the browser is signed in to Clerk or has just signed in, ties the return to the browser with a short state cookie, and keeps the person signed in to these pages for 12 hours with its own signed cookie, because Clerk's session token lasts about a minute. A form sent after that goes back to the page instead of applying. HOSTED.md, DATA-LEDGER.md and PRIVACY.md say so.
 - Meta AI's custom connector can discover the sign-in server. The connector host serves Clerk's authorization-server and OpenID documents at `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration`, including the `/mcp` forms older clients request. The response is that JSON, with CORS, cached for about a minute. Protected-resource metadata is unchanged.
