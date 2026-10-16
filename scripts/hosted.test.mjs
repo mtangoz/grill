@@ -2216,6 +2216,15 @@ describe("look-back reminders", { concurrency: false }, () => {
     assert.doesNotMatch(inviteHtml, /Clerk|CLERK_|allowed origins/);
   });
 
+  it("gives a button and an input a 44px tap target", async () => {
+    const ctx = world();
+    const cookie = `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+    const res = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx);
+    const html = await res.text();
+    assert.match(html, /button, \.button \{[^}]*min-height:\s*44px/);
+    assert.match(html, /(^|\n)\s*input, select \{[^}]*min-height:\s*44px/);
+  });
+
   it("lets a long one-word title wrap inside a card", async () => {
     const ctx = world();
     const cookie = `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
