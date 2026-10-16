@@ -1053,7 +1053,7 @@ describe("hosted Grill", { concurrency: false }, () => {
         }),
         ctx,
       );
-      assert.equal(removed.status, 200);
+      assert.equal(removed.status, 303);
       const left = JSON.parse(await (await handleDecisions(new Request("https://grillyour.ai/decisions?export=json", { headers: { cookie: `__session=${session}` } }), ctx)).text());
       assert.equal(left.length, 0);
     } finally {
@@ -1164,7 +1164,9 @@ describe("hosted Grill", { concurrency: false }, () => {
         }),
         ctx,
       );
-      assert.match(await gone.text(), /account is deleted/);
+      assert.equal(gone.status, 303);
+      assert.match(gone.headers.get("location"), /\/account\?deleted=1$/);
+      assert.match(await (await handleAccount(new Request(gone.headers.get("location")), ctx)).text(), /account is deleted/);
       assert.equal(ctx.management.removed.length, 1);
       assert.equal(ctx.management.removedUsers, 1);
       assert.equal(ctx.management.deletedUser, "user_invitee");
@@ -1412,7 +1414,9 @@ describe("AgentID owner email", () => {
       }),
       ctx,
     );
-    assert.match(await gone.text(), /account is deleted/);
+    assert.equal(gone.status, 303);
+    assert.match(gone.headers.get("location"), /\/account\?deleted=1$/);
+    assert.match(await (await handleAccount(new Request(gone.headers.get("location")), ctx)).text(), /account is deleted/);
     assert.equal(ctx.management.removed.length, 0);
     const still = await storedAccount(ctx, "user_agent_a");
     assert.equal(still.keyHash, holder.keyHash);
@@ -2063,7 +2067,13 @@ describe("look-back reminders", { concurrency: false }, () => {
   const page = async (ctx, handler, path, { now, body } = {}) => {
     const headers = { cookie: `__session=${session()}` };
     if (body) headers["content-type"] = "application/x-www-form-urlencoded";
-    const res = await handler(new Request(`https://grillyour.ai${path}`, body ? { method: "POST", headers, body } : { headers }), { ...ctx, now });
+    let res = await handler(new Request(`https://grillyour.ai${path}`, body ? { method: "POST", headers, body } : { headers }), { ...ctx, now });
+    if (res.status === 303 && res.headers.get("location")) {
+      const extra = (typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [])
+        .map((cookie) => cookie.split(";")[0])
+        .filter((pair) => pair && !pair.endsWith("="));
+      res = await handler(new Request(res.headers.get("location"), { headers: { cookie: [`__session=${session()}`, ...extra].join("; ") } }), { ...ctx, now });
+    }
     return res.text();
   };
   const feed = (ctx, url, now = FEB) => handleCalendar(new Request(url), { ...ctx, now });
@@ -2225,6 +2235,43 @@ describe("look-back reminders", { concurrency: false }, () => {
     }
   });
 
+  it("answers 303 after a successful form, shows a new calendar link once, and does not replace it on a second on", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Keep the stand", JAN);
+      const headers = { cookie: `__session=${session()}`, "content-type": "application/x-www-form-urlencoded" };
+      const post = (body) => handleDecisions(new Request("https://grillyour.ai/decisions", { method: "POST", headers, body }), { ...ctx, now: FEB });
+      const first = await post("action=calendar&value=on");
+      assert.equal(first.status, 303);
+      assert.equal(first.headers.get("location"), "https://grillyour.ai/decisions");
+      assert.equal(await first.text(), "");
+      const flash = first.headers.getSetCookie().find((cookie) => cookie.startsWith("__Host-grill_flash="));
+      assert.match(flash, /HttpOnly; Secure; SameSite=Lax; Max-Age=120/);
+      const link = decodeURIComponent(flash.split(";")[0].slice("__Host-grill_flash=".length)).match(/([A-Za-z0-9_-]{43})/)[1];
+      assert.ok(!ctx.writes.some((args) => args.join(" ").includes(link)));
+      const shown = await handleDecisions(
+        new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${session()}; ${flash.split(";")[0]}` } }),
+        { ...ctx, now: FEB },
+      );
+      assert.match(await shown.text(), /shown only once/);
+      assert.match(shown.headers.getSetCookie().join("\n"), /__Host-grill_flash=;.*Max-Age=0/);
+      const later = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${session()}` } }), { ...ctx, now: FEB });
+      assert.equal((await later.text()).includes(link), false);
+      const second = await post("action=calendar&value=on");
+      assert.equal(second.status, 303);
+      assert.equal(second.headers.getSetCookie().some((cookie) => cookie.startsWith("__Host-grill_flash=") && !cookie.startsWith("__Host-grill_flash=;")), false);
+      assert.equal((await feed(ctx, `https://grillyour.ai/decisions/calendar/${link}.ics`)).status, 200);
+      const kept = await post("action=records&value=keep");
+      assert.equal(kept.status, 303);
+      assert.equal((await post("action=records&value=keep")).status, 303);
+      assert.equal(JSON.parse(ctx.memory.command(["GET", `grill:hosted:acct:${personOf(ctx)}`])).records, "keep");
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("answers 404 for a malformed link, and for every link while hosted is off", async () => {
     const ctx = world();
     assert.equal((await feed(ctx, "https://grillyour.ai/decisions/calendar/short.ics")).status, 404);
@@ -2297,7 +2344,16 @@ describe("page sign-in through Clerk's handshake", { concurrency: false }, () =>
       }),
       ctx,
     );
-    assert.match(await form.text(), /shown only once/);
+    assert.equal(form.status, 303);
+    const flash = setCookies(form).find((c) => c.startsWith("__Host-grill_flash="));
+    assert.match(flash, /HttpOnly; Secure; SameSite=Lax/);
+    const flashPair = flash.split(";")[0];
+    const shown = await handleAccount(
+      new Request(form.headers.get("location"), { headers: { cookie: `__Host-grill_page=${pageCookie}; ${flashPair}` } }),
+      ctx,
+    );
+    assert.match(await shown.text(), /shown only once/);
+    assert.match(shown.headers.get("set-cookie") || "", /__Host-grill_flash=;/);
 
     // A changed cookie is not a session.
     const forged = `${pageCookie.split(".")[0]}.${"A".repeat(43)}`;
