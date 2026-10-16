@@ -22,9 +22,12 @@ const SITE_URL = "https://grillyour.ai/";
 const DESCRIPTION =
   "Get a second opinion before you decide. A different AI finds the weak spots in your plan, with a quick way to check each one. Works with ChatGPT, Claude, Gemini and more.";
 // The pitchfork mark. Sizes are generated from the owner's logo into site/brand/ and copied to _site/brand/.
+// Google's favicon service, which Claude's connector list uses for a custom connector's icon, only
+// takes an icon whose size is a multiple of 48px, so the 192px one is declared too.
 const ICONS = [
   '<link rel="icon" href="/favicon.ico" sizes="any">',
   '<link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png">',
+  '<link rel="icon" type="image/png" sizes="192x192" href="/brand/icon-192.png">',
   '<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">',
 ];
 const OG_IMAGE = `${SITE_URL}brand/og-image.png`;
@@ -116,6 +119,9 @@ mkdirSync(OUT, { recursive: true });
 cpSync(join(ROOT, "site/brand"), join(OUT, "brand"), { recursive: true });
 cpSync(join(ROOT, "site/brand/favicon.ico"), join(OUT, "favicon.ico"));
 writeFileSync(join(OUT, "index.html"), doc(headFor({ description: DESCRIPTION, url: SITE_URL }), pageHead, homeBody));
+// Every public page, for the sitemap. Google has to crawl the home page before its favicon service
+// knows the icon; until then Claude shows a letter in place of the logo.
+const pageUrls = [SITE_URL];
 
 // Other pages are a <title> and a body; they borrow the main page's styles.
 const style = pageHead.slice(pageHead.indexOf("<style>"));
@@ -124,6 +130,7 @@ function writePage(file, { description, url, outDir }) {
   const title = source.match(/^<title>[^<]*<\/title>/)?.[0];
   if (!title) throw new Error(`site/${file} must open with its <title>`);
   mkdirSync(join(OUT, outDir), { recursive: true });
+  pageUrls.push(url);
   writeFileSync(
     join(OUT, outDir, "index.html"),
     doc(headFor({ description, url }), `${title}\n${style}`, source.slice(title.length)),
@@ -166,9 +173,15 @@ if (process.env.GRILL_MISS === "1") {
     .replace("/* MISS_CORE */", () => inlined);
   const title = source.match(/^<title>[^<]*<\/title>/)[0];
   mkdirSync(join(OUT, "miss"), { recursive: true });
+  pageUrls.push(`${SITE_URL}miss/`);
   writeFileSync(
     join(OUT, "miss", "index.html"),
     doc(headFor({ description: "Share how AI got a decision wrong, without the decision.", url: `${SITE_URL}miss/` }), `${title}\n${style}`, source.slice(title.length)),
   );
 }
+writeFileSync(join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}sitemap.xml\n`);
+writeFileSync(
+  join(OUT, "sitemap.xml"),
+  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pageUrls.map((u) => `  <url><loc>${u}</loc></url>`).join("\n")}\n</urlset>\n`,
+);
 console.log(`built _site/index.html and the terms, contribute, look-back and privacy pages${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}`);
