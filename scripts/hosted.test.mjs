@@ -1508,7 +1508,9 @@ describe("one hosted function", () => {
     unknown.env.CLERK_ISSUER = "https://fapi.example.test";
     const unset = await handleAccount(new Request("https://grillyour.ai/account"), unknown);
     assert.equal(unset.status, 200);
-    assert.match(await unset.text(), /CLERK_SIGN_IN_URL/);
+    const unsetHtml = await unset.text();
+    assert.match(unsetHtml, /Sign-in isn't set up/);
+    assert.doesNotMatch(unsetHtml, /Clerk|CLERK_|allowed origins/);
     assert.equal(unset.headers.get("location"), null);
 
     // Back from sign-in with no session: the handshake is tried first, once.
@@ -1521,6 +1523,7 @@ describe("one hosted function", () => {
     assert.equal(stuck.status, 200);
     const body = await stuck.text();
     assert.match(body, /no session for this site/);
+    assert.doesNotMatch(body, /Clerk|CLERK_|allowed origins/);
     assert.match(body, /https:\/\/accounts\.example\.test\/sign-in/);
     assert.equal(body.includes("clerk.example.test/sign-in"), false);
     assert.equal(stuck.headers.get("location"), null);

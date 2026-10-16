@@ -1891,9 +1891,9 @@ function signInMissed(request, deps) {
   const again = signInUrl(deps.env, returnTo(request));
   const link = again ? `<p><a href="${esc(again)}">Try sign-in again</a></p>` : "";
   return page(
-    "Grill",
+    "Sign-in didn't come back · Grill",
     `<h1>Sign-in didn't come back to this page.</h1>
-    <p>The sign-in page is open, but this browser has no session for this site. Add this site's address to Clerk's allowed origins, or open Grill on your own domain, then try again.</p>
+    <p>This browser has no session for this site. Try signing in again. If it still doesn't come back, write to support@grillyour.ai.</p>
     ${link}`,
   );
 }
@@ -1912,7 +1912,7 @@ async function pageUser(request, deps) {
     if (start) return { redirect: start };
     if (pageUrl(request).searchParams.get("from") === "signin") return { html: signInMissed(request, deps) };
     const redirect = signInRedirect(request, deps);
-    if (!redirect) return { html: page("Grill", "<h1>Sign-in isn't set up.</h1><p>Set CLERK_SIGN_IN_URL to your Clerk Account Portal sign-in page.</p>") };
+    if (!redirect) return { html: page("Sign-in isn't set up · Grill", "<h1>Sign-in isn't set up.</h1><p>This page can't open a sign-in right now. Write to support@grillyour.ai.</p>") };
     return { redirect };
   }
   const user = await clerkUser(who.payload.sub, deps);
