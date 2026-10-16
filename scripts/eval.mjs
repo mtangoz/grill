@@ -10,8 +10,12 @@
  * live model.
  *
  * THE PRIVACY RULE THIS LOOP EXISTS UNDER: it must never need a real user's decision. Every
- * case it runs comes from evals/cases/*.json, fictional and committed to the repo — this
- * script never reads anything else as a subject.
+ * case it runs is fictional: the public set is committed under evals/cases/, and a held-out set
+ * (cases marked `heldOut: true`, passed with --cases) lives outside this repository.
+ *
+ * A HELD-OUT RUN keeps its cases private. Its cases must not sit inside this repository, its
+ * results file must be written outside it, and what it prints (and appends to the job summary)
+ * is rates only, never a case id or phrase. A run counts as held out when any case says so.
  *
  * THE QUALITY CHECK IS ALWAYS ON HERE (`--check`), because these subjects are synthetic and
  * the eval is where the check's numbers are worth collecting. Flawed and loaded cases also
@@ -22,6 +26,7 @@
  *
  * USAGE
  *   node scripts/eval.mjs [--cases evals/cases] [--concurrency 4] [--out evals/results/latest.json]
+ *   node scripts/eval.mjs --cases <held-out dir> --out <path outside this repo>
  *
  * ENVIRONMENT
  *   OPENROUTER_API_KEY / JUDGE_FIXTURE   same meaning as for judge.mjs. With NEITHER set,
@@ -34,15 +39,16 @@
  *
  * EXIT CODES
  *   0   ran clean (including the "skipped, no key" path).
- *   1   at least one threshold in evals/thresholds.json regressed.
+ *   1   at least one threshold in evals/thresholds.json regressed, or a case file is malformed,
+ *       or a held-out run would put its cases or results inside this repository.
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { renderSummary, scoreCase, summarize } from "./evalCore.mjs";
+import { caseProblems, renderSummary, scoreCase, summarize } from "./evalCore.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, "..");
@@ -104,12 +110,27 @@ if (caseFiles.length === 0) fail(`no case files (*.json) found under ${opts.case
 
 const cases = caseFiles.map((f) => {
   const path = join(opts.casesDir, f);
+  let c;
   try {
-    return JSON.parse(readFileSync(path, "utf8"));
+    c = JSON.parse(readFileSync(path, "utf8"));
   } catch (e) {
     return fail(`cannot parse case ${path}: ${e?.message ?? e}`);
   }
+  const problems = caseProblems(c, f);
+  if (problems.length > 0) fail(`case ${path} is malformed: ${problems.join("; ")}`);
+  return c;
 });
+
+// ── A held-out set stays out of this public repository, cases and results both ──
+const insideRepo = (p) => {
+  const rel = relative(REPO_ROOT, resolve(p));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+};
+const heldOut = cases.some((c) => c.heldOut === true);
+if (heldOut) {
+  if (insideRepo(opts.casesDir)) fail("held-out cases never live inside this repository; keep them in a private location and pass --cases");
+  if (insideRepo(opts.out)) fail("a held-out run writes its results outside this repository: pass --out <path outside the repo>");
+}
 
 // ── Run one case through the real judge CLI, timing it ──────────────────────
 function runOneCase(caseDef) {
@@ -168,14 +189,14 @@ async function mapWithConcurrency(items, limit, fn) {
 const runs = await mapWithConcurrency(cases, opts.concurrency, runOneCase);
 
 for (const { caseDef, note } of runs) {
-  if (note) console.error(`[eval] ${caseDef.id}: ${note}`);
+  if (note) console.error(`[eval] ${heldOut ? "a held-out case" : caseDef.id}: ${note}`);
 }
 
 const scores = runs.map(({ caseDef, result, latencyMs }) => ({ ...scoreCase(caseDef, result), latencyMs }));
 
 const thresholds = JSON.parse(readFileSync(THRESHOLDS_PATH, "utf8"));
 const summary = summarize(scores, thresholds);
-const markdown = renderSummary(summary, scores);
+const markdown = renderSummary(summary, scores, { heldOut });
 
 mkdirSync(dirname(opts.out), { recursive: true });
 writeFileSync(opts.out, JSON.stringify({ scores, summary }, null, 2), "utf8");
