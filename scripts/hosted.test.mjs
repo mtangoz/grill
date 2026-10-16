@@ -379,6 +379,136 @@ describe("hosted Grill", { concurrency: false }, () => {
     }
   });
 
+  it("logs a rejected bearer with public claims only, and omits the token", async () => {
+    const warnings = [];
+    const errors = [];
+    const origWarn = console.warn;
+    const origError = console.error;
+    console.warn = (...args) => {
+      warnings.push(args.map((part) => String(part)).join(" "));
+    };
+    console.error = (...args) => {
+      errors.push(args.map((part) => String(part)).join(" "));
+    };
+    const authLogs = () => warnings.filter((line) => line.startsWith("[grill-hosted] auth-reject "));
+    const parseLog = (line) => JSON.parse(line.slice("[grill-hosted] auth-reject ".length));
+    try {
+      const ctx = world();
+      const email = "reject-log-secret@example.com";
+      const ua = "GrillAuthProbe/9f3a";
+      const future = Math.floor(Date.now() / 1000) + 3600;
+      const past = Math.floor(Date.now() / 1000) - 120;
+      const secretClaims = {
+        sub: "user_do_not_log_9f3a",
+        email,
+        azp: "azp_public_9f3a",
+        client_id: "client_public_9f3a",
+      };
+      const ping = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" });
+      const posted = async (token, { url = RESOURCE, cookie = false } = {}) => {
+        warnings.length = 0;
+        errors.length = 0;
+        const headers = { "content-type": "application/json", "user-agent": ua };
+        if (cookie) headers.cookie = `__session=${token}`;
+        else if (token) headers.authorization = `Bearer ${token}`;
+        if (cookie) return handleDecisions(new Request("https://grillyour.ai/decisions", { headers }), ctx);
+        return handleMcp(new Request(url, { method: "POST", headers, body: ping }), ctx);
+      };
+      const omits = (line, secret) => {
+        assert.equal(line.includes(secret), false);
+        assert.equal(line.includes(email), false);
+        assert.equal(line.includes("user_do_not_log_9f3a"), false);
+        assert.equal(line.includes("\n"), false);
+      };
+
+      const signed = signJwt(claims({ ...secretClaims, exp: future, aud: [RESOURCE, "https://other.example/mcp"] }), { tamper: true });
+      const bad = await posted(signed);
+      assert.equal(bad.status, 401);
+      assert.equal(bad.headers.get("www-authenticate"), wwwAuthenticate("https://mcp.example"));
+      assert.equal(authLogs().length, 1);
+      const line = authLogs()[0];
+      omits(line, signed);
+      for (const part of signed.split(".")) assert.equal(line.includes(part), false);
+      const logged = parseLog(line);
+      assert.deepEqual(Object.keys(logged).sort(), ["aud", "azp", "client_id", "exp", "expired", "iss", "reason", "user_agent"]);
+      assert.deepEqual(logged, {
+        reason: "signature",
+        iss: "https://clerk.example.test",
+        aud: [RESOURCE, "https://other.example/mcp"],
+        azp: "azp_public_9f3a",
+        client_id: "client_public_9f3a",
+        exp: future,
+        expired: false,
+        user_agent: ua,
+      });
+      assert.equal(errors.some((row) => row.includes(signed) || row.includes(email)), false);
+
+      const expiredToken = signJwt(claims({ ...secretClaims, exp: past }));
+      const expired = await posted(expiredToken);
+      assert.equal(expired.status, 401);
+      assert.equal(authLogs().length, 1);
+      omits(authLogs()[0], expiredToken);
+      const expiredBody = parseLog(authLogs()[0]);
+      assert.equal(expiredBody.reason, "expired");
+      assert.equal(expiredBody.expired, true);
+      assert.equal(expiredBody.exp, past);
+      assert.equal(expiredBody.user_agent, ua);
+
+      const raw = "raw-bearer-do-not-log-9f3a";
+      const malformed = await posted(raw);
+      assert.equal(malformed.status, 401);
+      assert.equal(malformed.headers.get("www-authenticate"), wwwAuthenticate("https://mcp.example"));
+      assert.equal(authLogs().length, 1);
+      omits(authLogs()[0], raw);
+      assert.deepEqual(parseLog(authLogs()[0]), {
+        reason: "malformed",
+        iss: "",
+        aud: "",
+        azp: "",
+        client_id: "",
+        exp: null,
+        expired: false,
+        user_agent: ua,
+      });
+
+      const wrongAud = signJwt(claims({ ...secretClaims, aud: "https://evil.example/mcp", exp: future }));
+      const audRes = await posted(wrongAud);
+      assert.equal(audRes.status, 401);
+      assert.equal(authLogs().length, 1);
+      omits(authLogs()[0], wrongAud);
+      const audBody = parseLog(authLogs()[0]);
+      assert.equal(audBody.reason, "audience");
+      assert.equal(audBody.aud, "https://evil.example/mcp");
+      assert.equal(audBody.expired, false);
+
+      const missing = await posted("");
+      assert.equal(missing.status, 401);
+      assert.equal(authLogs().length, 0);
+
+      const queryToken = signJwt(claims({ ...secretClaims, exp: future }));
+      const query = await posted(queryToken, { url: `${RESOURCE}?access_token=${queryToken}` });
+      assert.equal(query.status, 401);
+      assert.equal(authLogs().length, 0);
+      assert.equal(warnings.some((row) => row.includes(queryToken) || row.includes(email)), false);
+
+      warnings.length = 0;
+      const good = signJwt(claims({ exp: future }));
+      const ok = await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "ping" }, { token: good });
+      assert.equal(ok.res.status, 200);
+      assert.equal(authLogs().length, 0);
+
+      const cookie = signJwt(claims({ ...secretClaims, exp: future }), { tamper: true });
+      const page = await posted(cookie, { cookie: true });
+      assert.equal(page.status, 302);
+      assert.equal(authLogs().length, 0);
+      assert.equal(warnings.some((row) => row.includes(cookie) || row.includes(email)), false);
+      assert.equal(errors.some((row) => row.includes(cookie) || row.includes(email)), false);
+    } finally {
+      console.warn = origWarn;
+      console.error = origError;
+    }
+  });
+
   it("negotiates the hosted protocol versions and lists tools with annotations", async () => {
     const ctx = world();
     const token = signJwt(claims());
