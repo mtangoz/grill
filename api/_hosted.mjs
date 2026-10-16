@@ -8,7 +8,7 @@
  * Request and response bodies are not logged. Errors return a fixed sentence and a
  * request id.
  */
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -202,6 +202,23 @@ async function redis(deps, args) {
 
 function acctKey(id) {
   return `grill:hosted:acct:${id}`;
+}
+/**
+ * Grill owns the person ID. The sign-in provider's user ID only points at it, per
+ * issuer, so a new provider or a new Clerk instance links back by verified email
+ * instead of starting a fresh account.
+ */
+function identKey(env, sub) {
+  const issuer = String(env.CLERK_ISSUER || "").trim().replace(/\/$/, "");
+  const ns = createHash("sha256").update(issuer).digest("hex").slice(0, 16);
+  return `grill:hosted:ident:${ns}:${sub}`;
+}
+/** Every provider link a person has, so deleting the account removes them all. */
+function identsOf(id) {
+  return `grill:hosted:idents:${id}`;
+}
+function personIndex(email) {
+  return `grill:hosted:person:${createHash("sha256").update(String(email).trim().toLowerCase()).digest("hex")}`;
 }
 function emailIndex(email) {
   return `grill:hosted:email:${createHash("sha256").update(String(email).trim().toLowerCase()).digest("hex")}`;
@@ -530,6 +547,40 @@ function openSecret(cipher, env, name) {
   }
 }
 
+/**
+ * The Grill ID for a signed-in person. Order: this provider's ID already linked;
+ * else the person with this verified email; else an account made before Grill IDs,
+ * which keeps the provider's ID as its Grill ID so no data moves; else a new ID.
+ * Only a verified email may link, or anyone could claim someone else's records.
+ */
+async function resolvePerson(sub, email, deps) {
+  const ident = identKey(deps.env, sub);
+  const known = await redis(deps, ["GET", ident]);
+  if (known) return known;
+  const own = cleanEmail(email);
+  let id = own ? await redis(deps, ["GET", personIndex(own)]) : null;
+  if (!id) {
+    // Accounts made before Grill IDs keep the provider's ID they were filed under:
+    // this provider's own, or the one the starter-credit claim for this email names.
+    let legacy = (await redis(deps, ["GET", acctKey(sub)])) ? sub : "";
+    if (!legacy && own) {
+      const claim = await redis(deps, ["GET", emailIndex(own)]);
+      const held = claim ? await loadAccount(claim, deps) : null;
+      if (held && held.email === own) legacy = claim;
+    }
+    const mine = legacy || `g_${randomUUID()}`;
+    id = mine;
+    if (own) {
+      const claimed = await redis(deps, ["SET", personIndex(own), mine, "NX"]);
+      if (claimed !== "OK") id = (await redis(deps, ["GET", personIndex(own)])) || mine;
+    }
+  }
+  const linked = await redis(deps, ["SET", ident, id, "NX"]);
+  if (linked !== "OK") return (await redis(deps, ["GET", ident])) || id;
+  await redis(deps, ["SADD", identsOf(id), ident]);
+  return id;
+}
+
 async function ensureAccount(userId, email, deps, human) {
   const own = String(email || "").trim().toLowerCase();
   const capEmail = cleanEmail(human) || own;
@@ -550,6 +601,12 @@ async function ensureAccount(userId, email, deps, human) {
     };
     await saveAccount(account, deps);
   } else if (account.email !== own) {
+    // Move the email link with the account, so a reassigned old address can't link in.
+    if (account.email) {
+      const holder = await redis(deps, ["GET", personIndex(account.email)]);
+      if (holder === userId) await redis(deps, ["DEL", personIndex(account.email)]);
+    }
+    if (own) await redis(deps, ["SET", personIndex(own), userId, "NX"]);
     account.email = own;
     await saveAccount(account, deps);
   }
@@ -1297,7 +1354,8 @@ export async function handleMcp(request, deps) {
       const gate = await admit(user, deps, who.payload.sub);
       if (!gate.email) return rpcResponse(rpcId, toolText("Grill needs a verified email on this account before it can run.", true), request);
       if (!gate.allowed) return rpcResponse(rpcId, toolText(INVITE_ONLY, true), request);
-      const account = await ensureAccount(who.payload.sub, gate.email, deps, gate.human);
+      const personId = await resolvePerson(who.payload.sub, gate.email, deps);
+      const account = await ensureAccount(personId, gate.email, deps, gate.human);
       await countActive(account, deps);
       const name = msg.params?.name;
       const args = msg.params?.arguments ?? {};
@@ -1393,8 +1451,9 @@ async function pageUser(request, deps) {
   const gate = await admit(user, deps, who.payload.sub);
   if (!gate.email) return { html: page("Grill", "<h1>Grill needs a verified email on this account.</h1>") };
   if (!gate.allowed) return { html: page("Grill", `<h1>${esc(INVITE_ONLY)}</h1>`) };
-  const account = await ensureAccount(who.payload.sub, gate.email, deps, gate.human);
-  return { account, email: gate.email };
+  const personId = await resolvePerson(who.payload.sub, gate.email, deps);
+  const account = await ensureAccount(personId, gate.email, deps, gate.human);
+  return { account, email: gate.email, sub: who.payload.sub };
 }
 
 function html(status, body) {
@@ -1537,7 +1596,7 @@ async function exportRecords(account, deps, kind) {
   });
 }
 
-async function deleteAccount(account, deps) {
+async function deleteAccount(account, deps, sub) {
   if (account.keyHash && !account.capFrom) {
     try {
       await removeManagedKey(account.keyHash, { env: deps.env, fetch: deps.fetch });
@@ -1547,7 +1606,7 @@ async function deleteAccount(account, deps) {
   }
   const secret = deps.env.CLERK_SECRET_KEY;
   if (!secret) throw new Coded("clerk");
-  const res = await deps.fetch(`${CLERK_API}/v1/users/${encodeURIComponent(account.id)}`, {
+  const res = await deps.fetch(`${CLERK_API}/v1/users/${encodeURIComponent(sub)}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${secret}` },
     redirect: "error",
@@ -1569,8 +1628,15 @@ async function deleteAccount(account, deps) {
     const holder = await redis(deps, ["GET", emailIndex(indexEmail)]);
     if (!holder || holder === account.id) await redis(deps, ["DEL", emailIndex(indexEmail)]);
   }
-  await redis(deps, ["DEL", ownerCacheKey(account.id)]);
-  userCache.delete(account.id);
+  const idents = (await redis(deps, ["SMEMBERS", identsOf(account.id)])) || [];
+  for (const key of new Set([...idents, identKey(deps.env, sub)])) await redis(deps, ["DEL", key]);
+  await redis(deps, ["DEL", identsOf(account.id)]);
+  if (account.email) {
+    const holder = await redis(deps, ["GET", personIndex(account.email)]);
+    if (holder === account.id) await redis(deps, ["DEL", personIndex(account.email)]);
+  }
+  await redis(deps, ["DEL", ownerCacheKey(sub)]);
+  userCache.delete(sub);
   creditCache.delete(account.id);
 }
 
@@ -1639,7 +1705,7 @@ export async function handleAccount(request, deps) {
         }
       }
       if (form.get("action") === "delete-account" && form.get("confirm") === "delete") {
-        await deleteAccount(session.account, deps);
+        await deleteAccount(session.account, deps, session.sub);
         return html(200, page("Account deleted · Grill", "<h1>Your Grill account is deleted.</h1><p>The records and the model-router key are gone.</p>"));
       }
     }

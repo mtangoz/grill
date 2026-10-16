@@ -1,5 +1,5 @@
 // Hosted Grill, behind GRILL_HOSTED. No network: Clerk, Redis and OpenRouter are faked.
-import { createSign, generateKeyPairSync, randomBytes } from "node:crypto";
+import { createHash, createSign, generateKeyPairSync, randomBytes } from "node:crypto";
 import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -98,6 +98,7 @@ function world({ email = "invitee@example.com", sub = "user_invitee" } = {}) {
       if (init.method === "DELETE") {
         management.deleted = true;
         management.removedUsers = (management.removedUsers || 0) + 1;
+        management.deletedUser = decodeURIComponent(u.split("/").pop());
         return new Response("{}", { status: 200 });
       }
       if (management.deleted) return new Response("{}", { status: 404 });
@@ -129,6 +130,17 @@ function world({ email = "invitee@example.com", sub = "user_invitee" } = {}) {
     return memory.command(args);
   };
   return { env, fetch: fetchImpl, redis, writes, management, memory, sub };
+}
+
+/** The provider ID's link to a Grill person ID, as the server stores it. */
+function identKeyFor(env, sub) {
+  const ns = createHash("sha256").update(env.CLERK_ISSUER.replace(/\/$/, "")).digest("hex").slice(0, 16);
+  return `grill:hosted:ident:${ns}:${sub}`;
+}
+
+/** The Grill person ID a signed-in provider ID resolved to. */
+function personOf(ctx, sub = "user_invitee") {
+  return ctx.memory.command(["GET", identKeyFor(ctx.env, sub)]);
 }
 
 function textOf(json) {
@@ -189,6 +201,129 @@ describe("hosted Grill", { concurrency: false }, () => {
     };
     const out = await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "no_such_tool", arguments: {} } }, { token: signJwt(claims()) });
     assert.match(textOf(out.json), /no tool called/);
+  });
+
+  it("files a new account under a Grill ID, not the sign-in provider's ID", async () => {
+    const ctx = world();
+    await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "no_such_tool", arguments: {} } }, { token: signJwt(claims()) });
+    const id = personOf(ctx);
+    assert.match(id, /^g_[0-9a-f-]{36}$/);
+    assert.ok(ctx.memory.command(["GET", `grill:hosted:acct:${id}`]));
+    assert.equal(ctx.memory.command(["GET", "grill:hosted:acct:user_invitee"]), null);
+  });
+
+  it("keeps an account made before Grill IDs under its old ID, so nothing moves", async () => {
+    const ctx = world();
+    const legacy = { id: "user_invitee", email: "invitee@example.com", records: "keep", spend: [], createdAt: "2026-10-01T00:00:00Z" };
+    ctx.memory.command(["SET", "grill:hosted:acct:user_invitee", JSON.stringify(legacy)]);
+    await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "no_such_tool", arguments: {} } }, { token: signJwt(claims()) });
+    assert.equal(personOf(ctx), "user_invitee");
+    assert.equal(JSON.parse(ctx.memory.command(["GET", "grill:hosted:acct:user_invitee"])).records, "keep");
+  });
+
+  it("after a switch to a new sign-in provider, the same verified email finds the same records", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const deps = judgeDeps(fake);
+      const keep = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: keep this one.", keep_records: true, quality_check: false } } };
+      await postMcp(ctx, keep, { token: signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT })), deps });
+      const decided = { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_decided", arguments: { decided: "do it" } } };
+      await postMcp(ctx, decided, { token: signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT })), deps });
+      const before = personOf(ctx);
+      const records = ctx.memory.command(["ZRANGE", `grill:hosted:records:${before}`, "0", "-1"]);
+      assert.equal(records.length, 1);
+      // A new provider: another issuer, another user ID, the same verified email.
+      resetHostedCaches();
+      ctx.env.CLERK_ISSUER = "https://clerk.other.test";
+      const moved = signJwt(claims({ iss: "https://clerk.other.test", sub: "user_elsewhere", redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await postMcp(ctx, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "no_such_tool", arguments: {} } }, { token: moved, deps });
+      assert.equal(personOf(ctx, "user_elsewhere"), before);
+      assert.deepEqual(ctx.memory.command(["ZRANGE", `grill:hosted:records:${before}`, "0", "-1"]), records);
+      assert.equal(ctx.management.creates.length, 1);
+      const session = signJwt({ iss: "https://clerk.other.test", sub: "user_elsewhere", exp: Math.floor(Date.now() / 1000) + 3600 });
+      await handleAccount(
+        new Request("https://grillyour.ai/account", {
+          method: "POST",
+          headers: { cookie: `__session=${session}`, "content-type": "application/x-www-form-urlencoded" },
+          body: "action=delete-account&confirm=delete",
+        }),
+        ctx,
+      );
+      assert.equal(personOf(ctx, "user_elsewhere"), null);
+      ctx.env.CLERK_ISSUER = "https://clerk.example.test";
+      assert.equal(personOf(ctx, "user_invitee"), null, "the earlier provider's link goes too");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("an account made before Grill IDs is found again after the switch, through its starter-credit claim", async () => {
+    const ctx = world();
+    const emailHash = createHash("sha256").update("invitee@example.com").digest("hex");
+    const legacy = { id: "user_devinstance", email: "invitee@example.com", records: "keep", spend: [], createdAt: "2026-10-01T00:00:00Z" };
+    ctx.memory.command(["SET", "grill:hosted:acct:user_devinstance", JSON.stringify(legacy)]);
+    ctx.memory.command(["SET", `grill:hosted:email:${emailHash}`, "user_devinstance"]);
+    await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "no_such_tool", arguments: {} } }, { token: signJwt(claims({ sub: "user_production" })) });
+    assert.equal(personOf(ctx, "user_production"), "user_devinstance");
+    assert.equal(ctx.memory.command(["GET", `grill:hosted:person:${emailHash}`]), "user_devinstance");
+    assert.equal(JSON.parse(ctx.memory.command(["GET", "grill:hosted:acct:user_devinstance"])).records, "keep");
+    assert.equal(ctx.memory.command(["GET", `grill:hosted:email:${emailHash}`]), "user_devinstance");
+  });
+
+  it("a starter-credit claim held by an agent for its owner doesn't link the owner into the agent's account", async () => {
+    const ctx = world();
+    const emailHash = createHash("sha256").update("invitee@example.com").digest("hex");
+    const agent = { id: "user_agent", email: "agent@inbox.example", human: "invitee@example.com", spend: [], createdAt: "2026-10-01T00:00:00Z" };
+    ctx.memory.command(["SET", "grill:hosted:acct:user_agent", JSON.stringify(agent)]);
+    ctx.memory.command(["SET", `grill:hosted:email:${emailHash}`, "user_agent"]);
+    await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "no_such_tool", arguments: {} } }, { token: signJwt(claims()) });
+    assert.notEqual(personOf(ctx), "user_agent");
+  });
+
+  it("an unverified email never links to someone else's records", async () => {
+    const ctx = world();
+    await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "no_such_tool", arguments: {} } }, { token: signJwt(claims()) });
+    const fetchVerified = ctx.fetch;
+    ctx.fetch = async (url, init = {}) => {
+      if (String(url).endsWith("/v1/users/user_unverified")) {
+        return Response.json({
+          id: "user_unverified",
+          primary_email_address_id: "idn_1",
+          email_addresses: [{ id: "idn_1", email_address: "invitee@example.com", verification: { status: "unverified" } }],
+        });
+      }
+      return fetchVerified(url, init);
+    };
+    const out = await postMcp(ctx, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "no_such_tool", arguments: {} } }, { token: signJwt(claims({ sub: "user_unverified" })) });
+    assert.match(textOf(out.json), /verified email/);
+    assert.equal(personOf(ctx, "user_unverified"), null);
+  });
+
+  it("a changed email moves the link, so the old address can't reach this account", async () => {
+    const ctx = world();
+    const call = (id) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "no_such_tool", arguments: {} } });
+    await postMcp(ctx, call(1), { token: signJwt(claims()) });
+    const me = personOf(ctx);
+    const hash = (email) => createHash("sha256").update(email).digest("hex");
+    assert.equal(ctx.memory.command(["GET", `grill:hosted:person:${hash("invitee@example.com")}`]), me);
+    resetHostedCaches();
+    ctx.env.GRILL_HOSTED_ALLOWLIST = "invitee@example.com,renamed@example.com";
+    const fetchOld = ctx.fetch;
+    ctx.fetch = async (url, init = {}) => {
+      if (String(url).endsWith("/v1/users/user_invitee") && !init.method) {
+        return Response.json({
+          id: "user_invitee",
+          primary_email_address_id: "idn_1",
+          email_addresses: [{ id: "idn_1", email_address: "renamed@example.com", verification: { status: "verified" } }],
+        });
+      }
+      return fetchOld(url, init);
+    };
+    await postMcp(ctx, call(2), { token: signJwt(claims()) });
+    assert.equal(personOf(ctx), me);
+    assert.equal(ctx.memory.command(["GET", `grill:hosted:person:${hash("invitee@example.com")}`]), null);
+    assert.equal(ctx.memory.command(["GET", `grill:hosted:person:${hash("renamed@example.com")}`]), me);
   });
 
   it("stays dark until GRILL_HOSTED=on", async () => {
@@ -587,7 +722,8 @@ describe("hosted Grill", { concurrency: false }, () => {
     const fake = await startFakeOpenRouter();
     try {
       const ctx = world();
-      for (const id of ["a", "b", "c"]) ctx.memory.command(["SADD", "grill:hosted:running:user_invitee", id]);
+      ctx.memory.command(["SET", identKeyFor(ctx.env, "user_invitee"), "g_running"]);
+      for (const id of ["a", "b", "c"]) ctx.memory.command(["SADD", "grill:hosted:running:g_running", id]);
       const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
       const res = await postMcp(
         ctx,
@@ -868,7 +1004,9 @@ describe("hosted Grill", { concurrency: false }, () => {
         { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: same email.", keep_records: false, quality_check: false } } },
         { token: secondUser, deps },
       );
-      assert.match(textOf(shared.json), /already has Grill.s free starter credit/);
+      // Same verified email, another sign-in ID: the same person, still one starter key.
+      assert.doesNotMatch(textOf(shared.json), /already has Grill.s free starter credit/);
+      assert.equal(personOf(ctx, "user_second"), personOf(ctx));
       assert.equal(ctx.management.creates.length, 1);
       resetHostedCaches();
       ctx.management.usage = 1;
@@ -897,6 +1035,10 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.match(await gone.text(), /account is deleted/);
       assert.equal(ctx.management.removed.length, 1);
       assert.equal(ctx.management.removedUsers, 1);
+      assert.equal(ctx.management.deletedUser, "user_invitee");
+      assert.equal(personOf(ctx), null);
+      const emailHash = createHash("sha256").update("invitee@example.com").digest("hex");
+      assert.equal(ctx.memory.command(["GET", `grill:hosted:person:${emailHash}`]), null);
     } finally {
       await fake.close();
     }
@@ -976,7 +1118,9 @@ function userinfoCalls(ctx) {
   return ctx.calls.filter((url) => url === AGENTID_USERINFO).length;
 }
 
-async function storedAccount(ctx, id) {
+async function storedAccount(ctx, sub) {
+  const id = ctx.memory.command(["GET", identKeyFor(ctx.env, sub)]);
+  if (!id) return null;
   const raw = await ctx.redis(["GET", `grill:hosted:acct:${id}`]);
   return raw ? JSON.parse(raw) : null;
 }
@@ -1124,7 +1268,7 @@ describe("AgentID owner email", () => {
     const borrower = await storedAccount(ctx, "user_agent_b");
     assert.equal(holder.human, OWNER_EMAIL);
     assert.equal(borrower.human, OWNER_EMAIL);
-    assert.equal(borrower.capFrom, "user_agent_a");
+    assert.equal(borrower.capFrom, personOf(ctx, "user_agent_a"));
     assert.equal(borrower.keyHash, holder.keyHash);
     assert.ok(borrower.keyHash);
     const session = signJwt({ iss: "https://clerk.example.test", sub: "user_agent_b", exp: Math.floor(Date.now() / 1000) + 3600 });
@@ -1491,10 +1635,11 @@ describe("hosted Grill: spending caps, open sign-up, races and plain errors", ()
       ]);
       const texts = [textOf(a.json), textOf(b.json)];
       assert.equal(texts.filter((text) => text.includes(ONCE_DISCLOSURE)).length, 1, texts.join("\n---\n"));
-      const log = await ctx.memory.command(["LRANGE", "grill:hosted:spendlog:user_invitee", "0", "-1"]);
+      const me = personOf(ctx);
+      const log = await ctx.memory.command(["LRANGE", `grill:hosted:spendlog:${me}`, "0", "-1"]);
       assert.equal(log.length, 2);
-      const acctWritesAfterSetup = ctx.writes.slice(setupWrites).filter((row) => row[0] === "SET" && row[1] === "grill:hosted:acct:user_invitee");
-      const raw = await ctx.memory.command(["GET", "grill:hosted:acct:user_invitee"]);
+      const acctWritesAfterSetup = ctx.writes.slice(setupWrites).filter((row) => row[0] === "SET" && row[1] === `grill:hosted:acct:${me}`);
+      const raw = await ctx.memory.command(["GET", `grill:hosted:acct:${me}`]);
       assert.equal(JSON.parse(raw).records, "off");
       assert.equal(acctWritesAfterSetup.length, 0, `account rewritten ${acctWritesAfterSetup.length} times`);
     } finally {
@@ -1515,7 +1660,7 @@ describe("hosted Grill: spending caps, open sign-up, races and plain errors", ()
         params: { name: "grill", arguments: { subject, keep_records: true, quality_check: false } },
       });
       await Promise.all([postMcp(ctx, keep(1, "Decision: keep A."), { token, deps }), postMcp(ctx, keep(2, "Decision: keep B."), { token, deps })]);
-      const rkeySets = ctx.writes.filter((row) => row[0] === "SET" && row[1] === "grill:hosted:rkey:user_invitee");
+      const rkeySets = ctx.writes.filter((row) => row[0] === "SET" && row[1] === `grill:hosted:rkey:${personOf(ctx)}`);
       assert.ok(rkeySets.every((row) => row.includes("NX")));
       for (const id of [3, 4]) {
         const decided = await postMcp(

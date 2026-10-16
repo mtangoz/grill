@@ -713,6 +713,8 @@ export function createMemoryRedis() {
         }
         case "SCARD":
           return sets.get(key)?.size || 0;
+        case "SMEMBERS":
+          return [...(sets.get(key) || [])];
         case "SISMEMBER":
           return sets.get(key)?.has(String(args[2])) ? 1 : 0;
         case "ZADD": {
