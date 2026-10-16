@@ -2178,6 +2178,22 @@ describe("look-back reminders", { concurrency: false }, () => {
     }
   });
 
+  it("shows a record title as the person wrote it, not as a section label", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "iPhone launch", JAN);
+      const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
+      assert.match(html, /<p class="record-title">iPhone launch<\/p>/);
+      assert.equal(html.includes("<h2>iPhone launch</h2>"), false);
+      assert.match(html, /\.record-title \{[^}]*text-transform:\s*none/);
+      assert.match(html, /\.record-title \{[^}]*color:\s*var\(--ink\)/);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("puts the due list above credit, the records switch and export", async () => {
     const fake = await startFakeOpenRouter();
     try {

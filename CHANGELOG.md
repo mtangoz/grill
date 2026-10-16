@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A saved decision's title on `/decisions` is shown in the person's own words and case. It is no longer set in the small uppercase section style.
 - A successful form on `/decisions` or `/account` redirects back to the page, so a refresh does not send it again. A new calendar link is carried in a short-lived cookie and shown once on that next page. Turning the link on again, when it is already on, leaves the same link in place. DATA-LEDGER.md and PRIVACY.md say so.
 - The due list on `/decisions` sits under the title, before credit, the records switch and the export links.
 - Delete all records, and delete this account, each open a confirm page first. The button on that page is what confirms it. One tap on the decisions or account page no longer removes them. Deleting one record, or one chain, is still one tap.
