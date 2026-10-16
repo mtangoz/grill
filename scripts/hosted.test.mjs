@@ -1511,6 +1511,7 @@ describe("one hosted function", () => {
     const unsetHtml = await unset.text();
     assert.match(unsetHtml, /Sign-in isn't set up/);
     assert.doesNotMatch(unsetHtml, /Clerk|CLERK_|allowed origins/);
+    assert.match(unsetHtml, /href="\/">Back to Grill/);
     assert.equal(unset.headers.get("location"), null);
 
     // Back from sign-in with no session: the handshake is tried first, once.
@@ -1524,6 +1525,7 @@ describe("one hosted function", () => {
     const body = await stuck.text();
     assert.match(body, /no session for this site/);
     assert.doesNotMatch(body, /Clerk|CLERK_|allowed origins/);
+    assert.match(body, /href="\/">Back to Grill/);
     assert.match(body, /https:\/\/accounts\.example\.test\/sign-in/);
     assert.equal(body.includes("clerk.example.test/sign-in"), false);
     assert.equal(stuck.headers.get("location"), null);
@@ -2179,6 +2181,19 @@ describe("look-back reminders", { concurrency: false }, () => {
     } finally {
       await fake.close();
     }
+  });
+
+  it("gives every dead-end page a way back", async () => {
+    const ctx = world();
+    const deleted = await handleAccount(new Request("https://grillyour.ai/account?deleted=1"), ctx);
+    assert.match(await deleted.text(), /href="\/">Back to Grill/);
+    ctx.env.GRILL_HOSTED_ALLOWLIST = "someone-else@example.com";
+    const token = signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 });
+    const invite = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${token}` } }), ctx);
+    const inviteHtml = await invite.text();
+    assert.match(inviteHtml, /invite-only/);
+    assert.match(inviteHtml, /href="\/">Back to Grill/);
+    assert.doesNotMatch(inviteHtml, /Clerk|CLERK_|allowed origins/);
   });
 
   it("lets a long one-word title wrap inside a card", async () => {
