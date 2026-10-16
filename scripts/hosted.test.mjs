@@ -2178,6 +2178,14 @@ describe("look-back reminders", { concurrency: false }, () => {
     }
   });
 
+  it("lets a long one-word title wrap inside a card", async () => {
+    const ctx = world();
+    const cookie = `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+    const res = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx);
+    const html = await res.text();
+    assert.match(html, /\.banner \{[^}]*overflow-wrap:\s*anywhere/);
+  });
+
   it("shows a record title as the person wrote it, not as a section label", async () => {
     const fake = await startFakeOpenRouter();
     try {

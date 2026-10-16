@@ -411,7 +411,7 @@ const STYLE = `
   pre.config { background: var(--code-bg); padding: 12px; border-radius: 8px; }
   fieldset { border: 1px solid var(--rule); border-radius: 8px; margin: 1rem 0; }
   .choice { font-weight: 400; margin: 0.35rem 0; }
-  .banner { border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; margin: 1rem 0; }
+  .banner { border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; margin: 1rem 0; overflow-wrap: anywhere; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 1rem 0; }
   :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }`;
 
