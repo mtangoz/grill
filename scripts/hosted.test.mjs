@@ -1377,8 +1377,13 @@ describe("one hosted function", () => {
     assert.match(await unset.text(), /CLERK_SIGN_IN_URL/);
     assert.equal(unset.headers.get("location"), null);
 
+    // Back from sign-in with no session: the handshake is tried first, once.
     const returned = world();
-    const stuck = await handleDecisions(new Request("https://grillyour.ai/decisions?from=signin"), returned);
+    const first = await handleDecisions(new Request("https://grillyour.ai/decisions?from=signin"), returned);
+    assert.equal(first.status, 307);
+    assert.match(first.headers.get("location"), /^https:\/\/clerk\.example\.test\/v1\/client\/handshake\?/);
+    // It came back with nothing: say so, and don't loop.
+    const stuck = await handleDecisions(new Request("https://grillyour.ai/decisions?from=signin&__grill_hs=done"), returned);
     assert.equal(stuck.status, 200);
     const body = await stuck.text();
     assert.match(body, /no session for this site/);
@@ -2039,6 +2044,119 @@ describe("look-back reminders", { concurrency: false }, () => {
     ctx.env.GRILL_HOSTED = "off";
     assert.equal((await feed(ctx, `https://grillyour.ai/decisions/calendar/${"a".repeat(43)}.ics`)).status, 404);
     assert.equal((await handleCalendar(new Request(`https://grillyour.ai/decisions/calendar/${"a".repeat(43)}.ics`, { method: "POST" }), ctx)).status, 404);
+  });
+});
+
+describe("page sign-in through Clerk's handshake", { concurrency: false }, () => {
+  beforeEach(() => resetHostedCaches());
+
+  const sessionJwt = () => signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 60 });
+  const setCookies = (res) => res.headers.getSetCookie();
+  const cookieOf = (res, name) => setCookies(res).find((c) => c.startsWith(`${name}=`))?.split(";")[0].slice(name.length + 1) ?? null;
+
+  function withHandshake(ctx, directives) {
+    const seen = [];
+    const inner = ctx.fetch;
+    ctx.fetch = async (url, init = {}) => {
+      const u = String(url);
+      if (u.startsWith("https://api.clerk.com/v1/clients/handshake_payload")) {
+        seen.push({ nonce: new URL(u).searchParams.get("nonce"), auth: init.headers?.Authorization });
+        return Response.json({ directives: directives() });
+      }
+      return inner(url, init);
+    };
+    return seen;
+  }
+
+  async function startHandshake(ctx, path = "/decisions") {
+    const res = await handleDecisions(new Request(`https://grillyour.ai${path}`, { headers: { cookie: "__client_uat=1760000000" } }), ctx);
+    assert.equal(res.status, 307);
+    const to = new URL(res.headers.get("location"));
+    assert.equal(`${to.origin}${to.pathname}`, "https://clerk.example.test/v1/client/handshake");
+    assert.equal(to.searchParams.get("format"), "nonce");
+    const back = new URL(to.searchParams.get("redirect_url"));
+    const state = back.searchParams.get("__grill_hs");
+    assert.ok(state && cookieOf(res, "__Host-grill_hs") === state);
+    assert.match(setCookies(res).find((c) => c.startsWith("__Host-grill_hs=")), /HttpOnly; Secure; SameSite=Lax/);
+    return { back, state };
+  }
+
+  it("a signed-in Clerk browser gets a session on these pages through the handshake, and keeps it past Clerk's minute", async () => {
+    const ctx = world();
+    const jwt = sessionJwt();
+    const seen = withHandshake(ctx, () => [`__session=${jwt}; Path=/; Secure; SameSite=Lax`, "__clerk_handshake_nonce=; Path=/; Max-Age=0", "evil=1; Path=/"]);
+    const { back, state } = await startHandshake(ctx);
+    back.searchParams.set("__clerk_handshake_nonce", "nonce-1");
+    const res = await handleDecisions(new Request(back, { headers: { cookie: `__Host-grill_hs=${state}` } }), ctx);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), "https://grillyour.ai/decisions");
+    assert.deepEqual(seen, [{ nonce: "nonce-1", auth: "Bearer sk_test_clerk" }]);
+    assert.equal(cookieOf(res, "__session"), jwt);
+    assert.equal(cookieOf(res, "evil"), null, "only Clerk's own cookies are passed on");
+    const pageCookie = cookieOf(res, "__Host-grill_page");
+    assert.ok(pageCookie);
+    assert.match(setCookies(res).find((c) => c.startsWith("__Host-grill_page=")), /HttpOnly; Secure; SameSite=Lax; Max-Age=43200/);
+    assert.equal(cookieOf(res, "__Host-grill_hs"), "");
+
+    // Later, Clerk's token has lapsed, and only Grill's page cookie is left: still signed in, and forms work.
+    const later = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__Host-grill_page=${pageCookie}` } }), ctx);
+    assert.equal(later.status, 200);
+    assert.match(await later.text(), /Your decisions/);
+    const form = await handleAccount(
+      new Request("https://grillyour.ai/account", {
+        method: "POST",
+        headers: { cookie: `__Host-grill_page=${pageCookie}`, "content-type": "application/x-www-form-urlencoded" },
+        body: "action=calendar&value=on",
+      }),
+      ctx,
+    );
+    assert.match(await form.text(), /shown only once/);
+
+    // A changed cookie is not a session.
+    const forged = `${pageCookie.split(".")[0]}.${"A".repeat(43)}`;
+    const bad = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__Host-grill_page=${forged}` } }), ctx);
+    assert.equal(bad.status, 302);
+    assert.match(bad.headers.get("location"), /accounts\.example\.test\/sign-in/);
+  });
+
+  it("ignores a handshake return whose state this browser was not sent with", async () => {
+    const ctx = world();
+    const seen = withHandshake(ctx, () => [`__session=${sessionJwt()}; Path=/`]);
+    const { back } = await startHandshake(ctx);
+    back.searchParams.set("__clerk_handshake_nonce", "someone-elses");
+    const res = await handleDecisions(new Request(back, { headers: { cookie: "__Host-grill_hs=another-state-value-xx" } }), ctx);
+    assert.equal(res.status, 303);
+    assert.equal(seen.length, 0);
+    assert.equal(cookieOf(res, "__Host-grill_page"), null);
+    assert.equal(new URL(res.headers.get("location")).searchParams.get("__grill_hs"), "done");
+    // Done means no second handshake: a signed-out browser goes to sign-in.
+    const next = await handleDecisions(new Request(res.headers.get("location"), { headers: { cookie: "__client_uat=1760000000" } }), ctx);
+    assert.equal(next.status, 302);
+    assert.match(next.headers.get("location"), /accounts\.example\.test\/sign-in/);
+  });
+
+  it("a signed-out handshake leads to sign-in, and a signed-out browser with no Clerk marker goes straight there", async () => {
+    const ctx = world();
+    withHandshake(ctx, () => ["__session=; Path=/; Max-Age=0", "__client_uat=0; Path=/"]);
+    const { back, state } = await startHandshake(ctx);
+    back.searchParams.set("__clerk_handshake_nonce", "nonce-2");
+    const res = await handleDecisions(new Request(back, { headers: { cookie: `__Host-grill_hs=${state}` } }), ctx);
+    assert.equal(res.status, 303);
+    assert.equal(cookieOf(res, "__Host-grill_page"), null);
+    assert.equal(new URL(res.headers.get("location")).searchParams.get("__grill_hs"), "done");
+    const fresh = await handleDecisions(new Request("https://grillyour.ai/decisions"), ctx);
+    assert.equal(fresh.status, 302);
+    assert.match(fresh.headers.get("location"), /accounts\.example\.test\/sign-in/);
+  });
+
+  it("a form sent with no session goes back to the page instead of applying", async () => {
+    const ctx = world();
+    const res = await handleDecisions(
+      new Request("https://grillyour.ai/decisions", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "action=delete-all&confirm=delete" }),
+      ctx,
+    );
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), "https://grillyour.ai/decisions");
   });
 });
 
