@@ -16,7 +16,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, WELCOME_HEADERS } from "./_pro.mjs";
-import { isThinGrill, normalizeDetail, renderLayers } from "../scripts/judgeCore.mjs";
+import {
+  DEEPEN_OFF,
+  DEEPEN_ONLY_BIG,
+  deepenTestEnabled,
+  isThinGrill,
+  normalizeDetail,
+  renderDeepen,
+  renderLayers,
+} from "../scripts/judgeCore.mjs";
 import {
   REVIEW_DAYS,
   addDays,
@@ -911,11 +919,15 @@ function judgeChildEnv(apiKey, deps) {
   return env;
 }
 
-function startJudge({ subject, question, author, check, apiKey, deps }) {
-  const dir = mkdtempSync(join(tmpdir(), "grill-hosted-"));
-  const args = [JUDGE, "--json", "--out", join(dir, "report.md"), "--author", author];
-  if (question) args.push("--question", question);
-  if (check) args.push("--check");
+function startJudge({ subject, question, author, check, apiKey, deps, deepen = false }) {
+  const dir = deepen ? "" : mkdtempSync(join(tmpdir(), "grill-hosted-"));
+  const args = [JUDGE, "--json", "--author", author];
+  if (deepen) args.push("--deepen");
+  else {
+    args.push("--out", join(dir, "report.md"));
+    if (question) args.push("--question", question);
+    if (check) args.push("--check");
+  }
   const child = spawn(process.execPath, args, { env: judgeChildEnv(apiKey, deps), stdio: ["pipe", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
@@ -930,12 +942,14 @@ function startJudge({ subject, question, author, check, apiKey, deps }) {
     const finish = (code) => {
       if (job.done) return;
       let report = "";
-      try {
-        report = readFileSync(join(dir, "report.md"), "utf8");
-      } catch {
-        report = "";
+      if (dir) {
+        try {
+          report = readFileSync(join(dir, "report.md"), "utf8");
+        } catch {
+          report = "";
+        }
+        rmSync(dir, { recursive: true, force: true });
       }
-      rmSync(dir, { recursive: true, force: true });
       let parsed = null;
       try {
         parsed = JSON.parse(stdout);
@@ -1084,15 +1098,20 @@ async function firstDisclosure(account, deps) {
   return won === "OK";
 }
 
-async function composeReport({ outcome, subject, sourceApp, account, credit, supersedes, changed, deps }) {
+async function composeReport({ outcome, subject, sourceApp, account, credit, supersedes, changed, deps, depthJob, big }) {
   const stderr = String(outcome?.stderr || "");
   const parsed = outcome?.parsed || null;
   if (!outcome || outcome.code !== 0 || (!parsed && !String(outcome.report || "").trim())) {
+    if (depthJob) await depthJob.promise;
     logHosted(deps.requestId, `judge-exit ${outcome?.code ?? "none"}`);
     return { text: judgeFailureText(stderr, deps.requestId), isError: true };
   }
   const now = typeof deps.now === "number" ? new Date(deps.now) : new Date();
-  const layers = renderLayers(parsed || {}, { subject });
+  const layers = renderLayers(parsed || {}, { subject, big: big === true, deepenTest: deepenTestEnabled(deps.env) });
+  if (depthJob) {
+    const depthOutcome = await depthJob.promise;
+    if (big === true && deepenTestEnabled(deps.env)) layers.deepen = renderDeepen(depthOutcome?.parsed?.depth) || "";
+  }
   const keep = account.records === "keep";
   if (keep) {
     await writePending(
@@ -1130,8 +1149,14 @@ async function storeJobResult(credential, result, deps) {
   await redis(deps, ["SET", jobRedisKey(credential.id), cipher, "EX", JOB_TTL_SECONDS]);
 }
 
+function deepenReply(layer) {
+  if (typeof layer !== "string") return `${DEEPEN_ONLY_BIG}\n`;
+  if (!layer.trim()) return "The judge did not answer the four depth questions.\n";
+  return layer.endsWith("\n") ? layer : `${layer}\n`;
+}
+
 function layerFromStored(stored, detail) {
-  const key = detail === "more" || detail === "options" || detail === "full" ? detail : "brief";
+  const key = detail === "more" || detail === "options" || detail === "full" || detail === "deepen" ? detail : "brief";
   if (key === "brief") return String(stored?.text || stored?.layers?.brief || "");
   const layer = stored?.layers?.[key];
   return typeof layer === "string" && layer.trim() ? layer : "";
@@ -1190,6 +1215,8 @@ async function callGrill(args, account, payload, params, deps) {
   const credential = newJobCredential();
   await redis(deps, ["SADD", runningKey(account.id), credential.id]);
   await redis(deps, ["EXPIRE", runningKey(account.id), JOB_TTL_SECONDS]);
+  const wantDeepen = args.big === true && deepenTestEnabled(deps.env);
+  const depthJob = wantDeepen ? startJudge({ subject, author: author.author, apiKey, deps, deepen: true }) : null;
   const job = startJudge({
     subject,
     question,
@@ -1214,6 +1241,8 @@ async function callGrill(args, account, payload, params, deps) {
       supersedes: args.supersedes,
       changed: args.changed,
       deps,
+      depthJob,
+      big: wantDeepen,
     });
     if (account.records !== "keep" && !result.isError) {
       const credential = newJobCredential();
@@ -1233,6 +1262,8 @@ async function callGrill(args, account, payload, params, deps) {
         supersedes: args.supersedes,
         changed: args.changed,
         deps,
+        depthJob,
+        big: wantDeepen,
       });
       await storeJobResult(credential, result, deps);
     } finally {
@@ -1253,8 +1284,13 @@ async function layerFromPending(account, deps, detail) {
 
 async function callResult(args, account, deps) {
   const detail = normalizeDetail(args.detail);
+  if (detail === "deepen" && !deepenTestEnabled(deps.env)) return toolText(`${DEEPEN_OFF}\n`);
   const credential = parseJobCredential(typeof args.job_id === "string" ? args.job_id : "");
   if (!credential) {
+    if (detail === "deepen") {
+      const pendings = account.records === "keep" ? await loadPendings(account, deps) : [];
+      return toolText(deepenReply(pendings.at(-1)?.layers?.deepen));
+    }
     const layer = await layerFromPending(account, deps, detail);
     if (!layer.trim()) {
       return toolText("No stored layer for that. Pass the job id from the grill, including a follow: line, and do not show that line.", true);
@@ -1282,6 +1318,7 @@ async function callResult(args, account, deps) {
     logHosted(deps.requestId, "job-decrypt");
     return toolText("Grill couldn't read that stored result. Run the grill again to get a fresh one.", true);
   }
+  if (detail === "deepen") return toolText(deepenReply(stored?.layers?.deepen));
   const layer = layerFromStored(stored, detail);
   if (!layer.trim()) return toolText("That layer is not stored for this grill.", true);
   return toolText(layer.endsWith("\n") ? layer : `${layer}\n`, Boolean(stored.isError));

@@ -22,6 +22,7 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = join(HERE, "..", "server", "index.mjs");
 const USABLE = join(HERE, "fixtures", "usable-response.json");
+const DEEPEN = join(HERE, "fixtures", "deepen-response.json");
 const KEY = "sk-or-v1-test-key-never-echoed";
 
 /** A minimal MCP client: send lines, collect replies by id and notifications in order. */
@@ -141,7 +142,7 @@ describe("the MCP handshake", () => {
     assert.match(grill.description, /at most one short question/);
     assert.match(grill.description, /do not add your own case against/i);
     assert.match(grill.description, /quick or bulk/);
-    assert.deepEqual(Object.keys(grill.inputSchema.properties).sort(), ["author", "quality_check", "question", "subject"]);
+    assert.deepEqual(Object.keys(grill.inputSchema.properties).sort(), ["author", "big", "quality_check", "question", "subject"]);
     assert.match(grill.inputSchema.properties.question.description, /Leave it empty/);
     assert.match(grill.description, /no code changes, no PRs, no product questions/);
     assert.match(grill.description, /https:\/\/grillyour\.ai\/#privacy/);
@@ -234,6 +235,69 @@ describe("a grill end to end (fixture, no network)", () => {
     } finally {
       await c.close();
     }
+  });
+
+  it("runs deepen only after the verdict, only for a big decision, and only when the test is on", { timeout: 15_000 }, async () => {
+    const subject = "We will raise prices 20% in Q4 because paid users cover the support cost.";
+    const listed = await initialized({});
+    const tools = (await listed.request("tools/list", {})).result.tools;
+    const grill = tools.find((t) => t.name === "grill");
+    const resultTool = tools.find((t) => t.name === "grill_result");
+    assert.match(grill.description, /only when the person asks to deepen or go bigger/);
+    assert.match(grill.description, /Never ask whether it is big/);
+    assert.match(grill.description, /Never add a required question before the verdict/);
+    assert.match(resultTool.description, /Call detail deepen only when the person asks to deepen or go bigger/);
+    assert.ok(resultTool.inputSchema.properties.detail.enum.includes("deepen"));
+    assert.match((await listed.request("initialize", { protocolVersion: "2025-06-18", capabilities: {} })).result.instructions, /only when the person asks to deepen or go bigger/);
+    await listed.close();
+
+    const off = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false", GRILL_NEWS: "off" });
+    const offRes = await off.request("tools/call", { name: "grill", arguments: { subject, big: true } });
+    assert.match(textOf(offRes), /Say 'more', 'options', or your call\./);
+    assert.doesNotMatch(textOf(offRes), /deepen/);
+    const offDeep = await off.request("tools/call", { name: "grill_result", arguments: { detail: "deepen" } });
+    assert.match(textOf(offDeep), /Deepen is a test and is off/);
+    await off.close();
+
+    const small = await initialized({
+      GRILL_API_KEY: KEY,
+      JUDGE_FIXTURE: USABLE,
+      JUDGE_DEEPEN_FIXTURE: DEEPEN,
+      GRILL_DEEPEN_TEST: "1",
+      GRILL_CHECK: "false",
+      GRILL_NEWS: "off",
+    });
+    const smallRes = await small.request("tools/call", { name: "grill", arguments: { subject } });
+    assert.match(textOf(smallRes), /Say 'more', 'options', or your call\./);
+    assert.doesNotMatch(textOf(smallRes), /deepen|Rewritten plan/);
+    const smallDeep = await small.request("tools/call", { name: "grill_result", arguments: { detail: "deepen" } });
+    assert.match(textOf(smallDeep), /only for a decision marked as big/);
+    await small.close();
+
+    const big = await initialized({
+      GRILL_API_KEY: KEY,
+      JUDGE_FIXTURE: USABLE,
+      JUDGE_DEEPEN_FIXTURE: DEEPEN,
+      GRILL_DEEPEN_TEST: "1",
+      GRILL_CHECK: "false",
+      GRILL_NEWS: "off",
+    });
+    const bigRes = await big.request("tools/call", { name: "grill", arguments: { subject, big: true } });
+    const brief = textOf(bigRes);
+    assert.match(brief, /^\*\*Shaky\.\*\*/);
+    assert.match(brief, /Say 'more', 'options', 'deepen', or your call\./);
+    assert.doesNotMatch(brief, /Rewritten plan|top professional/);
+    const words = brief.trim().split(/\s+/).filter(Boolean).length;
+    assert.ok(words <= 50, `${words}: ${brief}`);
+    const deep = await big.request("tools/call", { name: "grill_result", arguments: { detail: "deepen" } });
+    const note = textOf(deep);
+    assert.equal(deep.result.isError, false, note);
+    assert.match(note, /Deeper, not bigger\./);
+    assert.match(note, /1\. A top professional would:/);
+    assert.match(note, /Rewritten plan:/);
+    assert.match(note, /The rewrite is not the decision\./);
+    assert.doesNotMatch(note, /gpt-|openrouter\/auto/);
+    await big.close();
   });
 });
 
