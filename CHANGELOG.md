@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The code that handles your decision or your keys stays open source under MIT, for good. PRINCIPLES.md says so, names the files, and says what you can check where: on your own computer you can read what runs; with a Grill account in chat you are trusting that the server runs the published code. The footer of grillyour.ai's public pages now names the live commit, linked to its source, because the site and the server deploy from that one commit. A test fails if a decision-handling file leaves this repository or takes another license, and a change to `LICENSE` or the new `TRADEMARKS.md` is high risk and never merges itself. TRADEMARKS.md: forks are welcome under another name. CONTRIBUTING.md: contributions are MIT.
 - docs/UX.md says how a page a person sees is built, and scripts/pages.test.mjs checks it. The pull request template asks for that doc, and for a look at 390px in light and dark.
 
 - "Delete this chain" shows only on a record that replaces another, or was replaced. A record on its own has "Delete this record" only.
