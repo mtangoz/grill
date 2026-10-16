@@ -313,10 +313,10 @@
     if (CHANNEL_REFS[fromUrl]) channelRef = fromUrl;
   } catch (err) { channelRef = ""; }
   function trackClick(name) {
-    if (!CLICK_EVENTS[name] || typeof window.va !== "function") return;
+    if (!CLICK_EVENTS[name] || typeof window.grillTrack !== "function") return;
     var data = {};
     if (channelRef) data.ref = channelRef;
-    window.va("event", { name: name, data: data });
+    window.grillTrack(name, data);
   }
   document.querySelectorAll("a[data-track]").forEach(function (link) {
     link.addEventListener("click", function () { trackClick(link.getAttribute("data-track")); });

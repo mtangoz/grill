@@ -13,6 +13,7 @@ import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { billingMode, couponId, starterAllowanceUsd } from "../api/_pro.mjs";
+import { analyticsSnippet } from "./siteAnalytics.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "_site");
@@ -28,12 +29,10 @@ const ICONS = [
 ];
 const OG_IMAGE = `${SITE_URL}brand/og-image.png`;
 
-// Cookieless page counts for the website only. Not added to site/page.html itself: that file is also
-// published as a Claude artifact, and the Grill tool never loads this script.
-const ANALYTICS = `<script>
-window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
-</script>
-<script defer src="/_vercel/insights/script.js"></script>`;
+// Cookieless page counts for the website only, plus PostHog when GRILL_POSTHOG_KEY is set (see
+// scripts/siteAnalytics.mjs). Not added to site/page.html itself: that file is also published as a
+// Claude artifact, and the Grill tool never loads this script.
+const ANALYTICS = analyticsSnippet(process.env);
 
 const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
 const headFor = ({ description, url }) => [

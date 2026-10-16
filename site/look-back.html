@@ -164,8 +164,8 @@ review: 2026-10-11
   function track(name, records) {
     var count = Number(records);
     if (!Number.isInteger(count) || count < 0) count = 0;
-    if (typeof window.va !== "function") return;
-    window.va("event", { name: name, data: { records: count } });
+    if (typeof window.grillTrack !== "function") return;
+    window.grillTrack(name, { records: count });
   }
   function versionedCount(text) {
     var n = 0;
