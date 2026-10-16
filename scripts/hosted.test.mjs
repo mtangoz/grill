@@ -2168,6 +2168,24 @@ describe("look-back reminders", { concurrency: false }, () => {
     }
   });
 
+  it("puts the due list above credit, the records switch and export", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN);
+      const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
+      const due = html.indexOf("Due for a look-back");
+      const credit = html.indexOf("credit left");
+      const records = html.indexOf("Records are");
+      const exported = html.indexOf("Export as text");
+      assert.ok(due > 0, "due list is missing");
+      assert.ok(due < credit && due < records && due < exported, `due at ${due}, credit ${credit}, records ${records}, export ${exported}`);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("asks on a page before deleting every record or the account", async () => {
     const fake = await startFakeOpenRouter();
     try {
