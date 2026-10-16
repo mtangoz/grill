@@ -132,6 +132,30 @@ describe("the skip path — no OPENROUTER_API_KEY and no JUDGE_FIXTURE", () => {
     assert.ok(!existsSync(outPath), "the skip path must not run any case or write a results file");
   });
 
+  it("with --require-key, exits 2 and says nothing was measured, without running a case", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "eval-require-"));
+    const outPath = join(dir, "out.json");
+    const summary = join(dir, "summary.md");
+    const { code, stdout } = await runCli(["--require-key", "--out", outPath], envFor({ GITHUB_STEP_SUMMARY: summary }));
+
+    assert.equal(code, 2);
+    assert.match(stdout, /::error::Not measured: no OPENROUTER_API_KEY/);
+    assert.ok(!stdout.includes("eval skipped"), "a required run must not read as a skip");
+    assert.ok(!existsSync(outPath));
+    assert.match(readFileSync(summary, "utf8"), /Not measured/);
+  });
+
+  it("with --require-key and JUDGE_FIXTURE, runs as usual", async () => {
+    const oneCase = tempCasesDir("sound-ab-test-pricing-page");
+    const outPath = join(oneCase, "out.json");
+    const env = envFor({ JUDGE_FIXTURE: join(FIXTURES, "usable-response.json") });
+
+    const { code } = await runCli(["--require-key", "--cases", oneCase, "--out", outPath], env);
+
+    assert.notEqual(code, 2);
+    assert.ok(existsSync(outPath));
+  });
+
   it("is NOT skipped when JUDGE_FIXTURE is set, even with no OPENROUTER_API_KEY", async () => {
     const oneCase = tempCasesDir("sound-ab-test-pricing-page");
     const outPath = join(oneCase, "out.json");

@@ -22,6 +22,12 @@
  *
  * USAGE
  *   node scripts/eval.mjs [--cases evals/cases] [--concurrency 4] [--out evals/results/latest.json]
+ *                         [--require-key]
+ *
+ *   --require-key   the scheduled and manual runs pass this. With no key and no fixture, the run
+ *                   exits 2 and says nothing was measured, instead of a green skip. A skip that
+ *                   passes looks the same as a judge that passed, so the weekly loop could stay
+ *                   green for weeks without calling a judge once.
  *
  * ENVIRONMENT
  *   OPENROUTER_API_KEY / JUDGE_FIXTURE   same meaning as for judge.mjs. With NEITHER set,
@@ -33,8 +39,9 @@
  *                                        (GitHub Actions' own job-summary mechanism).
  *
  * EXIT CODES
- *   0   ran clean (including the "skipped, no key" path).
+ *   0   ran clean (including the "skipped, no key" path without --require-key).
  *   1   at least one threshold in evals/thresholds.json regressed.
+ *   2   --require-key was given and there was no key: nothing was measured.
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -58,7 +65,7 @@ function fail(message) {
 
 // ── Arguments ────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const opts = { casesDir: DEFAULT_CASES_DIR, concurrency: 4, out: DEFAULT_OUT };
+  const opts = { casesDir: DEFAULT_CASES_DIR, concurrency: 4, out: DEFAULT_OUT, requireKey: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = () => {
@@ -79,6 +86,9 @@ function parseArgs(argv) {
       case "--out":
         opts.out = next();
         break;
+      case "--require-key":
+        opts.requireKey = true;
+        break;
       default:
         fail(`unknown argument: ${arg}`);
     }
@@ -90,8 +100,20 @@ const opts = parseArgs(process.argv.slice(2));
 
 // ── The skip path: no way to reach a real judge, and nothing standing in for one. ──
 if (!process.env.OPENROUTER_API_KEY && !process.env.JUDGE_FIXTURE) {
-  console.log("::notice::no OPENROUTER_API_KEY; eval skipped");
-  process.exit(0);
+  if (!opts.requireKey) {
+    console.log("::notice::no OPENROUTER_API_KEY; eval skipped");
+    process.exit(0);
+  }
+  const message = "Not measured: no OPENROUTER_API_KEY, so no case reached a judge.";
+  console.log(`::error::${message}`);
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    try {
+      writeFileSync(process.env.GITHUB_STEP_SUMMARY, `## Judge self-eval\n\n**${message}** Set the repository secret, then run this workflow again.\n`, { flag: "a" });
+    } catch (e) {
+      console.error(`[eval] could not append to GITHUB_STEP_SUMMARY: ${e?.message ?? e}`);
+    }
+  }
+  process.exit(2);
 }
 
 // ── Load the cases ───────────────────────────────────────────────────────────
