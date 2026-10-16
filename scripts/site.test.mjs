@@ -25,6 +25,23 @@ describe("site/page.html", () => {
     }
   });
 
+  it("shows Meta AI (Muse) connector setup, with a public URL and client ID to copy", () => {
+    assert.match(page, /<summary>Meta AI \(Muse\)<span>connector<\/span><\/summary>/);
+    assert.match(page, /Muse → Settings → Connectors → Add custom connector/);
+    assert.match(page, /id="muse-url"[^>]*value="https:\/\/grillyour\.ai\/mcp"/);
+    assert.match(page, /id="muse-client"[^>]*value="RNdHSHmWCRJO40vd"/);
+    assert.match(page, /data-copy="muse-url"/);
+    assert.match(page, /data-copy="muse-client"/);
+    assert.match(page, /Same for everyone\. No secret\./);
+    assert.match(page, /Tap Add, then sign in with the code we email you/);
+    assert.match(page, /button\[data-copy\]/);
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    assert.match(readme, /### Meta AI \(Muse\)/);
+    assert.match(readme, /https:\/\/grillyour\.ai\/mcp/);
+    assert.match(readme, /RNdHSHmWCRJO40vd/);
+    assert.match(readme, /Same for everyone\. No secret\./);
+  });
+
   it("names every assistant people start from, and pairs Copilot only with a company it can't run", () => {
     for (const name of ["Claude", "ChatGPT", "Copilot", "Gemini", "Grok", "Muse"]) {
       assert.ok(page.includes(`<td>${name}`), `no row for ${name}`);
