@@ -38,6 +38,11 @@
  * file, no email. GRILL_NEWS off hides it. An unset value or an unfilled ${…} placeholder leaves
  * it on, the same rule as GRILL_CHECK. A test can pass GRILL_NOW as an ISO time.
  *
+ * DEEPEN TEST. Off unless GRILL_DEEPEN_TEST is exactly true, 1, on or yes. When it is on, and the
+ * person already marked the decision as big, layer 1's closing line may name deepen. The judge
+ * answers four depth questions only after that, when grill_result is called with detail deepen.
+ * Nothing is written to disk for it. The write-up goes to the same judge again, and nowhere new.
+ *
  * USAGE STATS. Off unless GRILL_USAGE_STATS is exactly true, 1, on or yes. That is the opposite
  * of GRILL_CHECK and GRILL_NEWS. GRILL_PING=off (also false, 0, no) and DO_NOT_TRACK=1 always
  * win. One metadata ping may go to Grill's site after the first successful grill, and never
@@ -52,7 +57,17 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { keyFilePath, maskKey, resolveApiKey, saveApiKey } from "../scripts/apiKey.mjs";
-import { CLOSING_ASK, SCOPE_GUARD, normalizeDetail, renderLayers } from "../scripts/judgeCore.mjs";
+import {
+  CLOSING_ASK,
+  CLOSING_ASK_DEEPEN,
+  DEEPEN_OFF,
+  DEEPEN_ONLY_BIG,
+  SCOPE_GUARD,
+  deepenTestEnabled,
+  normalizeDetail,
+  renderDeepen,
+  renderLayers,
+} from "../scripts/judgeCore.mjs";
 
 /** First use only. One line. The privacy page holds the rest. Same words as the hosted connector. */
 export const ONCE_DISCLOSURE =
@@ -252,8 +267,9 @@ export function buildGrillTools({ checkOn }) {
     "After that, do not repeat the disclosure. Do not mention the judge's model, a score, a balance, or a quote check.",
     "Relay layer 1 as written. It is at most 50 words and already ends with: " +
       CLOSING_ASK +
-      " Do not add a fact list, a confidence question, a record, or a disclaimer.",
+      " On a decision they marked as big, and only while the deepen test is on, that line may also name deepen. Relay whichever line came back. Do not add deepen yourself. Do not add a fact list, a confidence question, a record, or a disclaimer.",
     "When the user says more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Do not write a layer yourself.",
+    "Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Pass big: true only when they already marked the decision as big. Never ask whether it is big.",
     "Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask.",
     SCOPE_GUARD,
     "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default.",
@@ -285,6 +301,11 @@ export function buildGrillTools({ checkOn }) {
             description:
               "Optional. false skips the Jev quality check for this grill only, when the user asks. It never turns on a check the user switched off in settings.",
           },
+          big: {
+            type: "boolean",
+            description:
+              "Optional. true only when the person already marked this decision as big. Never ask whether it is big. Leave it off on a quick or bulk grill. It changes nothing before the verdict.",
+          },
         },
         required: ["subject"],
         additionalProperties: false,
@@ -295,16 +316,16 @@ export function buildGrillTools({ checkOn }) {
       name: "grill_result",
       title: "Collect a grill that was still running",
       description:
-        "Collect a grill that returned a job id, or a later layer of one. detail is brief (the default), more, options, or full. Pass job_id when you have one. Omit it to use the latest grill. Waits up to 45 seconds if it is still running. Do not write a layer yourself.",
+        "Collect a grill that returned a job id, or a later layer of one. detail is brief (the default), more, options, full, or deepen. Call detail deepen only when the person asks to deepen or go bigger. Pass job_id when you have one. Omit it to use the latest grill. Waits up to 45 seconds if it is still running. Do not write a layer yourself.",
       inputSchema: {
         type: "object",
         properties: {
           job_id: { type: "string", description: "The job id the grill tool returned. Omit it to use the latest grill in this session." },
           detail: {
             type: "string",
-            enum: ["brief", "more", "options", "full"],
+            enum: ["brief", "more", "options", "full", "deepen"],
             description:
-              "brief is layer 1. more is the next challenge, for more, why, or what else. options is a short decision frame. full is only when they ask for a full report.",
+              "brief is layer 1. more is the next challenge, for more, why, or what else. options is a short decision frame. full is only when they ask for a full report. deepen is only when the person asks to deepen or go bigger.",
           },
         },
         additionalProperties: false,
@@ -364,7 +385,7 @@ function judgePinConflicts(model, author) {
   return pin === family;
 }
 
-function startJob({ subject, question, author, skipCheck }) {
+function startJob({ subject, question, author, skipCheck, big = false }) {
   const id = randomUUID().slice(0, 8);
   const dir = mkdtempSync(join(tmpdir(), "grill-"));
   const args = [JUDGE, "--json", "--out", join(dir, "report.md")];
@@ -388,7 +409,7 @@ function startJob({ subject, question, author, skipCheck }) {
   child.stderr.on("data", (d) => {
     stderr += d;
   });
-  const job = { id, startedAt: Date.now(), done: false, outcome: null, child, subject };
+  const job = { id, startedAt: Date.now(), done: false, outcome: null, child, subject, question, author, big: big === true };
   job.promise = new Promise((resolve) => {
     const finish = (code, error) => {
       if (job.done) return;
@@ -459,22 +480,82 @@ function latestJob() {
 function rememberLayers(job) {
   if (job.layers) return job.layers;
   const parsed = job.outcome?.parsed || {};
-  job.layers = renderLayers(parsed, { subject: job.subject || "" });
+  job.layers = renderLayers(parsed, { subject: job.subject || "", big: job.big === true, deepenTest: deepenTestEnabled() });
   return job.layers;
 }
 
 function finishBrief(brief) {
   const body = String(brief || "").trim();
-  const note = body.endsWith(CLOSING_ASK) ? body.slice(0, -CLOSING_ASK.length).trim() : body;
+  const ask = body.endsWith(CLOSING_ASK_DEEPEN) ? CLOSING_ASK_DEEPEN : CLOSING_ASK;
+  const note = body.endsWith(ask) ? body.slice(0, -ask.length).trim() : body;
   const lined = withNews(note, { now: nowMs() }).trim();
-  return `${lined}\n\n${CLOSING_ASK}\n`;
+  return `${lined}\n\n${ask}\n`;
 }
 
-function outcomeOf(job, detail = "brief") {
+function runDeepen(job) {
+  return new Promise((resolve) => {
+    const args = [JUDGE, "--json", "--deepen"];
+    if (job.question) args.push("--question", job.question);
+    if (job.author) args.push("--author", job.author);
+    const env = { ...process.env, OPENROUTER_API_KEY: apiKey() };
+    delete env.JUDGE_CHECK;
+    const fixture = typeof process.env.JUDGE_DEEPEN_FIXTURE === "string" ? process.env.JUDGE_DEEPEN_FIXTURE.trim() : "";
+    if (fixture) env.JUDGE_FIXTURE = fixture;
+    else delete env.JUDGE_FIXTURE;
+    const model = configuredJudgeModel(env);
+    if (model) env.JUDGE_MODEL = model;
+    else delete env.JUDGE_MODEL;
+    const child = spawn(process.execPath, args, { env, stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    child.stdout.on("data", (d) => {
+      stdout += d;
+    });
+    child.stderr.on("data", () => {});
+    const finish = (line) => {
+      job.deepenText = line;
+      resolve(line);
+    };
+    child.on("error", () => finish("The judge did not answer the four depth questions.\n"));
+    child.on("close", () => {
+      let parsed = null;
+      try {
+        parsed = JSON.parse(stdout);
+      } catch {
+        parsed = null;
+      }
+      const note = renderDeepen(parsed?.depth);
+      finish(note ? `${note.trim()}\n` : "The judge did not answer the four depth questions.\n");
+    });
+    child.stdin.on("error", () => {});
+    child.stdin.end(job.subject || "");
+  });
+}
+
+async function deepenLayer(job) {
+  if (!deepenTestEnabled()) return `${DEEPEN_OFF}\n`;
+  if (job.big !== true) return `${DEEPEN_ONLY_BIG}\n`;
+  if (job.deepenText) return job.deepenText;
+  if (!job.deepenPromise) job.deepenPromise = runDeepen(job);
+  let timer;
+  const done = await Promise.race([
+    job.deepenPromise.then(() => true),
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve(false), waitMs());
+    }),
+  ]);
+  clearTimeout(timer);
+  if (!done) {
+    return `Still writing the deeper plan (job ${job.id}). Call grill_result again with job_id "${job.id}" and detail "deepen".\n`;
+  }
+  return job.deepenText;
+}
+
+async function outcomeOf(job, detail = "brief") {
   const { code, report, stderr, error, parsed } = job.outcome;
   if (parsed || report) {
     const layers = rememberLayers(job);
     const key = normalizeDetail(detail);
+    if (key === "deepen") return text(await deepenLayer(job));
     if (key !== "brief") return text(`${String(layers[key] || "").trim()}\n`);
     if (!job.briefText) job.briefText = finishBrief(layers.brief);
     return text(job.briefText);
@@ -509,15 +590,15 @@ async function callTool(name, args = {}, onTick) {
         true,
       );
     }
-    const job = startJob({ subject, question, author, skipCheck });
-    return (await waitFor(job, waitMs(), onTick)) ? outcomeOf(job, "brief") : pending(job);
+    const job = startJob({ subject, question, author, skipCheck, big: args.big === true });
+    return (await waitFor(job, waitMs(), onTick)) ? await outcomeOf(job, "brief") : pending(job);
   }
   if (name === "grill_result") {
     const id = typeof args.job_id === "string" ? args.job_id.trim() : "";
     const job = id ? jobs.get(id) : latestJob();
     if (!job) return text("No grill is waiting. Start one with the grill tool.", true);
     const detail = normalizeDetail(args.detail);
-    return (await waitFor(job, waitMs(), onTick)) ? outcomeOf(job, detail) : pending(job);
+    return (await waitFor(job, waitMs(), onTick)) ? await outcomeOf(job, detail) : pending(job);
   }
   if (name === "grill_look_back") {
     const records = typeof args.records === "string" ? args.records : "";
@@ -549,7 +630,7 @@ async function handle(msg) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "grill", title: "Grill", version: VERSION },
           instructions:
-            "Grill sends the decision as the user stated it to an outside judge from a different company. Do not rewrite it, do not add your own case against, and do not wait for an OK. Ask at most one short question, and only if the decision is truly unclear. The first time, say the outside-judge disclosure once, as one line, then never again. If grill returns a job id, call grill_result before you reply. Do not ask the user for a job id. Relay layer 1 as written. It is at most 50 words and already ends with the next-step line. Do not add a fact list or a confidence question. When the user says more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Do not write a layer yourself. Do not show a record, the judge's model, a score, a balance, a quote check, or a disclaimer. The verdict never becomes the decision. If the user asks 'so should I do it?', hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If the same decision is grilled again in the chat, ask what changed. Nothing changed is a re-run: show the earlier verdict beside the new one, and do not add a supersedes line. A changed choice names the earlier record and what changed. Never send the earlier verdict to the judge. Write a decision record only after the user states a choice, including a quick take. Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask. If they never answer, write no record and set no look-back. When they say look back, call grill_look_back and relay its one line. It stores nothing. If the report ends with a 'Grill news' line, show it once, word for word, after the note and before the next-step line. The tool adds it only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it. " +
+            "Grill sends the decision as the user stated it to an outside judge from a different company. Do not rewrite it, do not add your own case against, and do not wait for an OK. Ask at most one short question, and only if the decision is truly unclear. The first time, say the outside-judge disclosure once, as one line, then never again. If grill returns a job id, call grill_result before you reply. Do not ask the user for a job id. Relay layer 1 as written. It is at most 50 words and already ends with the next-step line. Do not add a fact list or a confidence question. When the user says more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Do not write a layer yourself. Do not show a record, the judge's model, a score, a balance, a quote check, or a disclaimer. The verdict never becomes the decision. If the user asks 'so should I do it?', hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If the same decision is grilled again in the chat, ask what changed. Nothing changed is a re-run: show the earlier verdict beside the new one, and do not add a supersedes line. A changed choice names the earlier record and what changed. Never send the earlier verdict to the judge. Write a decision record only after the user states a choice, including a quick take. Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask. If they never answer, write no record and set no look-back. When they say look back, call grill_look_back and relay its one line. It stores nothing. If the report ends with a 'Grill news' line, show it once, word for word, after the note and before the next-step line. The tool adds it only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it. " +
               SCOPE_GUARD,
         },
       });

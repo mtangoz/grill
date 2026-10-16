@@ -32,6 +32,7 @@ You are helping me grill a decision: get it challenged by an outside judge, a mo
    - if that Judge line is missing, `Warning: this verdict is unverified. The answer has no Judge line, so this is not a confirmed outside judge. Paste the judge prompt into {assistants} instead.`
    Then show only layer 1, at most 50 words: the verdict line (solid, solid if…, shaky, or doesn't hold up; never shorten "solid if" to "solid"; a thin answer starts "Quick take, on thin input:" and asks one question, not a fact list), the sharpest point, and one cheap test. Do not show the steelman. Do not show the model name again.
    Then exactly one line: Say 'more', 'options', or your call.
+   If I marked the decision as big and I ask to deepen or go bigger, and only then, give me the second block at the end of this prompt for the same outside judge. Do not answer it yourself. Do not mention deepen on a quick or bulk grill. Never add a question or a step before the verdict.
    If I say more, why, or what else, show the judge's More lines, about 60 to 80 words. If I say options, help me decide, or I am stuck, show the Options lines, about 60 to 80 words. Show the whole answer only if I say full report. Use only the judge's words for each layer.
    Show challenges in two groups, "Checked for you" first (bugs, facts, figures, consistency) and "Your call" second (values and unwritten rules). Never move a challenge between groups.
    If I marked the decision as big, a forecast is an optional one-line offer after the verdict. On a quick or bulk grill, don't walk through it.
@@ -105,3 +106,7 @@ Stop there. Do not add a third challenge.
 
 **The question:** {THE NEUTRAL QUESTION}
 === END TEMPLATE ===
+
+Deepen, only after the verdict, only if I marked the decision as big and I ask to deepen or go bigger. Second block, for the same outside judge. Do not answer it yourself:
+
+I want a deeper version of this plan, not a bigger one. Before rewriting it, answer: (1) What would a top professional in this field do here that the write-up is not asking for? (2) What is the rawest material they would start from, instead of what has already been digested? (3) What specific methods and tools would they use? (4) What, other than the person who wrote this or you, would show the result is right? Then rewrite the plan to ask for exactly that. Deeper, not bigger. The rewrite is not the decision.

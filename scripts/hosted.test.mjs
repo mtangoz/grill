@@ -563,8 +563,84 @@ describe("hosted Grill", { concurrency: false }, () => {
     assert.doesNotMatch(grill.description, /call grill_result until the verdict arrives/);
     assert.equal(
       tools.find((tool) => tool.name === "grill_result").description,
-      "Collect a grill that returned a job id, or a later layer of one. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person. detail is brief, more, options, or full. Do not write a layer yourself.",
+      "Collect a grill that returned a job id, or a later layer of one. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person. detail is brief, more, options, full, or deepen. Call detail deepen only when the person asks to deepen or go bigger. Do not write a layer yourself.",
     );
+  });
+
+  it("prepares deepen during the grill only for a big decision when the test is on, and layer 1 stays first", async () => {
+    const usable = readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8");
+    const depth = readFileSync(join(ROOT, "scripts/fixtures/deepen-response.json"), "utf8");
+    const fake = await startFakeOpenRouter({
+      chat: (body) => ({ text: body?.tools?.[0]?.function?.name === "report_depth" ? depth : usable }),
+    });
+    try {
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const subject = "We will raise prices 20% in Q4 because paid users cover support. CANARY-DEEPEN-WRITEUP stays in the write-up.";
+      const call = (ctx, env, big) =>
+        postMcp(
+          ctx,
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "grill", arguments: { subject, keep_records: false, quality_check: false, ...(big ? { big: true } : {}) } },
+          },
+          { token, deps: { ...judgeDeps(fake), waitMs: 20_000, env, now: Date.parse("2026-10-03T15:00:00Z") } },
+        );
+      const offCtx = world();
+      const off = await call(offCtx, offCtx.env, true);
+      assert.match(textOf(off.json), /Say 'more', 'options', or your call\./);
+      assert.doesNotMatch(textOf(off.json), /deepen/);
+      assert.equal(fake.seen.chat.length, 1);
+      const offJob = textOf(off.json).match(/follow: (\S+)/)[1];
+      const offDeep = await postMcp(
+        offCtx,
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: { job_id: offJob, detail: "deepen" } } },
+        { token, deps: { ...judgeDeps(fake), waitMs: 20_000, env: offCtx.env } },
+      );
+      assert.match(textOf(offDeep.json), /Deepen is a test and is off/);
+
+      const smallCtx = world();
+      const small = await call(smallCtx, { ...smallCtx.env, GRILL_DEEPEN_TEST: "1" }, false);
+      assert.doesNotMatch(textOf(small.json), /deepen|Rewritten plan/);
+      assert.equal(fake.seen.chat.length, 2);
+      assert.equal(fake.seen.chat.every((row) => row.body.tools[0].function.name === "report_challenge"), true);
+
+      const ctx = world();
+      const before = fake.seen.chat.length;
+      const grilled = await call(ctx, { ...ctx.env, GRILL_DEEPEN_TEST: "1" }, true);
+      const brief = textOf(grilled.json);
+      assert.equal(grilled.json.result.isError, false, brief);
+      assert.match(brief, /Say 'more', 'options', 'deepen', or your call\./);
+      assert.doesNotMatch(brief, /Rewritten plan|top professional/);
+      const layer = brief.replace(/^This goes to an outside judge[^\n]*\n\n/, "").split(/\n\nfollow:/)[0];
+      assert.ok(countWords(layer) <= 50, `${countWords(layer)}: ${layer}`);
+      const added = fake.seen.chat.slice(before);
+      assert.equal(added.length, 2);
+      for (const row of added) {
+        assert.equal(row.body.model, "openrouter/auto");
+        assert.equal(row.body.models, undefined);
+        assert.equal(row.body.provider.zdr, true);
+        assert.deepEqual(row.body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
+      }
+      assert.equal(added.some((row) => row.body.tools[0].function.name === "report_depth"), true);
+      assert.equal(added.some((row) => String(row.raw).includes("CANARY-DEEPEN-WRITEUP")), true);
+      assert.equal(ctx.writes.some((row) => row.join(" ").includes("CANARY-DEEPEN-WRITEUP")), false);
+      const jobId = brief.match(/follow: (\S+)/)[1];
+      const deep = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId, detail: "deepen" } } },
+        { token, deps: { ...judgeDeps(fake), waitMs: 20_000, env: { ...ctx.env, GRILL_DEEPEN_TEST: "1" } } },
+      );
+      const note = textOf(deep.json);
+      assert.equal(deep.json.result.isError, false, note);
+      assert.match(note, /Deeper, not bigger\./);
+      assert.match(note, /Rewritten plan:/);
+      assert.match(note, /The rewrite is not the decision\./);
+      assert.doesNotMatch(note, /CANARY-DEEPEN-WRITEUP|gpt-/);
+    } finally {
+      await fake.close();
+    }
   });
 
   it("returns plain JSON unless the client asks only for event streams", async () => {

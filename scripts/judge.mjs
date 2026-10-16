@@ -43,6 +43,11 @@
  *   --check            after a usable verdict, also score the REVIEW with Jev (see QUALITY
  *                      CHECK below). Off by default, because it sends the masked write-up to
  *                      a second party.
+ *   --deepen           TEST. After a verdict, answer four depth questions against the
+ *                      write-up and rewrite the plan. Same router, same company exclusion,
+ *                      no pinned model. This is not the default grill. The MCP server runs
+ *                      it only when GRILL_DEEPEN_TEST is on, the decision was marked big,
+ *                      and the person asks. --check is ignored on this path.
  *   --check-flaw <text>
  *                      with --check, also ask Jev whether any challenge identifies this
  *                      specific flaw. The eval loop passes each case's planted flaw; the text
@@ -132,10 +137,14 @@ import {
   MAX_CHALLENGES,
   MAX_LINK_TIMEOUT_MS,
   MIN_LINK_TIMEOUT_MS,
+  buildDeepenMessages,
   buildJudgeMessages,
   checkGrounding,
+  DEEPEN_TOOL,
   findCitedSources,
   decorrelationOf,
+  readDepth,
+  renderDeepen,
   nextAttempt,
   reconcileVerdict,
   renderJudgeReport,
@@ -219,6 +228,7 @@ function parseArgs(argv) {
     author: "",
     check: false,
     checkFlaw: null,
+    deepen: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -265,6 +275,9 @@ function parseArgs(argv) {
         break;
       case "--check":
         opts.check = true;
+        break;
+      case "--deepen":
+        opts.deepen = true;
         break;
       case "--check-flaw":
         opts.checkFlaw = next();
@@ -396,7 +409,7 @@ const checkEnv = typeof process.env.JUDGE_CHECK === "string" ? process.env.JUDGE
 if (checkEnv !== "" && checkEnv !== "0" && checkEnv !== "1") {
   console.error(`[judge] JUDGE_CHECK=${checkEnv} is not "1" — IGNORED, the quality check is off unless --check is passed`);
 }
-const checkWanted = opts.check || checkEnv === "1";
+const checkWanted = !opts.deepen && (opts.check || checkEnv === "1");
 
 // The planted-flaw question is text that will be SENT, so it goes through the same gate as the
 // subject: a secret stops the run here, before any request; contact details are masked.
@@ -422,12 +435,15 @@ for (const path of opts.contexts) {
 }
 
 // ── The request ──────────────────────────────────────────────────────────────
-const messages = buildJudgeMessages({
-  subject: subject.text,
-  question: opts.question,
-  contextBlocks,
-  subjectLabel,
-});
+const messages = opts.deepen
+  ? buildDeepenMessages({ subject: subject.text, question: opts.question })
+  : buildJudgeMessages({
+      subject: subject.text,
+      question: opts.question,
+      contextBlocks,
+      subjectLabel,
+    });
+const judgeTool = opts.deepen ? DEEPEN_TOOL : JUDGE_TOOL;
 
 const chainChoice = resolveChain(process.env.JUDGE_MODEL, { defaultChain: DEFAULT_CHAIN });
 if (chainChoice.source === "env-empty") {
@@ -479,8 +495,8 @@ function bodyFor(model) {
   // never reads.
   const plugin = autoRouterPlugin(model, opts.author);
   if (plugin) body.plugins = [plugin];
-  body.tools = [{ type: "function", function: JUDGE_TOOL }];
-  body.tool_choice = { type: "function", function: { name: JUDGE_TOOL.name } };
+  body.tools = [{ type: "function", function: judgeTool }];
+  body.tool_choice = { type: "function", function: { name: judgeTool.name } };
   body.usage = { include: true };
   // PRIVACY IS NOT CONFIGURABLE. Every request, on every link of the chain, asks for
   // zero-data-retention routing — there is no flag or environment variable that removes
@@ -810,6 +826,15 @@ if (data) {
   }
 } else if (degraded.length === 0) {
   degraded.push("no response from any link in the chain");
+}
+
+if (opts.deepen) {
+  const depth = readDepth(parsed);
+  if (!depth) degraded.push("the judge did not answer the four depth questions");
+  const payload = { depth, degraded, servedModel, decorrelated, declaredAuthor: opts.author };
+  console.log(opts.json ? JSON.stringify(payload, null, 2) : renderDeepen(depth) || "The judge did not answer the four depth questions.");
+  for (const d of degraded) console.error(`[judge] DEGRADED: ${d}`);
+  process.exit(depth ? 0 : 1);
 }
 
 const validation = validateChallenges(parsed?.challenges, { maxChallenges: opts.max });

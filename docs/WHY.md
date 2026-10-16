@@ -2,6 +2,8 @@
 
 It helped you think it through, so its critique shares your blind spots. A judge from another company doesn't. Claude Desktop and Claude Code enforce that in code, and tell you if a run lands on your own company anyway. The copy-and-paste routes check it and warn you.
 
+Grill is the outside judge step Felix Rieseberg recommends in [How to be more ambitious](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/): do not ask the model to judge itself.
+
 The judge must argue your side before it attacks, quote the words it targets, and give every challenge a test that would settle it. A verdict of "solid" with no challenges is a real answer when it's earned. It's told that a made-up objection and an unearned "solid" both cost you.
 
 A different company isn't enough on its own. The write-up still comes from your side of the decision, and a judge that grades the framing hands your own conclusion back to you. So:
