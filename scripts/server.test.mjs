@@ -252,8 +252,17 @@ describe("against a loopback OpenRouter", () => {
       );
     });
     await new Promise((r) => fake.listen(0, "127.0.0.1", r));
-    const url = `http://127.0.0.1:${fake.address().port}/api/v1/chat/completions`;
-    const c = await initialized({ GRILL_API_KEY: KEY, OPENROUTER_API_KEY: "ignored-env-key", JUDGE_OPENROUTER_URL: url, GRILL_PROGRESS_MS: "100" });
+    const base = `http://127.0.0.1:${fake.address().port}`;
+    // The Jev check is on by default. With no decisions override the judge POSTs to
+    // the real OpenRouter host and will wait out a stalled DNS or connect for up to
+    // a minute, which is longer than this client's 4s wait.
+    const c = await initialized({
+      GRILL_API_KEY: KEY,
+      OPENROUTER_API_KEY: "ignored-env-key",
+      JUDGE_OPENROUTER_URL: `${base}/api/v1/chat/completions`,
+      JUDGE_DECISIONS_URL: `${base}/api/alpha/decisions`,
+      GRILL_PROGRESS_MS: "100",
+    });
     const res = await c.request("tools/call", { name: "grill", arguments: { subject: "s" }, _meta: { progressToken: "tok-1" } });
     assert.equal(res.result.isError, false, textOf(res));
     assert.equal(seenAuth, `Bearer ${KEY}`);
