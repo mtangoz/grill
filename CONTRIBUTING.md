@@ -26,6 +26,7 @@ npm run build:extension          # dist/grill.mcpb and dist/grill-smithery.mcpb
 - Run the tests before you open the pull request.
 - Keep a change small. One idea per pull request.
 - Don't paste a real decision, a key, or anything private into an issue, a pull request, or a committed fixture.
+- What you contribute is licensed under MIT, the same as the rest of the code. A fork is welcome under another name: [TRADEMARKS.md](TRADEMARKS.md).
 
 Low-risk pull requests merge themselves once checks are green. Medium and high risk pull requests from the same authors are grilled. Rules and the opt-out labels are in [docs/PR-AUTOMATION.md](docs/PR-AUTOMATION.md).
 

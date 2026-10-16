@@ -117,4 +117,4 @@ Optional, in Claude, when you keep your own decision log: [docs/WEEKLY-REVIEW.md
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). The code that handles your decision stays MIT for good ([docs/PRINCIPLES.md](docs/PRINCIPLES.md#open-source)). The name and logo are not part of the license: [TRADEMARKS.md](TRADEMARKS.md).

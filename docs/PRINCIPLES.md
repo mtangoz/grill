@@ -64,6 +64,20 @@ Grill Pro is accounts and stored history. It is not live. It will be disclosed i
 
 Enforced by: prompt text + review in [docs/PRIVACY.md](PRIVACY.md).
 
+## Open source
+
+The code that handles your decision or your keys stays open source under the MIT license, for good. That covers the tool, the skill and the paste prompt, the judge and its checks, the masking, the miss-card check, and the server code behind a Grill account in chat. Anything Grill charges for later may be closed only if it never touches decision text or keys, such as billing or team admin. Code already released under MIT stays MIT.
+
+Enforced by: [LICENSE](../LICENSE), test "one license everywhere, and the MIT text beside it" and test "the code that handles a decision is here, under MIT, with no other license in it" in [scripts/packaging.test.mjs](../scripts/packaging.test.mjs). A change to the license never merges itself: test "a license or trademark change is high risk and never merges itself" in [scripts/automergeCore.test.mjs](../scripts/automergeCore.test.mjs).
+
+What you can check depends on where Grill runs. On the free tool, Claude Desktop, Claude Code and `npx`, the code is on your computer, so what runs is what you can read. With a Grill account in chat, the same public code runs on Grill's server, so you are trusting that it is the published code. The footer of grillyour.ai's public pages names the commit that is live, and the site and the server deploy together from that one commit.
+
+Enforced by: [scripts/build-site.mjs](../scripts/build-site.mjs), test "names the live commit in every public page footer when the deploy provides one, and nothing otherwise" in [scripts/site.test.mjs](../scripts/site.test.mjs).
+
+The name is not part of the license. Forks are welcome under another name.
+
+Enforced by: [TRADEMARKS.md](../TRADEMARKS.md) and review.
+
 ## Product guardrails
 
 The judge is always from a different company than the model being judged. Only that company is excluded.

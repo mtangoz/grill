@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The code that handles your decision or your keys stays open source under MIT, for good. PRINCIPLES.md says so, names the files, and says what you can check where: on your own computer you can read what runs; with a Grill account in chat you are trusting that the server runs the published code. The footer of grillyour.ai's public pages now names the live commit, linked to its source, because the site and the server deploy from that one commit. A test fails if a decision-handling file leaves this repository or takes another license, and a change to `LICENSE` or the new `TRADEMARKS.md` is high risk and never merges itself. TRADEMARKS.md: forks are welcome under another name. CONTRIBUTING.md: contributions are MIT.
 - A successful form on `/decisions` or `/account` redirects back to the page, so a refresh does not send it again. A new calendar link is carried in a short-lived cookie and shown once on that next page. Turning the link on again, when it is already on, leaves the same link in place. DATA-LEDGER.md and PRIVACY.md say so.
 - The due list on `/decisions` sits under the title, before credit, the records switch and the export links.
 - Delete all records, and delete this account, each open a confirm page first. The button on that page is what confirms it. One tap on the decisions or account page no longer removes them. Deleting one record, or one chain, is still one tap.
