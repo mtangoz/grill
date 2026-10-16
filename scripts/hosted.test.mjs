@@ -2184,6 +2184,25 @@ describe("look-back reminders", { concurrency: false }, () => {
     }
   });
 
+  it("offers delete this chain only on a record that is in a chain", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN);
+      assert.equal((await page(ctx, handleDecisions, "/decisions", { now: FEB })).includes("Delete this chain"), false);
+      const deps = { ...judgeDeps(fake), now: FEB };
+      await postMcp(ctx, call(1, "grill", { subject: "Decision: Delay the beta\nI'm 60% sure.", keep_records: true, quality_check: false, supersedes: "2026-01-01 Hire contractor", changed: "evidence the trial slipped" }), { token, deps });
+      await postMcp(ctx, call(2, "grill_decided", { decided: "Delay it." }), { token, deps });
+      await decide(ctx, fake, token, "Cut prices", FEB);
+      const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
+      assert.equal((html.match(/Delete this chain/g) || []).length, 2);
+      assert.equal((html.match(/Delete this record/g) || []).length, 3);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("gives every dead-end page a way back", async () => {
     const ctx = world();
     const deleted = await handleAccount(new Request("https://grillyour.ai/account?deleted=1"), ctx);

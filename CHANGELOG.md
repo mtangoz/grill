@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- "Delete this chain" shows only on a record that replaces another, or was replaced. A record on its own has "Delete this record" only.
 - Dates on `/decisions` use the same day format as the chat ("15 Jan"), not an ISO date.
 - The pages for a deleted account, an invite-only email, a missed sign-in and a sign-in that isn't set up each link back to Grill.
 - The sign-in missed page and the sign-in-not-set-up page tell the person what to do, without naming the sign-in company's settings.
