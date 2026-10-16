@@ -9,7 +9,7 @@
  * request id. A rejected bearer on /mcp logs the reason and public claims only:
  * never the token, and never an email.
  */
-import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -395,10 +395,19 @@ function logBearerReject(request, reason, claims) {
   console.warn(text);
 }
 
-async function verifyJwt(token, { issuer, jwksUrl, resource, fetchImpl, requireAudience }) {
-  const fail = (reason, claims) => ({ reason, claims: claims || blankAuthClaims() });
+function jwtFail(reason, claims) {
+  return { reason, claims: claims || blankAuthClaims() };
+}
+
+/** RS256 signature against the Clerk JWKS. Returns the payload, or null. Claims are not checked here. */
+async function verifiedPayload(token, jwksUrl, fetchImpl) {
+  const checked = await readSignedPayload(token, jwksUrl, fetchImpl);
+  return checked.payload || null;
+}
+
+async function readSignedPayload(token, jwksUrl, fetchImpl) {
   const parts = String(token || "").split(".");
-  if (parts.length !== 3) return fail("malformed");
+  if (parts.length !== 3) return jwtFail("malformed");
   const [h64, p64, s64] = parts;
   let header;
   let payload;
@@ -406,30 +415,44 @@ async function verifyJwt(token, { issuer, jwksUrl, resource, fetchImpl, requireA
     header = JSON.parse(Buffer.from(h64, "base64url").toString("utf8"));
     payload = JSON.parse(Buffer.from(p64, "base64url").toString("utf8"));
   } catch {
-    return fail("malformed");
+    return jwtFail("malformed");
   }
   const claims = jwtPublicClaims(payload);
-  if (header.alg !== "RS256" || !header.kid) return fail("alg", claims);
+  if (header.alg !== "RS256" || !header.kid) return jwtFail("alg", claims);
   const keys = await loadJwks(jwksUrl, fetchImpl);
   const jwk = keys.find((key) => key.kid === header.kid) || null;
-  if (!jwk) return fail("kid", claims);
+  if (!jwk) return jwtFail("kid", claims);
   const cryptoKey = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
   const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", cryptoKey, Buffer.from(s64, "base64url"), Buffer.from(`${h64}.${p64}`));
-  if (!ok) return fail("signature", claims);
+  if (!ok) return jwtFail("signature", claims);
+  return { payload };
+}
+
+/** Payload when the token is accepted, otherwise null. Page sign-in uses this. */
+async function verifyJwt(token, options) {
+  const checked = await checkJwt(token, options);
+  return checked.payload || null;
+}
+
+async function checkJwt(token, { issuer, jwksUrl, resource, fetchImpl, requireAudience }) {
+  const signed = await readSignedPayload(token, jwksUrl, fetchImpl);
+  if (!signed.payload) return signed.reason ? signed : jwtFail("malformed");
+  const payload = signed.payload;
+  const claims = jwtPublicClaims(payload);
   const iss = String(payload.iss || "").replace(/\/$/, "");
   const want = String(issuer || "").replace(/\/$/, "");
-  if (!want || iss !== want) return fail("issuer", claims);
+  if (!want || iss !== want) return jwtFail("issuer", claims);
   const now = Math.floor(Date.now() / 1000);
   if (typeof payload.exp !== "number" || payload.exp + 60 < now) {
     claims.expired = true;
-    return fail("expired", claims);
+    return jwtFail("expired", claims);
   }
   claims.expired = false;
-  if (typeof payload.nbf === "number" && payload.nbf - 60 > now) return fail("nbf", claims);
-  if (typeof payload.sub !== "string" || !payload.sub) return fail("sub", claims);
+  if (typeof payload.nbf === "number" && payload.nbf - 60 > now) return jwtFail("nbf", claims);
+  if (typeof payload.sub !== "string" || !payload.sub) return jwtFail("sub", claims);
   if (requireAudience) {
     const aud = Array.isArray(payload.aud) ? payload.aud : typeof payload.aud === "string" ? [payload.aud] : [];
-    if (!aud.includes(resource)) return fail("audience", claims);
+    if (!aud.includes(resource)) return jwtFail("audience", claims);
   }
   return { payload };
 }
@@ -1411,21 +1434,184 @@ async function identity(request, deps, { audience }) {
   if (queryHasToken(pageUrl(request).href)) return { error: unauthorized(publicOrigin(request)) };
   const origin = publicOrigin(request);
   const token = audience ? (request.headers.get("authorization") || "").match(/^Bearer\s+(\S+)$/i)?.[1] || "" : cookieValue(request.headers.get("cookie"), "__session");
-  if (!token) return { error: audience ? unauthorized(origin) : null, missing: true };
+  if (!audience) {
+    // Clerk's session token lives about a minute. After a handshake, Grill's own signed
+    // cookie keeps the person signed in to these pages for a few hours.
+    const clerk = token ? await clerkCookieIdentity(request, deps) : null;
+    if (clerk) return clerk;
+    const sub = readPageCookie(cookieValue(request.headers.get("cookie"), PAGE_COOKIE), deps.env, deps.now);
+    return sub ? { payload: { sub }, origin } : { error: null, missing: true };
+  }
+  if (!token) return { error: unauthorized(origin), missing: true };
   const url = jwksUrl(deps.env);
   if (!url || !deps.env.CLERK_ISSUER) throw new Coded("clerk");
-  const checked = await verifyJwt(token, {
+  const checked = await checkJwt(token, {
     issuer: deps.env.CLERK_ISSUER,
     jwksUrl: url,
     resource: mcpResource(origin),
     fetchImpl: deps.fetch,
-    requireAudience: audience,
+    requireAudience: true,
   });
   if (!checked.payload) {
-    if (audience) logBearerReject(request, checked.reason, checked.claims);
-    return { error: audience ? unauthorized(origin) : null, missing: true };
+    logBearerReject(request, checked.reason, checked.claims);
+    return { error: unauthorized(origin), missing: true };
   }
   return { payload: checked.payload, origin };
+}
+
+async function clerkCookieIdentity(request, deps) {
+  const origin = publicOrigin(request);
+  const token = cookieValue(request.headers.get("cookie"), "__session");
+  const url = jwksUrl(deps.env);
+  if (!url || !deps.env.CLERK_ISSUER) throw new Coded("clerk");
+  const payload = await verifyJwt(token, { issuer: deps.env.CLERK_ISSUER, jwksUrl: url, fetchImpl: deps.fetch, requireAudience: false });
+  return payload ? { payload, origin } : null;
+}
+
+// Grill's pages run no Clerk script. A production Clerk instance only hands this site a
+// session through its handshake: the browser visits Clerk's Frontend API, which sends it
+// back with a one-time nonce that the server trades for the session cookie. This is the
+// same exchange Clerk's own server SDK does (format "nonce").
+const PAGE_COOKIE = "__Host-grill_page";
+const HANDSHAKE_STATE_COOKIE = "__Host-grill_hs";
+const HANDSHAKE_MARK = "__grill_hs";
+const PAGE_SESSION_SECONDS = 12 * 60 * 60;
+const CLERK_API_VERSION = "2026-05-12";
+const CLERK_HANDSHAKE_PARAMS = ["__clerk_handshake", "__clerk_handshake_nonce", "__clerk_help", "__clerk_db_jwt", "__clerk_hs_reason"];
+
+function pageSessionKey(env) {
+  const master = keyFromEnv(env, "GRILL_RECORD_KEY");
+  return master ? createHmac("sha256", master).update("grill-page-session-v1").digest() : null;
+}
+
+function pageCookieValue(sub, env, now) {
+  const key = pageSessionKey(env);
+  if (!key || !sub) return "";
+  const at = typeof now === "number" ? now : Date.now();
+  const body = Buffer.from(JSON.stringify({ sub, exp: Math.floor(at / 1000) + PAGE_SESSION_SECONDS })).toString("base64url");
+  return `${body}.${createHmac("sha256", key).update(body).digest("base64url")}`;
+}
+
+function readPageCookie(value, env, now) {
+  const key = pageSessionKey(env);
+  const [body, mac, extra] = String(value || "").split(".");
+  if (!key || !body || !mac || extra !== undefined) return "";
+  const want = createHmac("sha256", key).update(body).digest();
+  const got = Buffer.from(mac, "base64url");
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return "";
+  let claims;
+  try {
+    claims = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  } catch {
+    return "";
+  }
+  const at = Math.floor((typeof now === "number" ? now : Date.now()) / 1000);
+  if (typeof claims?.sub !== "string" || !claims.sub || typeof claims.exp !== "number" || claims.exp < at) return "";
+  return claims.sub;
+}
+
+function pageCookieHeader(value, maxAge = PAGE_SESSION_SECONDS) {
+  return `${PAGE_COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+}
+
+/** The page path and query this request was for, on the public origin, without handshake leftovers. */
+function cleanPageUrl(request, { keepMark = false } = {}) {
+  const url = pageUrl(request);
+  const clean = new URL(`${publicOrigin(request)}${url.pathname}`);
+  for (const [k, v] of url.searchParams) {
+    if (CLERK_HANDSHAKE_PARAMS.includes(k) || k === HANDSHAKE_MARK) continue;
+    clean.searchParams.append(k, v);
+  }
+  if (keepMark) clean.searchParams.set(HANDSHAKE_MARK, "done");
+  return clean;
+}
+
+/** A browser that may be signed in to Clerk: Clerk's client marker is set, or it just came back from sign-in. */
+function mayBeSignedIn(request) {
+  const uat = Number(cookieValue(request.headers.get("cookie"), "__client_uat"));
+  return (Number.isFinite(uat) && uat > 0) || pageUrl(request).searchParams.get("from") === "signin";
+}
+
+function handshakeStart(request, deps) {
+  if (request.method !== "GET" || pageUrl(request).searchParams.has(HANDSHAKE_MARK) || !mayBeSignedIn(request)) return null;
+  const issuer = String(deps.env.CLERK_ISSUER || "").replace(/\/+$/, "");
+  if (!/^https:\/\//.test(issuer)) return null;
+  const state = randomBytes(16).toString("base64url");
+  const back = cleanPageUrl(request);
+  back.searchParams.set(HANDSHAKE_MARK, state);
+  const to = new URL(`${issuer}/v1/client/handshake`);
+  to.searchParams.set("redirect_url", back.toString());
+  to.searchParams.set("__clerk_api_version", CLERK_API_VERSION);
+  to.searchParams.set("suffixed_cookies", "false");
+  to.searchParams.set("__clerk_hs_reason", "grill-page");
+  to.searchParams.set("format", "nonce");
+  const headers = new Headers({ Location: to.toString(), "Cache-Control": "no-store" });
+  headers.append("Set-Cookie", `${HANDSHAKE_STATE_COOKIE}=${state}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
+  return new Response(null, { status: 307, headers });
+}
+
+/** The cookie directives Clerk sent back: from the nonce (Backend API) or a signed handshake token. */
+async function handshakeDirectives(request, deps) {
+  const url = pageUrl(request);
+  const cookies = request.headers.get("cookie");
+  const nonce = url.searchParams.get("__clerk_handshake_nonce") || cookieValue(cookies, "__clerk_handshake_nonce");
+  const token = url.searchParams.get("__clerk_handshake") || cookieValue(cookies, "__clerk_handshake");
+  if (nonce) {
+    const secret = deps.env.CLERK_SECRET_KEY;
+    if (!secret) throw new Coded("clerk");
+    const res = await deps.fetch(`${CLERK_API}/v1/clients/handshake_payload?nonce=${encodeURIComponent(nonce)}`, {
+      headers: { Authorization: `Bearer ${secret}`, "Clerk-API-Version": CLERK_API_VERSION },
+      redirect: "error",
+    });
+    if (!res.ok) return [];
+    const body = await res.json().catch(() => null);
+    return Array.isArray(body?.directives) ? body.directives.filter((x) => typeof x === "string") : [];
+  }
+  if (token) {
+    const payload = await verifiedPayload(token, jwksUrl(deps.env), deps.fetch);
+    return Array.isArray(payload?.handshake) ? payload.handshake.filter((x) => typeof x === "string") : [];
+  }
+  return null;
+}
+
+/**
+ * Back from Clerk's handshake. Only a return that carries the state this browser was sent
+ * with is used, so a link with someone else's nonce cannot sign this browser in as them.
+ */
+async function handshakeReturn(request, deps) {
+  if (request.method !== "GET") return null;
+  const url = pageUrl(request);
+  const mark = url.searchParams.get(HANDSHAKE_MARK) || "";
+  const state = cookieValue(request.headers.get("cookie"), HANDSHAKE_STATE_COOKIE);
+  if (!mark || mark === "done") return null;
+  const headers = new Headers({ "Cache-Control": "no-store" });
+  headers.append("Set-Cookie", `${HANDSHAKE_STATE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
+  let sub = "";
+  if (state && state.length === mark.length && timingSafeEqual(Buffer.from(state), Buffer.from(mark))) {
+    const directives = (await handshakeDirectives(request, deps)) || [];
+    let session = "";
+    for (const directive of directives) {
+      const name = directive.slice(0, directive.indexOf("=")).trim();
+      // Clerk's own cookies only, as Clerk sent them: the session, its client marker, and handshake clean-up.
+      if (!/^__(session|client_uat|refresh|clerk_[a-z_]+)$/.test(name) || /[\r\n]/.test(directive)) continue;
+      headers.append("Set-Cookie", directive);
+      if (name === "__session") session = directive.slice(directive.indexOf("=") + 1).split(";")[0].trim();
+    }
+    if (session) {
+      const payload = await verifyJwt(session, { issuer: deps.env.CLERK_ISSUER, jwksUrl: jwksUrl(deps.env), fetchImpl: deps.fetch, requireAudience: false });
+      if (payload?.sub) sub = payload.sub;
+    }
+  }
+  if (sub) {
+    const value = pageCookieValue(sub, deps.env, deps.now);
+    if (value) headers.append("Set-Cookie", pageCookieHeader(value));
+    const clean = cleanPageUrl(request);
+    clean.searchParams.delete("from");
+    headers.set("Location", clean.toString());
+  } else {
+    headers.set("Location", cleanPageUrl(request, { keepMark: true }).toString());
+  }
+  return new Response(null, { status: 303, headers });
 }
 
 function sseWanted(request) {
@@ -1685,6 +1871,14 @@ async function pageUser(request, deps) {
   const who = await identity(request, deps, { audience: false });
   if (who.error) return { redirect: who.error };
   if (who.missing || !who.payload) {
+    const back = await handshakeReturn(request, deps);
+    if (back) return { redirect: back };
+    if (request.method === "POST") {
+      // A form sent after the session lapsed: go back to the page, which signs in again. The form is not applied.
+      return { redirect: new Response(null, { status: 303, headers: { Location: cleanPageUrl(request).toString(), "Cache-Control": "no-store" } }) };
+    }
+    const start = handshakeStart(request, deps);
+    if (start) return { redirect: start };
     if (pageUrl(request).searchParams.get("from") === "signin") return { html: signInMissed(request, deps) };
     const redirect = signInRedirect(request, deps);
     if (!redirect) return { html: page("Grill", "<h1>Sign-in isn't set up.</h1><p>Set CLERK_SIGN_IN_URL to your Clerk Account Portal sign-in page.</p>") };
@@ -2010,7 +2204,9 @@ export async function handleAccount(request, deps) {
       }
       if (form.get("action") === "delete-account" && form.get("confirm") === "delete") {
         await deleteAccount(session.account, deps, session.sub);
-        return html(200, page("Account deleted · Grill", "<h1>Your Grill account is deleted.</h1><p>The records and the model-router key are gone.</p>"));
+        const gone = html(200, page("Account deleted · Grill", "<h1>Your Grill account is deleted.</h1><p>The records and the model-router key are gone.</p>"));
+        gone.headers.append("Set-Cookie", pageCookieHeader("", 0));
+        return gone;
       }
     }
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
