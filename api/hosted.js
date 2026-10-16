@@ -1,5 +1,5 @@
-// Hosted endpoints (/mcp, /account, /decisions, /.well-known/oauth-protected-resource). 404 unless GRILL_HOSTED=on.
-import { handleAccount, handleDecisions, handleMcp, handleProtectedResource } from "./_hosted.mjs";
+// Hosted endpoints (/mcp, /account, /decisions, /decisions/calendar/<link>, /.well-known/oauth-protected-resource). 404 unless GRILL_HOSTED=on.
+import { handleAccount, handleCalendar, handleDecisions, handleMcp, handleProtectedResource } from "./_hosted.mjs";
 
 export const maxDuration = 300;
 
@@ -9,6 +9,7 @@ function deps() {
 
 const PUBLIC_PATH = {
   account: "/account",
+  calendar: "/decisions/calendar",
   decisions: "/decisions",
   prm: "/.well-known/oauth-protected-resource",
   mcp: "/mcp",
@@ -19,6 +20,7 @@ function pick(request) {
   const r = url.searchParams.get("__route");
   const p = url.pathname;
   if (r === "account" || p === "/account") return ["account", handleAccount];
+  if (r === "calendar" || p.startsWith("/decisions/calendar/")) return ["calendar", handleCalendar];
   if (r === "decisions" || p === "/decisions") return ["decisions", handleDecisions];
   if (r === "prm" || p.startsWith("/.well-known/oauth-protected-resource")) return ["prm", handleProtectedResource];
   return ["mcp", handleMcp];
@@ -41,3 +43,4 @@ function run(request) {
 export const GET = (request) => run(request);
 export const POST = (request) => run(request);
 export const DELETE = (request) => run(request);
+export const HEAD = (request) => run(request);

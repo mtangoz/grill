@@ -15,7 +15,9 @@ The judge is always OpenRouter's Auto Router (`openrouter/auto`). Grill excludes
 3. The first grill asks, once, whether to keep decision records. Answer once. The outside-judge disclosure is shown once per account, then not again.
 4. Say the decision as you mean it. The assistant sends that. It does not show a template or wait for an OK. The note comes back in the chat. If three grills are already running, the assistant waits and retries on its own.
 
-Decisions you chose to keep are at `/decisions`. The account, the credit, and delete are at `/account`. Both pages are plain HTML, with the same content rules as the Pro pages: no analytics script.
+Decisions you chose to keep are at `/decisions`. Each gets a look-back date 14 days out. When the date comes, `/decisions` lists it under "Due for a look-back", and the next `grill_decided` adds one line counting the calls due, at most once a UTC day. To be reminded outside the chat, switch on a calendar link on `/decisions` or `/account` and subscribe to it in your calendar app. It is off by default, shown once, and shows "Grill look-back due" on each date, with titles only if you switch them on. Turning it off, getting a new link, or deleting the account stops the old link. The link is `https://<host>/decisions/calendar/<secret>.ics`. Why it works this way: [PRD-lookback-reminders.md](PRD-lookback-reminders.md).
+
+ The account, the credit, and delete are at `/account`. Both pages are plain HTML, with the same content rules as the Pro pages: no analytics script.
 
 ## What the owner sets
 
@@ -23,7 +25,7 @@ On the preview environment only, until the spike in [hosted-spike.md](hosted-spi
 
 | Variable | What it is |
 |---|---|
-| `GRILL_HOSTED` | `on` to serve `/mcp`, the sign-in metadata, `/decisions` and `/account`. Anything else, including unset, is a 404. |
+| `GRILL_HOSTED` | `on` to serve `/mcp`, the sign-in metadata, `/decisions`, the calendar link and `/account`. Anything else, including unset, is a 404. |
 | `GRILL_HOSTED_ALLOWLIST` | Comma-separated emails that may grill while sign-up is invite-only. If unset or empty, nobody is let in. |
 | `GRILL_OPEN_SIGNUP` | `on` lets any verified email grill, ignoring the list. Anything else, including unset, keeps it invite-only. Turn it on only with the caps below set. |
 | `GRILL_MONTHLY_CAP_USD` | Optional. Hard cap on what Grill pays for all hosted grills in a calendar month (UTC). Default `20`. `0` stops every grill. |

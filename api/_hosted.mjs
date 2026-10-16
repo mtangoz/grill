@@ -53,6 +53,13 @@ import {
   CAP_COUNTER_TTL_SECONDS,
   allowlistAllows,
   authorForJudge,
+  calendarFeed,
+  calendarTokenHash,
+  calendarTokenShape,
+  daysOverdue,
+  dueForLookBack,
+  dueReminderLine,
+  newCalendarToken,
   capBlock,
   chargeableUsd,
   chainIds,
@@ -91,6 +98,8 @@ const AGENTID_PROVIDER = "oauth_agentid";
 // userinfo_endpoint from AgentID's openid-configuration.
 const AGENTID_USERINFO = "https://auth.agentid.com/v0/userinfo";
 const OWNER_CACHE_SECONDS = 10 * 60;
+// A link the person may click to subscribe in Google Calendar. Grill's server never fetches it.
+const GOOGLE_CALENDAR_SUBSCRIBE = "https://calendar.google.com/calendar/r";
 const VERSION = "0.1.1";
 const jwksCache = new Map();
 const userCache = new Map();
@@ -255,6 +264,18 @@ function disclosedKey(userId) {
 }
 function recordKeyRedisKey(userId) {
   return `grill:hosted:rkey:${userId}`;
+}
+/** The calendar link, by the hash of its secret: which account, and whether titles are on. */
+function calendarFeedKey(hash) {
+  return `grill:hosted:calfeed:${hash}`;
+}
+/** The account's current calendar link hash, so off, reset and delete can find it. */
+function calendarOfKey(userId) {
+  return `grill:hosted:calof:${userId}`;
+}
+/** Set once a UTC day when grill_decided showed the look-back line. */
+function remindedKey(userId, day) {
+  return `grill:hosted:reminded:${userId}:${day}`;
 }
 /** Month spend counters for the caps, in micro-dollars. The person key is a hash of the email, never the email. */
 function serviceSpendKey(month) {
@@ -737,6 +758,56 @@ async function writeRecord(account, deps, row) {
   await redis(deps, ["ZADD", recordIndex(account.id), Date.parse(row.createdAt) || Date.now(), row.id]);
 }
 
+async function calendarState(account, deps) {
+  const hash = await redis(deps, ["GET", calendarOfKey(account.id)]);
+  if (typeof hash !== "string" || !hash) return { on: false, titles: false };
+  const raw = await redis(deps, ["GET", calendarFeedKey(hash)]);
+  let feed = null;
+  try {
+    feed = typeof raw === "string" ? JSON.parse(raw) : null;
+  } catch {
+    feed = null;
+  }
+  if (!feed || feed.id !== account.id) return { on: false, titles: false };
+  return { on: true, titles: feed.titles === true };
+}
+
+async function calendarOff(account, deps) {
+  const hash = await redis(deps, ["GET", calendarOfKey(account.id)]);
+  if (typeof hash === "string" && hash) await redis(deps, ["DEL", calendarFeedKey(hash)]);
+  await redis(deps, ["DEL", calendarOfKey(account.id)]);
+}
+
+/** A new secret link. Any old one stops working. The raw token is returned once and not stored. */
+async function calendarOn(account, deps, titles) {
+  await calendarOff(account, deps);
+  const token = newCalendarToken();
+  const hash = calendarTokenHash(token);
+  await redis(deps, ["SET", calendarFeedKey(hash), JSON.stringify({ id: account.id, titles: titles === true })]);
+  await redis(deps, ["SET", calendarOfKey(account.id), hash]);
+  return token;
+}
+
+/** Titles on or off for the link already issued. The link itself does not change. */
+async function calendarTitles(account, deps, titles) {
+  const hash = await redis(deps, ["GET", calendarOfKey(account.id)]);
+  if (typeof hash !== "string" || !hash) return;
+  await redis(deps, ["SET", calendarFeedKey(hash), JSON.stringify({ id: account.id, titles: titles === true })]);
+}
+
+/** Form actions shared by /decisions and /account. Returns a fresh link token when one was made. */
+async function calendarAction(account, deps, value) {
+  if (value === "on") return calendarOn(account, deps, false);
+  if (value === "reset") {
+    const state = await calendarState(account, deps);
+    return calendarOn(account, deps, state.titles);
+  }
+  if (value === "off") await calendarOff(account, deps);
+  else if (value === "titles-on") await calendarTitles(account, deps, true);
+  else if (value === "titles-off") await calendarTitles(account, deps, false);
+  return "";
+}
+
 async function deleteRecordIds(account, deps, ids) {
   for (const id of ids) {
     await redis(deps, ["DEL", recordRedisKey(account.id, id)]);
@@ -1142,7 +1213,8 @@ async function callLookBack(args, account, deps) {
   if (!records.trim() && account.records !== "keep") {
     return toolText("Paste one or more decision records. Saving is off on this account, so Grill has none to read. Grill stores nothing either way.", true);
   }
-  const picked = recordsForLookBack(saved, { records, now: Date.now() });
+  const now = typeof deps.now === "number" ? deps.now : Date.now();
+  const picked = recordsForLookBack(saved, { records, now });
   if (!picked.text.trim()) {
     if (picked.mode === "due") return toolText("No saved decision is due for a look-back yet. Name one by its title, or paste a record.");
     if (picked.mode === "named") return toolText("No saved decision matched that name.");
@@ -1156,7 +1228,7 @@ async function callLookBack(args, account, deps) {
       const hit = scored.some((item) => item.date === row.date && item.title === row.title);
       if (!hit) continue;
       row.lookback = {
-        at: new Date().toISOString(),
+        at: new Date(now).toISOString(),
         happened: happened.replace(/\s+/g, " ").trim().slice(0, 2000),
       };
       await writeRecord(account, deps, row);
@@ -1214,7 +1286,7 @@ async function callDecided(args, account, deps) {
     });
     saved.decided = decided;
     await writeRecord(account, deps, saved);
-    return toolText(savedConfirmation(parsed.review));
+    return toolText(withReminder(savedConfirmation(parsed.review), await reminderLine(account, deps, rows, saved.id)));
   }
   const pendings = await loadPendings(account, deps);
   const pending = ref ? pendings.find((item) => matchesRef(item, ref)) : pendings[pendings.length - 1];
@@ -1254,7 +1326,28 @@ async function callDecided(args, account, deps) {
     decided,
   });
   await deletePending(account, deps, pending.id);
-  return toolText(savedConfirmation(review));
+  return toolText(withReminder(savedConfirmation(review), await reminderLine(account, deps, rows, pending.id)));
+}
+
+function withReminder(confirmation, line) {
+  return line ? `${confirmation}\n${line}` : confirmation;
+}
+
+/**
+ * At most once a UTC day: how many other saved calls wait for a look-back. A count only.
+ * The once-a-day mark is set with SET NX, so two decisions at once show it once.
+ */
+async function reminderLine(account, deps, rows, exceptId) {
+  const now = typeof deps.now === "number" ? deps.now : Date.now();
+  const due = dueForLookBack(rows, now).filter((row) => row.id !== exceptId);
+  if (!due.length) return "";
+  try {
+    const won = await redis(deps, ["SET", remindedKey(account.id, isoDay(now)), "1", "NX", "EX", String(2 * 24 * 60 * 60)]);
+    if (won !== "OK") return "";
+  } catch {
+    return "";
+  }
+  return dueReminderLine(due.length);
 }
 
 async function identity(request, deps, { audience }) {
@@ -1502,7 +1595,55 @@ export function renderChanges(rows) {
   </section>`;
 }
 
-function renderDecisions(account, rows, credit, habits) {
+/** Records waiting for a look-back, oldest first. Titles are shown: this page is the person's own. */
+function renderDue(rows, now) {
+  const due = dueForLookBack(rows, now);
+  if (!due.length) return "";
+  const items = due
+    .map((row) => {
+      const late = daysOverdue(row.review, now);
+      const when = late === 0 ? "due today" : `${late} day${late === 1 ? "" : "s"} overdue`;
+      return `<li>${esc(row.title || "Untitled")} · review ${esc(row.review)} · ${esc(when)}</li>`;
+    })
+    .join("");
+  return `<section class="banner">
+    <h2>Due for a look-back</h2>
+    <ul>${items}</ul>
+    <p>Say "look back" in your chat. Grill reads these for you, so there is nothing to paste.</p>
+  </section>`;
+}
+
+function calendarUrl(origin, token) {
+  return `${String(origin).replace(/\/$/, "")}/decisions/calendar/${token}.ics`;
+}
+
+/** The calendar switch. A fresh link is shown once, right after it is made. */
+function renderCalendar(action, calendar, freshUrl) {
+  const form = (value, label) =>
+    `<form method="post" action="${action}"><input type="hidden" name="action" value="calendar"><button type="submit" name="value" value="${value}">${label}</button></form>`;
+  if (!calendar?.on) {
+    return `<section class="banner">
+    <h2>Look-back reminders in your calendar</h2>
+    <p>Off. Switch it on to get a private link your calendar app can subscribe to. Each saved decision shows up on its look-back date as "Grill look-back due", with no title unless you add titles. Your calendar company fetches the link to show it.</p>
+    ${form("on", "Get a calendar link")}
+  </section>`;
+  }
+  const webcal = freshUrl.replace(/^https?:/, "webcal:");
+  const fresh = freshUrl
+    ? `<p><strong>Copy this link now. It is shown only once.</strong></p>
+    <p><input readonly style="width:100%;box-sizing:border-box" value="${esc(freshUrl)}" aria-label="Calendar link"></p>
+    <p class="row"><a class="button" href="${esc(webcal)}">Open in my calendar app</a> <a class="button" href="${GOOGLE_CALENDAR_SUBSCRIBE}?cid=${encodeURIComponent(webcal)}">Add to Google Calendar</a></p>
+    <p class="small">In another calendar, choose "subscribe" or "add from URL" and paste the link. Anyone with the link can see your look-back dates${calendar.titles ? " and titles" : ""}.</p>`
+    : `<p>On. The link was shown when you made it. Lost it? Get a new link; the old one stops working.</p>`;
+  return `<section class="banner">
+    <h2>Look-back reminders in your calendar</h2>
+    ${fresh}
+    <p>Titles in the calendar: ${calendar.titles ? "on" : "off"}.</p>
+    <div class="row">${calendar.titles ? form("titles-off", "Hide titles") : form("titles-on", "Show titles")} ${form("reset", "Get a new link")} ${form("off", "Turn off")}</div>
+  </section>`;
+}
+
+function renderDecisions(account, rows, credit, habits, extra = {}) {
   const linked = linkChains(rows);
   const byId = new Map(linked.map((row) => [row.id, row]));
   const cards = [...linked].reverse().map((row) => {
@@ -1530,6 +1671,8 @@ function renderDecisions(account, rows, credit, habits) {
       <button type="submit" name="value" value="off">Don't keep records</button>
     </form>
     <p class="row"><a class="button" href="/decisions?export=text">Export as text</a> <a class="button" href="/decisions?export=json">Export as JSON</a> <a href="/account">Account</a></p>
+    ${renderDue(rows, extra.now)}
+    ${renderCalendar("/decisions", extra.calendar, extra.freshUrl || "")}
     ${renderHabits(habits)}
     ${renderChanges(rows)}
     ${cards.join("\n") || "<p>No records yet.</p>"}
@@ -1537,7 +1680,7 @@ function renderDecisions(account, rows, credit, habits) {
   );
 }
 
-function renderAccount(account, credit) {
+function renderAccount(account, credit, extra = {}) {
   const keeping = account.records === "keep" ? "On" : account.records === "off" ? "Off" : "Not chosen yet";
   return page(
     "Your Grill account",
@@ -1552,6 +1695,7 @@ function renderAccount(account, credit) {
       <button type="submit" name="value" value="off">Don't keep records</button>
     </form>
     <p><a href="/decisions">Your decisions</a></p>
+    ${renderCalendar("/account", extra.calendar, extra.freshUrl || "")}
     <form method="post" action="/account">
       <input type="hidden" name="action" value="delete-account">
       <input type="hidden" name="confirm" value="delete">
@@ -1622,6 +1766,7 @@ async function deleteAccount(account, deps, sub) {
   await redis(deps, ["DEL", spendLogKey(account.id)]);
   await redis(deps, ["DEL", disclosedKey(account.id)]);
   await redis(deps, ["DEL", recordKeyRedisKey(account.id)]);
+  await calendarOff(account, deps);
   // A borrowing agent does not hold the cap, so their delete leaves the shared key and its index.
   if (!account.capFrom) {
     const indexEmail = account.human || account.email;
@@ -1651,6 +1796,7 @@ export async function handleDecisions(request, deps) {
     if (session.missing) return html(200, page("Grill", "<h1>This account has been deleted.</h1>"));
     if (session.html) return html(200, session.html);
     const url = pageUrl(request);
+    let fresh = "";
     if (request.method === "GET" && url.searchParams.get("export") === "text") return exportRecords(session.account, deps, "text");
     if (request.method === "GET" && url.searchParams.get("export") === "json") return exportRecords(session.account, deps, "json");
     if (request.method === "POST") {
@@ -1670,13 +1816,18 @@ export async function handleDecisions(request, deps) {
       } else if (action === "delete-all" && form.get("confirm") === "delete") {
         const rows = await loadRecords(session.account, deps);
         await deleteRecordIds(session.account, deps, rows.map((row) => row.id));
+      } else if (action === "calendar") {
+        fresh = await calendarAction(session.account, deps, form.get("value") || "");
       }
     }
     const rows = await loadRecords(session.account, deps);
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
     const waiting = (await loadPendings(session.account, deps)).length;
-    const habits = decisionHabits({ records: rows, waiting, now: typeof deps.now === "number" ? deps.now : Date.now() });
-    return html(200, renderDecisions(session.account, rows, credit, habits));
+    const now = typeof deps.now === "number" ? deps.now : Date.now();
+    const habits = decisionHabits({ records: rows, waiting, now });
+    const calendar = await calendarState(session.account, deps);
+    const freshUrl = fresh ? calendarUrl(publicOrigin(request), fresh) : "";
+    return html(200, renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl }));
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
@@ -1695,8 +1846,10 @@ export async function handleAccount(request, deps) {
     if (session.redirect) return session.redirect;
     if (session.missing) return html(200, page("Grill", "<h1>This account has been deleted.</h1>"));
     if (session.html) return html(200, session.html);
+    let fresh = "";
     if (request.method === "POST") {
       const form = new URLSearchParams(await request.text());
+      if (form.get("action") === "calendar") fresh = await calendarAction(session.account, deps, form.get("value") || "");
       if (form.get("action") === "records") {
         const value = form.get("value");
         if (value === "keep" || value === "off") {
@@ -1710,7 +1863,9 @@ export async function handleAccount(request, deps) {
       }
     }
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
-    return html(200, renderAccount(session.account, credit));
+    const calendar = await calendarState(session.account, deps);
+    const freshUrl = fresh ? calendarUrl(publicOrigin(request), fresh) : "";
+    return html(200, renderAccount(session.account, credit, { calendar, freshUrl }));
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
@@ -1719,3 +1874,51 @@ export async function handleAccount(request, deps) {
   }
 }
 
+
+function calendarResponse(body) {
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/calendar; charset=utf-8",
+      "Content-Disposition": 'inline; filename="grill-look-backs.ics"',
+      "Cache-Control": "private, no-store",
+      "X-Robots-Tag": "noindex",
+      "Referrer-Policy": "no-referrer",
+    },
+  });
+}
+
+/**
+ * The private calendar feed. No sign-in: the secret in the path is the key, because calendar
+ * apps cannot send a header. Unknown, malformed or switched-off links all get the same 404.
+ * The token is never logged.
+ */
+export async function handleCalendar(request, deps) {
+  const id = requestId();
+  deps = { ...deps, requestId: id };
+  if (!hostedEnabled(deps.env)) return notFound();
+  if (request.method !== "GET" && request.method !== "HEAD") return methodNotAllowed();
+  try {
+    const url = pageUrl(request);
+    const fromPath = url.pathname.match(/^\/decisions\/calendar\/([^/]+)$/)?.[1] || "";
+    const token = String(url.searchParams.get("t") || fromPath).replace(/\.ics$/i, "");
+    if (!calendarTokenShape(token)) return notFound();
+    const raw = await redis(deps, ["GET", calendarFeedKey(calendarTokenHash(token))]);
+    let feed = null;
+    try {
+      feed = typeof raw === "string" ? JSON.parse(raw) : null;
+    } catch {
+      feed = null;
+    }
+    if (!feed?.id) return notFound();
+    const account = await loadAccount(feed.id, deps);
+    if (!account) return notFound();
+    const rows = await loadRecords(account, deps);
+    const now = typeof deps.now === "number" ? deps.now : Date.now();
+    return calendarResponse(calendarFeed({ rows, origin: publicOrigin(request), titles: feed.titles === true, now }));
+  } catch (error) {
+    const code = error instanceof Coded ? error.code : "";
+    logHosted(id, code || "calendar");
+    return fixedError(id, 500, code);
+  }
+}

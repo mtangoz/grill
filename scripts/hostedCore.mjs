@@ -2,7 +2,7 @@
  * Pure helpers for hosted Grill. No network and no logging.
  * The installed local tool does not import this file.
  */
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { confidenceValue, parseRecords } from "./reflection.mjs";
 import { SCOPE_GUARD } from "./judgeCore.mjs";
 import { buildGrillTools } from "../server/index.mjs";
@@ -477,8 +477,7 @@ export function recordsForLookBack(saved, { records = "", now = Date.now() } = {
   if (parsed.length) return { mode: "pasted", text: paste, parsed };
   const named = paste.trim();
   if (!named) {
-    const today = isoDay(now);
-    const due = (saved || []).filter((row) => row.review && row.review <= today);
+    const due = dueForLookBack(saved, now);
     return { mode: "due", text: due.map((row) => row.block).join("\n\n"), rows: due };
   }
   const needle = named.toLowerCase();
@@ -599,7 +598,7 @@ export const HOSTED_INSTRUCTIONS = [
   "When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Pass job_id if you have one. A follow: line is a job id for you. Never show it. Do not write a layer yourself.",
   "Do not show a record, the judge's model, a Jev score, a credit balance, a quote check, format rules, or a disclaimer.",
   "The verdict never becomes the decision. If they ask whether they should do it, hand the choice back and name the cheap test.",
-  "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation, about five words. If they never answer, do not call it, and there is no record and no look-back.",
+  "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation as written: about five words, and sometimes one more line saying earlier calls are due for a look-back. If they never answer, do not call it, and there is no record and no look-back.",
   "Add supersedes and changed only when they say the choice changed, in their words. A re-run with nothing changed leaves those off.",
   "When they say look back, call grill_look_back and relay its one line. With a Grill account it can read saved records, so they do not have to paste.",
   "When they ask what Grill has done for them, call grill_look_back with view changes and relay it as written.",
@@ -760,4 +759,131 @@ export function decisionHabits({ records = [], waiting = 0, now = Date.now() } =
   else if (decided && withConfidence * 2 < decided) prompt = "You rarely say how sure you are. A rough percent makes a look-back show whether your confidence matches what happens.";
   else if (due > lookedBack) prompt = `${due - lookedBack} look-back${due - lookedBack === 1 ? " is" : "s are"} due. Say "look back" in your chat.`;
   return { decided, waiting, withConfidence, changedCourse, due, lookedBack, prompt };
+}
+
+/**
+ * Saved records whose look-back date has come and that have no look-back yet, oldest date first.
+ * A reminder points only at these. A record already looked back is done.
+ */
+export function dueForLookBack(rows, now = Date.now()) {
+  const today = isoDay(now);
+  return (rows || [])
+    .filter((row) => /^\d{4}-\d{2}-\d{2}$/.test(String(row?.review || "")) && row.review <= today && !row.lookback?.happened)
+    .sort((a, b) => (a.review < b.review ? -1 : a.review > b.review ? 1 : 0));
+}
+
+/** The one reminder line grill_decided can add. A count only: no titles in the chat line. */
+export function dueReminderLine(count) {
+  const n = Math.floor(Number(count) || 0);
+  if (n < 1) return "";
+  return `${n} earlier call${n === 1 ? " is" : "s are"} due for a look-back. Say "look back" when you're ready.`;
+}
+
+/** Whole days from a YYYY-MM-DD date to today (UTC). 0 on the day itself. */
+export function daysOverdue(review, now = Date.now()) {
+  const at = Date.parse(`${review}T00:00:00Z`);
+  const today = Date.parse(`${isoDay(now)}T00:00:00Z`);
+  if (!Number.isFinite(at)) return 0;
+  return Math.max(0, Math.round((today - at) / 86_400_000));
+}
+
+/** The calendar link's secret. 32 random bytes, base64url, 43 characters. Shown once, stored only as a hash. */
+export function newCalendarToken() {
+  return randomBytes(32).toString("base64url");
+}
+
+export function calendarTokenShape(token) {
+  return /^[A-Za-z0-9_-]{43}$/.test(String(token || ""));
+}
+
+export function calendarTokenHash(token) {
+  return createHash("sha256").update(String(token)).digest("hex");
+}
+
+export const CALENDAR_EVENT_TITLE = "Grill look-back due";
+
+/** RFC 5545 TEXT: escape backslash, semicolon, comma and line breaks. */
+function icsText(value) {
+  return String(value ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\r\n|\r|\n/g, "\\n");
+}
+
+/** RFC 5545 folding: lines longer than 75 octets continue on the next line after one space. */
+function icsFold(line) {
+  const bytes = Buffer.from(line, "utf8");
+  if (bytes.length <= 75) return line;
+  const out = [];
+  let chunk = "";
+  let size = 0;
+  for (const char of line) {
+    const width = Buffer.byteLength(char, "utf8");
+    const limit = out.length ? 74 : 75;
+    if (size + width > limit) {
+      out.push(chunk);
+      chunk = "";
+      size = 0;
+    }
+    chunk += char;
+    size += width;
+  }
+  out.push(chunk);
+  return out.join("\r\n ");
+}
+
+function icsDate(iso) {
+  return String(iso).replace(/-/g, "");
+}
+
+function icsStamp(ms) {
+  return new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+/**
+ * The private calendar feed: one all-day event per saved record that has a look-back date
+ * and no look-back yet. Titles appear only when the person switched them on. Nothing else
+ * from the record is written: no verdict, no prediction, no choice.
+ */
+export function calendarFeed({ rows = [], origin = "https://grillyour.ai", titles = false, now = Date.now() } = {}) {
+  const stamp = icsStamp(now);
+  const link = `${String(origin).replace(/\/$/, "")}/decisions`;
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Grill//Look-back reminders//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-CALNAME:Grill look-backs",
+    "X-PUBLISHED-TTL:PT6H",
+    "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
+  ];
+  const waiting = (rows || []).filter(
+    (row) => /^\d{4}-\d{2}-\d{2}$/.test(String(row?.review || "")) && !row.lookback?.happened && row.id,
+  );
+  for (const row of waiting) {
+    const end = new Date(Date.parse(`${row.review}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    const summary = titles && row.title ? `${CALENDAR_EVENT_TITLE}: ${row.title}` : CALENDAR_EVENT_TITLE;
+    const uid = `${String(row.id).replace(/[^A-Za-z0-9_-]/g, "")}@grillyour.ai`;
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:${uid}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${icsDate(row.review)}`,
+      `DTEND;VALUE=DATE:${icsDate(end)}`,
+      `SUMMARY:${icsText(summary)}`,
+      `DESCRIPTION:${icsText(`Say "look back" in your chat, or open ${link}`)}`,
+      `URL:${link}`,
+      "TRANSP:TRANSPARENT",
+      "BEGIN:VALARM",
+      "ACTION:DISPLAY",
+      `DESCRIPTION:${icsText(CALENDAR_EVENT_TITLE)}`,
+      "TRIGGER;RELATED=START:PT9H",
+      "END:VALARM",
+      "END:VEVENT",
+    );
+  }
+  lines.push("END:VCALENDAR");
+  return `${lines.map(icsFold).join("\r\n")}\r\n`;
 }

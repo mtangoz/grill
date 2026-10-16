@@ -460,6 +460,7 @@ describe("the endpoints", () => {
         { source: "/mcp", destination: "/api/hosted?__route=mcp" },
         { source: "/.well-known/oauth-protected-resource", destination: "/api/hosted?__route=prm" },
         { source: "/.well-known/oauth-protected-resource/:extra*", destination: "/api/hosted?__route=prm" },
+        { source: "/decisions/calendar/:link", destination: "/api/hosted?__route=calendar&t=:link" },
         { source: "/decisions", destination: "/api/hosted?__route=decisions" },
         { source: "/account", destination: "/api/hosted?__route=account" },
       ],
