@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -324,6 +324,21 @@ describe("the site build", () => {
     assert.ok(!readFileSync(join(ROOT, "site/contribute.html"), "utf8").includes(snippet));
     for (const f of ["server/index.mjs", "scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/build-extension.mjs"]) {
       assert.ok(!readFileSync(join(ROOT, f), "utf8").includes("_vercel/insights"), `${f} must not load website analytics`);
+    }
+  });
+
+  it("gives Google's favicon service an icon it accepts, and a way to find every page", () => {
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+    const head = readFileSync(join(ROOT, "_site/index.html"), "utf8").split("</head>")[0];
+    assert.match(head, /<link rel="icon" type="image\/png" sizes="192x192" href="\/brand\/icon-192\.png">/);
+    assert.ok(existsSync(join(ROOT, "_site/brand/icon-192.png")));
+    assert.ok(existsSync(join(ROOT, "_site/favicon.ico")));
+    const robots = readFileSync(join(ROOT, "_site/robots.txt"), "utf8");
+    assert.match(robots, /^User-agent: \*\nAllow: \/\n/);
+    assert.match(robots, /Sitemap: https:\/\/grillyour\.ai\/sitemap\.xml/);
+    const sitemap = readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8");
+    for (const path of ["", "terms/", "contribute/", "look-back/", "privacy/"]) {
+      assert.ok(sitemap.includes(`<loc>https://grillyour.ai/${path}</loc>`), `sitemap lists /${path}`);
     }
   });
 
