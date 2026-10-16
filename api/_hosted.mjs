@@ -2032,7 +2032,7 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
     const look = row.lookback?.happened ? `<p>Look-back: ${esc(row.lookback.happened)}</p>` : "<p>Look-back: not yet.</p>";
     const chain = chainNote(row, byId);
     return `<article class="banner">
-      <h2>${esc(row.title || "Untitled")}</h2>
+      <p class="record-title">${esc(row.title || "Untitled")}</p>
       <p>${esc(row.date || "")} · ${esc(row.verdict || "")} · ${esc(row.sourceApp || "unknown")} · review ${esc(row.review || "")}</p>
       ${chain ? `<p>${esc(chain)}</p>` : ""}
       ${look}

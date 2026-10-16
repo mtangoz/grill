@@ -397,6 +397,7 @@ const STYLE = `
   .mark { font-weight: 700; font-size: 1.1rem; text-decoration: none; }
   h1 { font-size: clamp(1.8rem, 5vw, 2.4rem); line-height: 1.12; letter-spacing: -0.02em; margin: 2.4rem 0 0.8rem; }
   h2 { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--quiet); margin: 2rem 0 0.7rem; }
+  .record-title { font-size: 1.15rem; font-weight: 650; letter-spacing: normal; text-transform: none; color: var(--ink); margin: 0 0 0.35rem; }
   p, li { color: var(--muted); }
   ol { padding-left: 1.25rem; } li { margin: 0.4rem 0; }
   .key { display: flex; gap: 8px; margin: 1.2rem 0; flex-wrap: wrap; }
