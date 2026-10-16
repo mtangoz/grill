@@ -2040,13 +2040,17 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
   const cards = [...linked].reverse().map((row) => {
     const look = row.lookback?.happened ? `<p>Look-back: ${esc(row.lookback.happened)}</p>` : "<p>Look-back: not yet.</p>";
     const chain = chainNote(row, byId);
+    const chained = Boolean(row.replacesId || row.replacedByIds?.length);
+    const chainForm = chained
+      ? `<form method="post" action="/decisions"><input type="hidden" name="action" value="delete-chain"><input type="hidden" name="id" value="${esc(row.id)}"><button type="submit">Delete this chain</button></form>`
+      : "";
     return `<article class="banner">
       <p class="record-title">${esc(row.title || "Untitled")}</p>
       <p>${esc(showDay(row.date))} · ${esc(row.verdict || "")} · ${esc(row.sourceApp || "unknown")} · review ${esc(showDay(row.review))}</p>
       ${chain ? `<p>${esc(chain)}</p>` : ""}
       ${look}
       <form method="post" action="/decisions"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="${esc(row.id)}"><button type="submit">Delete this record</button></form>
-      <form method="post" action="/decisions"><input type="hidden" name="action" value="delete-chain"><input type="hidden" name="id" value="${esc(row.id)}"><button type="submit">Delete this chain</button></form>
+      ${chainForm}
     </article>`;
   });
   const keeping = account.records === "keep";
