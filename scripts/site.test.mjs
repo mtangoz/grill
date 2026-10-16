@@ -367,6 +367,32 @@ describe("the site build", () => {
     assert.match(custom, /starter-amount">\$1\.25</);
   });
 
+  it("names the live commit in every public page footer when the deploy provides one, and nothing otherwise", () => {
+    const pages = ["index.html", "terms/index.html", "contribute/index.html", "look-back/index.html", "privacy/index.html", "miss/index.html"];
+    const build = (sha) => {
+      const env = { ...process.env, GRILL_MISS: "1" };
+      if (sha === undefined) delete env.VERCEL_GIT_COMMIT_SHA;
+      else env.VERCEL_GIT_COMMIT_SHA = sha;
+      execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env });
+      return pages.map((p) => [p, readFileSync(join(ROOT, "_site", p), "utf8")]);
+    };
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+    for (const [p, html] of build(sha)) {
+      assert.ok(
+        html.includes(`<span>Live commit <a href="https://github.com/mtangoz/grill/commit/${sha}">0123456</a> · Made at <a href="https://hold.quest">Hold</a>`),
+        `${p} names the live commit`,
+      );
+    }
+    // A local build, a short hash, or anything else that isn't a full commit adds nothing.
+    for (const value of [undefined, "", "0123456", `${sha}"><script>`, "not-a-commit"]) {
+      for (const [p, html] of build(value)) {
+        assert.doesNotMatch(html, /Live commit/, `${p} with ${JSON.stringify(value)}`);
+        assert.match(html, /<span>Made at <a href="https:\/\/hold\.quest">Hold<\/a>/, `${p} keeps its footer`);
+      }
+    }
+    assert.doesNotMatch(page, /Live commit/, "the artifact source never carries a commit");
+  });
+
   it("GRILL_PRO_NOTIFY=1 replaces the starter-key button with the launch-list form", () => {
     const build = (notify) => {
       const env = { ...process.env };

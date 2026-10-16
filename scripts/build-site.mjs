@@ -34,6 +34,19 @@ const OG_IMAGE = `${SITE_URL}brand/og-image.png`;
 // Claude artifact, and the Grill tool never loads this script.
 const ANALYTICS = analyticsSnippet(process.env);
 
+// The commit this deploy was built from. Vercel builds the site and the server functions from one
+// commit, so this is also the code a Grill account in chat runs. Every footer names it, linked to
+// the public source. A local build, or anything that isn't a full commit hash, shows nothing.
+const LIVE_COMMIT = /^[0-9a-f]{40}$/.test(process.env.VERCEL_GIT_COMMIT_SHA ?? "") ? process.env.VERCEL_GIT_COMMIT_SHA : "";
+const MADE_AT = '<span>Made at <a href="https://hold.quest">Hold</a>';
+const withLiveCommit = (body) =>
+  LIVE_COMMIT
+    ? body.replace(
+        MADE_AT,
+        `<span>Live commit <a href="https://github.com/mtangoz/grill/commit/${LIVE_COMMIT}">${LIVE_COMMIT.slice(0, 7)}</a> · Made at <a href="https://hold.quest">Hold</a>`,
+      )
+    : body;
+
 const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
 const headFor = ({ description, url }) => [
   '<meta charset="utf-8">',
@@ -64,7 +77,7 @@ if (cut === -1) throw new Error("site/page.html must open with its <title>, link
 const pageHead = page.slice(0, cut + "</style>".length);
 const pageBody = page.slice(cut + "</style>".length);
 const doc = (head, title, body) =>
-  `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${body}\n${ANALYTICS}\n</body>\n</html>\n`;
+  `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${withLiveCommit(body)}\n${ANALYTICS}\n</body>\n</html>\n`;
 
 // The offer, the paywall and the launch-list form are build-time switches.
 // GRILL_PRO_COUPON set means 50% off is on the page. GRILL_PRO_BILLING=subscription shows
