@@ -37,6 +37,12 @@ const COMMITMENTS = [
   { id: "core-yours", file: "scripts/judgeCore.mjs", anchor: "Your call" },
   { id: "default-chain", file: "scripts/judgeCore.mjs", anchor: 'export const DEFAULT_CHAIN = "openrouter/auto";' },
   { id: "changelog-checked", file: "CHANGELOG.md", anchor: "Checked for you" },
+  { id: "ux-one-job", file: "docs/UX.md", anchor: "Each page has one job." },
+  { id: "ux-order", file: "docs/UX.md", anchor: "Settings do not sit above the thing the page is for." },
+  { id: "ux-confirm", file: "docs/UX.md", anchor: "Danger sits behind a confirm page." },
+  { id: "ux-no-script", file: "docs/UX.md", anchor: "The pages run no JavaScript." },
+  { id: "ux-title", file: "docs/UX.md", anchor: "iPhone launch" },
+  { id: "ux-redirect", file: "docs/UX.md", anchor: "answers 303" },
 ];
 
 /** { file, phrase } — phrase must be absent from file. */
@@ -66,37 +72,37 @@ describe("public commitments", () => {
       );
     }
 
-    const principlesPath = join(ROOT, "docs/PRINCIPLES.md");
-    const principles = readFileSync(principlesPath, "utf8");
-    const docsDir = dirname(principlesPath);
     const linkRe = /\[[^\]]*\]\(([^)\s]+)\)/g;
-    const links = [...principles.matchAll(linkRe)].map((m) => m[1]);
-    assert.ok(links.length > 0, "docs/PRINCIPLES.md has no markdown links");
-    for (const raw of links) {
-      if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) continue;
-      const href = decodeURIComponent(raw.split("#")[0]);
-      if (href === "") continue;
-      const target = normalize(join(docsDir, href));
-      let fileOk = false;
-      try {
-        fileOk = statSync(target).isFile();
-      } catch {
-        fileOk = false;
-      }
-      assert.ok(fileOk, `relative link ${raw} does not resolve to a file (${target})`);
-    }
-
     const citeRe = /"([^"]+)"\s+in\s+\[(scripts\/[^\]\s]+\.test\.mjs)\]/g;
-    const enforced = principles.split("\n").filter((line) => line.trimStart().startsWith("Enforced by:"));
-    assert.ok(enforced.length > 0, "docs/PRINCIPLES.md has no Enforced by line");
-    const cites = [];
-    for (const line of enforced) {
-      for (const match of line.matchAll(citeRe)) cites.push({ name: match[1], file: match[2] });
-    }
-    assert.ok(cites.length > 0, "no test is cited on an Enforced by line");
-    for (const { name, file } of cites) {
-      const body = read(file);
-      assert.ok(body.includes(name), `${file} has no test named ${JSON.stringify(name)}`);
+    for (const doc of ["docs/PRINCIPLES.md", "docs/UX.md"]) {
+      const text = read(doc);
+      const docsDir = dirname(join(ROOT, doc));
+      const links = [...text.matchAll(linkRe)].map((m) => m[1]);
+      assert.ok(links.length > 0, `${doc} has no markdown links`);
+      for (const raw of links) {
+        if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) continue;
+        const href = decodeURIComponent(raw.split("#")[0]);
+        if (href === "") continue;
+        const target = normalize(join(docsDir, href));
+        let fileOk = false;
+        try {
+          fileOk = statSync(target).isFile();
+        } catch {
+          fileOk = false;
+        }
+        assert.ok(fileOk, `relative link ${raw} does not resolve to a file (${target})`);
+      }
+      const enforced = text.split("\n").filter((line) => line.trimStart().startsWith("Enforced by:"));
+      assert.ok(enforced.length > 0, `${doc} has no Enforced by line`);
+      const cites = [];
+      for (const line of enforced) {
+        for (const match of line.matchAll(citeRe)) cites.push({ name: match[1], file: match[2] });
+      }
+      assert.ok(cites.length > 0, `${doc} cites no test on an Enforced by line`);
+      for (const { name, file } of cites) {
+        const body = read(file);
+        assert.ok(body.includes(name), `${file} has no test named ${JSON.stringify(name)}`);
+      }
     }
   });
 });

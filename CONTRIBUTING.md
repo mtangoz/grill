@@ -60,4 +60,4 @@ The public site is `site/page.html`. The other pages are `site/terms.html`, `sit
 
 How Grill improves without reading a real decision: [LEARNING.md](LEARNING.md).
 
-What we will and won't do, and how we build: [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
+What we will and won't do, and how we build: [docs/PRINCIPLES.md](docs/PRINCIPLES.md). How a page a person sees is built: [docs/UX.md](docs/UX.md).
