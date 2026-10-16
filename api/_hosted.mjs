@@ -6,7 +6,8 @@
  * the one that wrote the write-up, not whichever chat the person is sitting in.
  *
  * Request and response bodies are not logged. Errors return a fixed sentence and a
- * request id.
+ * request id. A rejected bearer on /mcp logs the reason and public claims only:
+ * never the token, and never an email.
  */
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -348,9 +349,56 @@ async function loadJwks(url, fetchImpl) {
   return keys;
 }
 
+function blankAuthClaims() {
+  return { iss: "", aud: "", azp: "", client_id: "", exp: null, expired: false };
+}
+
+/**
+ * Claims that may be written when a bearer is rejected. The 60 second leeway
+ * matches the check below. Email, subject and every other claim are left out.
+ */
+function jwtPublicClaims(payload) {
+  const body = payload && typeof payload === "object" ? payload : {};
+  const exp = typeof body.exp === "number" ? body.exp : null;
+  const now = Math.floor(Date.now() / 1000);
+  let aud = "";
+  if (typeof body.aud === "string") aud = body.aud;
+  else if (Array.isArray(body.aud)) aud = body.aud.filter((item) => typeof item === "string");
+  return {
+    iss: typeof body.iss === "string" ? body.iss : "",
+    aud,
+    azp: typeof body.azp === "string" ? body.azp : "",
+    client_id: typeof body.client_id === "string" ? body.client_id : "",
+    exp,
+    expired: exp === null || exp + 60 < now,
+  };
+}
+
+function authRejectLog(request, reason, claims) {
+  const safe = claims || blankAuthClaims();
+  const ua = String(request.headers.get("user-agent") || "").replace(/[\r\n]+/g, " ").slice(0, 300);
+  return `[grill-hosted] auth-reject ${JSON.stringify({
+    reason,
+    iss: safe.iss,
+    aud: safe.aud,
+    azp: safe.azp,
+    client_id: safe.client_id,
+    exp: safe.exp,
+    expired: safe.expired === true,
+    user_agent: ua,
+  })}`;
+}
+
+/** One warning line for a presented bearer that did not verify. */
+function logBearerReject(request, reason, claims) {
+  const text = authRejectLog(request, reason, claims);
+  console.warn(text);
+}
+
 async function verifyJwt(token, { issuer, jwksUrl, resource, fetchImpl, requireAudience }) {
+  const fail = (reason, claims) => ({ reason, claims: claims || blankAuthClaims() });
   const parts = String(token || "").split(".");
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3) return fail("malformed");
   const [h64, p64, s64] = parts;
   let header;
   let payload;
@@ -358,27 +406,32 @@ async function verifyJwt(token, { issuer, jwksUrl, resource, fetchImpl, requireA
     header = JSON.parse(Buffer.from(h64, "base64url").toString("utf8"));
     payload = JSON.parse(Buffer.from(p64, "base64url").toString("utf8"));
   } catch {
-    return null;
+    return fail("malformed");
   }
-  if (header.alg !== "RS256" || !header.kid) return null;
+  const claims = jwtPublicClaims(payload);
+  if (header.alg !== "RS256" || !header.kid) return fail("alg", claims);
   const keys = await loadJwks(jwksUrl, fetchImpl);
   const jwk = keys.find((key) => key.kid === header.kid) || null;
-  if (!jwk) return null;
+  if (!jwk) return fail("kid", claims);
   const cryptoKey = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
   const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", cryptoKey, Buffer.from(s64, "base64url"), Buffer.from(`${h64}.${p64}`));
-  if (!ok) return null;
+  if (!ok) return fail("signature", claims);
   const iss = String(payload.iss || "").replace(/\/$/, "");
   const want = String(issuer || "").replace(/\/$/, "");
-  if (!want || iss !== want) return null;
+  if (!want || iss !== want) return fail("issuer", claims);
   const now = Math.floor(Date.now() / 1000);
-  if (typeof payload.exp !== "number" || payload.exp + 60 < now) return null;
-  if (typeof payload.nbf === "number" && payload.nbf - 60 > now) return null;
-  if (typeof payload.sub !== "string" || !payload.sub) return null;
+  if (typeof payload.exp !== "number" || payload.exp + 60 < now) {
+    claims.expired = true;
+    return fail("expired", claims);
+  }
+  claims.expired = false;
+  if (typeof payload.nbf === "number" && payload.nbf - 60 > now) return fail("nbf", claims);
+  if (typeof payload.sub !== "string" || !payload.sub) return fail("sub", claims);
   if (requireAudience) {
     const aud = Array.isArray(payload.aud) ? payload.aud : typeof payload.aud === "string" ? [payload.aud] : [];
-    if (!aud.includes(resource)) return null;
+    if (!aud.includes(resource)) return fail("audience", claims);
   }
-  return payload;
+  return { payload };
 }
 
 function jwksUrl(env) {
@@ -1361,15 +1414,18 @@ async function identity(request, deps, { audience }) {
   if (!token) return { error: audience ? unauthorized(origin) : null, missing: true };
   const url = jwksUrl(deps.env);
   if (!url || !deps.env.CLERK_ISSUER) throw new Coded("clerk");
-  const payload = await verifyJwt(token, {
+  const checked = await verifyJwt(token, {
     issuer: deps.env.CLERK_ISSUER,
     jwksUrl: url,
     resource: mcpResource(origin),
     fetchImpl: deps.fetch,
     requireAudience: audience,
   });
-  if (!payload) return { error: audience ? unauthorized(origin) : null, missing: true };
-  return { payload, origin };
+  if (!checked.payload) {
+    if (audience) logBearerReject(request, checked.reason, checked.claims);
+    return { error: audience ? unauthorized(origin) : null, missing: true };
+  }
+  return { payload: checked.payload, origin };
 }
 
 function sseWanted(request) {
