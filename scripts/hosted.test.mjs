@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { activeKeys, activeMember, describeError, handleAccount, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
+import { activeKeys, activeMember, describeError, handleAccount, handleCalendar, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import {
   CLAUDE_CODE_CLIENT_ID,
@@ -1511,7 +1511,9 @@ describe("hosted mappings and ledger pins", () => {
     assert.ok(apiFns.length <= 12, apiFns.join(", "));
     const hosted = readFileSync(join(ROOT, "api/_hosted.mjs"), "utf8");
     const urls = [...hosted.matchAll(/https?:\/\/[^\s"'`]+/g)].map((match) => match[0]);
-    assert.deepEqual(urls, ["https://api.clerk.com", "https://auth.agentid.com/v0/userinfo"]);
+    // The Google Calendar address is a subscribe link on the page for the person to click. The server never fetches it.
+    assert.deepEqual(urls, ["https://api.clerk.com", "https://auth.agentid.com/v0/userinfo", "https://calendar.google.com/calendar/r"]);
+    assert.doesNotMatch(hosted, /fetch\([^)]*GOOGLE_CALENDAR_SUBSCRIBE/);
     const childEnv = hosted.slice(hosted.indexOf("function judgeChildEnv"), hosted.indexOf("function startJudge"));
     assert.doesNotMatch(childEnv, /JUDGE_MODEL/);
     assert.match(hosted, /OPENROUTER_API_KEY: apiKey/);
@@ -1523,6 +1525,7 @@ describe("hosted mappings and ledger pins", () => {
     const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
     assert.match(ledger, /15 minutes/);
     assert.match(ledger, /never logged or stored/);
+    assert.match(ledger, /Calendar link/);
     const principles = readFileSync(join(ROOT, "docs/PRINCIPLES.md"), "utf8");
     assert.match(principles, /passes through Grill's server in memory/);
   });
@@ -1715,3 +1718,128 @@ describe("hosted Grill: spending caps, open sign-up, races and plain errors", ()
     assert.ok(line.length < 220);
   });
 });
+
+describe("look-back reminders", { concurrency: false }, () => {
+  beforeEach(() => resetHostedCaches());
+
+  const JAN = Date.parse("2026-01-01T15:00:00Z");
+  const FEB = Date.parse("2026-02-01T15:00:00Z");
+  const call = (id, name, args) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
+  const session = () => signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 });
+  const page = async (ctx, handler, path, { now, body } = {}) => {
+    const headers = { cookie: `__session=${session()}` };
+    if (body) headers["content-type"] = "application/x-www-form-urlencoded";
+    const res = await handler(new Request(`https://grillyour.ai${path}`, body ? { method: "POST", headers, body } : { headers }), { ...ctx, now });
+    return res.text();
+  };
+  const feed = (ctx, url, now = FEB) => handleCalendar(new Request(url), { ...ctx, now });
+  const linkIn = (html) => html.match(/https:\/\/grillyour\.ai\/decisions\/calendar\/([A-Za-z0-9_-]{43})\.ics/)?.[1] || "";
+
+  async function decide(ctx, fake, token, title, now) {
+    const deps = { ...judgeDeps(fake), now };
+    const grilled = await postMcp(ctx, call(1, "grill", { subject: `Decision: ${title}\nI'm 60% sure.`, keep_records: true, quality_check: false }), { token, deps });
+    assert.equal(grilled.json.result.isError, false, textOf(grilled.json));
+    return textOf((await postMcp(ctx, call(2, "grill_decided", { decided: `Go with ${title}.` }), { token, deps })).json);
+  }
+
+  it("reminds once a day in chat, lists what is due, and serves a private calendar link", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const first = await decide(ctx, fake, token, "Hire contractor", JAN);
+      assert.equal(first, "Saved. Look-back 15 Jan.");
+
+      // A month later the first call is overdue. The next choice says so once, as a count with no title.
+      const second = await decide(ctx, fake, token, "Move office", FEB);
+      assert.equal(second, 'Saved. Look-back 15 Feb.\n1 earlier call is due for a look-back. Say "look back" when you\'re ready.');
+      const third = await decide(ctx, fake, token, "Cut prices", FEB);
+      assert.equal(third, "Saved. Look-back 15 Feb.");
+
+      // The due list names only what waits for a look-back.
+      let html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
+      assert.match(html, /Due for a look-back/);
+      assert.match(html, /Hire contractor · review 2026-01-15 · 17 days overdue/);
+      assert.doesNotMatch(html, /<li>Move office/);
+      assert.match(html, /Get a calendar link/);
+
+      // Off by default: there is no link to fetch.
+      assert.equal((await feed(ctx, `https://grillyour.ai/decisions/calendar/${"a".repeat(43)}.ics`)).status, 404);
+
+      html = await page(ctx, handleDecisions, "/decisions", { now: FEB, body: "action=calendar&value=on" });
+      const link = linkIn(html);
+      assert.ok(link, "the new link is shown once");
+      assert.match(html, /shown only once/);
+      assert.match(html, /webcal:\/\/grillyour\.ai\/decisions\/calendar\//);
+      // Stored only as a hash.
+      assert.ok(!ctx.writes.some((args) => args.join(" ").includes(link)));
+      assert.equal(linkIn(await page(ctx, handleDecisions, "/decisions", { now: FEB })), "");
+
+      let res = await feed(ctx, `https://grillyour.ai/decisions/calendar/${link}.ics`);
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get("content-type"), /^text\/calendar/);
+      assert.match(res.headers.get("cache-control"), /no-store/);
+      let ics = await res.text();
+      assert.match(ics, /^BEGIN:VCALENDAR\r\n/);
+      assert.equal(ics.match(/BEGIN:VEVENT/g).length, 3);
+      assert.match(ics, /DTSTART;VALUE=DATE:20260115/);
+      assert.match(ics, /SUMMARY:Grill look-back due\r\n/);
+      for (const word of ["Hire contractor", "Move office", "Cut prices", "Go with", "60%"]) assert.ok(!ics.includes(word), word);
+      // The rewrite form: the link arrives as a query parameter.
+      assert.equal((await feed(ctx, `https://grillyour.ai/decisions/calendar?t=${link}.ics`)).status, 200);
+
+      // Titles only when switched on, and the link stays the same.
+      await page(ctx, handleAccount, "/account", { body: "action=calendar&value=titles-on" });
+      ics = await (await feed(ctx, `https://grillyour.ai/decisions/calendar/${link}.ics`)).text();
+      assert.match(ics, /SUMMARY:Grill look-back due: Hire contractor/);
+
+      // A look-back takes the call out of the feed, and out of the next "look back".
+      const look = await postMcp(ctx, call(3, "grill_look_back", { happened: "came_true: yes\nhappened: The contractor shipped." }), { token, deps: { now: FEB } });
+      assert.match(textOf(look.json), /Saved with your decision record/);
+      ics = await (await feed(ctx, `https://grillyour.ai/decisions/calendar/${link}.ics`)).text();
+      assert.equal(ics.match(/BEGIN:VEVENT/g).length, 2);
+      assert.ok(!ics.includes("Hire contractor"));
+      const again = await postMcp(ctx, call(4, "grill_look_back", {}), { token, deps: { now: FEB } });
+      assert.match(textOf(again.json), /No saved decision is due/);
+      assert.doesNotMatch(await page(ctx, handleDecisions, "/decisions", { now: FEB }), /Due for a look-back/);
+
+      // Reset: the old link stops working, the new one keeps the titles choice.
+      html = await page(ctx, handleAccount, "/account", { body: "action=calendar&value=reset" });
+      const next = linkIn(html);
+      assert.ok(next && next !== link);
+      assert.equal((await feed(ctx, `https://grillyour.ai/decisions/calendar/${link}.ics`)).status, 404);
+      assert.match(await (await feed(ctx, `https://grillyour.ai/decisions/calendar/${next}.ics`)).text(), /Move office/);
+
+      // Off.
+      await page(ctx, handleDecisions, "/decisions", { body: "action=calendar&value=off" });
+      assert.equal((await feed(ctx, `https://grillyour.ai/decisions/calendar/${next}.ics`)).status, 404);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("deleting the account revokes the calendar link", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN);
+      const link = linkIn(await page(ctx, handleAccount, "/account", { body: "action=calendar&value=on" }));
+      assert.equal((await feed(ctx, `https://grillyour.ai/decisions/calendar/${link}.ics`)).status, 200);
+      await page(ctx, handleAccount, "/account", { body: "action=delete-account&confirm=delete" });
+      assert.equal((await feed(ctx, `https://grillyour.ai/decisions/calendar/${link}.ics`)).status, 404);
+      assert.ok(!ctx.memory.command(["GET", `grill:hosted:calfeed:${createHash("sha256").update(link).digest("hex")}`]));
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("answers 404 for a malformed link, and for every link while hosted is off", async () => {
+    const ctx = world();
+    assert.equal((await feed(ctx, "https://grillyour.ai/decisions/calendar/short.ics")).status, 404);
+    ctx.env.GRILL_HOSTED = "off";
+    assert.equal((await feed(ctx, `https://grillyour.ai/decisions/calendar/${"a".repeat(43)}.ics`)).status, 404);
+    assert.equal((await handleCalendar(new Request(`https://grillyour.ai/decisions/calendar/${"a".repeat(43)}.ics`, { method: "POST" }), ctx)).status, 404);
+  });
+});
+

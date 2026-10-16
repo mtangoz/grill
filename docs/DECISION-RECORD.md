@@ -91,4 +91,4 @@ The text of a version 1 block is the whole record. These can be added later by k
 - **A reminder on the review date.** Read `review`. The date is already in the block.
 - **A monthly look-back.** Read the version 1 blocks from that month and run the same look-back. The reply stays a separate note.
 
-Grill does none of those today. A free grill stores nothing, needs no account, and sends the block nowhere.
+A free grill does none of those. It stores nothing, needs no account, and sends the block nowhere. In-chat Grill does the first two for people who keep records: it saves the block unchanged, and it reads `review` for the due list on `/decisions`, a once-a-day line in chat, and an optional calendar link ([HOSTED.md](HOSTED.md)).
