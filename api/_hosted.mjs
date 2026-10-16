@@ -877,7 +877,11 @@ async function calendarTitles(account, deps, titles) {
 
 /** Form actions shared by /decisions and /account. Returns a fresh link token when one was made. */
 async function calendarAction(account, deps, value) {
-  if (value === "on") return calendarOn(account, deps, false);
+  if (value === "on") {
+    const state = await calendarState(account, deps);
+    if (state.on) return "";
+    return calendarOn(account, deps, false);
+  }
   if (value === "reset") {
     const state = await calendarState(account, deps);
     return calendarOn(account, deps, state.titles);
@@ -1473,6 +1477,8 @@ async function clerkCookieIdentity(request, deps) {
 // back with a one-time nonce that the server trades for the session cookie. This is the
 // same exchange Clerk's own server SDK does (format "nonce").
 const PAGE_COOKIE = "__Host-grill_page";
+const FLASH_COOKIE = "__Host-grill_flash";
+const FLASH_SECONDS = 120;
 const HANDSHAKE_STATE_COOKIE = "__Host-grill_hs";
 const HANDSHAKE_MARK = "__grill_hs";
 const PAGE_SESSION_SECONDS = 12 * 60 * 60;
@@ -1512,6 +1518,31 @@ function readPageCookie(value, env, now) {
 
 function pageCookieHeader(value, maxAge = PAGE_SESSION_SECONDS) {
   return `${PAGE_COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+}
+
+/** The new calendar link, carried to the next GET and then forgotten. Not stored on the server. */
+function flashCookieHeader(value, maxAge = FLASH_SECONDS) {
+  return `${FLASH_COOKIE}=${value ? encodeURIComponent(value) : ""}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+}
+
+function readFlashLink(request) {
+  const value = cookieValue(request.headers.get("cookie"), FLASH_COOKIE);
+  if (!value) return "";
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return "";
+  }
+  if (url.origin !== publicOrigin(request)) return "";
+  if (!/^\/decisions\/calendar\/[A-Za-z0-9_-]{43}\.ics$/.test(url.pathname)) return "";
+  return url.toString();
+}
+
+function seeOther(location, cookies = []) {
+  const headers = new Headers({ Location: location, "Cache-Control": "no-store" });
+  for (const cookie of cookies) headers.append("Set-Cookie", cookie);
+  return new Response(null, { status: 303, headers });
 }
 
 /** The page path and query this request was for, on the public origin, without handshake leftovers. */
@@ -1898,6 +1929,12 @@ function html(status, body) {
   return new Response(body, { status, headers: WELCOME_HEADERS });
 }
 
+function htmlPage(body, { clearFlash = false } = {}) {
+  const res = html(200, body);
+  if (clearFlash) res.headers.append("Set-Cookie", flashCookieHeader("", 0));
+  return res;
+}
+
 function chainNote(row, byId) {
   const parts = [];
   if (row.replacesId && byId.get(row.replacesId)) {
@@ -2190,15 +2227,17 @@ export async function handleDecisions(request, deps) {
       } else if (action === "calendar") {
         fresh = await calendarAction(session.account, deps, form.get("value") || "");
       }
+      const cookies = fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), fresh))] : [];
+      return seeOther(`${publicOrigin(request)}/decisions`, cookies);
     }
+    const flashed = readFlashLink(request);
     const rows = await loadRecords(session.account, deps);
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
     const waiting = (await loadPendings(session.account, deps)).length;
     const now = typeof deps.now === "number" ? deps.now : Date.now();
     const habits = decisionHabits({ records: rows, waiting, now });
     const calendar = await calendarState(session.account, deps);
-    const freshUrl = fresh ? calendarUrl(publicOrigin(request), fresh) : "";
-    return html(200, renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl }));
+    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
@@ -2212,6 +2251,9 @@ export async function handleAccount(request, deps) {
   deps = { ...deps, requestId: id };
   if (!hostedEnabled(deps.env)) return notFound();
   if (request.method === "DELETE") return methodNotAllowed();
+  if (request.method === "GET" && pageUrl(request).searchParams.get("deleted") === "1") {
+    return html(200, page("Account deleted · Grill", "<h1>Your Grill account is deleted.</h1><p>The records and the model-router key are gone.</p>"));
+  }
   try {
     const session = await pageUser(request, deps);
     if (session.redirect) return session.redirect;
@@ -2231,15 +2273,15 @@ export async function handleAccount(request, deps) {
       }
       if (form.get("action") === "delete-account" && form.get("confirm") === "delete") {
         await deleteAccount(session.account, deps, session.sub);
-        const gone = html(200, page("Account deleted · Grill", "<h1>Your Grill account is deleted.</h1><p>The records and the model-router key are gone.</p>"));
-        gone.headers.append("Set-Cookie", pageCookieHeader("", 0));
-        return gone;
+        return seeOther(`${publicOrigin(request)}/account?deleted=1`, [pageCookieHeader("", 0)]);
       }
+      const cookies = fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), fresh))] : [];
+      return seeOther(`${publicOrigin(request)}/account`, cookies);
     }
+    const flashed = readFlashLink(request);
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
     const calendar = await calendarState(session.account, deps);
-    const freshUrl = fresh ? calendarUrl(publicOrigin(request), fresh) : "";
-    return html(200, renderAccount(session.account, credit, { calendar, freshUrl }));
+    return htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
