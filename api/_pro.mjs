@@ -402,7 +402,8 @@ const STYLE = `
   ol { padding-left: 1.25rem; } li { margin: 0.4rem 0; }
   .key { display: flex; gap: 8px; margin: 1.2rem 0; flex-wrap: wrap; }
   .key input { flex: 1 1 16rem; min-width: 0; font: 0.9rem var(--mono); padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--code-bg); color: var(--ink); }
-  button, .button { font: 600 0.95rem var(--sans); padding: 10px 18px; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); cursor: pointer; text-decoration: none; display: inline-block; }
+  button, .button { font: 600 0.95rem var(--sans); padding: 10px 18px; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); cursor: pointer; text-decoration: none; display: inline-block; box-sizing: border-box; min-height: 44px; }
+  input, select { box-sizing: border-box; min-height: 44px; }
   .small { font-size: 0.9rem; color: var(--quiet); }
   label { display: block; font-weight: 600; margin: 1rem 0 0.35rem; }
   input[type="email"], input[type="text"], textarea, select { width: 100%; box-sizing: border-box; font: 0.95rem var(--sans); padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: transparent; color: var(--ink); }

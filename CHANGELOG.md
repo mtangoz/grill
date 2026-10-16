@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Buttons and inputs on the pages are at least 44px tall, including the calendar-link field.
 - "Delete this chain" shows only on a record that replaces another, or was replaced. A record on its own has "Delete this record" only.
 - Dates on `/decisions` use the same day format as the chat ("15 Jan"), not an ISO date.
 - The pages for a deleted account, an invite-only email, a missed sign-in and a sign-in that isn't set up each link back to Grill.
