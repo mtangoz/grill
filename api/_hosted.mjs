@@ -104,11 +104,15 @@ const VERSION = "0.1.1";
 const jwksCache = new Map();
 const userCache = new Map();
 const creditCache = new Map();
+// Clerk's authorization-server documents, keyed by the upstream URL. Public metadata only.
+const authMetadataCache = new Map();
+export const AUTH_METADATA_CACHE_MS = 60_000;
 
 export function resetHostedCaches() {
   jwksCache.clear();
   userCache.clear();
   creditCache.clear();
+  authMetadataCache.clear();
 }
 
 class Coded extends Error {
@@ -1486,6 +1490,97 @@ export function describeError(error) {
     .replace(/[A-Za-z0-9+/_=-]{32,}/g, "<redacted>")
     .slice(0, 160);
   return `${error?.name || "Error"}/${error?.constructor?.name || "?"}: ${message}`;
+}
+
+const AUTH_METADATA_CORS = Object.freeze({
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+  "Access-Control-Allow-Headers": "*",
+});
+
+function authMetadataPreflight() {
+  return new Response(null, {
+    status: 204,
+    headers: { ...AUTH_METADATA_CORS, "Access-Control-Max-Age": "600", "Cache-Control": "no-store" },
+  });
+}
+
+function authMetadataMethodNotAllowed() {
+  return new Response("That request isn't supported.", {
+    status: 405,
+    headers: {
+      ...AUTH_METADATA_CORS,
+      Allow: "GET, HEAD, OPTIONS",
+      "Cache-Control": "no-store",
+      "Content-Type": "text/plain; charset=utf-8",
+    },
+  });
+}
+
+function authMetadataRedirect(location) {
+  return new Response(null, {
+    status: 302,
+    headers: { ...AUTH_METADATA_CORS, Location: location, "Cache-Control": "no-store" },
+  });
+}
+
+function authMetadataJson(body, method) {
+  return new Response(method === "HEAD" ? null : JSON.stringify(body), {
+    status: 200,
+    headers: {
+      ...AUTH_METADATA_CORS,
+      "Content-Type": "application/json",
+      "Cache-Control": `public, max-age=${AUTH_METADATA_CACHE_MS / 1000}`,
+    },
+  });
+}
+
+/**
+ * Which Clerk document to serve. Path insertion (`/mcp`) is how the client
+ * names our resource. It is not part of Clerk's issuer, so both the root
+ * and the /mcp form read the same upstream document.
+ */
+function authMetadataKind(request) {
+  return new URL(request.url).pathname.includes("openid-configuration") ? "openid-configuration" : "oauth-authorization-server";
+}
+
+/**
+ * Authorization-server metadata for older MCP clients that look it up on the
+ * connector host (RFC 8414 path insertion included) instead of only following
+ * authorization_servers on the protected-resource document. The body is Clerk's
+ * document at CLERK_ISSUER, returned as JSON with CORS, cached briefly. A failed
+ * read redirects to that same document. Protected-resource metadata is untouched.
+ */
+export async function handleAuthorizationServer(request, deps) {
+  if (!hostedEnabled(deps.env)) return notFound();
+  if (request.method === "OPTIONS") return authMetadataPreflight();
+  if (request.method !== "GET" && request.method !== "HEAD") return authMetadataMethodNotAllowed();
+  const issuer = String(deps.env.CLERK_ISSUER || "").trim().replace(/\/+$/, "");
+  if (!issuer) {
+    const id = requestId();
+    logHosted(id, "clerk-issuer");
+    return fixedError(id, 500, "clerk");
+  }
+  const upstream = `${issuer}/.well-known/${authMetadataKind(request)}`;
+  const now = typeof deps.now === "number" ? deps.now : Date.now();
+  const hit = authMetadataCache.get(upstream);
+  if (hit && now - hit.at < AUTH_METADATA_CACHE_MS) return authMetadataJson(hit.body, request.method);
+  let res;
+  try {
+    res = await deps.fetch(upstream, { headers: { accept: "application/json" }, redirect: "follow" });
+  } catch {
+    return authMetadataRedirect(upstream);
+  }
+  if (!res?.ok) return authMetadataRedirect(upstream);
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    return authMetadataRedirect(upstream);
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return authMetadataRedirect(upstream);
+  authMetadataCache.set(upstream, { at: now, body });
+  return authMetadataJson(body, request.method);
 }
 
 export async function handleProtectedResource(request, deps) {

@@ -1,5 +1,8 @@
-// Hosted endpoints (/mcp, /account, /decisions, /decisions/calendar/<link>, /.well-known/oauth-protected-resource). 404 unless GRILL_HOSTED=on.
-import { handleAccount, handleCalendar, handleDecisions, handleMcp, handleProtectedResource } from "./_hosted.mjs";
+// Hosted endpoints (/mcp, /account, /decisions, /decisions/calendar/<link>,
+// /.well-known/oauth-protected-resource, and Clerk's authorization-server
+// metadata at /.well-known/oauth-authorization-server and openid-configuration,
+// including the /mcp path-inserted forms). 404 unless GRILL_HOSTED=on.
+import { handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleMcp, handleProtectedResource } from "./_hosted.mjs";
 
 export const maxDuration = 300;
 
@@ -12,6 +15,8 @@ const PUBLIC_PATH = {
   calendar: "/decisions/calendar",
   decisions: "/decisions",
   prm: "/.well-known/oauth-protected-resource",
+  oauth: "/.well-known/oauth-authorization-server",
+  oidc: "/.well-known/openid-configuration",
   mcp: "/mcp",
 };
 
@@ -23,6 +28,8 @@ function pick(request) {
   if (r === "calendar" || p.startsWith("/decisions/calendar/")) return ["calendar", handleCalendar];
   if (r === "decisions" || p === "/decisions") return ["decisions", handleDecisions];
   if (r === "prm" || p.startsWith("/.well-known/oauth-protected-resource")) return ["prm", handleProtectedResource];
+  if (r === "oauth" || p.startsWith("/.well-known/oauth-authorization-server")) return ["oauth", handleAuthorizationServer];
+  if (r === "oidc" || p.startsWith("/.well-known/openid-configuration")) return ["oidc", handleAuthorizationServer];
   return ["mcp", handleMcp];
 }
 
@@ -44,3 +51,14 @@ export const GET = (request) => run(request);
 export const POST = (request) => run(request);
 export const DELETE = (request) => run(request);
 export const HEAD = (request) => run(request);
+
+// Preflight is only meaningful on the authorization-server documents. Other
+// routes keep answering 405, the same as when this function did not export OPTIONS.
+export function OPTIONS(request) {
+  const [route, handler] = pick(request);
+  if (route === "oauth" || route === "oidc") return handler(forHandler(request, route), deps());
+  return new Response("That request isn't supported.", {
+    status: 405,
+    headers: { Allow: "GET, POST, DELETE, HEAD", "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+  });
+}
