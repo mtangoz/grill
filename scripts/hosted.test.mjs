@@ -1000,7 +1000,7 @@ describe("hosted Grill", { concurrency: false }, () => {
       const html = await page.text();
       assert.match(html, /Hire contractor/);
       assert.match(html, /Hire in house/);
-      assert.match(html, /Replaces 2026-01-10 Hire contractor/);
+      assert.match(html, /Replaces 10 Jan Hire contractor/);
       assert.doesNotMatch(html, /flip-flop|consistency score/i);
       assert.match(html, /Your habits/);
       assert.match(html, /Grills you answered with a choice: 2\./);
@@ -2108,7 +2108,8 @@ describe("look-back reminders", { concurrency: false }, () => {
       // The due list names only what waits for a look-back.
       let html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
       assert.match(html, /Due for a look-back/);
-      assert.match(html, /Hire contractor · review 2026-01-15 · 17 days overdue/);
+      assert.match(html, /Hire contractor · review 15 Jan · 17 days overdue/);
+      assert.equal(html.includes("2026-01-15"), false);
       assert.doesNotMatch(html, /<li>Move office/);
       assert.match(html, /Get a calendar link/);
 

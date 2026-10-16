@@ -58,6 +58,7 @@ import {
   calendarTokenHash,
   calendarTokenShape,
   daysOverdue,
+  formatDay,
   dueForLookBack,
   dueReminderLine,
   newCalendarToken,
@@ -1939,15 +1940,19 @@ function htmlPage(body, { clearFlash = false } = {}) {
   return res;
 }
 
+function showDay(iso) {
+  return formatDay(iso) || String(iso || "");
+}
+
 function chainNote(row, byId) {
   const parts = [];
   if (row.replacesId && byId.get(row.replacesId)) {
     const prev = byId.get(row.replacesId);
-    parts.push(`Replaces ${prev.date} ${prev.title}.`);
+    parts.push(`Replaces ${showDay(prev.date)} ${prev.title}.`);
   }
   if (row.replacedByIds?.length) {
     const next = row.replacedByIds.map((id) => byId.get(id)).filter(Boolean);
-    if (next.length) parts.push(`Later call: ${next.map((item) => `${item.date} ${item.title}`).join("; ")}.`);
+    if (next.length) parts.push(`Later call: ${next.map((item) => `${showDay(item.date)} ${item.title}`).join("; ")}.`);
   }
   return parts.join(" ");
 }
@@ -1989,7 +1994,7 @@ function renderDue(rows, now) {
     .map((row) => {
       const late = daysOverdue(row.review, now);
       const when = late === 0 ? "due today" : `${late} day${late === 1 ? "" : "s"} overdue`;
-      return `<li>${esc(row.title || "Untitled")} · review ${esc(row.review)} · ${esc(when)}</li>`;
+      return `<li>${esc(row.title || "Untitled")} · review ${esc(showDay(row.review))} · ${esc(when)}</li>`;
     })
     .join("");
   return `<section class="banner">
@@ -2037,7 +2042,7 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
     const chain = chainNote(row, byId);
     return `<article class="banner">
       <p class="record-title">${esc(row.title || "Untitled")}</p>
-      <p>${esc(row.date || "")} · ${esc(row.verdict || "")} · ${esc(row.sourceApp || "unknown")} · review ${esc(row.review || "")}</p>
+      <p>${esc(showDay(row.date))} · ${esc(row.verdict || "")} · ${esc(row.sourceApp || "unknown")} · review ${esc(showDay(row.review))}</p>
       ${chain ? `<p>${esc(chain)}</p>` : ""}
       ${look}
       <form method="post" action="/decisions"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="${esc(row.id)}"><button type="submit">Delete this record</button></form>

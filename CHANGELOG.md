@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Dates on `/decisions` use the same day format as the chat ("15 Jan"), not an ISO date.
 - The pages for a deleted account, an invite-only email, a missed sign-in and a sign-in that isn't set up each link back to Grill.
 - The sign-in missed page and the sign-in-not-set-up page tell the person what to do, without naming the sign-in company's settings.
 - A long one-word title on a decisions card wraps instead of widening the page.
