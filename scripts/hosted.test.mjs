@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { activeKeys, activeMember, describeError, handleAccount, handleCalendar, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
+import { activeKeys, activeMember, AUTH_METADATA_CACHE_MS, describeError, handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import {
   CLAUDE_CODE_CLIENT_ID,
@@ -332,6 +332,8 @@ describe("hosted Grill", { concurrency: false }, () => {
     for (const call of [
       handleMcp(new Request(RESOURCE, { method: "POST", body: "{}" }), deps),
       handleProtectedResource(new Request("https://mcp.example/.well-known/oauth-protected-resource"), deps),
+      handleAuthorizationServer(new Request("https://mcp.example/.well-known/oauth-authorization-server"), deps),
+      handleAuthorizationServer(new Request("https://mcp.example/.well-known/openid-configuration/mcp"), deps),
       handleDecisions(new Request("https://grillyour.ai/decisions"), deps),
       handleAccount(new Request("https://grillyour.ai/account"), deps),
     ]) {
@@ -1400,11 +1402,17 @@ describe("one hosted function", () => {
   });
 
   it("dispatches /api/hosted by __route, and by the public path", async () => {
-    const saved = { hosted: process.env.GRILL_HOSTED, issuer: process.env.CLERK_ISSUER };
+    const saved = { hosted: process.env.GRILL_HOSTED, issuer: process.env.CLERK_ISSUER, fetch: globalThis.fetch };
     process.env.GRILL_HOSTED = "on";
     process.env.CLERK_ISSUER = "https://clerk.example.test";
+    const metadataFetches = [];
+    globalThis.fetch = async (url, init) => {
+      metadataFetches.push({ url: String(url), init });
+      const kind = String(url).endsWith("/openid-configuration") ? "openid-configuration" : "oauth-authorization-server";
+      return Response.json({ issuer: "https://clerk.example.test", kind });
+    };
     try {
-      const { GET, POST, DELETE } = await import("../api/hosted.js");
+      const { GET, POST, DELETE, OPTIONS } = await import("../api/hosted.js");
       const meta = await GET(new Request("https://mcp.example/api/hosted?__route=prm"));
       assert.equal(meta.status, 200);
       assert.equal((await meta.json()).resource, "https://mcp.example/mcp");
@@ -1429,15 +1437,206 @@ describe("one hosted function", () => {
       const unknown = await GET(new Request("https://mcp.example/api/hosted"));
       assert.equal(unknown.status, 401);
 
+      const oauth = await GET(new Request("https://grillyour.ai/api/hosted?__route=oauth"));
+      assert.equal(oauth.status, 200);
+      assert.equal(oauth.headers.get("access-control-allow-origin"), "*");
+      assert.deepEqual(await oauth.json(), { issuer: "https://clerk.example.test", kind: "oauth-authorization-server" });
+      assert.deepEqual(metadataFetches.map((call) => call.url), ["https://clerk.example.test/.well-known/oauth-authorization-server"]);
+
+      const oidc = await GET(new Request("https://grillyour.ai/.well-known/openid-configuration/mcp"));
+      assert.equal(oidc.status, 200);
+      assert.deepEqual(await oidc.json(), { issuer: "https://clerk.example.test", kind: "openid-configuration" });
+      assert.equal(metadataFetches.at(-1).url, "https://clerk.example.test/.well-known/openid-configuration");
+
+      const preflight = await OPTIONS(new Request("https://grillyour.ai/.well-known/oauth-authorization-server/mcp", { method: "OPTIONS" }));
+      assert.equal(preflight.status, 204);
+      assert.equal(preflight.headers.get("access-control-allow-origin"), "*");
+      const otherPreflight = await OPTIONS(new Request("https://grillyour.ai/account", { method: "OPTIONS" }));
+      assert.equal(otherPreflight.status, 405);
+
       process.env.GRILL_HOSTED = "";
       const off = await GET(new Request("https://grillyour.ai/account"));
       assert.equal(off.status, 404);
+      const metadataOff = await GET(new Request("https://grillyour.ai/.well-known/oauth-authorization-server"));
+      assert.equal(metadataOff.status, 404);
     } finally {
+      globalThis.fetch = saved.fetch;
       if (saved.hosted === undefined) delete process.env.GRILL_HOSTED;
       else process.env.GRILL_HOSTED = saved.hosted;
       if (saved.issuer === undefined) delete process.env.CLERK_ISSUER;
       else process.env.CLERK_ISSUER = saved.issuer;
     }
+  });
+});
+
+describe("authorization server metadata on the connector host", { concurrency: false }, () => {
+  beforeEach(() => resetHostedCaches());
+
+  const oauthDoc = {
+    issuer: "https://clerk.example.test",
+    authorization_endpoint: "https://clerk.example.test/oauth/authorize",
+    token_endpoint: "https://clerk.example.test/oauth/token",
+    registration_endpoint: "https://clerk.example.test/oauth/register",
+    code_challenge_methods_supported: ["S256"],
+  };
+  const oidcDoc = {
+    issuer: "https://clerk.example.test",
+    authorization_endpoint: "https://clerk.example.test/oauth/authorize",
+    userinfo_endpoint: "https://clerk.example.test/oauth/userinfo",
+    jwks_uri: "https://clerk.example.test/.well-known/jwks.json",
+  };
+  const paths = [
+    ["https://grillyour.ai/.well-known/oauth-authorization-server", "https://clerk.example.test/.well-known/oauth-authorization-server", oauthDoc],
+    ["https://grillyour.ai/.well-known/oauth-authorization-server/mcp", "https://clerk.example.test/.well-known/oauth-authorization-server", oauthDoc],
+    ["https://grillyour.ai/.well-known/openid-configuration", "https://clerk.example.test/.well-known/openid-configuration", oidcDoc],
+    ["https://grillyour.ai/.well-known/openid-configuration/mcp", "https://clerk.example.test/.well-known/openid-configuration", oidcDoc],
+  ];
+
+  function scripted(env = baseEnv()) {
+    const calls = [];
+    const deps = {
+      env,
+      now: 1_700_000_000_000,
+      calls,
+      fetch: async (url, init = {}) => {
+        calls.push({ url: String(url), init });
+        if (url === "https://clerk.example.test/.well-known/oauth-authorization-server") return Response.json(oauthDoc);
+        if (url === "https://clerk.example.test/.well-known/openid-configuration") return Response.json(oidcDoc);
+        throw new Error(`unexpected fetch ${url}`);
+      },
+    };
+    return deps;
+  }
+
+  it("serves Clerk's documents as JSON with CORS, and does not rewrite them", async () => {
+    const deps = scripted();
+    for (const [path, upstream, doc] of paths) {
+      resetHostedCaches();
+      deps.calls.length = 0;
+      const res = await handleAuthorizationServer(new Request(path, { headers: { authorization: "Bearer secret-token", cookie: "sid=secret" } }), deps);
+      assert.equal(res.status, 200, path);
+      assert.equal(res.headers.get("content-type"), "application/json", path);
+      assert.equal(res.headers.get("access-control-allow-origin"), "*", path);
+      assert.equal(res.headers.get("cache-control"), "public, max-age=60", path);
+      assert.deepEqual(await res.json(), doc, path);
+      assert.equal(deps.calls.length, 1, path);
+      assert.equal(deps.calls[0].url, upstream, path);
+      assert.equal(deps.calls[0].init.redirect, "follow", path);
+      assert.deepEqual(deps.calls[0].init.headers, { accept: "application/json" }, path);
+      assert.equal(JSON.stringify(deps.calls[0].init).includes("secret"), false, path);
+    }
+
+    const prm = await handleProtectedResource(new Request("https://grillyour.ai/.well-known/oauth-protected-resource/mcp"), deps);
+    assert.equal(prm.status, 200);
+    assert.equal(prm.headers.get("access-control-allow-origin"), null);
+    assert.equal(prm.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await prm.json(), {
+      resource: "https://grillyour.ai/mcp",
+      authorization_servers: ["https://clerk.example.test"],
+      scopes_supported: ["openid", "profile", "email"],
+      bearer_methods_supported: ["header"],
+    });
+    assert.equal(deps.calls.length, 1);
+  });
+
+  it("caches a good read briefly, shares the /mcp form with the root, and refetches after the window", async () => {
+    const deps = scripted();
+    const root = "https://grillyour.ai/.well-known/oauth-authorization-server";
+    const inserted = "https://grillyour.ai/.well-known/oauth-authorization-server/mcp";
+    const first = await handleAuthorizationServer(new Request(root), deps);
+    assert.equal(first.status, 200);
+    assert.equal(deps.calls.length, 1);
+    const again = await handleAuthorizationServer(new Request(inserted), deps);
+    assert.deepEqual(await again.json(), oauthDoc);
+    assert.equal(deps.calls.length, 1);
+
+    const head = await handleAuthorizationServer(new Request(root, { method: "HEAD" }), deps);
+    assert.equal(head.status, 200);
+    assert.equal(await head.text(), "");
+    assert.equal(head.headers.get("access-control-allow-origin"), "*");
+    assert.equal(head.headers.get("content-type"), "application/json");
+    assert.equal(deps.calls.length, 1);
+
+    deps.now += AUTH_METADATA_CACHE_MS - 1;
+    await handleAuthorizationServer(new Request(root), deps);
+    assert.equal(deps.calls.length, 1);
+    deps.now += 1;
+    const expired = await handleAuthorizationServer(new Request(root), deps);
+    assert.equal(expired.status, 200);
+    assert.equal(deps.calls.length, 2);
+
+    const oidc = await handleAuthorizationServer(new Request("https://grillyour.ai/.well-known/openid-configuration/mcp"), deps);
+    assert.deepEqual(await oidc.json(), oidcDoc);
+    assert.equal(deps.calls.at(-1).url, "https://clerk.example.test/.well-known/openid-configuration");
+    assert.equal(deps.calls.length, 3);
+
+    deps.env = { ...deps.env, CLERK_ISSUER: "https://clerk.example.test/" };
+    resetHostedCaches();
+    deps.calls.length = 0;
+    const slash = await handleAuthorizationServer(new Request(inserted), deps);
+    assert.equal(slash.status, 200);
+    assert.equal(deps.calls[0].url, "https://clerk.example.test/.well-known/oauth-authorization-server");
+  });
+
+  it("redirects when Clerk cannot be read, and does not cache the miss", async () => {
+    const cases = [
+      ["status", async () => new Response("missing", { status: 404 })],
+      ["throw", async () => { throw new Error("network"); }],
+      ["text", async () => new Response("nope", { status: 200, headers: { "content-type": "text/plain" } })],
+      ["array", async () => Response.json(["not", "a document"])],
+    ];
+    for (const [label, fetchImpl] of cases) {
+      resetHostedCaches();
+      const calls = [];
+      const deps = {
+        env: baseEnv(),
+        now: 1_700_000_000_000,
+        fetch: async (url, init) => {
+          calls.push(String(url));
+          return fetchImpl(url, init);
+        },
+      };
+      const path = "https://grillyour.ai/.well-known/oauth-authorization-server/mcp";
+      const res = await handleAuthorizationServer(new Request(path), deps);
+      assert.equal(res.status, 302, label);
+      assert.equal(res.headers.get("location"), "https://clerk.example.test/.well-known/oauth-authorization-server", label);
+      assert.equal(res.headers.get("access-control-allow-origin"), "*", label);
+      assert.equal(res.headers.get("cache-control"), "no-store", label);
+      deps.fetch = async () => Response.json(oauthDoc);
+      const next = await handleAuthorizationServer(new Request(path), deps);
+      assert.equal(next.status, 200, label);
+      assert.deepEqual(await next.json(), oauthDoc, label);
+      assert.equal(calls.length, 1, label);
+    }
+  });
+
+  it("answers a preflight, refuses other methods, and does not fetch without an issuer", async () => {
+    const deps = scripted();
+    const path = "https://grillyour.ai/.well-known/openid-configuration";
+    const preflight = await handleAuthorizationServer(new Request(path, { method: "OPTIONS" }), deps);
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get("access-control-allow-origin"), "*");
+    assert.equal(preflight.headers.get("access-control-allow-methods"), "GET, HEAD, OPTIONS");
+    assert.equal(deps.calls.length, 0);
+
+    for (const method of ["POST", "DELETE"]) {
+      const res = await handleAuthorizationServer(new Request(path, { method }), deps);
+      assert.equal(res.status, 405, method);
+      assert.equal(res.headers.get("allow"), "GET, HEAD, OPTIONS", method);
+      assert.equal(res.headers.get("access-control-allow-origin"), "*", method);
+    }
+    assert.equal(deps.calls.length, 0);
+
+    const missing = scripted({ ...baseEnv(), CLERK_ISSUER: "  " });
+    const broken = await handleAuthorizationServer(new Request(path), missing);
+    assert.equal(broken.status, 500);
+    assert.match(await broken.text(), /sign-in/);
+    assert.equal(missing.calls.length, 0);
+
+    const off = scripted({ ...baseEnv(), GRILL_HOSTED: "" });
+    const dark = await handleAuthorizationServer(new Request(path, { method: "OPTIONS" }), off);
+    assert.equal(dark.status, 404);
+    assert.equal(off.calls.length, 0);
   });
 });
 

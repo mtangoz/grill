@@ -25,7 +25,7 @@ On the preview environment only, until the spike in [hosted-spike.md](hosted-spi
 
 | Variable | What it is |
 |---|---|
-| `GRILL_HOSTED` | `on` to serve `/mcp`, the sign-in metadata, `/decisions`, the calendar link and `/account`. Anything else, including unset, is a 404. |
+| `GRILL_HOSTED` | `on` to serve `/mcp`, the sign-in metadata, the authorization-server metadata, `/decisions`, the calendar link and `/account`. Anything else, including unset, is a 404. |
 | `GRILL_HOSTED_ALLOWLIST` | Comma-separated emails that may grill while sign-up is invite-only. If unset or empty, nobody is let in. |
 | `GRILL_OPEN_SIGNUP` | `on` lets any verified email grill, ignoring the list. Anything else, including unset, keeps it invite-only. Turn it on only with the caps below set. |
 | `GRILL_MONTHLY_CAP_USD` | Optional. Hard cap on what Grill pays for all hosted grills in a calendar month (UTC). Default `20`. `0` stops every grill. |
@@ -52,6 +52,7 @@ The function that runs the judge is allowed 300 seconds, and its bundle includes
 For this preview:
 
 - Publish Client ID Metadata Documents and Dynamic Client Registration. Require PKCE. Scopes `openid`, `profile`, `email`.
+- Older MCP clients look up the authorization server on this host, including the path-inserted `/mcp` forms from RFC 8414. Grill answers `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration` (and both with `/mcp`) with Clerk's own document from `CLERK_ISSUER`, as JSON, `Access-Control-Allow-Origin: *`, cached for about a minute. If Clerk cannot be read, the response redirects there. Protected-resource metadata is unchanged and still names `CLERK_ISSUER`.
 - Google, and an emailed code.
 - Redirect `https://claude.ai/api/mcp/auth_callback` for Claude on the web, desktop, mobile and Cowork.
 - Port-agnostic loopback `http://localhost/callback` and `http://127.0.0.1/callback` for Claude Code.
