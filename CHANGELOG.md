@@ -3,6 +3,12 @@
 ## Unreleased
 
 - The code that handles your decision or your keys stays open source under MIT, for good. PRINCIPLES.md says so, names the files, and says what you can check where: on your own computer you can read what runs; with a Grill account in chat you are trusting that the server runs the published code. The footer of grillyour.ai's public pages now names the live commit, linked to its source, because the site and the server deploy from that one commit. A test fails if a decision-handling file leaves this repository or takes another license, and a change to `LICENSE` or the new `TRADEMARKS.md` is high risk and never merges itself. TRADEMARKS.md: forks are welcome under another name. CONTRIBUTING.md: contributions are MIT.
+- "Delete this chain" shows only on a record that replaces another, or was replaced. A record on its own has "Delete this record" only.
+- Dates on `/decisions` use the same day format as the chat ("15 Jan"), not an ISO date.
+- The pages for a deleted account, an invite-only email, a missed sign-in and a sign-in that isn't set up each link back to Grill.
+- The sign-in missed page and the sign-in-not-set-up page tell the person what to do, without naming the sign-in company's settings.
+- A long one-word title on a decisions card wraps instead of widening the page.
+- A saved decision's title on `/decisions` is shown in the person's own words and case. It is no longer set in the small uppercase section style.
 - A successful form on `/decisions` or `/account` redirects back to the page, so a refresh does not send it again. A new calendar link is carried in a short-lived cookie and shown once on that next page. Turning the link on again, when it is already on, leaves the same link in place. DATA-LEDGER.md and PRIVACY.md say so.
 - The due list on `/decisions` sits under the title, before credit, the records switch and the export links.
 - Delete all records, and delete this account, each open a confirm page first. The button on that page is what confirms it. One tap on the decisions or account page no longer removes them. Deleting one record, or one chain, is still one tap.

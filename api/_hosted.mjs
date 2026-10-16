@@ -58,6 +58,7 @@ import {
   calendarTokenHash,
   calendarTokenShape,
   daysOverdue,
+  formatDay,
   dueForLookBack,
   dueReminderLine,
   newCalendarToken,
@@ -1887,13 +1888,17 @@ function signInRedirect(request, deps) {
   });
 }
 
+function terminal(title, inner) {
+  return page(title, `${inner}<p><a href="/">Back to Grill</a></p>`);
+}
+
 function signInMissed(request, deps) {
   const again = signInUrl(deps.env, returnTo(request));
   const link = again ? `<p><a href="${esc(again)}">Try sign-in again</a></p>` : "";
-  return page(
-    "Grill",
+  return terminal(
+    "Sign-in didn't come back · Grill",
     `<h1>Sign-in didn't come back to this page.</h1>
-    <p>The sign-in page is open, but this browser has no session for this site. Add this site's address to Clerk's allowed origins, or open Grill on your own domain, then try again.</p>
+    <p>This browser has no session for this site. Try signing in again. If it still doesn't come back, write to support@grillyour.ai.</p>
     ${link}`,
   );
 }
@@ -1912,14 +1917,14 @@ async function pageUser(request, deps) {
     if (start) return { redirect: start };
     if (pageUrl(request).searchParams.get("from") === "signin") return { html: signInMissed(request, deps) };
     const redirect = signInRedirect(request, deps);
-    if (!redirect) return { html: page("Grill", "<h1>Sign-in isn't set up.</h1><p>Set CLERK_SIGN_IN_URL to your Clerk Account Portal sign-in page.</p>") };
+    if (!redirect) return { html: terminal("Sign-in isn't set up · Grill", "<h1>Sign-in isn't set up.</h1><p>This page can't open a sign-in right now. Write to support@grillyour.ai.</p>") };
     return { redirect };
   }
   const user = await clerkUser(who.payload.sub, deps);
   if (!user) return { missing: true };
   const gate = await admit(user, deps, who.payload.sub);
-  if (!gate.email) return { html: page("Grill", "<h1>Grill needs a verified email on this account.</h1>") };
-  if (!gate.allowed) return { html: page("Grill", `<h1>${esc(INVITE_ONLY)}</h1>`) };
+  if (!gate.email) return { html: terminal("Verified email needed · Grill", "<h1>Grill needs a verified email on this account.</h1><p>Add one with your sign-in company, then come back.</p>") };
+  if (!gate.allowed) return { html: terminal("Invite only · Grill", `<h1>${esc(INVITE_ONLY)}</h1>`) };
   const personId = await resolvePerson(who.payload.sub, gate.email, deps);
   const account = await ensureAccount(personId, gate.email, deps, gate.human);
   return { account, email: gate.email, sub: who.payload.sub };
@@ -1935,15 +1940,19 @@ function htmlPage(body, { clearFlash = false } = {}) {
   return res;
 }
 
+function showDay(iso) {
+  return formatDay(iso) || String(iso || "");
+}
+
 function chainNote(row, byId) {
   const parts = [];
   if (row.replacesId && byId.get(row.replacesId)) {
     const prev = byId.get(row.replacesId);
-    parts.push(`Replaces ${prev.date} ${prev.title}.`);
+    parts.push(`Replaces ${showDay(prev.date)} ${prev.title}.`);
   }
   if (row.replacedByIds?.length) {
     const next = row.replacedByIds.map((id) => byId.get(id)).filter(Boolean);
-    if (next.length) parts.push(`Later call: ${next.map((item) => `${item.date} ${item.title}`).join("; ")}.`);
+    if (next.length) parts.push(`Later call: ${next.map((item) => `${showDay(item.date)} ${item.title}`).join("; ")}.`);
   }
   return parts.join(" ");
 }
@@ -1985,7 +1994,7 @@ function renderDue(rows, now) {
     .map((row) => {
       const late = daysOverdue(row.review, now);
       const when = late === 0 ? "due today" : `${late} day${late === 1 ? "" : "s"} overdue`;
-      return `<li>${esc(row.title || "Untitled")} · review ${esc(row.review)} · ${esc(when)}</li>`;
+      return `<li>${esc(row.title || "Untitled")} · review ${esc(showDay(row.review))} · ${esc(when)}</li>`;
     })
     .join("");
   return `<section class="banner">
@@ -2031,13 +2040,17 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
   const cards = [...linked].reverse().map((row) => {
     const look = row.lookback?.happened ? `<p>Look-back: ${esc(row.lookback.happened)}</p>` : "<p>Look-back: not yet.</p>";
     const chain = chainNote(row, byId);
+    const chained = Boolean(row.replacesId || row.replacedByIds?.length);
+    const chainForm = chained
+      ? `<form method="post" action="/decisions"><input type="hidden" name="action" value="delete-chain"><input type="hidden" name="id" value="${esc(row.id)}"><button type="submit">Delete this chain</button></form>`
+      : "";
     return `<article class="banner">
-      <h2>${esc(row.title || "Untitled")}</h2>
-      <p>${esc(row.date || "")} · ${esc(row.verdict || "")} · ${esc(row.sourceApp || "unknown")} · review ${esc(row.review || "")}</p>
+      <p class="record-title">${esc(row.title || "Untitled")}</p>
+      <p>${esc(showDay(row.date))} · ${esc(row.verdict || "")} · ${esc(row.sourceApp || "unknown")} · review ${esc(showDay(row.review))}</p>
       ${chain ? `<p>${esc(chain)}</p>` : ""}
       ${look}
       <form method="post" action="/decisions"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="${esc(row.id)}"><button type="submit">Delete this record</button></form>
-      <form method="post" action="/decisions"><input type="hidden" name="action" value="delete-chain"><input type="hidden" name="id" value="${esc(row.id)}"><button type="submit">Delete this chain</button></form>
+      ${chainForm}
     </article>`;
   });
   const keeping = account.records === "keep";
@@ -2200,7 +2213,7 @@ export async function handleDecisions(request, deps) {
   try {
     const session = await pageUser(request, deps);
     if (session.redirect) return session.redirect;
-    if (session.missing) return html(200, page("Grill", "<h1>This account has been deleted.</h1>"));
+    if (session.missing) return html(200, terminal("Account deleted · Grill", "<h1>This account has been deleted.</h1>"));
     if (session.html) return html(200, session.html);
     const url = pageUrl(request);
     let fresh = "";
@@ -2252,12 +2265,12 @@ export async function handleAccount(request, deps) {
   if (!hostedEnabled(deps.env)) return notFound();
   if (request.method === "DELETE") return methodNotAllowed();
   if (request.method === "GET" && pageUrl(request).searchParams.get("deleted") === "1") {
-    return html(200, page("Account deleted · Grill", "<h1>Your Grill account is deleted.</h1><p>The records and the model-router key are gone.</p>"));
+    return html(200, terminal("Account deleted · Grill", "<h1>Your Grill account is deleted.</h1><p>The records and the model-router key are gone.</p>"));
   }
   try {
     const session = await pageUser(request, deps);
     if (session.redirect) return session.redirect;
-    if (session.missing) return html(200, page("Grill", "<h1>This account has been deleted.</h1>"));
+    if (session.missing) return html(200, terminal("Account deleted · Grill", "<h1>This account has been deleted.</h1>"));
     if (session.html) return html(200, session.html);
     if (request.method === "GET" && pageUrl(request).searchParams.get("confirm") === "delete") return html(200, renderDeleteAccountConfirm());
     let fresh = "";
