@@ -1000,7 +1000,7 @@ describe("hosted Grill", { concurrency: false }, () => {
       const html = await page.text();
       assert.match(html, /Hire contractor/);
       assert.match(html, /Hire in house/);
-      assert.match(html, /Replaces 2026-01-10 Hire contractor/);
+      assert.match(html, /Replaces 10 Jan Hire contractor/);
       assert.doesNotMatch(html, /flip-flop|consistency score/i);
       assert.match(html, /Your habits/);
       assert.match(html, /Grills you answered with a choice: 2\./);
@@ -1508,7 +1508,10 @@ describe("one hosted function", () => {
     unknown.env.CLERK_ISSUER = "https://fapi.example.test";
     const unset = await handleAccount(new Request("https://grillyour.ai/account"), unknown);
     assert.equal(unset.status, 200);
-    assert.match(await unset.text(), /CLERK_SIGN_IN_URL/);
+    const unsetHtml = await unset.text();
+    assert.match(unsetHtml, /Sign-in isn't set up/);
+    assert.doesNotMatch(unsetHtml, /Clerk|CLERK_|allowed origins/);
+    assert.match(unsetHtml, /href="\/">Back to Grill/);
     assert.equal(unset.headers.get("location"), null);
 
     // Back from sign-in with no session: the handshake is tried first, once.
@@ -1521,6 +1524,8 @@ describe("one hosted function", () => {
     assert.equal(stuck.status, 200);
     const body = await stuck.text();
     assert.match(body, /no session for this site/);
+    assert.doesNotMatch(body, /Clerk|CLERK_|allowed origins/);
+    assert.match(body, /href="\/">Back to Grill/);
     assert.match(body, /https:\/\/accounts\.example\.test\/sign-in/);
     assert.equal(body.includes("clerk.example.test/sign-in"), false);
     assert.equal(stuck.headers.get("location"), null);
@@ -2103,7 +2108,8 @@ describe("look-back reminders", { concurrency: false }, () => {
       // The due list names only what waits for a look-back.
       let html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
       assert.match(html, /Due for a look-back/);
-      assert.match(html, /Hire contractor · review 2026-01-15 · 17 days overdue/);
+      assert.match(html, /Hire contractor · review 15 Jan · 17 days overdue/);
+      assert.equal(html.includes("2026-01-15"), false);
       assert.doesNotMatch(html, /<li>Move office/);
       assert.match(html, /Get a calendar link/);
 
@@ -2173,6 +2179,71 @@ describe("look-back reminders", { concurrency: false }, () => {
       await page(ctx, handleAccount, "/account", { body: "action=delete-account&confirm=delete" });
       assert.equal((await feed(ctx, `https://grillyour.ai/decisions/calendar/${link}.ics`)).status, 404);
       assert.ok(!ctx.memory.command(["GET", `grill:hosted:calfeed:${createHash("sha256").update(link).digest("hex")}`]));
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("offers delete this chain only on a record that is in a chain", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN);
+      assert.equal((await page(ctx, handleDecisions, "/decisions", { now: FEB })).includes("Delete this chain"), false);
+      const deps = { ...judgeDeps(fake), now: FEB };
+      await postMcp(ctx, call(1, "grill", { subject: "Decision: Delay the beta\nI'm 60% sure.", keep_records: true, quality_check: false, supersedes: "2026-01-01 Hire contractor", changed: "evidence the trial slipped" }), { token, deps });
+      await postMcp(ctx, call(2, "grill_decided", { decided: "Delay it." }), { token, deps });
+      await decide(ctx, fake, token, "Cut prices", FEB);
+      const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
+      assert.equal((html.match(/Delete this chain/g) || []).length, 2);
+      assert.equal((html.match(/Delete this record/g) || []).length, 3);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("gives every dead-end page a way back", async () => {
+    const ctx = world();
+    const deleted = await handleAccount(new Request("https://grillyour.ai/account?deleted=1"), ctx);
+    assert.match(await deleted.text(), /href="\/">Back to Grill/);
+    ctx.env.GRILL_HOSTED_ALLOWLIST = "someone-else@example.com";
+    const token = signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 });
+    const invite = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${token}` } }), ctx);
+    const inviteHtml = await invite.text();
+    assert.match(inviteHtml, /invite-only/);
+    assert.match(inviteHtml, /href="\/">Back to Grill/);
+    assert.doesNotMatch(inviteHtml, /Clerk|CLERK_|allowed origins/);
+  });
+
+  it("gives a button and an input a 44px tap target", async () => {
+    const ctx = world();
+    const cookie = `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+    const res = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx);
+    const html = await res.text();
+    assert.match(html, /button, \.button \{[^}]*min-height:\s*44px/);
+    assert.match(html, /(^|\n)\s*input, select \{[^}]*min-height:\s*44px/);
+  });
+
+  it("lets a long one-word title wrap inside a card", async () => {
+    const ctx = world();
+    const cookie = `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+    const res = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx);
+    const html = await res.text();
+    assert.match(html, /\.banner \{[^}]*overflow-wrap:\s*anywhere/);
+  });
+
+  it("shows a record title as the person wrote it, not as a section label", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "iPhone launch", JAN);
+      const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
+      assert.match(html, /<p class="record-title">iPhone launch<\/p>/);
+      assert.equal(html.includes("<h2>iPhone launch</h2>"), false);
+      assert.match(html, /\.record-title \{[^}]*text-transform:\s*none/);
+      assert.match(html, /\.record-title \{[^}]*color:\s*var\(--ink\)/);
     } finally {
       await fake.close();
     }

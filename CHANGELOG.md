@@ -3,6 +3,14 @@
 ## Unreleased
 
 - A held-out eval set. Every public case can be trained on or tuned to, so the maintainers now keep a second set of fictional cases outside the repository, marked `heldOut: true`. `node scripts/eval.mjs --cases <dir> --out <path>` runs it. A held-out run refuses to keep its cases or results inside the repository, and prints only rates and a failure count, never a case id or phrase. Every case file, public or held out, is now checked against one format (`caseProblems` in `scripts/evalCore.mjs`) before any judge call, so a malformed case stops the run with the reason. evals/README.md and LEARNING.md say so.
+- docs/UX.md says how a page a person sees is built, and scripts/pages.test.mjs checks it. The pull request template asks for that doc, and for a look at 390px in light and dark.
+
+- "Delete this chain" shows only on a record that replaces another, or was replaced. A record on its own has "Delete this record" only.
+- Dates on `/decisions` use the same day format as the chat ("15 Jan"), not an ISO date.
+- The pages for a deleted account, an invite-only email, a missed sign-in and a sign-in that isn't set up each link back to Grill.
+- The sign-in missed page and the sign-in-not-set-up page tell the person what to do, without naming the sign-in company's settings.
+- A long one-word title on a decisions card wraps instead of widening the page.
+- A saved decision's title on `/decisions` is shown in the person's own words and case. It is no longer set in the small uppercase section style.
 - A successful form on `/decisions` or `/account` redirects back to the page, so a refresh does not send it again. A new calendar link is carried in a short-lived cookie and shown once on that next page. Turning the link on again, when it is already on, leaves the same link in place. DATA-LEDGER.md and PRIVACY.md say so.
 - The due list on `/decisions` sits under the title, before credit, the records switch and the export links.
 - Delete all records, and delete this account, each open a confirm page first. The button on that page is what confirms it. One tap on the decisions or account page no longer removes them. Deleting one record, or one chain, is still one tap.
