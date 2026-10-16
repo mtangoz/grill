@@ -53,6 +53,13 @@ Want it in one step? Use Claude Desktop, above.
 | Grok or GrokBot | Claude, ChatGPT or Gemini |
 | Muse | Claude, ChatGPT or Gemini |
 
+### Meta AI (Muse)
+
+1. In the Meta AI app, open **Muse → Settings → Connectors → Add custom connector**.
+2. URL: `https://grillyour.ai/mcp`
+3. Client ID: `RNdHSHmWCRJO40vd`. Same for everyone. No secret.
+4. Tap **Add**, then sign in with the code we email you.
+
 ### Cursor, VS Code, Codex, Gemini CLI, or any app that runs MCP servers
 
 ```bash

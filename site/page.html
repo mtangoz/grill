@@ -159,6 +159,9 @@
   .routes .steps { margin-bottom: 1.1rem; }
   .routes .pairs { margin-bottom: 1.2rem; }
   .routes .note { margin-bottom: 1.1rem; }
+  .routes .copyrow { display: flex; gap: 8px; align-items: center; margin: 0.4rem 0 0.15rem; }
+  .routes .copyrow input { flex: 1 1 12rem; min-width: 0; font: 0.86rem var(--mono); padding: 8px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--code-bg); color: var(--ink); }
+  .routes .copyrow .button { padding: 8px 14px; }
 
   .promises { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; border-block: 1px solid var(--rule); padding-block: 18px; margin: 0 0 1rem; }
   .promises strong { display: block; font: 650 1.05rem/1.25 var(--sans); letter-spacing: -0.01em; margin-bottom: 4px; }
@@ -252,6 +255,25 @@
         <li><code>/plugin install grill@grill</code></li>
       </ol>
     </details>
+    <details>
+      <summary>Meta AI (Muse)<span>connector</span></summary>
+      <ol class="steps">
+        <li>In the Meta AI app, open Muse → Settings → Connectors → Add custom connector.</li>
+        <li>URL
+          <div class="copyrow">
+            <input id="muse-url" type="text" readonly value="https://grillyour.ai/mcp" aria-label="Connector URL">
+            <button class="button" type="button" data-copy="muse-url">Copy</button>
+          </div>
+        </li>
+        <li>Client ID. Same for everyone. No secret.
+          <div class="copyrow">
+            <input id="muse-client" type="text" readonly value="RNdHSHmWCRJO40vd" aria-label="Client ID">
+            <button class="button" type="button" data-copy="muse-client">Copy</button>
+          </div>
+        </li>
+        <li>Tap Add, then sign in with the code we email you.</li>
+      </ol>
+    </details>
   </div>
   <p class="more">Cursor, VS Code and other apps: see the <a href="https://github.com/mtangoz/grill#set-up">README</a>.</p>
 
@@ -320,6 +342,25 @@
   }
   document.querySelectorAll("a[data-track]").forEach(function (link) {
     link.addEventListener("click", function () { trackClick(link.getAttribute("data-track")); });
+  });
+  document.querySelectorAll("button[data-copy]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var input = document.getElementById(button.getAttribute("data-copy"));
+      if (!input) return;
+      var value = input.value;
+      function done() { button.textContent = "Copied"; }
+      input.focus();
+      input.select();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(value).then(done, function () {
+          try { document.execCommand("copy"); } catch (err) { /* selection stays so they can copy */ }
+          done();
+        });
+      } else {
+        try { document.execCommand("copy"); } catch (err) { /* selection stays so they can copy */ }
+        done();
+      }
+    });
   });
 })();
 </script>
