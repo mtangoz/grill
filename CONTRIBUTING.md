@@ -54,7 +54,7 @@ The messages a person might see, and what they mean: [docs/TROUBLESHOOTING.md](d
 
 ## The website and Grill Pro
 
-The public site is `site/page.html`. The other pages are `site/terms.html`, `site/contribute.html`, `site/look-back.html` (the paste-route record and look-back tool) and `site/privacy.html`; they borrow the home page's styles. `node scripts/build-site.mjs` writes `_site/`, which Vercel serves. Grill Pro is parked (`GRILL_PRO_BILLING` off). Stripe, Redis, webhooks and the account variables: [docs/pro-development.md](docs/pro-development.md).
+The public site is `site/page.html`. The other pages are `site/terms.html`, `site/contribute.html`, `site/look-back.html` (the paste-route record and look-back tool) and `site/privacy.html`; they borrow the home page's styles. `node scripts/build-site.mjs` writes `_site/`, which Vercel serves. Website analytics live in `scripts/siteAnalytics.mjs`: pages call `window.grillTrack(name, data)`, which keeps only allowlisted event names and fields. Vercel Web Analytics is always on. PostHog is on only when `GRILL_POSTHOG_KEY` (a project key from Grill's own PostHog organization, never a shared or another company's) is set at build time; `GRILL_POSTHOG_HOST` picks `https://eu.i.posthog.com` (default) or `https://us.i.posthog.com`. Grill Pro is parked (`GRILL_PRO_BILLING` off). Stripe, Redis, webhooks and the account variables: [docs/pro-development.md](docs/pro-development.md).
 
 ## How a grill stays honest
 

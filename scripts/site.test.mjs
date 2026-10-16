@@ -139,17 +139,18 @@ describe("site/page.html", () => {
     assert.match(lookBack, /reflection_record_copied/);
     assert.match(lookBack, /reflection_lookback_started/);
     assert.match(lookBack, /reflection_lookback_completed/);
-    assert.match(lookBack, /window\.va\("event", \{ name: name, data: \{ records: count \} \}\)/);
+    assert.match(lookBack, /window\.grillTrack\(name, \{ records: count \}\)/);
     assert.match(privacyPage, /It never includes the words of a decision/);
     assert.match(lookBack, /Did anything happen you didn['\u2019]t expect\?/);
     for (const text of [page, lookBack]) {
-      assert.doesNotMatch(text, /window\.va\([^)]*(judge-answer|saved-records|what-happened|decision-title|surprise)/);
+      assert.doesNotMatch(text, /window\.(va|grillTrack)\([^)]*(judge-answer|saved-records|what-happened|decision-title|surprise)/);
       assert.doesNotMatch(text, /track\([^)]*surprise/);
     }
     assert.doesNotMatch(page, /reflection_/, "the home page has no reflection events");
     for (const file of ["server/index.mjs", "scripts/reflection.mjs"]) {
       const source = readFileSync(join(ROOT, file), "utf8");
       assert.ok(!source.includes("window.va"), `${file} must not send website analytics`);
+      assert.ok(!source.includes("grillTrack") && !/posthog/i.test(source), `${file} must not send website analytics`);
       assert.ok(!source.includes("reflection_record_"), `${file} must not name website reflection events`);
     }
     const privacy = readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8");
@@ -172,7 +173,7 @@ describe("site/page.html", () => {
     }
     assert.match(page, /if \(CHANNEL_REFS\[fromUrl\]\) channelRef = fromUrl/);
     assert.match(page, /if \(channelRef\) data\.ref = channelRef/);
-    assert.match(page, /window\.va\("event", \{ name: name, data: data \}\)/);
+    assert.match(page, /window\.grillTrack\(name, data\)/);
     assert.match(page, /About 2 minutes if you already have an OpenRouter key/);
     assert.match(page, /About 10 minutes if you need to create one \(\$5 credit\)/);
     assert.match(page, /Prefer free first\? Use Any AI above/);

@@ -38,6 +38,7 @@ The decision, as you stated it, passes through Grill's server in memory. It is n
 - The look-back reminder in chat is a count only ("2 earlier calls are due"). It names no decision. The "Due for a look-back" list on `/decisions` is worked out from that person's records when the page loads and is not stored.
 - The "Your habits" section on `/decisions` is worked out from that person's own records and drafts each time the page loads. It is not stored, not logged and not counted, and only that person sees it.
 - Account pages load no analytics script. The website's visit counter is not on `/decisions` or `/account`.
+- The website's PostHog events (off until `GRILL_POSTHOG_KEY` is set) are the same allowlisted event names and fields as Vercel's: a channel `ref` and a `records` count. No person profile, no GeoIP, a one-page-load ID. Grill's PostHog is its own organization; the build refuses a key known to belong to another company's organization.
 - The judge is not the host chat's model. The request is `openrouter/auto`, with one company excluded, and no pinned model list.
 - Records you did not agree to keep are not written. A record is not written until you state a choice. If you never answer, the draft expires and no look-back is scheduled.
 

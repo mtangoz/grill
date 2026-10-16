@@ -608,8 +608,8 @@ describe("a look-back surprise stays on the page", () => {
     };
     const window = {
       addEventListener() {},
-      va(kind, payload) {
-        events.push({ kind, payload });
+      grillTrack(name, data) {
+        events.push({ kind: "event", payload: { name, data } });
       },
     };
     runInNewContext(
