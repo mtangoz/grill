@@ -24,7 +24,7 @@ export const JOB_TTL_SECONDS = 15 * 60;
 export const DAILY_GRILL_LIMIT = 30;
 export const RUNNING_JOB_LIMIT = 3;
 export const CREDIT_CACHE_MS = 60_000;
-export const OUT_OF_CREDIT = "You're out of grill credit. More is coming soon. Write to support@grillyour.ai for a top-up.";
+export const OUT_OF_CREDIT = "You're out of grill credit for this month, so this one didn't run. It starts again on the 1st. Nothing was charged to you. If you need more sooner, write to support@grillyour.ai.";
 export const INVITE_ONLY =
   "Grill in chat is invite-only for now, and this email isn't on the list yet. If you were invited, disconnect Grill, connect again, and sign in with the email your invite went to. To ask for an invite, write to support@grillyour.ai.";
 export const CONSENT_TEXT = [
@@ -236,13 +236,17 @@ export function allowlistAllows(email, env = {}) {
 // Two hard caps on what Grill pays for starter credit, counted in Upstash in
 // micro-dollars (whole numbers, so INCRBY stays atomic and exact):
 //   - one for the whole service per calendar month (UTC), GRILL_MONTHLY_CAP_USD, default $20;
-//   - one per person per calendar month, GRILL_USER_MONTHLY_CAP_USD, default $1.
+//   - one per person per calendar month, GRILL_USER_MONTHLY_CAP_USD, default $5: the early-tester
+//     allowance, free for life, which resets on the 1st. Each person's router key is minted at the
+//     same amount with a monthly reset.
 // A person is keyed by the human email the starter credit belongs to, so an agent
 // signed in for someone shares that person's cap. Each person's router key is
 // still capped by the router itself; these counters are the second lock.
 
 export const DEFAULT_MONTHLY_CAP_USD = 20;
-export const DEFAULT_USER_MONTHLY_CAP_USD = 1;
+/** Early testers: free for life, $5 of use each month, reset on the 1st (UTC). */
+export const TESTER_MONTHLY_USD = 5;
+export const DEFAULT_USER_MONTHLY_CAP_USD = TESTER_MONTHLY_USD;
 export const CAP_COUNTER_TTL_SECONDS = 40 * 24 * 60 * 60;
 
 export const SERVICE_CAP_TEXT =
@@ -264,6 +268,14 @@ export function monthlyCapUsd(env = {}) {
 
 export function userMonthlyCapUsd(env = {}) {
   return capFromEnv(env.GRILL_USER_MONTHLY_CAP_USD, DEFAULT_USER_MONTHLY_CAP_USD);
+}
+
+/** The allowance line /decisions and /account show, with what is left of this month's use. */
+export function allowanceLine(remainingUsd, env = {}) {
+  const cap = userMonthlyCapUsd(env);
+  const whole = Number.isInteger(cap) ? String(cap) : cap.toFixed(2);
+  const left = Math.max(0, Number(remainingUsd) || 0).toFixed(2);
+  return `Free for life: $${whole} of use each month, resets on the 1st. $${left} left this month.`;
 }
 
 /** "2026-10" in UTC. */

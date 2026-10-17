@@ -251,6 +251,13 @@ export async function createCappedKey({ env, fetch: fetchImpl, name, limit, rese
   return { key, hash, limitUsd: cap };
 }
 
+/** Set a key's cap and make it reset monthly. Used to move a one-off starter key to a monthly allowance. */
+export async function setMonthlyLimit(hash, limit, { env, fetch: fetchImpl }) {
+  const { router } = clients(env, fetchImpl);
+  const r = await router.update(hash, { limit, limit_reset: "monthly" });
+  if (!r.ok) throw new UpstreamError(`the router didn't accept a monthly limit (${r.status})`);
+}
+
 /** Switch every listed key off. A key the router has already forgotten is fine. */
 export async function disableManagedKeys(hashes, { env, fetch: fetchImpl }) {
   const { router } = clients(env, fetchImpl);
