@@ -11,7 +11,7 @@ The judge is always OpenRouter's Auto Router (`openrouter/auto`). Grill excludes
 ## What a person does
 
 1. Add a custom connector. The URL is `https://<host>/mcp`. On a preview that host is the preview origin. `https://mcp.grillyour.ai/mcp` comes later, when the owner adds that domain.
-2. Connect. A sign-in opens. Google, or an emailed code. No key to paste, and no card.
+2. Connect. A sign-in opens. Sign in with an emailed code: use the email your invite went to, every time, and check spam if the code isn't there in a minute. No key to paste, no password, and no card.
 3. The first grill asks, once, whether to keep decision records. Answer once. The outside-judge disclosure is shown once per account, then not again.
 4. Say the decision as you mean it. The assistant sends that. It does not show a template or wait for an OK. The note comes back in the chat. If three grills are already running, the assistant waits and retries on its own.
 
@@ -53,7 +53,7 @@ For this preview:
 
 - Publish Client ID Metadata Documents and Dynamic Client Registration. Require PKCE. Scopes `openid`, `profile`, `email`.
 - Older MCP clients look up the authorization server on this host, including the path-inserted `/mcp` forms from RFC 8414. Grill answers `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration` (and both with `/mcp`) with Clerk's own document from `CLERK_ISSUER`, as JSON, `Access-Control-Allow-Origin: *`, cached for about a minute. If Clerk cannot be read, the response redirects there. Protected-resource metadata is unchanged and still names `CLERK_ISSUER`.
-- Google, and an emailed code.
+- An emailed code. Google is off in production, so invitees are told to use the email their invite went to.
 - Redirect `https://claude.ai/api/mcp/auth_callback` for Claude on the web, desktop, mobile and Cowork.
 - Port-agnostic loopback `http://localhost/callback` and `http://127.0.0.1/callback` for Claude Code.
 - Add this site's origin to Clerk's allowed origins. Signed-out visits to `/decisions` and `/account` redirect to the Account Portal sign-in page, then back here. Grill runs no Clerk script on these pages, so it gets the session the way Clerk's own server SDK does: when the browser carries Clerk's `__client_uat` marker, or has just come back from sign-in, Grill sends it once to Clerk's handshake (`<CLERK_ISSUER>/v1/client/handshake`, nonce format). Clerk sends it back with a nonce, which Grill trades for the session through Clerk's Backend API (`/v1/clients/handshake_payload`, with `CLERK_SECRET_KEY`), then checks the `__session` token with the same JWKS. A short-lived state cookie (`__Host-grill_hs`, 10 minutes) ties that return to this browser, so a link carrying someone else's nonce does nothing. Clerk's session token lasts about a minute, so Grill then sets its own signed cookie (`__Host-grill_page`: the Clerk user ID and an expiry, HMAC-signed with a key derived from `GRILL_RECORD_KEY`, HttpOnly, 12 hours). A form sent after that lapses goes back to the page instead of applying. A development instance does not set that cookie on a `*.vercel.app` preview: the dev session stays on Clerk's host, and Clerk will not send the browser back until this origin is allowed. A return with no session shows a short message instead of another redirect. On a production instance, use your own domain (`accounts.<domain>` for sign-in, the app on that same domain) so the cookie can come back with the person.
