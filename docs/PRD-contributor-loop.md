@@ -1,6 +1,6 @@
 # PRD: A contributor loop that grows users
 
-Status: draft, proposed 2026-10-17. Not approved. Research and grill: [RESEARCH-contributor-ownership.md](RESEARCH-contributor-ownership.md).
+Status: approved by the owner, 2026-10-17 ("Ok makes sense"). Decision record: D-20261017-01 in the ops repo. Research and grill: [RESEARCH-contributor-ownership.md](RESEARCH-contributor-ownership.md).
 
 ## 0. Why, in one line
 
