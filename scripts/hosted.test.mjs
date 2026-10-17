@@ -1668,6 +1668,18 @@ describe("one hosted function", () => {
       assert.deepEqual(await oidc.json(), { issuer: "https://clerk.example.test", kind: "openid-configuration" });
       assert.equal(metadataFetches.at(-1).url, "https://clerk.example.test/.well-known/openid-configuration");
 
+      const prmRoot = await GET(new Request("https://grillyour.ai/.well-known/oauth-protected-resource"));
+      const prmPath = await GET(new Request("https://grillyour.ai/.well-known/oauth-protected-resource/mcp"));
+      assert.equal(prmRoot.status, 200);
+      assert.equal(prmPath.status, 200);
+      const prmRootBody = await prmRoot.json();
+      const prmPathBody = await prmPath.json();
+      assert.equal(typeof prmRootBody.resource, "string");
+      assert.ok(prmRootBody.resource.length > 0);
+      assert.ok(prmRootBody.authorization_servers?.length > 0);
+      assert.deepEqual(prmPathBody, prmRootBody);
+      assert.equal(prmPath.headers.get("content-type"), prmRoot.headers.get("content-type"));
+
       const preflight = await OPTIONS(new Request("https://grillyour.ai/.well-known/oauth-authorization-server/mcp", { method: "OPTIONS" }));
       assert.equal(preflight.status, 204);
       assert.equal(preflight.headers.get("access-control-allow-origin"), "*");

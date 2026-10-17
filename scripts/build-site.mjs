@@ -152,7 +152,7 @@ writePage("look-back.html", {
   outDir: "look-back",
 });
 writePage("start.html", {
-  description: "Connect Grill to your AI: Claude.ai steps for people invited to Grill in chat.",
+  description: "Connect Grill to your AI. Claude.ai, ChatGPT and Grok Bot for people invited to Grill in chat. Gemini is still being tested. Meta AI is coming soon.",
   url: `${SITE_URL}start/`,
   outDir: "start",
 });

@@ -1,5 +1,6 @@
 // Hosted endpoints (/mcp, /account, /decisions, /decisions/calendar/<link>,
-// /.well-known/oauth-protected-resource, and Clerk's authorization-server
+// /.well-known/oauth-protected-resource, including the /mcp path-inserted form,
+// which serves the same metadata as the root path, and Clerk's authorization-server
 // metadata at /.well-known/oauth-authorization-server and openid-configuration,
 // including the /mcp path-inserted forms). 404 unless GRILL_HOSTED=on.
 import { handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleMcp, handleProtectedResource } from "./_hosted.mjs";

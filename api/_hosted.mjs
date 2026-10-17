@@ -1884,7 +1884,8 @@ function authMetadataKind(request) {
  * connector host (RFC 8414 path insertion included) instead of only following
  * authorization_servers on the protected-resource document. The body is Clerk's
  * document at CLERK_ISSUER, returned as JSON with CORS, cached briefly. A failed
- * read redirects to that same document. Protected-resource metadata is untouched.
+ * read redirects to that same document. Protected-resource metadata is a separate
+ * document: the /mcp path serves the same JSON as the root path.
  */
 export async function handleAuthorizationServer(request, deps) {
   if (!hostedEnabled(deps.env)) return notFound();
