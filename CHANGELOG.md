@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The privacy page states four promises, and says what Grill in chat keeps: only what you choose, encrypted, and you can delete it. Grill's maintainers hold the encryption keys. Sign-in for Grill in chat is an emailed code. The home page promise is "Nothing kept unless you choose", linked to the privacy page.
+
 - Optional post-verdict deepen layer, off unless `GRILL_DEEPEN_TEST` is on. After a verdict, and only for a decision marked as big, `grill_result` accepts `detail` `deepen`. The same judge (openrouter/auto, excluding only the author's company, no pin) answers four depth questions from Felix Rieseberg's How to be more ambitious and returns a deeper rewrite of the plan. Layer 1 stays at most 50 words. The closing line names deepen only in that case. A quick or bulk grill is unchanged. Nothing new is stored, and the write-up goes nowhere new. Grill is the outside-judge step that essay recommends.
 
 - Claude's connector list showed a plain "G" for Grill instead of the pitchfork. A custom connector's icon comes from Google's favicon service, which had no icon for grillyour.ai, so Claude showed a letter. The site now declares the 192px pitchfork (Google only takes sizes in multiples of 48px) and serves `robots.txt` and `sitemap.xml`, so Google can crawl the home page and pick up the icon.
