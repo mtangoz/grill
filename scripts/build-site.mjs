@@ -19,8 +19,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "_site");
 // The page's own address. Vercel also serves it at grill-by-hold.vercel.app; this says which is canonical.
 const SITE_URL = "https://grillyour.ai/";
+const TAGLINE = "Grill your AI before you send it to your boss.";
+const HOME_TITLE = "Grill: grill your AI before you send it to your boss";
 const DESCRIPTION =
-  "Get a second opinion before you decide. A different AI finds the weak spots in your plan, with a quick way to check each one. Works with ChatGPT, Claude, Gemini and more.";
+  `${TAGLINE} Get a second opinion before you decide. A different AI finds the weak spots in your plan, with a quick way to check each one. Works with ChatGPT, Claude, Gemini and more.`;
 // The pitchfork mark. Sizes are generated from the owner's logo into site/brand/ and copied to _site/brand/.
 // Google's favicon service, which Claude's connector list uses for a custom connector's icon, only
 // takes an icon whose size is a multiple of 48px, so the 192px one is declared too.
@@ -51,7 +53,7 @@ const withLiveCommit = (body) =>
     : body;
 
 const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
-const headFor = ({ description, url }) => [
+const headFor = ({ description, url, title = "Grill" }) => [
   '<meta charset="utf-8">',
   '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
   '<meta name="color-scheme" content="light dark">',
@@ -61,7 +63,7 @@ const headFor = ({ description, url }) => [
   `<meta name="description" content="${description}">`,
   `<link rel="canonical" href="${url}">`,
   `<meta property="og:url" content="${url}">`,
-  '<meta property="og:title" content="Grill">',
+  `<meta property="og:title" content="${title}">`,
   `<meta property="og:description" content="${description}">`,
   '<meta property="og:type" content="website">',
   `<meta property="og:image" content="${OG_IMAGE}">`,
@@ -118,7 +120,7 @@ if (notifyOn(process.env)) {
 mkdirSync(OUT, { recursive: true });
 cpSync(join(ROOT, "site/brand"), join(OUT, "brand"), { recursive: true });
 cpSync(join(ROOT, "site/brand/favicon.ico"), join(OUT, "favicon.ico"));
-writeFileSync(join(OUT, "index.html"), doc(headFor({ description: DESCRIPTION, url: SITE_URL }), pageHead, homeBody));
+writeFileSync(join(OUT, "index.html"), doc(headFor({ description: DESCRIPTION, url: SITE_URL, title: HOME_TITLE }), pageHead, homeBody));
 // Every public page, for the sitemap. Google has to crawl the home page before its favicon service
 // knows the icon; until then Claude shows a letter in place of the logo.
 const pageUrls = [SITE_URL];
