@@ -10,8 +10,8 @@ The judge is always OpenRouter's Auto Router (`openrouter/auto`). Grill excludes
 
 ## What a person does
 
-1. Add a custom connector. The URL is `https://<host>/mcp`. On a preview that host is the preview origin. `https://mcp.grillyour.ai/mcp` comes later, when the owner adds that domain.
-2. Connect. A sign-in opens. Sign in with an emailed code: use the email your invite went to, every time, and check spam if the code isn't there in a minute. No key to paste, no password, and no card.
+1. Follow the steps for the AI at `https://grillyour.ai/start/` (on a preview, use that preview's origin instead of grillyour.ai). Claude.ai, ChatGPT and Grok Bot are verified working. Gemini should work and is still being tested. Meta AI is coming soon. The connector URL is `https://<host>/mcp`. On a preview that host is the preview origin. `https://mcp.grillyour.ai/mcp` comes later, when the owner adds that domain.
+2. Connect. A sign-in opens. Sign in with an emailed code: use the same email each time, the email your invite went to, every time, and check spam if the code isn't there in a minute. No key to paste, no password, and no card.
 3. The first grill asks, once, whether to keep decision records. Answer once. The outside-judge disclosure is shown once per account, then not again.
 4. Say the decision as you mean it. The assistant sends that. It does not show a template or wait for an OK. The note comes back in the chat. If three grills are already running, the assistant waits and retries on its own.
 
@@ -52,7 +52,7 @@ The function that runs the judge is allowed 300 seconds, and its bundle includes
 For this preview:
 
 - Publish Client ID Metadata Documents and Dynamic Client Registration. Require PKCE. Scopes `openid`, `profile`, `email`.
-- Older MCP clients look up the authorization server on this host, including the path-inserted `/mcp` forms from RFC 8414. Grill answers `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration` (and both with `/mcp`) with Clerk's own document from `CLERK_ISSUER`, as JSON, `Access-Control-Allow-Origin: *`, cached for about a minute. If Clerk cannot be read, the response redirects there. Protected-resource metadata is unchanged and still names `CLERK_ISSUER`.
+- Older MCP clients look up the authorization server on this host, including the path-inserted `/mcp` forms from RFC 8414. Grill answers `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration` (and both with `/mcp`) with Clerk's own document from `CLERK_ISSUER`, as JSON, `Access-Control-Allow-Origin: *`, cached for about a minute. If Clerk cannot be read, the response redirects there. Protected-resource metadata still names `CLERK_ISSUER`. `GET /.well-known/oauth-protected-resource/mcp` serves the same metadata as the root path.
 - An emailed code. Google is off in production, so invitees are told to use the email their invite went to.
 - Redirect `https://claude.ai/api/mcp/auth_callback` for Claude on the web, desktop, mobile and Cowork.
 - Port-agnostic loopback `http://localhost/callback` and `http://127.0.0.1/callback` for Claude Code.
@@ -82,7 +82,7 @@ Then `/mcp`, choose grill, Authenticate, and sign in with an allowlisted email.
 
 ## Grok
 
-Grok is not part of the pass rule in the spike. When you try it, add a custom connector at the same `/mcp` URL and sign in with an allowlisted email. Grill treats a redirect on `grok.com` or `grok.x.ai` as Grok and excludes x-ai from the judge. If Grok's redirect host is different, the client is unknown and nothing is excluded until the call names an author. Do not pin Grok's own model to save time.
+Grok Bot is verified working. The person tells the bot `Add this MCP server: https://<host>/mcp`, then signs in with the same email each time, the email your invite went to, every time. Grill treats a redirect on `grok.com` or `grok.x.ai` as Grok and excludes x-ai from the judge. If Grok's redirect host is different, the client is unknown and nothing is excluded until the call names an author. Do not pin Grok's own model to save time. The spike's pass rule is still the Claude web runs in [hosted-spike.md](hosted-spike.md).
 
 ## Grill IDs, and leaving Clerk
 

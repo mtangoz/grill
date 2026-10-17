@@ -436,11 +436,21 @@ describe("the site build", () => {
   });
 });
 
-// /start has one job: connect Grill in chat to the AI an invitee uses. Claude.ai is the tested
-// route. Meta AI and ChatGPT stay "coming soon" until they pass. No script: the address and
-// steps are plain text a person can select and copy.
+// /start has one job: connect Grill in chat to the AI an invitee uses. One section per AI,
+// under Claude.ai. No script: the address and steps are plain text a person can select and copy.
+// Every section says to use the same email each time.
 describe("the /start page", () => {
   const startPath = join(ROOT, "site/start.html");
+  const SAME_EMAIL = /the same email each time/i;
+  const INVITE_EMAIL = /the email your invite went to, every time/i;
+  const section = (html, id) => {
+    const marker = `<h2 id="${id}">`;
+    const from = html.indexOf(marker);
+    assert.ok(from > 0, id);
+    const after = html.slice(from);
+    const next = after.slice(marker.length).search(/<h2\b/);
+    return next === -1 ? after : after.slice(0, marker.length + next);
+  };
 
   it("exists, opens with its title, and uses no script or copy buttons", () => {
     assert.ok(existsSync(startPath), "site/start.html exists");
@@ -452,26 +462,83 @@ describe("the /start page", () => {
 
   it("gives Claude.ai connector steps with the URL as selectable text", () => {
     const start = readFileSync(startPath, "utf8");
-    assert.match(start, /<h2 id="claude">Claude\.ai<\/h2>/);
-    assert.match(start, /Customize → Connectors → Add custom connector/);
-    assert.match(start, /<input id="connector-url" type="text" readonly value="https:\/\/grillyour\.ai\/mcp"/);
-    assert.match(start, /<code>https:\/\/grillyour\.ai\/mcp<\/code>/);
-    assert.match(start, /use the email your invite went to, every time/i);
-    assert.match(start, /check spam/i);
-    assert.doesNotMatch(start, /Google/);
-    assert.match(start, /Grill this:/);
-    const claude = start.slice(start.indexOf('id="claude"'), start.indexOf('id="soon"'));
+    const claude = section(start, "claude");
+    assert.match(claude, /<h2 id="claude">Claude\.ai<\/h2>/);
+    assert.match(claude, /Customize → Connectors → Add custom connector/);
+    assert.match(claude, /<input id="connector-url" type="text" readonly value="https:\/\/grillyour\.ai\/mcp"/);
+    assert.match(claude, /<code>https:\/\/grillyour\.ai\/mcp<\/code>/);
+    assert.match(claude, SAME_EMAIL);
+    assert.match(claude, INVITE_EMAIL);
+    assert.match(claude, /check spam/i);
+    assert.doesNotMatch(claude, /Google/);
+    assert.match(claude, /Grill this:/);
     const steps = claude.match(/<li>/g) ?? [];
     assert.ok(steps.length >= 3 && steps.length <= 5, `Claude.ai has 3 to 5 steps, got ${steps.length}`);
   });
 
-  it("marks Meta AI and ChatGPT coming soon, with no setup steps for them", () => {
+  it("gives ChatGPT the verified web steps for a paid plan", () => {
+    const chatgpt = section(readFileSync(startPath, "utf8"), "chatgpt");
+    assert.match(chatgpt, /<h2 id="chatgpt">ChatGPT<\/h2>/);
+    assert.match(chatgpt, /Verified working/);
+    assert.match(chatgpt, /paid plan/i);
+    assert.match(chatgpt, /Plugins/);
+    assert.match(chatgpt, /plus button/i);
+    assert.match(chatgpt, /Add custom MCP server/);
+    assert.match(chatgpt, /name it Grill|Name it Grill|name Grill/i);
+    assert.match(chatgpt, /<code>https:\/\/grillyour\.ai\/mcp<\/code>/);
+    assert.match(chatgpt, /OAuth/);
+    assert.match(chatgpt, /I understand and want to continue/);
+    assert.match(chatgpt, /Create/);
+    assert.match(chatgpt, /Install/);
+    assert.match(chatgpt, SAME_EMAIL);
+    assert.match(chatgpt, INVITE_EMAIL);
+    assert.match(chatgpt, /check spam/i);
+  });
+
+  it("gives Grok Bot the verified one-line setup", () => {
+    const grok = section(readFileSync(startPath, "utf8"), "grok");
+    assert.match(grok, /<h2 id="grok">Grok Bot<\/h2>/);
+    assert.match(grok, /Verified working/);
+    assert.match(grok, /Add this MCP server: https:\/\/grillyour\.ai\/mcp/);
+    assert.match(grok, /sign in when asked/i);
+    assert.match(grok, SAME_EMAIL);
+    assert.match(grok, INVITE_EMAIL);
+  });
+
+  it("marks Gemini as should work, with the limits, and still gives the steps", () => {
+    const gemini = section(readFileSync(startPath, "utf8"), "gemini");
+    assert.match(gemini, /<h2 id="gemini">Gemini<\/h2>/);
+    assert.match(gemini, /Should work, testing now/);
+    assert.match(gemini, /US only/);
+    assert.match(gemini, /personal Google account/);
+    assert.match(gemini, /Keep Activity on/);
+    assert.match(gemini, /gemini\.google\.com/);
+    assert.match(gemini, /Settings/);
+    assert.match(gemini, /Connected Apps/);
+    assert.match(gemini, /Add a custom app/);
+    assert.match(gemini, /<code>https:\/\/grillyour\.ai\/mcp<\/code>/);
+    assert.match(gemini, /Next/);
+    assert.match(gemini, /sign in/i);
+    assert.match(gemini, SAME_EMAIL);
+    assert.match(gemini, INVITE_EMAIL);
+  });
+
+  it("leaves only Meta AI coming soon, with no setup steps", () => {
     const start = readFileSync(startPath, "utf8");
-    const soon = start.slice(start.indexOf('id="soon"'));
-    assert.match(soon, /Meta AI/);
-    assert.match(soon, /ChatGPT/);
-    assert.match(soon, /coming soon/i);
-    assert.doesNotMatch(soon, /RNdHSHmWCRJO40vd/);
+    const soon = section(start, "soon");
+    assert.match(soon, /<h2 id="soon">Meta AI<\/h2>/);
+    assert.match(soon, /Coming soon/);
+    assert.doesNotMatch(soon, /ChatGPT|Grok|Gemini/);
+    assert.doesNotMatch(soon, /<li>|RNdHSHmWCRJO40vd/);
+    assert.match(soon, SAME_EMAIL);
+    assert.match(soon, INVITE_EMAIL);
+    const order = ["claude", "chatgpt", "grok", "gemini", "soon"];
+    let at = -1;
+    for (const id of order) {
+      const i = start.indexOf(`id="${id}"`);
+      assert.ok(i > at, `${id} is out of order`);
+      at = i;
+    }
   });
 
   it("builds to /start/ with the site's styles and is in the sitemap", () => {
@@ -480,11 +547,58 @@ describe("the /start page", () => {
     assert.match(built, /<title>Start using Grill<\/title>/);
     assert.match(built, /<link rel="canonical" href="https:\/\/grillyour\.ai\/start\/">/);
     assert.match(built, /--paper:/);
+    assert.match(built, /<h2 id="chatgpt">ChatGPT<\/h2>/);
+    assert.doesNotMatch(readFileSync(startPath, "utf8"), /<script/i);
     assert.match(readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8"), /https:\/\/grillyour\.ai\/start\//);
   });
 
-  it("is linked from the home page", () => {
-    assert.match(page, /<a href="\/start\/">/);
+  it("the home page setup copy points invitees at every AI, and the README and hosted guide match", () => {
+    const setup = page.slice(page.indexOf('id="setup"'), page.indexOf('class="routes"'));
+    assert.match(setup, /<a href="\/start\/">/);
+    assert.match(setup, /Claude\.ai/);
+    assert.match(setup, /ChatGPT/);
+    assert.match(setup, /Grok Bot/);
+    assert.match(setup, /Gemini/);
+    assert.match(setup, /Meta AI/);
+    assert.match(setup, /verified working/i);
+    assert.match(setup, /Should work, testing now/);
+    assert.match(setup, /US only/);
+    assert.match(setup, /personal Google account/);
+    assert.match(setup, /Keep Activity on/);
+    assert.match(setup, /coming soon/i);
+    assert.match(setup, SAME_EMAIL);
+    assert.match(setup, INVITE_EMAIL);
+    assert.doesNotMatch(setup, /in two minutes/);
+
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    const chat = readme.slice(readme.indexOf("### Grill in chat"), readme.indexOf("###", readme.indexOf("### Grill in chat") + 4));
+    assert.match(chat, /https:\/\/grillyour\.ai\/start\//);
+    assert.match(chat, /ChatGPT/);
+    assert.match(chat, /paid plan/);
+    assert.match(chat, /Add custom MCP server/);
+    assert.match(chat, /OAuth/);
+    assert.match(chat, /I understand and want to continue/);
+    assert.match(chat, /Grok Bot/);
+    assert.match(chat, /Add this MCP server: https:\/\/grillyour\.ai\/mcp/);
+    assert.match(chat, /Gemini/);
+    assert.match(chat, /Should work, testing now/);
+    assert.match(chat, /Keep Activity on/);
+    assert.match(chat, /Meta AI/);
+    assert.match(chat, /coming soon/i);
+    assert.match(chat, SAME_EMAIL);
+    assert.match(chat, INVITE_EMAIL);
+    assert.doesNotMatch(readme, /### Inside Claude\.ai/);
+    assert.doesNotMatch(readme, /not live yet\. When Grill turns it on/);
+
+    const hosted = readFileSync(join(ROOT, "docs/HOSTED.md"), "utf8");
+    assert.match(hosted, /https:\/\/grillyour\.ai\/start\//);
+    assert.match(hosted, /GET \/\.well-known\/oauth-protected-resource\/mcp`? serves the same metadata as the root path/);
+    const person = hosted.slice(hosted.indexOf("## What a person does"), hosted.indexOf("## ", hosted.indexOf("## What a person does") + 3));
+    assert.match(person, SAME_EMAIL);
+    assert.match(person, INVITE_EMAIL);
+    assert.match(person, /ChatGPT/);
+    assert.match(person, /Grok Bot/);
+    assert.match(person, /coming soon/i);
   });
 
   it("links to the privacy page", () => {

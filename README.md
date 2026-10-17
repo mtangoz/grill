@@ -77,9 +77,17 @@ Then add a server named `grill` that runs `npx -y grillyour`. The config holds n
 
 It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTER_API_KEY` works when that is unset. Or save the key once for every app on this computer with `npx -y grillyour --set-key`. It goes in `~/.config/grill/key`, outside any project's `.env`.
 
-### Inside Claude.ai
+### Grill in chat
 
-Invite-only, and not live yet. When Grill turns it on, you add a custom connector at the address Grill gives you, sign in, and grill in the chat. Until then, use Claude Desktop or the paste route above. Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
+Invite-only. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). Use the same email each time, the email your invite went to, every time.
+
+- **Claude.ai**, verified working. On the web, on a Free, Pro or Max plan: Customize → Connectors → Add custom connector. URL `https://grillyour.ai/mcp`, name it Grill, then sign in.
+- **ChatGPT**, verified working. On the web, with a paid plan: Plugins, the plus button, Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Click I understand and want to continue, then Create. Install it, then sign in.
+- **Grok Bot**, verified working. Tell the bot `Add this MCP server: https://grillyour.ai/mcp`, then sign in when asked.
+- **Gemini**: Should work, testing now. US only, a personal Google account, Keep Activity on. On gemini.google.com: Settings, Connected Apps, Add a custom app, paste `https://grillyour.ai/mcp`, Next, then sign in.
+- **Meta AI**, coming soon.
+
+Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
 
 ## What it costs
 
