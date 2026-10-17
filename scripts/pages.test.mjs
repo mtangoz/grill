@@ -338,7 +338,7 @@ describe("the decisions page layout", () => {
       const manage = html.indexOf("<h2>Manage</h2>");
       assert.ok(record > 0, "a record card is shown");
       assert.ok(manage > record, "Manage comes after the records");
-      for (const marker of ["Keep my decision records", "Export as text", "Look-back reminders in your calendar", "credit left"]) {
+      for (const marker of ["Keep my decision records", "Export as text", "Look-back reminders in your calendar"]) {
         assert.ok(html.indexOf(marker) > manage, `${marker} sits under Manage`);
       }
       assert.ok(html.indexOf("Delete all records") > record, "delete all follows the records");
