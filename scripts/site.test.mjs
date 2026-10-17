@@ -33,7 +33,7 @@ describe("site/page.html", () => {
     assert.match(page, /data-copy="muse-url"/);
     assert.match(page, /data-copy="muse-client"/);
     assert.match(page, /Same for everyone\. No secret\./);
-    assert.match(page, /Tap Add, then sign in with the code we email you/);
+    assert.match(page, /Tap Add, then sign in with the email your invite went to, every time\. We email you a code; check spam/);
     assert.match(page, /button\[data-copy\]/);
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     assert.match(readme, /### Meta AI \(Muse\)/);

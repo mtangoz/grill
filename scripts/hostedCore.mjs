@@ -26,7 +26,7 @@ export const RUNNING_JOB_LIMIT = 3;
 export const CREDIT_CACHE_MS = 60_000;
 export const OUT_OF_CREDIT = "You're out of grill credit. More is coming soon. Write to support@grillyour.ai for a top-up.";
 export const INVITE_ONLY =
-  "Grill in chat is invite-only for now, and this email isn't on the list yet. To ask for an invite, write to support@grillyour.ai.";
+  "Grill in chat is invite-only for now, and this email isn't on the list yet. If you were invited, disconnect Grill, connect again, and sign in with the email your invite went to. To ask for an invite, write to support@grillyour.ai.";
 export const CONSENT_TEXT = [
   "Keep a record of your decisions on your Grill account? Yes / No",
   "",
