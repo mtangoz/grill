@@ -1205,7 +1205,7 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.equal(ctx.management.creates.length, 1);
       assert.equal(ctx.management.creates[0].name.includes("@"), false);
       assert.equal(ctx.management.creates[0].name.includes("invitee"), false);
-      assert.equal(ctx.management.creates[0].limit, 1);
+      assert.equal(ctx.management.creates[0].limit, 5);
       const secondUser = signJwt(claims({ sub: "user_second", redirect_uri: CLAUDE_WEB_REDIRECT }));
       const shared = await postMcp(
         ctx,
@@ -1962,14 +1962,15 @@ describe("hosted Grill: spending caps, open sign-up, races and plain errors", ()
 
   it("reads the caps from env with safe defaults", () => {
     assert.equal(monthlyCapUsd({}), 20);
-    assert.equal(userMonthlyCapUsd({}), 1);
+    assert.equal(userMonthlyCapUsd({}), 5);
     assert.equal(monthlyCapUsd({ GRILL_MONTHLY_CAP_USD: "35" }), 35);
     assert.equal(monthlyCapUsd({ GRILL_MONTHLY_CAP_USD: "nonsense" }), 20);
     assert.equal(monthlyCapUsd({ GRILL_MONTHLY_CAP_USD: "-4" }), 20);
     assert.equal(monthlyCapUsd({ GRILL_MONTHLY_CAP_USD: "0" }), 0);
     assert.equal(capBlock({ serviceMicros: 19_999_999, userMicros: 0 }), null);
     assert.equal(capBlock({ serviceMicros: 20_000_000, userMicros: 0 }).text, SERVICE_CAP_TEXT);
-    assert.equal(capBlock({ serviceMicros: 0, userMicros: 1_000_000 }).text, USER_CAP_TEXT);
+    assert.equal(capBlock({ serviceMicros: 0, userMicros: 4_999_999 }), null);
+    assert.equal(capBlock({ serviceMicros: 0, userMicros: 5_000_000 }).text, USER_CAP_TEXT);
     for (const text of [SERVICE_CAP_TEXT, USER_CAP_TEXT]) {
       assert.doesNotMatch(text, /\b[45]\d\d\b|error|code/i);
       assert.match(text, /Nothing was charged to you/);
@@ -2333,7 +2334,7 @@ describe("look-back reminders", { concurrency: false }, () => {
       await decide(ctx, fake, token, "Hire contractor", JAN);
       const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
       const due = html.indexOf("Due for a look-back");
-      const credit = html.indexOf("credit left");
+      const credit = html.indexOf("Free for life");
       const records = html.indexOf("Records are");
       const exported = html.indexOf("Export as text");
       assert.ok(due > 0, "due list is missing");

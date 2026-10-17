@@ -15,7 +15,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createCappedKey, esc, page, readManagedKey, removeManagedKey, WELCOME_HEADERS } from "./_pro.mjs";
+import { createCappedKey, esc, page, readManagedKey, removeManagedKey, setMonthlyLimit, WELCOME_HEADERS } from "./_pro.mjs";
 import {
   DEEPEN_OFF,
   DEEPEN_ONLY_BIG,
@@ -96,7 +96,8 @@ import {
   serviceFailureText,
   signInUrl,
   sourceAppFromClient,
-  starterCreditUsd,
+  allowanceLine,
+  userMonthlyCapUsd,
   toMicros,
   wwwAuthenticate,
 } from "../scripts/hostedCore.mjs";
@@ -630,6 +631,7 @@ async function saveAccount(account, deps) {
     keyCipher: account.keyCipher || null,
     keyHash: account.keyHash || null,
     keyLimitUsd: account.keyLimitUsd ?? null,
+    keyReset: account.keyReset || null,
     keyName: account.keyName || null,
     recordKeyCipher: account.recordKeyCipher || null,
     spend: (account.spend || []).map((row) => ({
@@ -735,6 +737,7 @@ async function ensureAccount(userId, email, deps, human) {
         account.keyCipher = holder.keyCipher;
         account.keyHash = holder.keyHash;
         account.keyLimitUsd = holder.keyLimitUsd ?? null;
+        account.keyReset = holder.keyReset || null;
         account.keyName = holder.keyName || null;
         account.capFrom = prior;
         account.human = capEmail;
@@ -754,8 +757,8 @@ async function ensureAccount(userId, email, deps, human) {
       env: deps.env,
       fetch: deps.fetch,
       name,
-      limit: starterCreditUsd(deps.env),
-      reset: null,
+      limit: userMonthlyCapUsd(deps.env),
+      reset: "monthly",
     });
   } catch {
     throw new Coded("starter-key");
@@ -777,9 +780,28 @@ async function ensureAccount(userId, email, deps, human) {
   account.keyCipher = encryptString(made.key, master);
   account.keyHash = made.hash;
   account.keyLimitUsd = made.limitUsd;
+  account.keyReset = "monthly";
   account.keyName = name;
   await saveAccount(account, deps);
   return account;
+}
+
+/**
+ * Early testers get a monthly allowance. A key minted before that was a one-off starter credit
+ * with no reset; move it once to the monthly cap. A failure leaves the old key as it was.
+ */
+async function ensureMonthlyAllowance(account, deps) {
+  const cap = userMonthlyCapUsd(deps.env);
+  if (!account.keyHash || (account.keyReset === "monthly" && Number(account.keyLimitUsd) === cap)) return;
+  try {
+    await setMonthlyLimit(account.keyHash, cap, { env: deps.env, fetch: deps.fetch });
+  } catch {
+    logHosted(deps.requestId || "credit", "key-monthly");
+    return;
+  }
+  account.keyReset = "monthly";
+  account.keyLimitUsd = cap;
+  await saveAccount(account, deps);
 }
 
 async function creditOf(account, deps) {
@@ -787,13 +809,15 @@ async function creditOf(account, deps) {
   const hit = creditCache.get(account.id);
   if (hit && now - hit.at < CREDIT_CACHE_MS) return hit;
   if (!account.keyHash) return { at: now, remaining: 0, out: true };
+  await ensureMonthlyAllowance(account, deps);
   const live = await readManagedKey(account.keyHash, { env: deps.env, fetch: deps.fetch });
   if (!live || live.disabled) {
     const row = { at: now, remaining: 0, out: true };
     creditCache.set(account.id, row);
     return row;
   }
-  const usage = Number(live.usageTotalUsd) || 0;
+  // A monthly key counts this month's use; an old one-off key, if it couldn't be moved, its total.
+  const usage = Number(account.keyReset === "monthly" ? live.usageUsd : live.usageTotalUsd) || 0;
   const limit = Number.isFinite(live.limitUsd) ? live.limitUsd : Number(account.keyLimitUsd) || 0;
   const remaining = Math.max(0, limit - usage);
   const row = { at: now, remaining, out: remaining <= 0 };
@@ -2117,7 +2141,7 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
     ${renderChanges(rows)}
     ${records}
     <h2>Manage</h2>
-    <p>${credit?.out ? esc(OUT_OF_CREDIT) : `About ${Math.max(0, Math.floor((credit?.remaining || 0) / 0.03))} grills of credit left.`}</p>
+    <p>${credit?.out ? esc(OUT_OF_CREDIT) : esc(allowanceLine(credit?.remaining, extra.env))}</p>
     <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them.</p>
     <form method="post" action="/decisions" class="row">
       <input type="hidden" name="action" value="records">
@@ -2172,7 +2196,8 @@ function renderAccount(account, credit, extra = {}) {
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Your account</h1>
     <p>${esc(account.email)}</p>
-    <p>Records: ${esc(keeping)}. ${credit?.out ? esc(OUT_OF_CREDIT) : `About ${Math.max(0, Math.floor((credit?.remaining || 0) / 0.03))} grills of credit left.`}</p>
+    <p>Records: ${esc(keeping)}.</p>
+    <p>${credit?.out ? esc(OUT_OF_CREDIT) : esc(allowanceLine(credit?.remaining, extra.env))}</p>
     <p>Grill holds a model-router key for you. It is not shown here. The write-up you approve passes through Grill's server in memory and is not stored.</p>
     <form method="post" action="/account" class="row">
       <input type="hidden" name="action" value="records">
@@ -2333,7 +2358,7 @@ export async function handleDecisions(request, deps) {
     const now = typeof deps.now === "number" ? deps.now : Date.now();
     const habits = decisionHabits({ records: rows, waiting, now });
     const calendar = await calendarState(session.account, deps);
-    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed }), { clearFlash: Boolean(flashed) });
+    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed, env: deps.env }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
@@ -2377,7 +2402,7 @@ export async function handleAccount(request, deps) {
     const flashed = readFlashLink(request);
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
     const calendar = await calendarState(session.account, deps);
-    return htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed }), { clearFlash: Boolean(flashed) });
+    return htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);

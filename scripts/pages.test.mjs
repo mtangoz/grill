@@ -111,7 +111,7 @@ describe("pages a person sees", () => {
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
       const due = html.indexOf("Due for a look-back");
-      const credit = html.indexOf("credit left");
+      const credit = html.indexOf("Free for life");
       const records = html.indexOf("Keep my decision records");
       const exported = html.indexOf("Export as text");
       assert.ok(due > html.indexOf("<h1>"), "due list is missing");
@@ -338,7 +338,7 @@ describe("the decisions page layout", () => {
       const manage = html.indexOf("<h2>Manage</h2>");
       assert.ok(record > 0, "a record card is shown");
       assert.ok(manage > record, "Manage comes after the records");
-      for (const marker of ["Keep my decision records", "Export as text", "Look-back reminders in your calendar"]) {
+      for (const marker of ["Keep my decision records", "Export as text", "Look-back reminders in your calendar", "Free for life"]) {
         assert.ok(html.indexOf(marker) > manage, `${marker} sits under Manage`);
       }
       assert.ok(html.indexOf("Delete all records") > record, "delete all follows the records");
