@@ -16,7 +16,7 @@ const privacyPage = readFileSync(join(ROOT, "site/privacy.html"), "utf8");
 describe("site/page.html", () => {
   it("is a body with no document skeleton, so it publishes as an artifact unchanged", () => {
     assert.doesNotMatch(page, /<!doctype|<html[\s>]|<head[\s>]|<body[\s>]/i);
-    assert.match(page.slice(0, 8192), /<title>Grill<\/title>/);
+    assert.match(page.slice(0, 8192), /<title>Grill: grill your AI before you send it to your boss<\/title>/);
   });
 
   it("links every setup route the README promises", () => {
@@ -94,7 +94,10 @@ describe("site/page.html", () => {
     ]);
   });
 
-  it("leads with the choice staying with the person", () => {
+  it("leads with the tagline, then the choice staying with the person", () => {
+    assert.match(page, /^<title>Grill: grill your AI before you send it to your boss<\/title>/);
+    assert.match(page, /<h1>Grill your AI before you send it to your boss\.<\/h1>/);
+    assert.doesNotMatch(page, /<h1>Get a second opinion before you decide\.<\/h1>/);
     assert.match(page, /<p class="lede">Hear the strongest case against your plan, then decide for yourself\.<\/p>/);
     const line3 = readFileSync(join(ROOT, "README.md"), "utf8").split("\n")[2];
     assert.equal(line3, "**Hear the strongest case against your plan, then decide for yourself.**");
@@ -290,8 +293,9 @@ describe("the site build", () => {
     const html = readFileSync(join(ROOT, "_site/index.html"), "utf8");
     const [head, rest] = html.split("</head>");
     assert.match(html, /^<!doctype html>/);
-    assert.match(head, /<title>Grill<\/title>/);
-    assert.match(head, /<meta property="og:title" content="Grill">/);
+    assert.match(head, /<title>Grill: grill your AI before you send it to your boss<\/title>/);
+    assert.match(head, /<meta property="og:title" content="Grill: grill your AI before you send it to your boss">/);
+    assert.match(head, /<meta name="description" content="Grill your AI before you send it to your boss\. Get a second opinion before you decide/);
     assert.match(head, /<link rel="canonical" href="https:\/\/grillyour\.ai\/">/);
     assert.match(head, /<meta name="color-scheme" content="light dark">/);
     assert.match(head, /<meta name="theme-color" content="#f7f4ef" media="\(prefers-color-scheme: light\)">/);
