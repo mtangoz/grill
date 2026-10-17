@@ -118,6 +118,7 @@ describe("site/page.html", () => {
     assert.ok(privacyPage.includes(tool));
     assert.ok(privacyPage.includes(launch));
     assert.match(page, /<a href="\/privacy\/">Privacy<\/a>/, "the home page links the privacy page");
+    assert.match(page, /<a href="\/privacy\/">Nothing kept unless you choose<\/a>/);
     assert.match(page, /The free tool has no account and keeps none of your decisions/);
     const privacy = readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8");
     assert.ok(privacy.includes(visits));
@@ -598,5 +599,32 @@ describe("the /start page", () => {
     assert.match(person, /ChatGPT/);
     assert.match(person, /Grok Bot/);
     assert.match(person, /coming soon/i);
+  });
+
+  it("links to the privacy page", () => {
+    const start = readFileSync(startPath, "utf8");
+    assert.match(start, /href="\/privacy\/"/);
+    assert.match(start, /Your decisions stay private\. See <a href="\/privacy\/">Privacy<\/a>\./);
+  });
+});
+
+describe("the privacy page", () => {
+  it("states the four promises", () => {
+    const blockEnd = privacyPage.indexOf("<h2>Your decisions</h2>");
+    const block = privacyPage.slice(0, blockEnd);
+    assert.match(block, /<h2>Our four promises<\/h2>/);
+    for (const line of [
+      "<strong>Your decisions are never public.</strong> We never publish a decision, and we never tie one to your name in public. Not in examples, case studies, marketing or anywhere else.",
+      "<strong>No ads.</strong> Grill shows no ads and has no advertising partners.",
+      "<strong>We never sell your data.</strong> Not your decisions, your email or your usage. Not to anyone.",
+      "<strong>We never train AI on your decisions.</strong> Grill improves by practising on made-up examples. The AI services that judge your decision are asked, on every request, not to keep it or collect it (zero data retention).",
+    ]) {
+      assert.ok(block.includes(line), line);
+    }
+    const keys = "Only you see your records on the site. Grill's maintainers hold the encryption keys, so they could technically decrypt records you chose to keep. They don't read them, and they never publish them.";
+    assert.ok(privacyPage.includes(keys), "encryption-keys line");
+    assert.match(privacyPage, /<h2>Using Grill in chat \(the connector\)<\/h2>/);
+    assert.match(privacyPage, /The free tool has no account and keeps nothing\. Grill in chat keeps only what you choose, encrypted, and you can delete it\./);
+    assert.match(privacyPage, /We don't keep what you decide unless you choose to keep decision records \(Grill in chat\) or saved report copies \(Pro\), and you can delete them\./);
   });
 });

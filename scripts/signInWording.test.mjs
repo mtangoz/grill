@@ -33,6 +33,17 @@ describe("sign-in wording", () => {
     assert.doesNotMatch(hosted, /^- Google, and an emailed code\.$/m);
   });
 
+  it("the privacy notes and the data ledger say email code only", () => {
+    const privacy = read("docs/PRIVACY.md");
+    assert.match(privacy, /Sign-in is Clerk \(an emailed code only\)\. There is no password\./);
+    const signIn = privacy.slice(privacy.indexOf("Sign-in is Clerk"), privacy.indexOf("Records live in Upstash"));
+    assert.doesNotMatch(signIn, /Google|AgentID/);
+    const ledger = read("docs/DATA-LEDGER.md");
+    const row = ledger.split("\n").find((line) => line.startsWith("| Sign-in |"));
+    assert.equal(row, "| Sign-in | Clerk. Email, and the sign-in event. An emailed code only. | Until you delete the account. Clerk's own retention applies to its logs. | You, by deleting the account (Grill calls Clerk's delete). Clerk, under their policy. | No sign-in. |");
+    assert.doesNotMatch(row, /Google|AgentID/);
+  });
+
   it("the invite-only reply tells an invitee to sign in again with the invited email", () => {
     assert.match(INVITE_ONLY, /^Grill in chat is invite-only for now/);
     assert.match(INVITE_ONLY, /email your invite went to/);
