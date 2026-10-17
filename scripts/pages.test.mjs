@@ -142,7 +142,6 @@ describe("pages a person sees", () => {
     const ctx = world();
     const { html } = await getPage(ctx, "/decisions", { now: FEB });
     assert.equal(html.includes('type="hidden" name="confirm"'), false);
-    assert.match(html, /href="\/decisions\?confirm=delete-all"/);
     const ask = await getPage(ctx, "/decisions?confirm=delete-all", { now: FEB });
     assert.match(ask.html, /<h1>Delete all records\?<\/h1>/);
     assert.match(ask.html, /<button type="submit" name="confirm" value="delete">Delete all records<\/button>/);
@@ -280,7 +279,7 @@ describe("pages a person sees", () => {
       const ctx = world();
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(html, /review 15 Jan/);
+      assert.match(html, /Look back on 15 Jan/);
       assert.equal(html.includes("2026-01-15"), false);
     } finally {
       await fake.close();
@@ -318,6 +317,115 @@ describe("pages a person sees", () => {
       await send(2, "grill_decided", { decided: "Delay it." });
       const html = (await getPage(ctx, "/decisions", { now: FEB })).html;
       assert.equal((html.match(/Delete this chain/g) || []).length, 2);
+    } finally {
+      await fake.close();
+    }
+  });
+});
+
+// /decisions has one job: see your decisions. Records come before the settings, a single record
+// or a chain is deleted only from a page that asks first, and an empty page says what to do.
+// Made-up fixtures only.
+describe("the decisions page layout", () => {
+  it("puts records before the settings, export and calendar, with settings at the bottom under Manage", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Hire contractor", JAN);
+      const { html } = await getPage(ctx, "/decisions", { now: FEB });
+      const record = html.indexOf('class="record-title"');
+      const manage = html.indexOf("<h2>Manage</h2>");
+      assert.ok(record > 0, "a record card is shown");
+      assert.ok(manage > record, "Manage comes after the records");
+      for (const marker of ["Keep my decision records", "Export as text", "Look-back reminders in your calendar", "credit left"]) {
+        assert.ok(html.indexOf(marker) > manage, `${marker} sits under Manage`);
+      }
+      assert.ok(html.indexOf("Delete all records") > record, "delete all follows the records");
+      assert.match(html, /href="\/decisions\?confirm=delete-all"/);
+      assert.equal(html.includes('type="hidden" name="confirm"'), false);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("links each record's delete to a page that asks first, and deletes only after confirm", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Hire contractor", JAN);
+      const { html } = await getPage(ctx, "/decisions", { now: FEB });
+      assert.equal(/<input type="hidden" name="action" value="delete">/.test(html), false, "no one-tap delete form on the list");
+      const href = html.match(/href="(\/decisions\?confirm=delete&amp;id=[^"]+)"/)?.[1];
+      assert.ok(href, "a delete link to a confirm page");
+      const id = decodeURIComponent(href.split("id=")[1]);
+      const ask = await getPage(ctx, href.replace(/&amp;/g, "&"), { now: FEB });
+      assert.match(ask.html, /<h1>Delete this record\?<\/h1>/);
+      assert.match(ask.html, /Hire contractor/);
+      assert.match(ask.html, /<button type="submit" name="confirm" value="delete">Delete this record<\/button>/);
+      assert.match(ask.html, /<a href="\/decisions">Keep it<\/a>/);
+      assert.equal(ask.html.includes("<script"), false);
+      const exportJson = async () =>
+        JSON.parse(await (await handleDecisions(new Request("https://grillyour.ai/decisions?export=json", { headers: { cookie: cookieHeader() } }), { ...ctx, now: FEB })).text());
+      const unconfirmed = await postForm(ctx, `action=delete&id=${encodeURIComponent(id)}`, FEB);
+      assert.equal(unconfirmed.status, 303);
+      assert.equal((await exportJson()).length, 1, "a post without confirm deletes nothing");
+      const confirmed = await postForm(ctx, `action=delete&id=${encodeURIComponent(id)}&confirm=delete`, FEB);
+      assert.equal(confirmed.status, 303);
+      assert.equal((await exportJson()).length, 0);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("asks before deleting a chain, and says how many records it removes", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Hire contractor", JAN);
+      await decide(ctx, fake, "Delay the beta", FEB, { supersedes: "2026-01-01 Hire contractor", changed: "evidence the trial slipped" });
+      const { html } = await getPage(ctx, "/decisions", { now: FEB });
+      assert.equal(/name="action" value="delete-chain"/.test(html), false, "no one-tap chain delete on the list");
+      const href = html.match(/href="(\/decisions\?confirm=delete-chain&amp;id=[^"]+)"/)?.[1];
+      assert.ok(href, "a chain delete link to a confirm page");
+      const ask = await getPage(ctx, href.replace(/&amp;/g, "&"), { now: FEB });
+      assert.match(ask.html, /<h1>Delete this chain\?<\/h1>/);
+      assert.match(ask.html, /2 records/);
+      assert.match(ask.html, /<button type="submit" name="confirm" value="delete">Delete this chain<\/button>/);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("sends a confirm link for a record that isn't yours back to the list", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const { res } = await getPage(ctx, "/decisions?confirm=delete&id=not-a-record", { now: FEB });
+    assert.equal(res.status, 303);
+  });
+
+  it("says what to do when there are no records yet", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const { html } = await getPage(ctx, "/decisions", { now: FEB });
+    assert.match(html, /No decisions saved yet\./);
+    assert.match(html, /Say “grill this: …” in your AI\. When you tell it your call, it’s saved here\./);
+    assert.equal(html.includes("Delete all records"), false, "nothing to delete on an empty page");
+  });
+
+  it("shows a short details line: the verdict in bold, the look-back date in words, no unknown app", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Hire contractor", JAN);
+      const { html } = await getPage(ctx, "/decisions", { now: FEB });
+      const card = html.slice(html.indexOf('class="record-title"'), html.indexOf("</article>"));
+      assert.match(card, /<p class="record-meta"><strong>[^<]+<\/strong> · 1 Jan · (from [A-Za-z. ]+ · )?Look back on 15 Jan<\/p>/);
+      assert.equal(card.includes("unknown"), false);
+      assert.equal(card.includes("Look-back: not yet."), false);
     } finally {
       await fake.close();
     }
