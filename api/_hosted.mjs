@@ -2071,31 +2071,52 @@ function renderCalendar(action, calendar, freshUrl) {
   </section>`;
 }
 
+const APP_LABELS = { claude: "Claude", "claude-code": "Claude Code", chatgpt: "ChatGPT", grok: "Grok", gemini: "Gemini", meta: "Meta AI", muse: "Meta AI" };
+
+/** One short line: the verdict in bold, the day, the app if known, and the look-back date in words. */
+function recordMeta(row) {
+  const parts = [];
+  if (row.verdict) parts.push(`<strong>${esc(row.verdict)}</strong>`);
+  if (row.date) parts.push(esc(showDay(row.date)));
+  const app = String(row.sourceApp || "").trim();
+  if (app && app !== "unknown") parts.push(`from ${esc(APP_LABELS[app] || app)}`);
+  if (row.review) parts.push(`Look back on ${esc(showDay(row.review))}`);
+  return `<p class="record-meta">${parts.join(" · ")}</p>`;
+}
+
+const EMPTY_DECISIONS = "<p><strong>No decisions saved yet.</strong></p>\n    <p>Say “grill this: …” in your AI. When you tell it your call, it’s saved here.</p>";
+
 function renderDecisions(account, rows, credit, habits, extra = {}) {
   const linked = linkChains(rows);
   const byId = new Map(linked.map((row) => [row.id, row]));
   const cards = [...linked].reverse().map((row) => {
-    const look = row.lookback?.happened ? `<p>Look-back: ${esc(row.lookback.happened)}</p>` : "<p>Look-back: not yet.</p>";
+    const look = row.lookback?.happened ? `<p>Look-back: ${esc(row.lookback.happened)}</p>` : "";
     const chain = chainNote(row, byId);
     const chained = Boolean(row.replacesId || row.replacedByIds?.length);
-    const chainForm = chained
-      ? `<form method="post" action="/decisions"><input type="hidden" name="action" value="delete-chain"><input type="hidden" name="id" value="${esc(row.id)}"><button type="submit">Delete this chain</button></form>`
-      : "";
+    const id = encodeURIComponent(row.id);
+    const chainLink = chained ? ` <a class="button" href="/decisions?confirm=delete-chain&amp;id=${esc(id)}">Delete this chain</a>` : "";
     return `<article class="banner">
       <p class="record-title">${esc(row.title || "Untitled")}</p>
-      <p>${esc(showDay(row.date))} · ${esc(row.verdict || "")} · ${esc(row.sourceApp || "unknown")} · review ${esc(showDay(row.review))}</p>
+      ${recordMeta(row)}
       ${chain ? `<p>${esc(chain)}</p>` : ""}
       ${look}
-      <form method="post" action="/decisions"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="${esc(row.id)}"><button type="submit">Delete this record</button></form>
-      ${chainForm}
+      <p class="row"><a class="button" href="/decisions?confirm=delete&amp;id=${esc(id)}">Delete this record</a>${chainLink}</p>
     </article>`;
   });
   const keeping = account.records === "keep";
+  const records = cards.length
+    ? `${cards.join("\n")}
+    <p><a class="button" href="/decisions?confirm=delete-all">Delete all records</a></p>`
+    : EMPTY_DECISIONS;
   return page(
     "Your decisions · Grill",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Your decisions</h1>
     ${renderDue(rows, extra.now)}
+    ${renderHabits(habits)}
+    ${renderChanges(rows)}
+    ${records}
+    <h2>Manage</h2>
     <p>${credit?.out ? esc(OUT_OF_CREDIT) : `About ${Math.max(0, Math.floor((credit?.remaining || 0) / 0.03))} grills of credit left.`}</p>
     <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them.</p>
     <form method="post" action="/decisions" class="row">
@@ -2104,11 +2125,28 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
       <button type="submit" name="value" value="off">Don't keep records</button>
     </form>
     <p class="row"><a class="button" href="/decisions?export=text">Export as text</a> <a class="button" href="/decisions?export=json">Export as JSON</a> <a href="/account">Account</a></p>
-    ${renderCalendar("/decisions", extra.calendar, extra.freshUrl || "")}
-    ${renderHabits(habits)}
-    ${renderChanges(rows)}
-    ${cards.join("\n") || "<p>No records yet.</p>"}
-    <p><a class="button" href="/decisions?confirm=delete-all">Delete all records</a></p>`,
+    ${renderCalendar("/decisions", extra.calendar, extra.freshUrl || "")}`,
+  );
+}
+
+/** Asks before one record, or a whole chain, is deleted. The confirm value is the button they press. */
+function renderDeleteOneConfirm(row, chainCount) {
+  const chain = chainCount > 0;
+  const what = chain ? "Delete this chain" : "Delete this record";
+  const detail = chain
+    ? `This removes ${chainCount} record${chainCount === 1 ? "" : "s"} in this chain, including “${esc(row.title || "Untitled")}”.`
+    : `This removes “${esc(row.title || "Untitled")}”.`;
+  return page(
+    `${what}? · Grill`,
+    `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
+    <h1>${what}?</h1>
+    <p>${detail} Export first if you want a copy. This cannot be undone.</p>
+    <form method="post" action="/decisions">
+      <input type="hidden" name="action" value="${chain ? "delete-chain" : "delete"}">
+      <input type="hidden" name="id" value="${esc(row.id)}">
+      <button type="submit" name="confirm" value="delete">${what}</button>
+    </form>
+    <p><a href="/decisions">Keep it</a></p>`,
   );
 }
 
@@ -2257,6 +2295,14 @@ export async function handleDecisions(request, deps) {
     if (request.method === "GET" && url.searchParams.get("export") === "text") return exportRecords(session.account, deps, "text");
     if (request.method === "GET" && url.searchParams.get("export") === "json") return exportRecords(session.account, deps, "json");
     if (request.method === "GET" && url.searchParams.get("confirm") === "delete-all") return html(200, renderDeleteAllConfirm());
+    const confirmOne = request.method === "GET" ? url.searchParams.get("confirm") : "";
+    if (confirmOne === "delete" || confirmOne === "delete-chain") {
+      const rows = await loadRecords(session.account, deps);
+      const target = rows.find((row) => row.id === (url.searchParams.get("id") || ""));
+      if (!target) return seeOther(`${publicOrigin(request)}/decisions`);
+      const count = confirmOne === "delete-chain" ? chainIds(rows, target.id).length : 0;
+      return html(200, renderDeleteOneConfirm(target, count));
+    }
     if (request.method === "POST") {
       const form = new URLSearchParams(await request.text());
       const action = form.get("action") || "";
@@ -2266,9 +2312,9 @@ export async function handleDecisions(request, deps) {
           session.account.records = value;
           await saveAccount(session.account, deps);
         }
-      } else if (action === "delete") {
+      } else if (action === "delete" && form.get("confirm") === "delete") {
         await deleteRecordIds(session.account, deps, [form.get("id") || ""]);
-      } else if (action === "delete-chain") {
+      } else if (action === "delete-chain" && form.get("confirm") === "delete") {
         const rows = await loadRecords(session.account, deps);
         await deleteRecordIds(session.account, deps, chainIds(rows, form.get("id") || ""));
       } else if (action === "delete-all" && form.get("confirm") === "delete") {

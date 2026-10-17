@@ -1125,7 +1125,7 @@ describe("hosted Grill", { concurrency: false }, () => {
         new Request("https://grillyour.ai/decisions", {
           method: "POST",
           headers: { cookie: `__session=${session}`, "content-type": "application/x-www-form-urlencoded" },
-          body: `action=delete-chain&id=${id}`,
+          body: `action=delete-chain&id=${id}&confirm=delete`,
         }),
         ctx,
       );
