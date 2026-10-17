@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build the public onboarding site. The home page's one source is site/page.html; the other pages
- * (terms, contribute, look-back, privacy) borrow its styles.
+ * (terms, contribute, look-back, start, privacy) borrow its styles.
  *
  * site/page.html is a page body (title, styles, markup, script) with no document skeleton, so the
  * same file publishes as a Claude artifact unchanged. This wraps it into a full document with the
@@ -151,6 +151,11 @@ writePage("look-back.html", {
   url: `${SITE_URL}look-back/`,
   outDir: "look-back",
 });
+writePage("start.html", {
+  description: "Connect Grill to your AI: Claude.ai steps for people invited to Grill in chat.",
+  url: `${SITE_URL}start/`,
+  outDir: "start",
+});
 writePage("privacy.html", {
   description: "What Grill sends, what it counts, and what it never keeps.",
   url: `${SITE_URL}privacy/`,
@@ -184,4 +189,4 @@ writeFileSync(
   join(OUT, "sitemap.xml"),
   `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pageUrls.map((u) => `  <url><loc>${u}</loc></url>`).join("\n")}\n</urlset>\n`,
 );
-console.log(`built _site/index.html and the terms, contribute, look-back and privacy pages${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}`);
+console.log(`built _site/index.html and the terms, contribute, look-back, start and privacy pages${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}`);

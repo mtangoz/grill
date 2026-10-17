@@ -434,3 +434,55 @@ describe("the site build", () => {
     assert.match(ignored, /Get a starter key/);
   });
 });
+
+// /start has one job: connect Grill in chat to the AI an invitee uses. Claude.ai is the tested
+// route. Meta AI and ChatGPT stay "coming soon" until they pass. No script: the address and
+// steps are plain text a person can select and copy.
+describe("the /start page", () => {
+  const startPath = join(ROOT, "site/start.html");
+
+  it("exists, opens with its title, and uses no script or copy buttons", () => {
+    assert.ok(existsSync(startPath), "site/start.html exists");
+    const start = readFileSync(startPath, "utf8");
+    assert.match(start, /^<title>Start using Grill<\/title>/);
+    assert.doesNotMatch(start, /<script/i);
+    assert.doesNotMatch(start, /data-copy|<button/i);
+  });
+
+  it("gives Claude.ai connector steps with the URL as selectable text", () => {
+    const start = readFileSync(startPath, "utf8");
+    assert.match(start, /<h2 id="claude">Claude\.ai<\/h2>/);
+    assert.match(start, /Customize → Connectors → Add custom connector/);
+    assert.match(start, /<input id="connector-url" type="text" readonly value="https:\/\/grillyour\.ai\/mcp"/);
+    assert.match(start, /<code>https:\/\/grillyour\.ai\/mcp<\/code>/);
+    assert.match(start, /use the email your invite went to, every time/i);
+    assert.match(start, /check spam/i);
+    assert.doesNotMatch(start, /Google/);
+    assert.match(start, /Grill this:/);
+    const claude = start.slice(start.indexOf('id="claude"'), start.indexOf('id="soon"'));
+    const steps = claude.match(/<li>/g) ?? [];
+    assert.ok(steps.length >= 3 && steps.length <= 5, `Claude.ai has 3 to 5 steps, got ${steps.length}`);
+  });
+
+  it("marks Meta AI and ChatGPT coming soon, with no setup steps for them", () => {
+    const start = readFileSync(startPath, "utf8");
+    const soon = start.slice(start.indexOf('id="soon"'));
+    assert.match(soon, /Meta AI/);
+    assert.match(soon, /ChatGPT/);
+    assert.match(soon, /coming soon/i);
+    assert.doesNotMatch(soon, /RNdHSHmWCRJO40vd/);
+  });
+
+  it("builds to /start/ with the site's styles and is in the sitemap", () => {
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+    const built = readFileSync(join(ROOT, "_site/start/index.html"), "utf8");
+    assert.match(built, /<title>Start using Grill<\/title>/);
+    assert.match(built, /<link rel="canonical" href="https:\/\/grillyour\.ai\/start\/">/);
+    assert.match(built, /--paper:/);
+    assert.match(readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8"), /https:\/\/grillyour\.ai\/start\//);
+  });
+
+  it("is linked from the home page", () => {
+    assert.match(page, /<a href="\/start\/">/);
+  });
+});
