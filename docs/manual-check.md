@@ -27,3 +27,18 @@ One more check, once, on any one assistant. Do not pin a model.
 6. Anchoring. Write one subject. Grill it twice, with the same words: once with no earlier choice in the write-up, and once with the earlier choice listed as one option among the others, not labeled "what I decided before", and with no earlier verdict. Compare the two verdicts. If they drift, stop listing the earlier choice in the write-up.
 
 Write down pass or fail for each assistant and each check, and the verdict words you saw. Do not file the decision text. A failure is a prompt fix, not a reason to pin a model.
+
+## Claude Code: the plan offer
+
+Once per release that touches `hooks/` or `scripts/planOffer.mjs`. Install the plugin from the branch, or start Claude Code with `--plugin-dir` pointing at a checkout.
+
+7. Enter plan mode (Shift+Tab), ask for a small plan, and let Claude show it for approval.
+   Pass: the line "Grill: want an outside judge, from a different company than Claude, on this plan first?" shows on screen before you choose, and the approval choices are the usual ones.
+8. Choose to keep planning, and say "grill this plan".
+   Pass: Claude grills the plan with the Grill tool. Nothing was sent before you said it.
+9. Get a second plan in the same session.
+   Pass: no line this time.
+10. Start Claude Code with `GRILL_PLAN_OFFER=off` and repeat step 7.
+    Pass: no line.
+
+If the line does not show on the approval screen in step 7, the hook does nothing useful there: note the Claude Code version and open an issue.

@@ -77,6 +77,10 @@ Then add a server named `grill` that runs `npx -y grillyour`. The config holds n
 
 It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTER_API_KEY` works when that is unset. Or save the key once for every app on this computer with `npx -y grillyour --set-key`. It goes in `~/.config/grill/key`, outside any project's `.env`.
 
+When Claude Code shows you a plan to approve, Grill adds one line, once a session: want an outside judge on this plan first? Keep planning and say "grill this plan". Claude Code hands the hook the plan, and the hook ignores it: it sends nothing and keeps nothing of the plan. To ask once, it keeps an empty marker file per session in the plugin's data folder, and removes markers older than two days the next time it runs. Turn it off with `GRILL_PLAN_OFFER=off`.
+
+Claude Code's advisor (`/advisor`) has a stronger Claude look over the work. That is a second opinion from the same company. Grill's judge is from a different one. Use both.
+
 ### Grill in chat
 
 Invite-only. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). Use the same email each time, the email your invite went to, every time.
