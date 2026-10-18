@@ -1,6 +1,6 @@
 # Why not just ask your own assistant?
 
-It helped you think it through, so its critique shares your blind spots. A judge from another company doesn't. Claude Desktop and Claude Code enforce that in code, and tell you if a run lands on your own company anyway. The copy-and-paste routes check it and warn you.
+It helped you think it through, so its critique shares your blind spots. A judge from another company doesn't. The same goes for a stronger model from the same company, such as Claude Code's advisor: it is a useful second look, but it comes from the same lab and can share the same blind spots. Claude Desktop and Claude Code enforce that in code, and tell you if a run lands on your own company anyway. The copy-and-paste routes check it and warn you.
 
 Grill is the outside judge step Felix Rieseberg recommends in [How to be more ambitious](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/): do not ask the model to judge itself.
 
