@@ -347,6 +347,42 @@ describe("the site build", () => {
     }
   });
 
+  // /llms.txt is the llmstxt.org file agents fetch. It has to name the same public pages as the
+  // sitemap, or a new page can ship in one and not the other.
+  it("writes llms.txt from the same pages as the sitemap", () => {
+    const build = (extra = {}) => {
+      execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env: { ...process.env, ...extra } });
+      return {
+        llms: readFileSync(join(ROOT, "_site/llms.txt"), "utf8"),
+        sitemap: readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8"),
+      };
+    };
+    const check = ({ llms, sitemap }) => {
+      assert.match(llms, /^# Grill\n/);
+      assert.match(
+        llms,
+        /^> Grill your AI before you send it to your boss\. An outside judge, a model from a different company, gives the strongest case against a decision\.\n/m,
+      );
+      assert.match(llms, /https:\/\/grillyour\.ai\/mcp/);
+      assert.match(llms, /Grill in chat is invite-only for now/);
+      assert.match(llms, /\[GitHub\]\(https:\/\/github\.com\/mtangoz\/grill\): \S/);
+      const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
+      for (const path of ["", "start/", "privacy/", "terms/", "look-back/", "contribute/"]) {
+        assert.ok(locs.includes(`https://grillyour.ai/${path}`), `sitemap lists /${path}`);
+      }
+      for (const url of locs) {
+        const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        assert.match(llms, new RegExp(`\\[[^\\]]+\\]\\(${escaped}\\): \\S`), `llms.txt links ${url}`);
+      }
+      // The privacy link keeps that page's own limit. Chat keeps a record only when you choose.
+      assert.match(llms, /https:\/\/grillyour\.ai\/privacy\/\): [^\n]*keeps only what you choose/);
+    };
+    check(build());
+    const withMiss = build({ GRILL_MISS: "1" });
+    check(withMiss);
+    assert.match(withMiss.llms, /https:\/\/grillyour\.ai\/miss\//);
+  });
+
   it("the early-access offer is on only when GRILL_PRO_COUPON is set at build time", () => {
     const build = (coupon) => {
       const env = { ...process.env };
