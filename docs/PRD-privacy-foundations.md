@@ -6,7 +6,7 @@ Grilled 2026-10-18: **solid if** (openrouter/auto, Anthropic excluded). Four cha
 
 ## 0. Why, in one line
 
-The homepage now says "Grill your AI before you send it to your boss." (#90), so people will grill work material, and several published privacy claims, including four in PRINCIPLES.md, are stronger than the code.
+The homepage now says "Grill your AI before you send it to your boss." (#90), so people will grill work material, and several published privacy claims, including five in PRINCIPLES.md, are stronger than the code.
 
 North Star check ([PRINCIPLES.md](PRINCIPLES.md#north-star)): the goal is 100 real users, and the count is not recorded ([STRATEGY.md](STRATEGY.md) rec 1). Careful users who make big decisions adopt Grill because of trust. If one false privacy line is found while Grill is at n≈0, it costs more users than any lever gains. So Now is small: count the 100, make every claim literally true, fix the cheap storage gaps, and add the one count that tells us when the rest is due. Everything an employer would see waits for one team pilot and a named buyer.
 
@@ -16,9 +16,9 @@ North Star check ([PRINCIPLES.md](PRINCIPLES.md#north-star)): the goal is 100 re
 |---|---|---|
 | "Only the write-up you approve" (README.md:18,100; PRINCIPLES.md:25,27; site/privacy.html:26; site/page.html:284; manifest.json:9; skills/grill/SKILL.md:69) | The instructions say "Do not wait for an OK" (server/index.mjs:263,633; scripts/hostedCore.mjs:603) and send "whatever context is already in the chat" (server/index.mjs:262), which can include a file the person shared | No |
 | "Grill keeps nothing" (site/page.html:208); "straight to the AI services" (site/terms.html:26) | On the hosted route the write-up passes through Grill's server. The note is held for 15 minutes; drafts and records are kept if the person opts in (api/_hosted.mjs:1086,1173) | No, for the hosted route |
-| Hosted: "in memory. It is never logged or stored" (PRINCIPLES.md:45; site/privacy.html:35) | The hosted spawn writes `report.md` to /tmp and removes it only when the child closes (api/_hosted.mjs:946-975). Every layer is held 15 minutes. Drafts copy lines of the write-up when records are on | No |
+| Hosted: "in memory. It is never logged or stored" (PRINCIPLES.md:45; site/privacy.html:35); "It never stores the write-up" (PRINCIPLES.md:61) | The hosted spawn writes `report.md` to /tmp and removes it only when the child closes (api/_hosted.mjs:946-975). Every layer is held 15 minutes. Drafts copy lines of the write-up when records are on | No |
 | "Emails, phones and card numbers are hidden" (site/privacy.html:26) | Masked only inside the judge process (scripts/judge.mjs:380-393). Drafts and the stored layers use the raw subject (api/_hosted.mjs:1043-1048,1134; scripts/reflection.mjs:73-136) | Misleading |
-| "If you say no, nothing is kept" (site/privacy.html:37) | Turning records off leaves existing drafts for up to 14 days, and Delete all skips them (api/_hosted.mjs:2335-2348) | No, once records were on |
+| "If you say no, nothing is kept" (site/privacy.html:37) | Turning records off (api/_hosted.mjs:1204-1207, 2335-2340, 2389-2394) leaves existing drafts for up to 14 days, and Delete all skips them (:2346-2348) | No, once records were on |
 | "The verdict is held … 15 minutes" (site/privacy.html:36) | Every layer is held, and it can repeat the write-up's first sentence and cited sources (api/_hosted.mjs:1168-1174; scripts/judgeCore.mjs choiceLabel, findCitedSources) | Understated |
 | "The optional Jev quality check … is zero-retention. It keeps nothing" (PRINCIPLES.md:33); "asked, on every request" and "the router does not keep it" (site/privacy.html:22,41; server/index.mjs:74; scripts/hostedCore.mjs:14) | The check is on by default (server/index.mjs:130-138; api/_hosted.mjs:1248). Its request carries no `provider` flag (scripts/checkCore.mjs buildCheckRequest); only the judge request does (scripts/judge.mjs:505). OpenRouter's categorisation sampling under `zdr` is unchecked | No for "optional"; the rest unverified |
 | "Grill uses OpenRouter's Auto Router. It does not pin models." (PRINCIPLES.md:87) | True of the judge. The quality check is a fixed model, `typesafe/jev-1.13` (scripts/checkCore.mjs:29) | Unscoped |
@@ -47,11 +47,11 @@ P1b adds the rule to PRINCIPLES.md as a "Who sees what" section. Under it goes a
 |---|---|---|---|---|---|
 | P0 | This PRD | docs/PRD-privacy-foundations.md | low | no (auto-merge) | — |
 | O0 | Count the 100: record evidenced users and look-backs (signal issues 0, plus outreach replies and conversations). Each conversation also records, with no names or text, whether the person grilled work material and whether records were on. If 2 of the first 10 conversations did both, X1 moves to Now | docs/STRATEGY.md (low); ops `grill-growth/evidence.md` and `user-conversations.md` | low | supplies the counts only they know | STRATEGY rec 1; tests the deferral premise |
-| T1 | Ops plumbing, bot-only | ops repo: `snapshot.py` evaluates section F and stops writing `new_senders`; a tracking issue in mtangoz/grill listing O1 and the PRs below | ops | no | trigger sources |
+| T1 | Ops plumbing, bot-only | ops repo: `snapshot.py` evaluates section F and stops writing `new_senders`. Tracking issue: #92 | ops | no | trigger sources |
 | O1 | Owner settings session, about 20 minutes, no PR | OpenRouter: Input & Output Logging off on the hosted router account, or hosted keys excluded; answers on categorisation sampling under `zdr=true`, any opt-out (turn it on), and whether the Auto Router sends prompts to a third party. PostHog: "Discard client IP data" on. `GRILL_METRICS_SALT` set if unset. Regions of Vercel functions, Upstash and Clerk. One live decisions-endpoint call with `provider.zdr` | — | yes | S9, G10, G6, S10, G3 check |
 | P1a | Honest claims, copy on safe paths, and a work-use line under the homepage tagline: "For work material: the free tool keeps nothing, and in chat you can say No to records." | README.md:18,100; site/page.html (tagline block), 208, 284; docs/PRD-hosted-pro.md:39 (drop "deleted on first read"; add a Pro launch-blocker list); docs/DATA-LEDGER.md:16 (layers can repeat the first line and cited sources) | low | no (auto-merge; only narrows claims) | G5 copy, S5 homepage, G4 |
 | P1b | Honest claims, the rest, and the core rule | docs/PRINCIPLES.md:25-27,33,45,87 plus "Who sees what"; docs/PRIVACY.md:7,18,20; site/privacy.html:26,35-40; site/terms.html:26; manifest.json:9,42; skills/grill/SKILL.md:42,69; api/_hosted.mjs:2202 (copy); server/index.mjs:251 (comment); scripts/hostedCore.mjs:31 (records question); scripts/claims.test.mjs; anchors in scripts/principles.test.mjs and the tests that assert the records question | high | yes | G5 (option A), S4, S5 terms, S12, G1 copy, §2 |
-| P2 | Hosted: nothing unmasked, on disk or per-grill outlives the request | api/_hosted.mjs: `safeSubject = redactSensitive(subject).text` for draftFromGrill and renderLayers (:1043-1048,:1134); drop `--out`, the mkdtemp/readFileSync/rmSync (:946-975) and the `report` fallback at :1128; `deletePendings` on records off (/decisions, /account) and on Delete all, with a notice on /account; delete the spend list (RPUSH/LTRIM at :1159-1160, one-off DEL) and the legacy `spend` field (:637); `GRILL_PAGE_KEY` for the page cookie (:1550-1553); `GRILL_METRICS_SALT` required, no fallback (:329). Also scripts/hosted.test.mjs (no `--out` in spawn args; drafts masked; drafts gone on off), docs/HOSTED.md env table, docs/DATA-LEDGER.md, docs/PRIVACY.md:118, site/privacy.html:37,40, PRINCIPLES.md:61 | high | yes, plus `GRILL_PAGE_KEY` set before deploy | G2, S6, G8, S7, G1 impersonation, S8 salt |
+| P2 | Hosted: nothing unmasked, on disk or per-grill outlives the request | api/_hosted.mjs: `safeSubject = redactSensitive(subject).text` for draftFromGrill and renderLayers (:1043-1048,:1134); drop `--out`, the mkdtemp/readFileSync/rmSync (:946-975) and the `report` fallback at :1128; `deletePendings` on every records-off path (/decisions :2335-2340, /account :2389-2394, and the grill tool's `keep_records: false` switch at :1204-1207) and on Delete all (:2346-2348), with a notice on /account; delete the spend list (RPUSH/LTRIM at :1159-1160, one-off DEL) and the legacy `spend` field (:637); `GRILL_PAGE_KEY` for the page cookie (:1550-1553); `GRILL_METRICS_SALT` required, no fallback (:329). Also scripts/hosted.test.mjs (no `--out` in spawn args; drafts masked; drafts gone on off), docs/HOSTED.md env table, docs/DATA-LEDGER.md, docs/PRIVACY.md:118, site/privacy.html:37,40, PRINCIPLES.md:61 | high | yes, plus `GRILL_PAGE_KEY` set before deploy | G2, S6, G8, S7, G1 impersonation, S8 salt |
 | P3 | Hosted counts route | api/_hosted.mjs: `GET` counts behind `Authorization: Bearer GRILL_OPS_TOKEN`. It returns only PFCOUNT for the active day, ISO week, current month and last complete month, as integers. No SCAN, no account or record counts, no ids. Tests: output keys are an allowlist; no route lists accounts. One DATA-LEDGER line | high | yes, plus `GRILL_OPS_TOKEN` | trigger source |
 | P4 | Zero retention on the quality check | scripts/checkCore.mjs (`provider: { zdr: true, data_collection: "deny" }`), the stale comments at scripts/judge.mjs:91,106-107 and checkCore.mjs:16, a test that every outbound body (judge, deepen, check) carries the flag | high | yes | G3 |
 | P5 | Signal issues say what they are. Keep the opt-in offer, which is Grill's only learning signal from real use. The form and the offer say it is a public GitHub issue under your own name, and it leads with "use a separate GitHub account if your employer could see it" | .github/ISSUE_TEMPLATE/grill-signal.yml:2 and its first markdown block; skills/grill/SKILL.md:131 (the offer line); skills/weekly-review/SKILL.md:103; LEARNING.md "Honest limits" | medium (skills/**) | no (narrows a claim) | S1 |
@@ -62,7 +62,7 @@ Wording P1b uses. For the send: "What your assistant sends: the decision in your
 
 ## 4. Honest limits for work users (the P7 text, in substance)
 
-- If you grill material under NDA, the installed tool, or Grill in your chat with records off, keeps nothing at Grill beyond the 15-minute encrypted note (and, until P2 ships, a report file on the server's disk for the length of the grill). The text still goes to OpenRouter, the judge's company and, unless you say "skip the check", TypeSafe. Masking covers emails, phones and card numbers only; names, clients and deal terms go as written. Whether your NDA allows that is your call.
+- If you grill material under NDA, the installed tool keeps nothing at Grill. Grill in your chat with records off keeps no decision text beyond the 15-minute encrypted note. Until P2 ships, it also keeps a report file on the server's disk for the length of the grill, the time, cost and model of each grill (the last 400), and any drafts left from when records were on (up to 14 days). The text still goes to OpenRouter, the judge's company and, unless you say "skip the check", TypeSafe. Masking covers emails, phones and card numbers only; names, clients and deal terms go as written. Whether your NDA allows that is your call.
 - With records on, Grill's operators hold the key that wraps saved records and drafts, so they could decrypt them.
 - A company-run Claude Team or Enterprise, ChatGPT Enterprise or Gemini workspace keeps the tool call, the write-up and the verdict in its admin and compliance exports. A work inbox receives your sign-in codes. A work calendar shows look-back dates, and titles if you turn them on, to its admins. A company Drive or Notion holds a weekly-review log. Employer device and network monitoring sees what you type. Grill cannot prevent any of this. For anything you would not show your employer, use a personal account, email and calendar.
 - The Gemini route needs Keep Activity on, so Google keeps the chat. Don't use it for NDA material.
@@ -70,7 +70,7 @@ Wording P1b uses. For the send: "What your assistant sends: the decision in your
 
 ## 5. Next and later, on triggers
 
-Section F of the growth framework holds the register: metric, source, threshold, the stage each item gates, and what GrillBot does when a trigger fires. Each item gets its own PRD in this format. GrillBot opens those PRs with the `needs-review` label, and they merge only after the owner says yes.
+Section F of the growth framework holds the register: metric, source, threshold, the stage each item gates, and what GrillBot does when a trigger fires. An item whose "Then" says PRD gets its own PRD in this format; the others go to the daily ask, to scoring or to a gate, as that column says. GrillBot opens those PRs with the `do-not-merge` label, because a solid PR grill clears `needs-review` (scripts/grillPrCore.mjs). They merge only after the owner says yes and removes the label.
 
 | Item | Bucket | Fires when (first of) |
 |---|---|---|
@@ -114,7 +114,7 @@ Taken (owner may overrule):
 | The homepage tagline | Keep it. P1a adds the work-use line under it | It is the owner's call (#90). The line makes the channel honest without taking it down |
 | Gate T (section F rule 2) | Active: no GrillBot lever that markets hosted Grill for work or team use scores above 0 until P1a, P1b and P2 merge, O1 is done, and P4 merges or P1b's check wording is live | The installed tool stays fully promotable. The gate ends by itself when the work is done |
 | Counts source | P3: a server route returning four integers, exact in the ops repo, `<5` when published | A read-only Upstash token can GET every account row (api/_hosted.mjs:626-650) |
-| Account and record counts | Not now | Option C of the 2026-10-11 insight is held until > 10 hosted users |
+| Account and record counts | Not now | Option C of the 2026-10-11 insight now waits on X4's trigger |
 | Spend list | Delete it in P2 | Nothing reads it, and it is a per-person timeline |
 | Per-person cap key on account deletion | Keep as is | It is intentional so delete-and-rejoin can't reset the cap, and disclosed (DATA-LEDGER.md:32). X2 makes it an HMAC |
 | Signal issues | Keep, labelled honestly (P5) | They are opt-in, and the only learning signal from real use. Stopping them would cost the loop in LEARNING.md for a risk the person chooses |
@@ -123,7 +123,7 @@ Taken (owner may overrule):
 | The 2026-10-11 hold on options C and D | Replaced by X4's tighter trigger | X4 needs X3 first, which is stricter than "> 10 hosted users" |
 | Break-glass | None for operators or personal space. None for org space in v1; decided again in L9 before the first org record | No path into a person's records is the default the rule needs |
 | Provider allowlist | Not inside Grill. A separate product under STRATEGY principle 10, or nothing | Grill keeps openrouter/auto, excluding only the author's company |
-| Section F thresholds and routine steps R1, R2 | As written; reviewed 2027-01-16 | The owner asked on 2026-10-18 for future plans to feed GrillBot's growth loop |
+| Section F rules, register and thresholds, and directive steps 2b and 4 (R1) | In force from 2026-10-18; reviewed 2027-01-16 | The owner asked on 2026-10-18 for future plans to feed GrillBot's growth loop |
 
 For the owner, with a recommendation each:
 
@@ -132,10 +132,11 @@ For the owner, with a recommendation each:
 3. O1 vendor settings, this week, and the secrets `GRILL_PAGE_KEY`, `GRILL_OPS_TOKEN` and `GRILL_METRICS_SALT` before P2 and P3 deploy. **Recommend yes.** Only the owner has these accounts.
 4. If P4's flag is rejected by the router: **recommend keeping Jev on by default with the exact P1b wording**, and off in work mode (X5).
 5. The tagline, if P1a and P1b have not merged by 2026-10-25: **recommend scoping it to the installed tool until they do.**
+6. R2: support triage writes a privacy `topic` per thread, only on lines whose sender is replaced by an HMAC under a secret kept off the ops repo. It changes a routine (GUARDRAILS §4). **Recommend yes.** Until then, the support-topic triggers are dark and O0 conversations carry those rows.
 
 ## 9. Measures
 
-- Rows in §1 not literally true or unverified: 16 today. Target 0 once P1a, P1b, P2, P4, P7 and O1 are done. `scripts/claims.test.mjs` stops new ones.
+- Rows in §1 not literally true or unverified: 16 today. Target 0 once P1a, P1b, P2, P4, P5, P7 and O1 are done. `scripts/claims.test.mjs` stops new ones.
 - Evidenced real users and look-backs recorded in STRATEGY.md by 2026-11-01, then monthly.
 - Section F sources live (hosted counts, support topics, conversations, evidence ledger): 0 of 4 today, 4 of 4 by 2026-11-30.
 - Verdict quality is unchanged: the eval catch rate after P1b, P2 and P4 stays within one standard error.
