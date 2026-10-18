@@ -30,7 +30,7 @@ If you turn on anonymous usage stats (off by default), the tool also sends a met
 
 Enforced by: [scripts/usageStats.mjs](../scripts/usageStats.mjs), test "posts exactly the allowed keys to the ping URL, with no decision text" in [scripts/usageStats.test.mjs](../scripts/usageStats.test.mjs), and test "when off, a finished grill makes no request to grillyour.ai and creates no state file" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs).
 
-The optional Jev quality check sees the masked write-up and the report. That check is zero-retention. It keeps nothing.
+The Jev quality check is on by default. It sees the masked write-up and the report. Say "skip the check" to skip it for one grill, or switch it off in Grill's settings. That check is zero-retention. It keeps nothing.
 
 Enforced by: [scripts/upstreamCore.mjs](../scripts/upstreamCore.mjs), test "flags a second endpoint from the same provider that is not zero-retention" in [scripts/upstreamCore.test.mjs](../scripts/upstreamCore.test.mjs). The judge request itself is zero-retention, test "shows the privacy fields on the payload it would send" in [scripts/judge.test.mjs](../scripts/judge.test.mjs).
 
