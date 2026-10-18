@@ -121,18 +121,29 @@ mkdirSync(OUT, { recursive: true });
 cpSync(join(ROOT, "site/brand"), join(OUT, "brand"), { recursive: true });
 cpSync(join(ROOT, "site/brand/favicon.ico"), join(OUT, "favicon.ico"));
 writeFileSync(join(OUT, "index.html"), doc(headFor({ description: DESCRIPTION, url: SITE_URL, title: HOME_TITLE }), pageHead, homeBody));
-// Every public page, for the sitemap. Google has to crawl the home page before its favicon service
-// knows the icon; until then Claude shows a letter in place of the logo.
-const pageUrls = [SITE_URL];
+// Every public page. The sitemap and /llms.txt both read this list, so a new page lands in both.
+// Google has to crawl the home page before its favicon service knows the icon; until then Claude
+// shows a letter in place of the logo.
+const publicPages = [];
+function addPublicPage({ url, name, blurb }) {
+  if (!url || !name || !blurb) throw new Error("a public page needs a url, a name and a one-line blurb");
+  if (/[\r\n]/.test(blurb)) throw new Error(`blurb for ${url} must be one line`);
+  publicPages.push({ url, name, blurb });
+}
+addPublicPage({
+  url: SITE_URL,
+  name: "Home",
+  blurb: "Hear the strongest case against your plan, then decide for yourself.",
+});
 
 // Other pages are a <title> and a body; they borrow the main page's styles.
 const style = pageHead.slice(pageHead.indexOf("<style>"));
-function writePage(file, { description, url, outDir }) {
+function writePage(file, { description, url, outDir, name, blurb }) {
   const source = readFileSync(join(ROOT, "site", file), "utf8");
   const title = source.match(/^<title>[^<]*<\/title>/)?.[0];
   if (!title) throw new Error(`site/${file} must open with its <title>`);
   mkdirSync(join(OUT, outDir), { recursive: true });
-  pageUrls.push(url);
+  addPublicPage({ url, name, blurb });
   writeFileSync(
     join(OUT, outDir, "index.html"),
     doc(headFor({ description, url }), `${title}\n${style}`, source.slice(title.length)),
@@ -142,26 +153,36 @@ writePage("terms.html", {
   description: "Grill Pro terms, in plain words.",
   url: `${SITE_URL}terms/`,
   outDir: "terms",
+  name: "Terms",
+  blurb: "Grill Pro terms. Short and plain.",
 });
 writePage("contribute.html", {
   description: "How to improve Grill.",
   url: `${SITE_URL}contribute/`,
   outDir: "contribute",
+  name: "Contribute",
+  blurb: "Grill is open source. If you'd like a change, you can make it.",
 });
 writePage("look-back.html", {
   description: "Turn a judge's answer into a decision record, and look back on how it turned out. Nothing is stored.",
   url: `${SITE_URL}look-back/`,
   outDir: "look-back",
+  name: "Look back",
+  blurb: "For the copy-and-paste route. Turn the judge's answer into a decision record, then come back and say what happened. Nothing is sent and nothing is stored.",
 });
 writePage("start.html", {
   description: "Connect Grill to your AI. Claude.ai, ChatGPT and Grok Bot for people invited to Grill in chat. Gemini is still being tested. Meta AI is coming soon.",
   url: `${SITE_URL}start/`,
   outDir: "start",
+  name: "Start",
+  blurb: "Connect Grill to your AI. For people invited to Grill in chat.",
 });
 writePage("privacy.html", {
   description: "What Grill sends, what it counts, and what it never keeps.",
   url: `${SITE_URL}privacy/`,
   outDir: "privacy",
+  name: "Privacy",
+  blurb: "The free tool has no account and keeps nothing. Grill in chat keeps only what you choose, encrypted, and you can delete it.",
 });
 // The miss page is built only when GRILL_MISS=1, the same switch that opens /miss/send. Its fields
 // and its in-browser check come from scripts/missCore.mjs, the module the server checks with.
@@ -180,7 +201,11 @@ if (process.env.GRILL_MISS === "1") {
     .replace("/* MISS_CORE */", () => inlined);
   const title = source.match(/^<title>[^<]*<\/title>/)[0];
   mkdirSync(join(OUT, "miss"), { recursive: true });
-  pageUrls.push(`${SITE_URL}miss/`);
+  addPublicPage({
+    url: `${SITE_URL}miss/`,
+    name: "Share a miss",
+    blurb: "Share a miss, not your decision. When AI got a decision wrong, tell Grill how it went wrong.",
+  });
   writeFileSync(
     join(OUT, "miss", "index.html"),
     doc(headFor({ description: "Share how AI got a decision wrong, without the decision.", url: `${SITE_URL}miss/` }), `${title}\n${style}`, source.slice(title.length)),
@@ -189,6 +214,24 @@ if (process.env.GRILL_MISS === "1") {
 writeFileSync(join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}sitemap.xml\n`);
 writeFileSync(
   join(OUT, "sitemap.xml"),
-  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pageUrls.map((u) => `  <url><loc>${u}</loc></url>`).join("\n")}\n</urlset>\n`,
+  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${publicPages.map((p) => `  <url><loc>${p.url}</loc></url>`).join("\n")}\n</urlset>\n`,
 );
-console.log(`built _site/index.html and the terms, contribute, look-back, start and privacy pages${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}`);
+// llmstxt.org: a short plain-text brief for agents. The page links are publicPages, same as the sitemap.
+const GITHUB_URL = "https://github.com/mtangoz/grill";
+writeFileSync(
+  join(OUT, "llms.txt"),
+  [
+    "# Grill",
+    "",
+    "> Grill your AI before you send it to your boss. An outside judge, a model from a different company, gives the strongest case against a decision.",
+    "",
+    "Invited testers connect Grill to the AI they use at https://grillyour.ai/mcp. Grill in chat is invite-only for now.",
+    "",
+    "## Pages",
+    "",
+    ...publicPages.map((p) => `- [${p.name}](${p.url}): ${p.blurb}`),
+    `- [GitHub](${GITHUB_URL}): An outside judge, a model from a different company.`,
+    "",
+  ].join("\n"),
+);
+console.log(`built _site/index.html and the terms, contribute, look-back, start and privacy pages${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);
