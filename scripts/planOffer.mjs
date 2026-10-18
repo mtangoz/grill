@@ -79,8 +79,9 @@ async function main() {
   } catch {
     // Fail open: never block a plan approval over an offer.
   }
+  // No process.exit here: on macOS a pipe write is asynchronous, and exiting could drop the line.
   clearTimeout(timer);
-  process.exit(0);
+  process.exitCode = 0;
 }
 
 function runAsScript() {
