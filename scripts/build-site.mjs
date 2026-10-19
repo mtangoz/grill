@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build the public onboarding site. The home page's one source is site/page.html; the other pages
- * (terms, contribute, look-back, start, privacy) borrow its styles.
+ * (terms, contribute, look-back, start, privacy, demo) borrow its styles.
  *
  * site/page.html is a page body (title, styles, markup, script) with no document skeleton, so the
  * same file publishes as a Claude artifact unchanged. This wraps it into a full document with the
@@ -184,6 +184,13 @@ writePage("privacy.html", {
   name: "Privacy",
   blurb: "The free tool has no account and keeps nothing. Grill in chat keeps only what you choose, encrypted, and you can delete it.",
 });
+writePage("demo.html", {
+  description: "Three made-up decisions, and what Grill said about each.",
+  url: `${SITE_URL}demo/`,
+  outDir: "demo",
+  name: "Demo",
+  blurb: "Three made-up decisions, and what Grill said about each.",
+});
 // The miss page is built only when GRILL_MISS=1, the same switch that opens /miss/send. Its fields
 // and its in-browser check come from scripts/missCore.mjs, the module the server checks with.
 if (process.env.GRILL_MISS === "1") {
@@ -234,4 +241,4 @@ writeFileSync(
     "",
   ].join("\n"),
 );
-console.log(`built _site/index.html and the terms, contribute, look-back, start and privacy pages${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);
+console.log(`built _site/index.html and the terms, contribute, look-back, start, privacy and demo pages${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);
