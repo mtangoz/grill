@@ -342,7 +342,7 @@ describe("the site build", () => {
     assert.match(robots, /^User-agent: \*\nAllow: \/\n/);
     assert.match(robots, /Sitemap: https:\/\/grillyour\.ai\/sitemap\.xml/);
     const sitemap = readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8");
-    for (const path of ["", "terms/", "contribute/", "look-back/", "privacy/"]) {
+    for (const path of ["", "terms/", "contribute/", "look-back/", "privacy/", "demo/"]) {
       assert.ok(sitemap.includes(`<loc>https://grillyour.ai/${path}</loc>`), `sitemap lists /${path}`);
     }
   });
@@ -367,7 +367,7 @@ describe("the site build", () => {
       assert.match(llms, /Grill in chat is invite-only for now/);
       assert.match(llms, /\[GitHub\]\(https:\/\/github\.com\/mtangoz\/grill\): \S/);
       const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
-      for (const path of ["", "start/", "privacy/", "terms/", "look-back/", "contribute/"]) {
+      for (const path of ["", "start/", "privacy/", "terms/", "look-back/", "contribute/", "demo/"]) {
         assert.ok(locs.includes(`https://grillyour.ai/${path}`), `sitemap lists /${path}`);
       }
       for (const url of locs) {
@@ -666,5 +666,96 @@ describe("the privacy page", () => {
     assert.match(privacyPage, /<h2>Using Grill in chat \(the connector\)<\/h2>/);
     assert.match(privacyPage, /The free tool has no account and keeps nothing\. Grill in chat keeps only what you choose, encrypted, and you can delete it\./);
     assert.match(privacyPage, /We don't keep what you decide unless you choose to keep decision records \(Grill in chat\) or saved report copies \(Pro\), and you can delete them\./);
+  });
+});
+
+// /demo lets a visitor see the grill format on three made-up everyday decisions
+// before they connect anything. The verdicts are illustrative. Nothing here is a saved record.
+describe("the /demo page", () => {
+  const demoPath = join(ROOT, "site/demo.html");
+  const VERDICTS = ["solid", "solid, if\u2026", "shaky", "doesn\u2019t hold up"];
+  const closing = "Say \u2018more\u2019, \u2018options\u2019, or your call.";
+
+  it("is three made-up chats, with a visible label and no script", () => {
+    assert.ok(existsSync(demoPath), "site/demo.html exists");
+    const demo = readFileSync(demoPath, "utf8");
+    const contribute = readFileSync(join(ROOT, "site/contribute.html"), "utf8");
+    const nav = (html) => html.match(/<nav aria-label="Sections">[\s\S]*?<\/nav>/)?.[0];
+    const footer = (html) => html.match(/<div class="footer">[\s\S]*?<\/div>/)?.[0];
+    assert.equal(nav(demo), nav(contribute));
+    assert.equal(footer(demo), footer(contribute));
+    assert.match(demo, /^<title>See a grill before you set one up<\/title>/);
+    assert.equal((demo.match(/<h1>/g) ?? []).length, 1);
+    assert.match(demo, /<h1>See a grill before you set one up\.<\/h1>/);
+    assert.equal((demo.match(/class="lede"/g) ?? []).length, 1);
+    assert.doesNotMatch(demo, /<script/i);
+    assert.doesNotMatch(demo, /onclick=|javascript:/i);
+
+    const label = "made-up decisions and illustrative verdicts, written to show the format, not real users\u2019 decisions and not saved records";
+    const labelAt = demo.toLowerCase().indexOf(label);
+    const h1 = demo.indexOf("<h1>");
+    const firstChat = demo.indexOf('class="chat"');
+    assert.ok(labelAt > h1 && labelAt < firstChat, "the made-up label sits near the top, before the examples");
+    assert.doesNotMatch(demo, /<!--[\s\S]*made-up decisions/);
+
+    const chats = [...demo.matchAll(/<div class="chat"[\s\S]*?<\/div>/g)].map((match) => match[0]);
+    assert.equal(chats.length, 3);
+    const seen = [];
+    for (const chat of chats) {
+      assert.match(chat, /class="you"[\s\S]*Grill this:/);
+      assert.match(chat, /I\u2019m \d+% sure/);
+      assert.match(chat, /class="grill"/);
+      assert.match(chat, /<strong>[^<]+<\/strong>/);
+      assert.match(chat, /Cheap test:/);
+      assert.ok(chat.includes(closing), "each example ends with the homepage follow-up line");
+      const verdict = chat.match(/<strong>([^<]+)<\/strong>/)[1].replace(/\.$/, "").trim().toLowerCase();
+      assert.ok(VERDICTS.includes(verdict), `verdict ${verdict} is one of the four`);
+      seen.push(verdict);
+      const brief = chat.match(/class="grill">([\s\S]*?)<\/p>/)[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      const words = brief.split(" ").filter(Boolean);
+      assert.ok(words.length > 0 && words.length <= 50, `brief is ${words.length} words: ${brief}`);
+    }
+    assert.equal(new Set(seen).size, 3, `three different verdicts, got ${seen.join(", ")}`);
+
+    const details = [...demo.matchAll(/<details>[\s\S]*?<\/details>/g)].map((match) => match[0]);
+    assert.equal(details.length, 3);
+    for (const block of details) {
+      assert.match(block, /<summary>more<\/summary>/);
+      const text = block.replace(/<summary>more<\/summary>/, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+      assert.ok(sentences.length >= 2 && sentences.length <= 3, text);
+      assert.match(text, /strongest case against/i);
+      assert.match(text, /your call/i);
+    }
+    assert.doesNotMatch(demo, /\b(boss|coworker|workplace|office|sprint|standup|ticket|company|team)\b/i);
+
+    const lastDetails = demo.lastIndexOf("</details>");
+    const cta = demo.indexOf('class="cta"');
+    const foot = demo.indexOf('class="footer"');
+    assert.ok(lastDetails < cta && cta < foot, "the call to action follows the examples");
+    assert.match(demo, /<a class="button" href="\/#setup">Get started<\/a>/);
+    assert.match(demo, /<a href="\/start\/">[^<]*invited testers[^<]*<\/a>/i);
+  });
+
+  it("builds to /demo/ and lands in the sitemap and llms.txt", () => {
+    const out = execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { encoding: "utf8" });
+    assert.match(out, /privacy and demo pages/);
+    const built = readFileSync(join(ROOT, "_site/demo/index.html"), "utf8");
+    assert.match(built, /<link rel="canonical" href="https:\/\/grillyour\.ai\/demo\/">/);
+    assert.match(built, /--paper:/, "the demo page borrows the site's styles");
+    const sitemap = readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8");
+    assert.ok(sitemap.includes("<loc>https://grillyour.ai/demo/</loc>"));
+    const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
+    assert.match(llms, /\[Demo\]\(https:\/\/grillyour\.ai\/demo\/\): Three made-up decisions, and what Grill said about each\./);
+  });
+
+  it("the home page links /demo/ once, right after the example", () => {
+    const links = page.match(/href="\/demo\/"/g) ?? [];
+    assert.equal(links.length, 1);
+    assert.match(page, /<a href="\/demo\/">See three more examples<\/a>/);
+    const scale = page.indexOf('class="scale"');
+    const link = page.indexOf('href="/demo/"');
+    const how = page.indexOf('id="how"');
+    assert.ok(scale > 0 && scale < link && link < how, "the demo link follows the example and scale, before How it works");
   });
 });
