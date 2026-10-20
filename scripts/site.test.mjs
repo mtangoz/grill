@@ -101,6 +101,9 @@ describe("site/page.html", () => {
     assert.match(page, /<p class="lede">Hear the strongest case against your plan, then decide for yourself\.<\/p>/);
     const line3 = readFileSync(join(ROOT, "README.md"), "utf8").split("\n")[2];
     assert.equal(line3, "**Hear the strongest case against your plan, then decide for yourself.**");
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    assert.match(readme.split("\n")[0], /Grill: grill your AI before you send it to your boss/);
+    assert.match(readme, /https:\/\/grillyour\.ai\/demo\//);
   });
 
   it("says Desktop and Claude Code enforce a different company, and the paste routes warn", () => {
