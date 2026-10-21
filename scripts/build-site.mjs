@@ -33,6 +33,8 @@ const ICONS = [
   '<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">',
 ];
 const OG_IMAGE = `${SITE_URL}brand/og-image.png`;
+// Attribute values, same escapes as the miss page's option labels.
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 // Cookieless page counts for the website only, plus PostHog when GRILL_POSTHOG_KEY is set (see
 // scripts/siteAnalytics.mjs). Not added to site/page.html itself: that file is also published as a
@@ -53,27 +55,38 @@ const withLiveCommit = (body) =>
     : body;
 
 const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
-const headFor = ({ description, url, title = "Grill" }) => [
-  '<meta charset="utf-8">',
-  '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
-  '<meta name="color-scheme" content="light dark">',
-  '<meta name="theme-color" content="#f7f4ef" media="(prefers-color-scheme: light)">',
-  '<meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">',
-  ...ICONS,
-  `<meta name="description" content="${description}">`,
-  `<link rel="canonical" href="${url}">`,
-  `<meta property="og:url" content="${url}">`,
-  `<meta property="og:title" content="${title}">`,
-  `<meta property="og:description" content="${description}">`,
-  '<meta property="og:type" content="website">',
-  `<meta property="og:image" content="${OG_IMAGE}">`,
-  '<meta property="og:image:width" content="1200">',
-  '<meta property="og:image:height" content="630">',
-  '<meta property="og:image:alt" content="Grill: a pitchfork mark and the words A second opinion before you decide.">',
-  '<meta name="twitter:card" content="summary_large_image">',
-  `<meta name="twitter:image" content="${OG_IMAGE}">`,
-  "<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>",
-].join("\n");
+const headFor = ({ description, url, title = "Grill" }) => {
+  const safeTitle = esc(title);
+  return [
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
+    '<meta name="color-scheme" content="light dark">',
+    '<meta name="theme-color" content="#f7f4ef" media="(prefers-color-scheme: light)">',
+    '<meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">',
+    ...ICONS,
+    `<meta name="description" content="${description}">`,
+    `<link rel="canonical" href="${url}">`,
+    `<meta property="og:url" content="${url}">`,
+    `<meta property="og:title" content="${safeTitle}">`,
+    `<meta property="og:description" content="${description}">`,
+    '<meta property="og:type" content="website">',
+    `<meta property="og:image" content="${OG_IMAGE}">`,
+    '<meta property="og:image:width" content="1200">',
+    '<meta property="og:image:height" content="630">',
+    '<meta property="og:image:alt" content="Grill: a pitchfork mark and the words A second opinion before you decide.">',
+    '<meta name="twitter:card" content="summary_large_image">',
+    `<meta name="twitter:title" content="${safeTitle}">`,
+    `<meta name="twitter:image" content="${OG_IMAGE}">`,
+    "<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>",
+  ].join("\n");
+};
+
+// Pages other than home open with <title>…</title>. The preview title is that text.
+function openingTitle(source, label) {
+  const tag = source.match(/^<title>[^<]*<\/title>/)?.[0];
+  if (!tag) throw new Error(`${label} must open with its <title>`);
+  return { tag, text: tag.slice("<title>".length, -"</title>".length) };
+}
 
 // The page opens with its <title>, font links and <style>; those belong in <head>, where link
 // previews and search engines read them. Everything after the first </style> is the body.
@@ -140,13 +153,12 @@ addPublicPage({
 const style = pageHead.slice(pageHead.indexOf("<style>"));
 function writePage(file, { description, url, outDir, name, blurb }) {
   const source = readFileSync(join(ROOT, "site", file), "utf8");
-  const title = source.match(/^<title>[^<]*<\/title>/)?.[0];
-  if (!title) throw new Error(`site/${file} must open with its <title>`);
+  const title = openingTitle(source, `site/${file}`);
   mkdirSync(join(OUT, outDir), { recursive: true });
   addPublicPage({ url, name, blurb });
   writeFileSync(
     join(OUT, outDir, "index.html"),
-    doc(headFor({ description, url }), `${title}\n${style}`, source.slice(title.length)),
+    doc(headFor({ description, url, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length)),
   );
 }
 writePage("terms.html", {
@@ -195,7 +207,6 @@ writePage("demo.html", {
 // and its in-browser check come from scripts/missCore.mjs, the module the server checks with.
 if (process.env.GRILL_MISS === "1") {
   const core = await import("./missCore.mjs");
-  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const fields = Object.entries(core.MISS_CHOICES)
     .map(([key, values]) => {
       const options = values.map((v) => `      <option value="${v}">${esc(core.MISS_LABELS[key][v])}</option>`).join("\n");
@@ -206,7 +217,7 @@ if (process.env.GRILL_MISS === "1") {
   const source = readFileSync(join(ROOT, "site/miss.html"), "utf8")
     .replace("<!-- MISS_FIELDS -->", fields)
     .replace("/* MISS_CORE */", () => inlined);
-  const title = source.match(/^<title>[^<]*<\/title>/)[0];
+  const title = openingTitle(source, "site/miss.html");
   mkdirSync(join(OUT, "miss"), { recursive: true });
   addPublicPage({
     url: `${SITE_URL}miss/`,
@@ -215,7 +226,7 @@ if (process.env.GRILL_MISS === "1") {
   });
   writeFileSync(
     join(OUT, "miss", "index.html"),
-    doc(headFor({ description: "Share how AI got a decision wrong, without the decision.", url: `${SITE_URL}miss/` }), `${title}\n${style}`, source.slice(title.length)),
+    doc(headFor({ description: "Share how AI got a decision wrong, without the decision.", url: `${SITE_URL}miss/`, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length)),
   );
 }
 writeFileSync(join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}sitemap.xml\n`);

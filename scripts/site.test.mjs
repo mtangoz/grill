@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -450,6 +450,35 @@ describe("the site build", () => {
       }
     }
     assert.doesNotMatch(page, /Live commit/, "the artifact source never carries a commit");
+  });
+
+  // A chat preview reads og:title, and X reads twitter:title. Both have to be the page's own
+  // <title>, so a shared /demo/ or /start/ link is not labelled just "Grill".
+  it("sets og:title and twitter:title to each page's own title", () => {
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], {
+      stdio: "pipe",
+      env: { ...process.env, GRILL_MISS: "1" },
+    });
+    const pages = readdirSync(join(ROOT, "_site"), { recursive: true })
+      .map((name) => join(ROOT, "_site", String(name)))
+      .filter((path) => path.endsWith(".html"));
+    assert.ok(pages.some((path) => path.endsWith(join("miss", "index.html"))), "the miss page is built");
+    let titled = 0;
+    for (const path of pages) {
+      const html = readFileSync(path, "utf8");
+      const title = html.match(/<title>([^<]*)<\/title>/)?.[1];
+      if (title === undefined) continue;
+      titled += 1;
+      const og = html.match(/<meta property="og:title" content="([^"]*)">/)?.[1];
+      const twitter = html.match(/<meta name="twitter:title" content="([^"]*)">/)?.[1];
+      assert.equal(og, title, `${path} og:title`);
+      assert.equal(twitter, title, `${path} twitter:title`);
+    }
+    assert.ok(titled >= 8, "home, the other public pages, and /miss/ each have a title");
+    const demo = readFileSync(join(ROOT, "_site/demo/index.html"), "utf8");
+    assert.match(demo, /<meta property="og:title" content="See a grill before you set one up">/);
+    const start = readFileSync(join(ROOT, "_site/start/index.html"), "utf8");
+    assert.match(start, /<meta property="og:title" content="Start using Grill">/);
   });
 
   it("GRILL_PRO_NOTIFY=1 replaces the starter-key button with the launch-list form", () => {
