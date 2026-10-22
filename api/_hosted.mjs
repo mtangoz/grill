@@ -78,6 +78,10 @@ import {
   encryptString,
   hostedEnabled,
   hostedStillRunningText,
+  HOSTED_JUDGE_ATTEMPT_MS,
+  HOSTED_JUDGE_DEADLINE_MS,
+  NO_JOB_TEXT,
+  provenanceLine,
   hostedTools,
   isoDay,
   isoMonth,
@@ -937,6 +941,7 @@ function judgeChildEnv(apiKey, deps) {
     PATH: process.env.PATH || "",
     TMPDIR: process.env.TMPDIR || tmpdir(),
     OPENROUTER_API_KEY: apiKey,
+    JUDGE_TIMEOUT_MS: String(Number.isInteger(deps.judgeAttemptMs) ? deps.judgeAttemptMs : HOSTED_JUDGE_ATTEMPT_MS),
   };
   if (deps.judgeOpenRouterUrl) env.JUDGE_OPENROUTER_URL = deps.judgeOpenRouterUrl;
   if (deps.judgeDecisionsUrl) env.JUDGE_DECISIONS_URL = deps.judgeDecisionsUrl;
@@ -962,9 +967,18 @@ function startJudge({ subject, question, author, check, apiKey, deps, deepen = f
     stderr += chunk;
   });
   const job = { done: false };
+  // Stop the judge before the function's own limit does, so a slow run still stores a
+  // "took too long" result instead of vanishing and reading as expired.
+  const deadlineMs = Number.isInteger(deps.judgeDeadlineMs) ? deps.judgeDeadlineMs : HOSTED_JUDGE_DEADLINE_MS;
+  const timer = setTimeout(() => {
+    stderr += `\n[hosted] deadline: judge stopped after ${deadlineMs}ms, timed out\n`;
+    child.kill("SIGKILL");
+  }, deadlineMs);
+  timer.unref?.();
   job.promise = new Promise((resolve) => {
     const finish = (code) => {
       if (job.done) return;
+      clearTimeout(timer);
       let report = "";
       if (dir) {
         try {
@@ -1132,6 +1146,7 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
   }
   const now = typeof deps.now === "number" ? new Date(deps.now) : new Date();
   const layers = renderLayers(parsed || {}, { subject, big: big === true, deepenTest: deepenTestEnabled(deps.env) });
+  layers.provenance = provenanceLine(parsed, now);
   if (depthJob) {
     const depthOutcome = await depthJob.promise;
     if (big === true && deepenTestEnabled(deps.env)) layers.deepen = renderDeepen(depthOutcome?.parsed?.depth) || "";
@@ -1180,7 +1195,7 @@ function deepenReply(layer) {
 }
 
 function layerFromStored(stored, detail) {
-  const key = detail === "more" || detail === "options" || detail === "full" || detail === "deepen" ? detail : "brief";
+  const key = ["more", "options", "full", "deepen", "provenance"].includes(detail) ? detail : "brief";
   if (key === "brief") return String(stored?.text || stored?.layers?.brief || "");
   const layer = stored?.layers?.[key];
   return typeof layer === "string" && layer.trim() ? layer : "";
@@ -1277,18 +1292,25 @@ async function callGrill(args, account, payload, params, deps) {
   }
   const pending = job.promise.then(async (outcome) => {
     try {
-      const result = await composeReport({
-        outcome,
-        subject,
-        sourceApp: client.sourceApp,
-        account,
-        credit,
-        supersedes: args.supersedes,
-        changed: args.changed,
-        deps,
-        depthJob,
-        big: wantDeepen,
-      });
+      let result;
+      try {
+        result = await composeReport({
+          outcome,
+          subject,
+          sourceApp: client.sourceApp,
+          account,
+          credit,
+          supersedes: args.supersedes,
+          changed: args.changed,
+          deps,
+          depthJob,
+          big: wantDeepen,
+        });
+      } catch {
+        // Store a told failure rather than nothing, so grill_result does not read it as expired.
+        logHosted(deps.requestId, "compose");
+        result = { text: `${serviceFailureText("store", deps.requestId)}\n`, layers: null, isError: true };
+      }
       await storeJobResult(credential, result, deps);
     } finally {
       await release();
@@ -1307,7 +1329,7 @@ async function layerFromPending(account, deps, detail) {
 }
 
 async function callResult(args, account, deps) {
-  const detail = normalizeDetail(args.detail);
+  const detail = String(args.detail || "").trim().toLowerCase() === "provenance" ? "provenance" : normalizeDetail(args.detail);
   if (detail === "deepen" && !deepenTestEnabled(deps.env)) return toolText(`${DEEPEN_OFF}\n`);
   const credential = parseJobCredential(typeof args.job_id === "string" ? args.job_id : "");
   if (!credential) {
@@ -1332,7 +1354,7 @@ async function callResult(args, account, deps) {
   }
   if (typeof cipher !== "string" || !cipher) {
     const running = Number(await redis(deps, ["SISMEMBER", runningKey(account.id), credential.id])) || 0;
-    if (!running) return toolText("No grill is running with that job id. It may already have expired.", true);
+    if (!running) return toolText(NO_JOB_TEXT, true);
     return toolText(hostedStillRunningText(credential.jobId));
   }
   let stored;

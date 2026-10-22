@@ -21,6 +21,14 @@ export const MAX_SUBJECT_CHARS = 200_000;
 export const MAX_QUESTION_CHARS = 600;
 export const MAX_PASTE_CHARS = 100_000;
 export const JOB_TTL_SECONDS = 15 * 60;
+/**
+ * The hosted judge has to finish inside the function that runs it (vercel.json maxDuration
+ * for api/hosted.js). Past that, Vercel kills the function, nothing is stored, and the job
+ * reads as expired. Leave 30 seconds to write the result; a test pins this to vercel.json.
+ */
+export const HOSTED_JUDGE_DEADLINE_MS = 270_000;
+/** One judge attempt, so a hung first attempt still leaves room for one retry inside the deadline. */
+export const HOSTED_JUDGE_ATTEMPT_MS = 180_000;
 export const DAILY_GRILL_LIMIT = 30;
 export const RUNNING_JOB_LIMIT = 3;
 export const CREDIT_CACHE_MS = 60_000;
@@ -506,7 +514,25 @@ const HOSTED_COST_LINE =
 
 /** What the assistant reads from grill_result. The next step, if the job is still running, is another call. */
 const HOSTED_RESULT_DESCRIPTION =
-  "Collect a grill that returned a job id, or a later layer of one. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person. detail is brief, more, options, full, or deepen. Call detail deepen only when the person asks to deepen or go bigger. Do not write a layer yourself.";
+  "Collect a grill that returned a job id, or a later layer of one. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person. detail is brief, more, options, full, deepen, or provenance. Call detail deepen only when the person asks to deepen or go bigger. Call detail provenance only to write a lasting record of the grill, such as an audit log: put that one line in the record, not in the chat reply, unless the person asks which model judged. Do not write a layer yourself.";
+
+/**
+ * One line for an agent's written audit record: which model judged, which company was
+ * excluded, and when. The time joins it to the account's spend log, which keeps the same
+ * model. It is for the record, not the chat note.
+ */
+export function provenanceLine(parsed, at) {
+  const served = typeof parsed?.servedModel === "string" && parsed.servedModel.trim() ? parsed.servedModel.trim() : "unattributable";
+  const author = typeof parsed?.declaredAuthor === "string" && parsed.declaredAuthor.trim() ? parsed.declaredAuthor.trim() : "anthropic";
+  const excluded = author === "none" ? "none" : author;
+  const decorrelated = parsed?.decorrelated === true ? "yes" : "no";
+  const when = at instanceof Date && !Number.isNaN(at.getTime()) ? at.toISOString().replace(/\.\d{3}Z$/, "Z") : "unknown";
+  return `Judge: ${served} · excluded: ${excluded} · decorrelated: ${decorrelated} · at: ${when}`;
+}
+
+/** What grill_result says when a job id has no stored result and nothing is running for it. */
+export const NO_JOB_TEXT =
+  "No result for that job id: the grill ended without one, or it finished more than 15 minutes ago. Call grill again with the same write-up. Do not ask the person for a job id.";
 
 /** The tool result while a hosted job is still running. The next step is another grill_result call. */
 export function hostedStillRunningText(jobId) {
@@ -547,7 +573,21 @@ export function hostedTools() {
         },
       },
     },
-    { ...result, description: HOSTED_RESULT_DESCRIPTION },
+    {
+      ...result,
+      description: HOSTED_RESULT_DESCRIPTION,
+      inputSchema: {
+        ...result.inputSchema,
+        properties: {
+          ...result.inputSchema.properties,
+          detail: {
+            ...result.inputSchema.properties.detail,
+            enum: [...result.inputSchema.properties.detail.enum, "provenance"],
+            description: `${result.inputSchema.properties.detail.description} provenance is one line naming the judge model, for a written record only.`,
+          },
+        },
+      },
+    },
     {
       ...look,
       description:
@@ -609,6 +649,7 @@ export const HOSTED_INSTRUCTIONS = [
   "Relay layer 1 as written. It is at most 50 words and already ends with the next-step line. Do not add a fact list, a confidence question, or a second line.",
   "When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Pass job_id if you have one. A follow: line is a job id for you. Never show it. Do not write a layer yourself.",
   "Do not show a record, the judge's model, a Jev score, a credit balance, a quote check, format rules, or a disclaimer.",
+  "Call grill_result with detail provenance only when you are writing a lasting record of the grill, such as an audit log. Put that one line in the record, not in your reply, unless the person asks which model judged.",
   "The verdict never becomes the decision. If they ask whether they should do it, hand the choice back and name the cheap test.",
   "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation as written: about five words, and sometimes one more line saying earlier calls are due for a look-back. If they never answer, do not call it, and there is no record and no look-back.",
   "Add supersedes and changed only when they say the choice changed, in their words. A re-run with nothing changed leaves those off.",
