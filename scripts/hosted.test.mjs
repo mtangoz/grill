@@ -31,7 +31,11 @@ import {
   footerLine,
   linkChains,
   ONCE_DISCLOSURE,
+  HOSTED_JUDGE_ATTEMPT_MS,
+  HOSTED_JUDGE_DEADLINE_MS,
+  NO_JOB_TEXT,
   parseJobCredential,
+  provenanceLine,
   sourceAppFromClient,
   wwwAuthenticate,
 } from "./hostedCore.mjs";
@@ -563,7 +567,7 @@ describe("hosted Grill", { concurrency: false }, () => {
     assert.doesNotMatch(grill.description, /call grill_result until the verdict arrives/);
     assert.equal(
       tools.find((tool) => tool.name === "grill_result").description,
-      "Collect a grill that returned a job id, or a later layer of one. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person. detail is brief, more, options, full, or deepen. Call detail deepen only when the person asks to deepen or go bigger. Do not write a layer yourself.",
+      "Collect a grill that returned a job id, or a later layer of one. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person. detail is brief, more, options, full, deepen, or provenance. Call detail deepen only when the person asks to deepen or go bigger. Call detail provenance only to write a lasting record of the grill, such as an audit log: put that one line in the record, not in the chat reply, unless the person asks which model judged. Do not write a layer yourself.",
     );
   });
 
@@ -2563,3 +2567,67 @@ describe("page sign-in through Clerk's handshake", { concurrency: false }, () =>
   });
 });
 
+
+describe("hosted judge budget and provenance", { concurrency: false }, () => {
+  const grillArgs = (subject) => ({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "grill", arguments: { subject, keep_records: false, quality_check: false } } });
+  const resultArgs = (args) => ({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: args } });
+
+  it("stops the judge, and stores the result, inside the function's maxDuration", () => {
+    const vercel = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
+    const maxMs = vercel.functions["api/hosted.js"].maxDuration * 1000;
+    assert.ok(HOSTED_JUDGE_DEADLINE_MS + 30_000 <= maxMs, "leave 30 seconds after the judge to store the result");
+    assert.ok(HOSTED_JUDGE_ATTEMPT_MS < HOSTED_JUDGE_DEADLINE_MS);
+  });
+
+  it("a judge that runs past the deadline stores a took-too-long result instead of expiring", async () => {
+    const fake = await startFakeOpenRouter({ chat: () => new Promise(() => {}) });
+    const backgrounds = [];
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const started = await postMcp(ctx, grillArgs("Decision: move the launch to March."), {
+        token,
+        deps: { ...judgeDeps(fake), waitMs: 40, backgrounds, judgeDeadlineMs: 300 },
+      });
+      const jobId = textOf(started.json).match(/job (g1\.[0-9a-f]{32}\.[A-Za-z0-9_-]+)/)[1];
+      await Promise.all(backgrounds);
+      const collected = await postMcp(ctx, resultArgs({ job_id: jobId }), { token, deps: { waitMs: 500 } });
+      assert.equal(collected.json.result.isError, true);
+      assert.match(textOf(collected.json), /took too long/);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("detail provenance returns one line naming the served model, and the brief does not", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse("2026-10-22T15:00:00Z") };
+      const first = await postMcp(ctx, grillArgs("Decision: move the launch to March."), { token, deps });
+      assert.doesNotMatch(textOf(first.json), /gpt-5\.6/);
+      const jobId = textOf(first.json).match(/follow: (\S+)/)[1];
+      const line = await postMcp(ctx, resultArgs({ job_id: jobId, detail: "provenance" }), { token, deps: { waitMs: 50 } });
+      assert.equal(line.json.result.isError, false, textOf(line.json));
+      assert.equal(textOf(line.json).trim(), "Judge: openai/gpt-5.6-sol · excluded: anthropic · decorrelated: yes · at: 2026-10-22T15:00:00Z");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("provenanceLine never invents a model", () => {
+    assert.equal(provenanceLine(null, new Date("2026-10-22T15:00:00Z")), "Judge: unattributable · excluded: anthropic · decorrelated: no · at: 2026-10-22T15:00:00Z");
+    assert.match(provenanceLine({ servedModel: "google/gemini-3", declaredAuthor: "openai", decorrelated: true }, new Date(Number.NaN)), /^Judge: google\/gemini-3 · excluded: openai · decorrelated: yes · at: unknown$/);
+  });
+
+  it("an unknown job id tells the assistant to grill again", async () => {
+    const ctx = world();
+    const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+    const jobId = `g1.${"0".repeat(32)}.${Buffer.alloc(32).toString("base64url")}`;
+    assert.ok(parseJobCredential(jobId));
+    const res = await postMcp(ctx, resultArgs({ job_id: jobId }), { token, deps: { waitMs: 20 } });
+    assert.equal(res.json.result.isError, true);
+    assert.equal(textOf(res.json), NO_JOB_TEXT);
+  });
+});
