@@ -7,7 +7,7 @@
  * same file publishes as a Claude artifact unchanged. This wraps it into a full document with the
  * link-preview tags a shared URL needs, and writes _site/index.html, which Vercel serves.
  *
- *   node scripts/build-site.mjs        # writes _site/index.html
+ *   node scripts/build-site.mjs        # writes _site/index.html, plus index.md and 404.md for agents
  */
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -249,6 +249,49 @@ writeFileSync(
     "",
     ...publicPages.map((p) => `- [${p.name}](${p.url}): ${p.blurb}`),
     `- [GitHub](${GITHUB_URL}): An outside judge, a model from a different company.`,
+    "",
+  ].join("\n"),
+);
+// Same words as the homepage, for an agent that sends Accept: text/markdown. vercel.json
+// routes / to this file only for that header. Nothing here is a new claim.
+writeFileSync(
+  join(OUT, "index.md"),
+  [
+    "# Grill your AI before you send it to your boss.",
+    "",
+    "Hear the strongest case against your plan, then decide for yourself.",
+    "",
+    "Free, with the AI you already use.",
+    "",
+    "## How it works",
+    "",
+    "1. **Say “grill this”** Tell the AI you already use what you’re deciding.",
+    "2. **A different AI pushes back** A model from another company gives a verdict and one cheap test.",
+    "3. **You make the call** The verdict never becomes the decision. Grill keeps nothing.",
+    "",
+    "## Get started: pick the AI you use",
+    "",
+    "Invited to Grill in chat? [Connect it](https://grillyour.ai/start/). Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email your invite went to, every time.",
+    "",
+    "**Any AI (easiest)** ChatGPT, Copilot, Gemini, Grok, Muse · free",
+    "",
+    "[See three more examples](https://grillyour.ai/demo/)",
+    "",
+    "Every detail of what is sent and counted is in [Privacy](https://grillyour.ai/privacy/).",
+    "",
+    "[llms.txt](https://grillyour.ai/llms.txt)",
+    "",
+  ].join("\n"),
+);
+writeFileSync(
+  join(OUT, "404.md"),
+  [
+    "# This page doesn’t exist",
+    "",
+    "This page doesn’t exist.",
+    "",
+    "- [llms.txt](https://grillyour.ai/llms.txt)",
+    "- [sitemap.xml](https://grillyour.ai/sitemap.xml)",
     "",
   ].join("\n"),
 );

@@ -468,6 +468,22 @@ describe("the endpoints", () => {
         { source: "/decisions", destination: "/api/hosted?__route=decisions" },
         { source: "/account", destination: "/api/hosted?__route=account" },
       ],
+      routes: [
+        {
+          src: "^/$",
+          has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
+          dest: "/index.md",
+          headers: { "Content-Type": "text/markdown; charset=utf-8", Vary: "Accept" },
+        },
+        { handle: "error" },
+        {
+          src: "^/(?!api(?:/|$)|mcp$|\\.well-known(?:/|$)|decisions(?:/|$)|account$|welcome$|checkout$|pro(?:/|$)|notify(?:/|$)|miss/send$).*$",
+          has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
+          status: 404,
+          dest: "/404.md",
+          headers: { "Content-Type": "text/markdown; charset=utf-8", Vary: "Accept" },
+        },
+      ],
       functions: {
         "api/hosted.js": { maxDuration: 300, includeFiles: "scripts/{apiKey,checkCore,judge,judgeCore,reflection,usageStats}.mjs" },
       },

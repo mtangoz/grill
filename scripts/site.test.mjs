@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -789,5 +789,137 @@ describe("the /demo page", () => {
     const link = page.indexOf('href="/demo/"');
     const how = page.indexOf('id="how"');
     assert.ok(scale > 0 && scale < link && link < how, "the demo link follows the example and scale, before How it works");
+  });
+});
+
+// Agents that send Accept: text/markdown need a markdown body. Vercel checks the filesystem
+// before `rewrites`, so a rewrite of `/` never runs: index.html is already the answer, and a
+// rewrite cannot keep a 404 status. `routes` are checked first, and an `error` route can
+// attach a body to a real 404. The existing rewrites stay as they are.
+describe("markdown for agents", () => {
+  const buildFresh = () => {
+    for (const name of ["index.md", "404.md"]) {
+      const path = join(ROOT, "_site", name);
+      if (existsSync(path)) rmSync(path);
+    }
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+  };
+
+  it("writes a nonempty markdown homepage from the page's own words", () => {
+    buildFresh();
+    const md = readFileSync(join(ROOT, "_site/index.md"), "utf8");
+    assert.ok(md.trim().length > 0);
+    assert.doesNotMatch(md, /<!doctype|<html[\s>]|<script/i);
+    const phrases = [
+      "Grill your AI before you send it to your boss.",
+      "Hear the strongest case against your plan, then decide for yourself.",
+      "Free, with the AI you already use",
+      "How it works",
+      "Say “grill this”",
+      "Tell the AI you already use what you’re deciding.",
+      "A different AI pushes back",
+      "A model from another company gives a verdict and one cheap test.",
+      "You make the call",
+      "The verdict never becomes the decision. Grill keeps nothing.",
+      "Get started: pick the AI you use",
+      "Invited to Grill in chat?",
+      "Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email your invite went to, every time.",
+      "Any AI (easiest)",
+      "ChatGPT, Copilot, Gemini, Grok, Muse",
+      "See three more examples",
+      "Every detail of what is sent and counted is in",
+    ];
+    for (const phrase of phrases) {
+      assert.ok(page.includes(phrase), `homepage is missing the wording ${phrase}`);
+      assert.ok(md.includes(phrase), `markdown homepage is missing ${phrase}`);
+    }
+    for (const url of [
+      "https://grillyour.ai/demo/",
+      "https://grillyour.ai/start/",
+      "https://grillyour.ai/privacy/",
+      "https://grillyour.ai/llms.txt",
+    ]) {
+      assert.ok(md.includes(url), `markdown homepage should link ${url}`);
+    }
+    assert.match(md, /\[Connect it\]\(https:\/\/grillyour\.ai\/start\/\)/);
+  });
+
+  it("writes a markdown 404 that says the page is missing and links the agent files", () => {
+    buildFresh();
+    const md = readFileSync(join(ROOT, "_site/404.md"), "utf8");
+    assert.ok(md.trim().length >= 20);
+    assert.match(md, /page doesn[’']t exist/i);
+    assert.ok(md.includes("https://grillyour.ai/llms.txt"));
+    assert.ok(md.includes("https://grillyour.ai/sitemap.xml"));
+    assert.doesNotMatch(md, /<!doctype|<html[\s>]|<script/i);
+  });
+
+  it("negotiates markdown on / and on 404s, and does not change the rewrites", () => {
+    const config = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
+    assert.deepEqual(config.rewrites, [
+      { source: "/welcome", destination: "/api/welcome" },
+      { source: "/checkout", destination: "/api/checkout" },
+      { source: "/pro", destination: "/api/pro" },
+      { source: "/pro/auth", destination: "/api/pro-auth" },
+      { source: "/pro/try", destination: "/api/pro-try" },
+      { source: "/pro/reports", destination: "/api/pro-reports" },
+      { source: "/notify", destination: "/api/notify" },
+      { source: "/notify/confirm", destination: "/api/notify-confirm" },
+      { source: "/miss/send", destination: "/api/miss" },
+      { source: "/mcp", destination: "/api/hosted?__route=mcp" },
+      { source: "/.well-known/oauth-protected-resource", destination: "/api/hosted?__route=prm" },
+      { source: "/.well-known/oauth-protected-resource/:extra*", destination: "/api/hosted?__route=prm" },
+      { source: "/.well-known/oauth-authorization-server", destination: "/api/hosted?__route=oauth" },
+      { source: "/.well-known/oauth-authorization-server/:extra*", destination: "/api/hosted?__route=oauth" },
+      { source: "/.well-known/openid-configuration", destination: "/api/hosted?__route=oidc" },
+      { source: "/.well-known/openid-configuration/:extra*", destination: "/api/hosted?__route=oidc" },
+      { source: "/decisions/calendar/:link", destination: "/api/hosted?__route=calendar&t=:link" },
+      { source: "/decisions", destination: "/api/hosted?__route=decisions" },
+      { source: "/account", destination: "/api/hosted?__route=account" },
+    ]);
+    assert.ok(!config.rewrites.some((rule) => rule.source === "/" || rule.source === "/:path*" || rule.source === "/(.*)"));
+
+    const routes = config.routes;
+    assert.ok(Array.isArray(routes), "vercel.json routes negotiate Accept before the filesystem");
+    const header = (route, name) => {
+      const found = Object.entries(route.headers ?? {}).find(([key]) => key.toLowerCase() === name);
+      assert.ok(found, `${name} header`);
+      return found[1];
+    };
+    const acceptPattern = (route) => {
+      const has = route.has?.find((item) => item.type === "header" && String(item.key).toLowerCase() === "accept");
+      assert.ok(has, "Accept condition");
+      const source = typeof has.value === "string" ? has.value : has.value?.re;
+      assert.equal(typeof source, "string");
+      return new RegExp(source);
+    };
+
+    const home = routes.find((route) => (route.dest ?? route.destination) === "/index.md");
+    assert.ok(home, "homepage markdown route");
+    assert.equal(home.src ?? home.source, "^/$");
+    const homeAccept = acceptPattern(home);
+    assert.ok(homeAccept.test("text/markdown"));
+    assert.ok(homeAccept.test("text/markdown, text/html;q=0.9"));
+    assert.equal(homeAccept.test("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"), false);
+    assert.match(header(home, "content-type"), /^text\/markdown\b/i);
+    assert.match(header(home, "vary"), /\bAccept\b/);
+    assert.ok(routes.filter((route) => (route.dest ?? route.destination) === "/index.md").every((route) => route.has));
+
+    const errorAt = routes.findIndex((route) => route.handle === "error");
+    const notFound = routes.find((route) => (route.dest ?? route.destination) === "/404.md");
+    assert.ok(notFound, "404 markdown route");
+    assert.ok(errorAt >= 0 && errorAt < routes.indexOf(notFound), "the 404 body is an error route, after a real 404");
+    assert.ok(routes.indexOf(home) < errorAt, "the homepage route is not stuck in the error phase");
+    assert.equal(notFound.status ?? notFound.statusCode, 404);
+    const notFoundAccept = acceptPattern(notFound);
+    assert.ok(notFoundAccept.test("text/markdown"));
+    assert.equal(notFoundAccept.test("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"), false);
+    assert.match(header(notFound, "content-type"), /^text\/markdown\b/i);
+    assert.match(header(notFound, "vary"), /\bAccept\b/);
+    const notFoundPath = new RegExp(notFound.src ?? notFound.source);
+    assert.ok(notFoundPath.test("/nope-404-check"));
+    for (const kept of ["/mcp", "/decisions", "/decisions/calendar/abc", "/account", "/api/hosted", "/.well-known/oauth-protected-resource", "/pro", "/pro/auth", "/welcome", "/notify/confirm", "/miss/send"]) {
+      assert.equal(notFoundPath.test(kept), false, `${kept} stays on its rewrite`);
+    }
   });
 });
