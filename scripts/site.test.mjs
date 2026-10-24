@@ -471,12 +471,16 @@ describe("the site build", () => {
       const bullets = section.split("\n").filter((line) => line.startsWith("- "));
       assert.ok(bullets.length >= 3 && bullets.length <= 5, `expected 3 to 5 bullets, got ${bullets.length}`);
       assert.ok(bullets.every((line) => /^- \S/.test(line)));
-      const strip = (html) => html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ");
+      const strip = (html) => {
+        const meta = html.match(/<meta name="description" content="([^"]*)">/)?.[1] ?? "";
+        const text = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ");
+        return `${meta} ${text}`.replace(/\s+([.?!,])/g, "$1").replace(/\s+/g, " ");
+      };
       const copy = [
         readFileSync(join(ROOT, "_site/index.html"), "utf8"),
         readFileSync(join(ROOT, "_site/demo/index.html"), "utf8"),
         readFileSync(join(ROOT, "_site/start/index.html"), "utf8"),
-      ].map(strip).join("\n").replace(/\s+/g, " ");
+      ].map(strip).join("\n");
       for (const bullet of bullets) {
         for (const sentence of bullet.slice(2).split(/(?<=[.?!])\s+/)) {
           assert.ok(copy.includes(sentence), `not on the homepage, /demo, or /start: ${sentence}`);
