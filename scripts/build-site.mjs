@@ -19,10 +19,28 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "_site");
 // The page's own address. Vercel also serves it at grill-by-hold.vercel.app; this says which is canonical.
 const SITE_URL = "https://grillyour.ai/";
+const GITHUB_URL = "https://github.com/mtangoz/grill";
 const TAGLINE = "Grill your AI before you send it to your boss.";
 const HOME_TITLE = "Grill: grill your AI before you send it to your boss";
 const DESCRIPTION =
   `${TAGLINE} Get a second opinion before you decide. A different AI finds the weak spots in your plan, with a quick way to check each one. Works with ChatGPT, Claude, Gemini and more.`;
+// One schema.org block on the homepage. The description is the meta description above.
+// ProductivityApplication is the closer category: Grill challenges a plan before you act.
+// Nothing here is an offer, a rating, a review, or a claim the homepage does not already make.
+const SOFTWARE_APPLICATION = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Grill",
+  url: SITE_URL,
+  description: DESCRIPTION,
+  applicationCategory: "ProductivityApplication",
+  operatingSystem: "Any",
+  sameAs: [GITHUB_URL],
+};
+const jsonLdScript = (data) => {
+  const json = JSON.stringify(data, null, 2).replace(/</g, "\\u003c");
+  return `<script type="application/ld+json">\n${json}\n</script>`;
+};
 // The pitchfork mark. Sizes are generated from the owner's logo into site/brand/ and copied to _site/brand/.
 // Google's favicon service, which Claude's connector list uses for a custom connector's icon, only
 // takes an icon whose size is a multiple of 48px, so the 192px one is declared too.
@@ -133,7 +151,10 @@ if (notifyOn(process.env)) {
 mkdirSync(OUT, { recursive: true });
 cpSync(join(ROOT, "site/brand"), join(OUT, "brand"), { recursive: true });
 cpSync(join(ROOT, "site/brand/favicon.ico"), join(OUT, "favicon.ico"));
-writeFileSync(join(OUT, "index.html"), doc(headFor({ description: DESCRIPTION, url: SITE_URL, title: HOME_TITLE }), pageHead, homeBody));
+writeFileSync(
+  join(OUT, "index.html"),
+  doc(headFor({ description: DESCRIPTION, url: SITE_URL, title: HOME_TITLE }), `${pageHead}\n${jsonLdScript(SOFTWARE_APPLICATION)}`, homeBody),
+);
 // Every public page. The sitemap and /llms.txt both read this list, so a new page lands in both.
 // Google has to crawl the home page before its favicon service knows the icon; until then Claude
 // shows a letter in place of the logo.
@@ -235,7 +256,13 @@ writeFileSync(
   `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${publicPages.map((p) => `  <url><loc>${p.url}</loc></url>`).join("\n")}\n</urlset>\n`,
 );
 // llmstxt.org: a short plain-text brief for agents. The page links are publicPages, same as the sitemap.
-const GITHUB_URL = "https://github.com/mtangoz/grill";
+// The "when" lines are sentences already on the homepage. index.md is a separate brief and stays as it is.
+const WHEN_TO_USE = [
+  "Hear the strongest case against your plan, then decide for yourself.",
+  "Get a second opinion before you decide. A model from another company gives a verdict and one cheap test.",
+  "The judge never comes from the company behind your AI, so it won\u2019t share its blind spots.",
+  "To keep a record and look back later, use the look-back page.",
+];
 writeFileSync(
   join(OUT, "llms.txt"),
   [
@@ -244,6 +271,10 @@ writeFileSync(
     "> Grill your AI before you send it to your boss. An outside judge, a model from a different company, gives the strongest case against a decision.",
     "",
     "Invited testers connect Grill to the AI they use at https://grillyour.ai/mcp. Grill in chat is invite-only for now.",
+    "",
+    "## When to use Grill",
+    "",
+    ...WHEN_TO_USE.map((line) => `- ${line}`),
     "",
     "## Pages",
     "",

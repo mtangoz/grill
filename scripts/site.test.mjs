@@ -4,8 +4,9 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { analyticsSnippet } from "./siteAnalytics.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
@@ -384,6 +385,110 @@ describe("the site build", () => {
     const withMiss = build({ GRILL_MISS: "1" });
     check(withMiss);
     assert.match(withMiss.llms, /https:\/\/grillyour\.ai\/miss\//);
+  });
+
+  // Search engines read one schema.org block. It restates the homepage and adds no offer,
+  // rating, or review. ProductivityApplication is the closer schema.org category: Grill is a
+  // tool for challenging a plan before you act, not a business system. The block is data.
+  // Every other <script> has to be one the build already emitted.
+  it("publishes one SoftwareApplication JSON-LD block and no other script", () => {
+    const OWN_SCRIPTS = { "index.html": 1, "look-back/index.html": 1, "miss/index.html": 1 };
+    const build = (extra = {}) => {
+      const env = { ...process.env, ...extra };
+      execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env });
+      const pages = readdirSync(join(ROOT, "_site"), { recursive: true })
+        .map((name) => join(ROOT, "_site", String(name)))
+        .filter((path) => path.endsWith(".html"))
+        .map((path) => [relative(join(ROOT, "_site"), path), readFileSync(path, "utf8")]);
+      return { env, pages };
+    };
+    const ldBlocks = (html) => {
+      const found = [];
+      for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+        if (/\btype\s*=\s*["']application\/ld\+json["']/i.test(match[1])) found.push(match[2]);
+      }
+      return found;
+    };
+    const check = ({ env, pages }) => {
+      assert.ok(pages.some(([rel]) => rel === "index.html"));
+      let parsed = null;
+      for (const [rel, html] of pages) {
+        const blocks = ldBlocks(html);
+        if (rel === "index.html") {
+          assert.equal(blocks.length, 1, "the homepage has exactly one application/ld+json block");
+          parsed = JSON.parse(blocks[0]);
+        } else {
+          assert.equal(blocks.length, 0, `${rel} has a JSON-LD block`);
+        }
+        let rest = html.replace(/<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi, "");
+        const snippet = analyticsSnippet(env);
+        assert.ok(rest.includes(snippet), `${rel} is missing the analytics snippet`);
+        rest = rest.replace(snippet, "");
+        const leftover = rest.match(/<script\b/gi)?.length ?? 0;
+        assert.equal(leftover, OWN_SCRIPTS[rel] ?? 0, `${rel} has an unexpected script`);
+      }
+      assert.equal(parsed["@context"], "https://schema.org");
+      assert.equal(parsed["@type"], "SoftwareApplication");
+      assert.equal(parsed.name, "Grill");
+      assert.equal(parsed.url, "https://grillyour.ai/");
+      assert.equal(parsed.applicationCategory, "ProductivityApplication");
+      assert.equal(parsed.operatingSystem, "Any");
+      assert.deepEqual(parsed.sameAs, ["https://github.com/mtangoz/grill"]);
+      const home = pages.find(([rel]) => rel === "index.html")[1];
+      const meta = home.match(/<meta name="description" content="([^"]*)">/)?.[1]
+        ?.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+      assert.equal(parsed.description, meta);
+      const forbidden = ["offers", "aggregateRating", "review"];
+      const walk = (node) => {
+        if (!node || typeof node !== "object") return;
+        for (const key of Object.keys(node)) {
+          assert.equal(forbidden.includes(key), false, key);
+          walk(node[key]);
+        }
+      };
+      walk(parsed);
+    };
+    check(build());
+    check(build({ GRILL_MISS: "1" }));
+  });
+
+  // Agents that fetch /llms.txt need to know when Grill is the right tool. The bullets
+  // have to be sentences already on the homepage, /demo, or /start.
+  it("says when to use Grill before the page list", () => {
+    const invite = "Invited testers connect Grill to the AI they use at https://grillyour.ai/mcp. Grill in chat is invite-only for now.";
+    const build = (extra = {}) => {
+      execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env: { ...process.env, ...extra } });
+      return readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
+    };
+    const check = (llms) => {
+      assert.equal(llms.split(invite).length - 1, 1);
+      assert.equal(llms.split("## When to use Grill").length - 1, 1);
+      const whenAt = llms.indexOf("## When to use Grill\n");
+      const pagesAt = llms.indexOf("## Pages\n");
+      assert.ok(whenAt > llms.indexOf(invite), "the invite-only line stays above the new section");
+      assert.ok(pagesAt > whenAt, "## When to use Grill comes before ## Pages");
+      const section = llms.slice(whenAt, pagesAt).trimEnd();
+      const bullets = section.split("\n").filter((line) => line.startsWith("- "));
+      assert.ok(bullets.length >= 3 && bullets.length <= 5, `expected 3 to 5 bullets, got ${bullets.length}`);
+      assert.ok(bullets.every((line) => /^- \S/.test(line)));
+      const strip = (html) => {
+        const meta = html.match(/<meta name="description" content="([^"]*)">/)?.[1] ?? "";
+        const text = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ");
+        return `${meta} ${text}`.replace(/\s+([.?!,])/g, "$1").replace(/\s+/g, " ");
+      };
+      const copy = [
+        readFileSync(join(ROOT, "_site/index.html"), "utf8"),
+        readFileSync(join(ROOT, "_site/demo/index.html"), "utf8"),
+        readFileSync(join(ROOT, "_site/start/index.html"), "utf8"),
+      ].map(strip).join("\n");
+      for (const bullet of bullets) {
+        for (const sentence of bullet.slice(2).split(/(?<=[.?!])\s+/)) {
+          assert.ok(copy.includes(sentence), `not on the homepage, /demo, or /start: ${sentence}`);
+        }
+      }
+    };
+    check(build());
+    check(build({ GRILL_MISS: "1" }));
   });
 
   it("the early-access offer is on only when GRILL_PRO_COUPON is set at build time", () => {
