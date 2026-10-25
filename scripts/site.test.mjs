@@ -586,6 +586,37 @@ describe("the site build", () => {
     assert.match(start, /<meta property="og:title" content="Start using Grill">/);
   });
 
+  // A shared link's preview is the image. It stays 1200x630, and the alt text is the
+  // tagline a person reads on that image, on every page the build emits.
+  it("shares a 1200x630 image whose alt includes the tagline", () => {
+    const png = readFileSync(join(ROOT, "site/brand/og-image.png"));
+    assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    assert.equal(png.subarray(12, 16).toString("ascii"), "IHDR");
+    assert.equal(png.readUInt32BE(16), 1200);
+    assert.equal(png.readUInt32BE(20), 630);
+
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], {
+      stdio: "pipe",
+      env: { ...process.env, GRILL_MISS: "1" },
+    });
+    const pages = readdirSync(join(ROOT, "_site"), { recursive: true })
+      .map((name) => join(ROOT, "_site", String(name)))
+      .filter((path) => path.endsWith(".html"));
+    assert.ok(pages.length >= 8, "home and the other public pages are built");
+    for (const path of pages) {
+      const html = readFileSync(path, "utf8");
+      const alt = html.match(/<meta property="og:image:alt" content="([^"]*)">/)?.[1];
+      assert.ok(alt, `${path} has og:image:alt`);
+      assert.ok(
+        alt.includes("Grill your AI before you send it to your boss"),
+        `${path} alt is ${alt}`,
+      );
+      assert.match(html, /<meta property="og:image:width" content="1200">/);
+      assert.match(html, /<meta property="og:image:height" content="630">/);
+      assert.match(html, /<meta property="og:image" content="https:\/\/grillyour\.ai\/brand\/og-image\.png">/);
+    }
+  });
+
   it("GRILL_PRO_NOTIFY=1 replaces the starter-key button with the launch-list form", () => {
     const build = (notify) => {
       const env = { ...process.env };

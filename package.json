@@ -33,5 +33,8 @@
     "eval": "node scripts/eval.mjs",
     "upstream": "node scripts/upstream-check.mjs",
     "learn": "node scripts/signals.mjs"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "2.6.2"
   }
 }
