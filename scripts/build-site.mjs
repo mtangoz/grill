@@ -91,7 +91,7 @@ const headFor = ({ description, url, title = "Grill" }) => {
     `<meta property="og:image" content="${OG_IMAGE}">`,
     '<meta property="og:image:width" content="1200">',
     '<meta property="og:image:height" content="630">',
-    '<meta property="og:image:alt" content="Grill: a pitchfork mark and the words A second opinion before you decide.">',
+    '<meta property="og:image:alt" content="Grill: a pitchfork mark and the words Grill your AI before you send it to your boss. A second opinion before you decide. grillyour.ai">',
     '<meta name="twitter:card" content="summary_large_image">',
     `<meta name="twitter:title" content="${safeTitle}">`,
     `<meta name="twitter:image" content="${OG_IMAGE}">`,
