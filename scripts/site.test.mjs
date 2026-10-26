@@ -532,7 +532,7 @@ describe("the site build", () => {
   });
 
   it("names the live commit in every public page footer when the deploy provides one, and nothing otherwise", () => {
-    const pages = ["index.html", "terms/index.html", "contribute/index.html", "look-back/index.html", "privacy/index.html", "miss/index.html"];
+    const pages = ["index.html", "terms/index.html", "contribute/index.html", "look-back/index.html", "privacy/index.html", "about/index.html", "contact/index.html", "miss/index.html"];
     const build = (sha) => {
       const env = { ...process.env, GRILL_MISS: "1" };
       if (sha === undefined) delete env.VERCEL_GIT_COMMIT_SHA;
@@ -925,6 +925,125 @@ describe("the /demo page", () => {
     const link = page.indexOf('href="/demo/"');
     const how = page.indexOf('id="how"');
     assert.ok(scale > 0 && scale < link && link < how, "the demo link follows the example and scale, before How it works");
+  });
+});
+
+// /about and /contact are trust pages. Assistants look for them before trusting the site.
+// They are built like privacy and terms: the shared template, no script of their own.
+// Accept: text/markdown is only negotiated for / and for 404s (5d84194), not for these pages.
+describe("the about and contact pages", () => {
+  const visibleText = (html) => {
+    const body = html.split(/<body[^>]*>/i)[1]?.split(/<\/body>/i)[0] ?? html;
+    return body
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;|&apos;/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+  };
+  // A street number plus a street type, a PO Box, or a UK postcode.
+  const POSTAL_ADDRESS = /\b(?:P\.?\s*O\.?\s*Box|Post Office Box)\b|\b\d{1,6}\s+[A-Za-z0-9.'-]+(?:\s+[A-Za-z0-9.'-]+){0,4}\s+(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Boulevard|Blvd\.|Lane|Ln\.|Drive|Dr\.|Court|Ct\.|Way|Place|Pl\.|Terrace|Square|Crescent)\b|\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/;
+  const LEGAL_ENTITY = /\b(?:Ltd|LLC|Inc)\b/;
+
+  function builtPage(dir) {
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+    const builtPath = join(ROOT, "_site", dir, "index.html");
+    assert.ok(existsSync(builtPath), `_site/${dir}/index.html exists`);
+    const built = readFileSync(builtPath, "utf8");
+    const sourcePath = join(ROOT, "site", `${dir}.html`);
+    assert.ok(existsSync(sourcePath), `site/${dir}.html exists`);
+    const source = readFileSync(sourcePath, "utf8");
+    return { built, source };
+  }
+
+  function assertTrustPage(dir, { title, canonical, description }) {
+    const { built, source } = builtPage(dir);
+    const text = visibleText(built);
+    assert.ok(text.length >= 500, `${dir} visible text is ${text.length} characters`);
+    assert.match(built, /support@grillyour\.ai/);
+    assert.match(built, /made by Hold/);
+    assert.match(built, /href="\/privacy\/"/);
+    assert.doesNotMatch(source, /<script\b/i, `${dir} source has a script`);
+    assert.doesNotMatch(built, /application\/ld\+json/i, `${dir} has a JSON-LD block`);
+    const snippet = analyticsSnippet(process.env);
+    const rest = built.replace(snippet, "");
+    assert.equal(rest.match(/<script\b/gi)?.length ?? 0, 0, `${dir} has a script besides the shared analytics snippet`);
+    assert.doesNotMatch(source, LEGAL_ENTITY);
+    assert.doesNotMatch(built, LEGAL_ENTITY);
+    assert.doesNotMatch(source, POSTAL_ADDRESS);
+    assert.doesNotMatch(built, POSTAL_ADDRESS);
+    assert.ok(!source.includes("—"), `${dir} source has an em dash`);
+    assert.match(built, new RegExp(`<title>${title}</title>`));
+    assert.match(built, new RegExp(`<link rel="canonical" href="${canonical}">`));
+    assert.match(built, new RegExp(`<meta property="og:url" content="${canonical}">`));
+    assert.match(built, new RegExp(`<meta property="og:title" content="${title}">`));
+    assert.match(built, new RegExp(`<meta name="twitter:title" content="${title}">`));
+    assert.match(built, new RegExp(`<meta name="description" content="${description.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}">`));
+    assert.match(built, new RegExp(`<meta property="og:description" content="${description.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}">`));
+    assert.match(built, /--paper:/, `${dir} borrows the site styles`);
+    assert.match(source, /<span>Made at <a href="https:\/\/hold\.quest">Hold<\/a>/);
+    return { built, source, text };
+  }
+
+  it("builds /about/ with the trust lines and no script of its own", () => {
+    const { source, text } = assertTrustPage("about", {
+      title: "About Grill",
+      canonical: "https://grillyour.ai/about/",
+      description: "Hear the strongest case against your plan, then decide for yourself. Grill is made by Hold.",
+    });
+    assert.match(text, /Hear the strongest case against your plan, then decide for yourself\./);
+    assert.match(text, /Get a second opinion before you decide\./);
+    assert.match(text, /A model from another company gives a verdict and one cheap test\./);
+    assert.match(text, /An AI from a different company argues the other side; you decide; later you look back and see how your judgement did\./);
+    assert.match(text, /The verdict never becomes the decision\./);
+    assert.match(text, /Grill in chat is invite-only for now\./);
+    assert.match(text, /Your decisions are never public\./);
+    assert.match(text, /We never publish a decision, and we never tie one to your name in public\./);
+    assert.match(source, /href="\/terms\/"/);
+    assert.match(source, /href="\/demo\/"/);
+    assert.match(source, /href="https:\/\/github\.com\/mtangoz\/grill"/);
+    assert.doesNotMatch(text, /\b\d{2,}\s+(?:users|people|customers)\b/i);
+    assert.doesNotMatch(text, /\b(?:rating|ratings|stars)\b/i);
+  });
+
+  it("builds /contact/ with a way to reach Grill and a warning about public issues", () => {
+    const { source, text } = assertTrustPage("contact", {
+      title: "Contact Grill",
+      canonical: "https://grillyour.ai/contact/",
+      description: "Write to support@grillyour.ai for your account, sign-in, privacy, or deleting your data.",
+    });
+    assert.match(text, /for anything: your account, sign-in, privacy, or deleting your data/);
+    assert.match(source, /href="https:\/\/github\.com\/mtangoz\/grill\/issues"/);
+    assert.match(source, /href="https:\/\/github\.com\/mtangoz\/grill\/blob\/main\/SECURITY\.md"/);
+    assert.match(text, /Never paste decision content into a public issue\./);
+    assert.match(text, /Don’t paste a real decision\. Issues are public\./);
+    assert.match(text, /Please don't open a public issue\./);
+    assert.doesNotMatch(text, /within \d+|response time|we(?:'|\u2019)ll (?:reply|get back|respond)/i);
+    assert.doesNotMatch(text, /\b(?:phone|call us|tel:)\b/i);
+    assert.doesNotMatch(source, /href="tel:/i);
+  });
+
+  it("lists both pages in the sitemap and in llms.txt, and the privacy and terms notes link them", () => {
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+    const sitemap = readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8");
+    const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
+    assert.ok(sitemap.includes("<loc>https://grillyour.ai/about/</loc>"));
+    assert.ok(sitemap.includes("<loc>https://grillyour.ai/contact/</loc>"));
+    const pagesAt = llms.indexOf("## Pages\n");
+    assert.ok(pagesAt > 0, "llms.txt has a Pages list");
+    const pages = llms.slice(pagesAt);
+    assert.match(pages, /\[About\]\(https:\/\/grillyour\.ai\/about\/\): \S/);
+    assert.match(pages, /\[Contact\]\(https:\/\/grillyour\.ai\/contact\/\): \S/);
+    for (const file of ["site/privacy.html", "site/terms.html"]) {
+      const html = readFileSync(join(ROOT, file), "utf8");
+      assert.match(html, /href="\/about\/"/, `${file} links /about/`);
+      assert.match(html, /href="\/contact\/"/, `${file} links /contact/`);
+    }
   });
 });
 
