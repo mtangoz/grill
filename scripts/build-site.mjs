@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build the public onboarding site. The home page's one source is site/page.html; the other pages
- * (terms, contribute, look-back, start, privacy, demo) borrow its styles.
+ * (terms, contribute, look-back, start, privacy, about, contact, demo) borrow its styles.
  *
  * site/page.html is a page body (title, styles, markup, script) with no document skeleton, so the
  * same file publishes as a Claude artifact unchanged. This wraps it into a full document with the
@@ -217,6 +217,20 @@ writePage("privacy.html", {
   name: "Privacy",
   blurb: "The free tool has no account and keeps nothing. Grill in chat keeps only what you choose, encrypted, and you can delete it.",
 });
+writePage("about.html", {
+  description: "Hear the strongest case against your plan, then decide for yourself. Grill is made by Hold.",
+  url: `${SITE_URL}about/`,
+  outDir: "about",
+  name: "About",
+  blurb: "Hear the strongest case against your plan, then decide for yourself. Grill is made by Hold.",
+});
+writePage("contact.html", {
+  description: "Write to support@grillyour.ai for your account, sign-in, privacy, or deleting your data.",
+  url: `${SITE_URL}contact/`,
+  outDir: "contact",
+  name: "Contact",
+  blurb: "Write to support@grillyour.ai for your account, sign-in, privacy, or deleting your data.",
+});
 writePage("demo.html", {
   description: "Three made-up decisions, and what Grill said about each.",
   url: `${SITE_URL}demo/`,
@@ -326,4 +340,4 @@ writeFileSync(
     "",
   ].join("\n"),
 );
-console.log(`built _site/index.html and the terms, contribute, look-back, start, privacy and demo pages${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);
+console.log(`built _site/index.html and the terms, contribute, look-back, start, privacy and demo pages, plus about and contact${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);
