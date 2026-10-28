@@ -30,6 +30,25 @@
       "dest": "/index.md",
       "headers": { "Content-Type": "text/markdown; charset=utf-8", "Vary": "Accept" }
     },
+    {
+      "src": "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|account/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
+      "has": [{ "type": "header", "key": "accept", "value": ".*text/markdown.*" }],
+      "dest": "/$1/index.md",
+      "check": true,
+      "headers": { "Content-Type": "text/markdown; charset=utf-8", "Vary": "Accept" }
+    },
+    {
+      "src": "^/$",
+      "dest": "/index.html",
+      "check": true,
+      "headers": { "Vary": "Accept" }
+    },
+    {
+      "src": "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|account/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
+      "dest": "/$1/index.html",
+      "check": true,
+      "headers": { "Vary": "Accept" }
+    },
     { "handle": "error" },
     {
       "src": "^/(?!api(?:/|$)|mcp$|\\.well-known(?:/|$)|decisions(?:/|$)|account$|welcome$|checkout$|pro(?:/|$)|notify(?:/|$)|miss/send$).*$",
