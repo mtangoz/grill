@@ -930,7 +930,6 @@ describe("the /demo page", () => {
 
 // /about and /contact are trust pages. Assistants look for them before trusting the site.
 // They are built like privacy and terms: the shared template, no script of their own.
-// Accept: text/markdown is only negotiated for / and for 404s (5d84194), not for these pages.
 describe("the about and contact pages", () => {
   const visibleText = (html) => {
     const body = html.split(/<body[^>]*>/i)[1]?.split(/<\/body>/i)[0] ?? html;
@@ -1176,5 +1175,178 @@ describe("markdown for agents", () => {
     for (const kept of ["/mcp", "/decisions", "/decisions/calendar/abc", "/account", "/api/hosted", "/.well-known/oauth-protected-resource", "/pro", "/pro/auth", "/welcome", "/notify/confirm", "/miss/send"]) {
       assert.equal(notFoundPath.test(kept), false, `${kept} stays on its rewrite`);
     }
+  });
+
+  // Every page in the built sitemap, not only the homepage. The twin is generated next to
+  // index.html. Nav chrome and styles are dropped; the page's own sentences stay.
+  it("writes a markdown twin for every sitemap page, from that page's own words", () => {
+    const h1Text = (html) =>
+      (html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? "")
+        .replace(/<[^>]+>/g, "")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;|&apos;/g, "'")
+        .replace(/\s+/g, " ")
+        .trim();
+    const twinPath = (loc) => {
+      const pathname = new URL(loc).pathname;
+      return pathname === "/" ? join(ROOT, "_site/index.md") : join(ROOT, "_site", pathname.replace(/^\//, ""), "index.md");
+    };
+    const check = (extra = {}) => {
+      execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], {
+        stdio: "pipe",
+        env: { ...process.env, ...extra },
+      });
+      const sitemap = readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8");
+      const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
+      assert.ok(locs.includes("https://grillyour.ai/"));
+      assert.ok(locs.includes("https://grillyour.ai/start/"));
+      for (const loc of locs) {
+        const pathname = new URL(loc).pathname;
+        const htmlPath = pathname === "/"
+          ? join(ROOT, "_site/index.html")
+          : join(ROOT, "_site", pathname.replace(/^\//, ""), "index.html");
+        const mdPath = twinPath(loc);
+        assert.ok(existsSync(mdPath), `${pathname} has a markdown twin`);
+        const md = readFileSync(mdPath, "utf8");
+        const h1 = h1Text(readFileSync(htmlPath, "utf8"));
+        assert.ok(h1.length > 0, `${pathname} has an H1`);
+        assert.ok(md.trim().length > 0, `${pathname} markdown is empty`);
+        assert.ok(md.includes(h1), `${pathname} markdown is missing its H1: ${h1}`);
+        assert.doesNotMatch(md, /<script/i, `${pathname} markdown has a script`);
+        assert.doesNotMatch(md, /<style/i, `${pathname} markdown has a style`);
+      }
+      const start = readFileSync(twinPath("https://grillyour.ai/start/"), "utf8");
+      assert.ok(start.includes("Grill in chat is invite-only for now."));
+      assert.ok(start.includes("the email your invite went to, every time"));
+      assert.ok(start.includes("https://grillyour.ai/mcp"));
+      assert.ok(start.includes("[Privacy](https://grillyour.ai/privacy/)"));
+      const privacy = readFileSync(twinPath("https://grillyour.ai/privacy/"), "utf8");
+      for (const line of [
+        "Your decisions are never public.",
+        "We never publish a decision, and we never tie one to your name in public.",
+        "No ads.",
+        "We never sell your data.",
+        "We never train AI on your decisions.",
+        "The free tool has no account and keeps nothing.",
+        "Grill in chat keeps only what you choose, encrypted, and you can delete it.",
+      ]) {
+        assert.ok(privacy.includes(line), `privacy markdown is missing: ${line}`);
+      }
+    };
+    check();
+    check({ GRILL_MISS: "1" });
+    const miss = readFileSync(join(ROOT, "_site/miss/index.md"), "utf8");
+    assert.ok(miss.includes("Share a miss, not your decision."));
+    assert.doesNotMatch(miss, /<script/i);
+  });
+
+  // One route, before the filesystem, sends Accept: text/markdown to that twin.
+  // The HTML for the same paths keeps its file and gains Vary: Accept, so a shared
+  // cache cannot swap the two. Rewrites stay on their own paths.
+  it("negotiates markdown for every sitemap page and adds Vary: Accept to the HTML", () => {
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], {
+      stdio: "pipe",
+      env: { ...process.env, GRILL_MISS: "1" },
+    });
+    const config = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
+    assert.deepEqual(config.rewrites.map((rule) => rule.source), [
+      "/welcome",
+      "/checkout",
+      "/pro",
+      "/pro/auth",
+      "/pro/try",
+      "/pro/reports",
+      "/notify",
+      "/notify/confirm",
+      "/miss/send",
+      "/mcp",
+      "/.well-known/oauth-protected-resource",
+      "/.well-known/oauth-protected-resource/:extra*",
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/oauth-authorization-server/:extra*",
+      "/.well-known/openid-configuration",
+      "/.well-known/openid-configuration/:extra*",
+      "/decisions/calendar/:link",
+      "/decisions",
+      "/account",
+    ]);
+    const routes = config.routes;
+    const errorAt = routes.findIndex((route) => route.handle === "error");
+    assert.ok(errorAt > 0, "error handle");
+    const before = routes.slice(0, errorAt);
+    const header = (route, name) => {
+      const found = Object.entries(route.headers ?? {}).find(([key]) => key.toLowerCase() === name);
+      return found ? found[1] : "";
+    };
+    const acceptSource = (route) => {
+      const has = route.has?.find((item) => item.type === "header" && String(item.key).toLowerCase() === "accept");
+      if (!has) return null;
+      const source = typeof has.value === "string" ? has.value : has.value?.re;
+      return typeof source === "string" ? source : null;
+    };
+    const destFor = (route, pathname) => {
+      const match = pathname.match(new RegExp(route.src ?? route.source));
+      if (!match) return null;
+      let dest = route.dest ?? route.destination ?? "";
+      dest = dest.replace(/\$(\d+)/g, (_, n) => match[Number(n)] ?? "");
+      return dest;
+    };
+    const fileExists = (dest) => dest.startsWith("/") && existsSync(join(ROOT, "_site", dest.slice(1)));
+    // A route answers only when its Accept condition matches and, if it checks the
+    // filesystem, the destination file is actually there. Otherwise the request falls through.
+    const answers = (route, pathname, accept) => {
+      if (route.handle) return false;
+      if (!new RegExp(route.src ?? route.source).test(pathname)) return false;
+      const source = acceptSource(route);
+      if (source !== null && !new RegExp(source).test(accept)) return false;
+      if (route.check && !fileExists(destFor(route, pathname) ?? "")) return false;
+      return true;
+    };
+    const browser = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+    const sitemap = readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8");
+    const pathnames = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => new URL(match[1]).pathname);
+    for (const extra of ["", "miss/"]) {
+      assert.ok(pathnames.includes(`/${extra}`), `sitemap lists /${extra}`);
+    }
+    for (const pathname of pathnames) {
+      const paths = pathname === "/" ? ["/"] : [pathname, pathname.replace(/\/$/, "")];
+      const expected = pathname === "/" ? "/index.md" : `/${pathname.replace(/^\/|\/$/g, "")}/index.md`;
+      for (const path of paths) {
+        const markdown = before.filter((route) => answers(route, path, "text/markdown") && !route.continue);
+        assert.ok(markdown.length >= 1, `${path} has a markdown route`);
+        const chosen = markdown[0];
+        assert.equal(destFor(chosen, path), expected, `${path} markdown dest`);
+        assert.match(header(chosen, "content-type"), /^text\/markdown;\s*charset=utf-8$/i, path);
+        assert.match(header(chosen, "vary"), /\bAccept\b/, path);
+        assert.ok(chosen.status == null || chosen.status === 200, `${path} markdown is 200`);
+        assert.equal(acceptSource(chosen) !== null && new RegExp(acceptSource(chosen)).test(browser), false, `${path} markdown route also matches a browser`);
+        assert.ok(fileExists(expected), `${expected} is built`);
+
+        for (const accept of [browser, ""]) {
+          const html = before.filter((route) => answers(route, path, accept) && !route.continue);
+          const htmlChosen = html.find((route) => (route.dest ?? route.destination) && !String(route.dest ?? route.destination).endsWith(".md"));
+          assert.ok(htmlChosen, `${path} HTML still has a route when Accept is ${JSON.stringify(accept)}`);
+          const htmlDest = destFor(htmlChosen, path);
+          const htmlExpected = pathname === "/" ? "/index.html" : `/${pathname.replace(/^\/|\/$/g, "")}/index.html`;
+          assert.equal(htmlDest, htmlExpected, `${path} HTML dest`);
+          assert.match(header(htmlChosen, "vary"), /\bAccept\b/, `${path} HTML varies on Accept`);
+          assert.equal(String(header(htmlChosen, "content-type")).includes("text/markdown"), false);
+        }
+      }
+    }
+    const kept = ["/mcp", "/decisions", "/decisions/calendar/abc", "/account", "/api/hosted", "/.well-known/oauth-protected-resource", "/pro", "/pro/auth", "/welcome", "/notify/confirm", "/miss/send", "/checkout"];
+    for (const path of kept) {
+      const stolen = before.filter((route) => answers(route, path, "text/markdown") && (route.dest ?? route.destination));
+      assert.equal(stolen.length, 0, `${path} stays on its rewrite`);
+    }
+    const notFound = routes.slice(errorAt + 1).find((route) => (route.dest ?? route.destination) === "/404.md");
+    assert.ok(notFound, "404 markdown route");
+    assert.equal(notFound.status, 404);
+    assert.ok(answers(notFound, "/nope-404-check", "text/markdown"));
+    const ghost = before.filter((route) => answers(route, "/nope-404-check", "text/markdown") && !route.continue);
+    assert.equal(ghost.length, 0, "a missing page is not served as a markdown 200");
   });
 });

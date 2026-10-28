@@ -7,7 +7,7 @@
  * same file publishes as a Claude artifact unchanged. This wraps it into a full document with the
  * link-preview tags a shared URL needs, and writes _site/index.html, which Vercel serves.
  *
- *   node scripts/build-site.mjs        # writes _site/index.html, plus index.md and 404.md for agents
+ *   node scripts/build-site.mjs        # writes _site/index.html, a Markdown twin for every public page, and 404.md
  */
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -53,6 +53,246 @@ const ICONS = [
 const OG_IMAGE = `${SITE_URL}brand/og-image.png`;
 // Attribute values, same escapes as the miss page's option labels.
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+// The public page, as Markdown, for an agent that sends Accept: text/markdown.
+// Headings, paragraphs, lists and links stay. Nav chrome and styles go. Nothing new is written.
+const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
+const INLINE_TAGS = new Set(["a", "strong", "b", "em", "i", "code", "span", "small", "br", "abbr", "sub", "sup", "img", "input", "button", "wbr"]);
+
+function decodeEntities(value) {
+  return String(value)
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)));
+}
+
+function parseAttrs(raw) {
+  const attrs = {};
+  for (const match of raw.matchAll(/([^\s=\/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+)))?/g)) {
+    attrs[match[1].toLowerCase()] = decodeEntities(match[2] ?? match[3] ?? match[4] ?? "");
+  }
+  return attrs;
+}
+
+function parseHtml(html) {
+  let i = 0;
+  function parseNodes(stopTag) {
+    const nodes = [];
+    while (i < html.length) {
+      if (html.startsWith("<!--", i)) {
+        const end = html.indexOf("-->", i);
+        i = end === -1 ? html.length : end + 3;
+        continue;
+      }
+      if (html[i] !== "<") {
+        const next = html.indexOf("<", i);
+        const text = html.slice(i, next === -1 ? html.length : next);
+        if (text) nodes.push({ type: "text", text });
+        i = next === -1 ? html.length : next;
+        continue;
+      }
+      if (html.startsWith("</", i)) {
+        const gt = html.indexOf(">", i);
+        const tag = html.slice(i + 2, gt === -1 ? html.length : gt).trim().toLowerCase().split(/[^a-z0-9:-]/)[0];
+        i = gt === -1 ? html.length : gt + 1;
+        if (!stopTag || tag === stopTag) return nodes;
+        continue;
+      }
+      const gt = html.indexOf(">", i);
+      if (gt === -1) break;
+      const raw = html.slice(i + 1, gt);
+      i = gt + 1;
+      const tag = (raw.match(/^[a-zA-Z0-9:-]+/) || [""])[0].toLowerCase();
+      const attrs = parseAttrs(raw.slice(tag.length).replace(/\/\s*$/, ""));
+      const children = /\/\s*$/.test(raw) || VOID_TAGS.has(tag) ? [] : parseNodes(tag);
+      nodes.push({ type: "el", tag, attrs, children });
+    }
+    return nodes;
+  }
+  return parseNodes(null);
+}
+
+function classList(el) {
+  return (el.attrs.class || "").split(/\s+/).filter(Boolean);
+}
+
+function skipped(el) {
+  if (["script", "style", "nav", "noscript"].includes(el.tag)) return true;
+  if (classList(el).includes("top")) return true;
+  return Object.hasOwn(el.attrs, "hidden");
+}
+
+function absoluteUrl(href) {
+  if (!href) return "";
+  if (/^(https?:|mailto:)/i.test(href)) return href;
+  if (href.startsWith("/")) return `https://grillyour.ai${href}`;
+  if (href.startsWith("#")) return `https://grillyour.ai/${href}`;
+  return href;
+}
+
+function inline(nodes) {
+  let out = "";
+  for (const node of nodes) {
+    const piece = node.type === "text" ? decodeEntities(node.text) : inlineEl(node);
+    if (!piece) continue;
+    if (out && !/\s$/.test(out) && node.type === "el" && /^[[(*A-Za-z0-9]/.test(piece)) out += " ";
+    out += piece;
+  }
+  return out.replace(/[ \t]*\n[ \t]*/g, "\n").replace(/[ \t]{2,}/g, " ").trim();
+}
+
+function inlineEl(node) {
+  if (node.type !== "el" || skipped(node)) return "";
+  if (node.tag === "br") return "\n";
+  if (node.tag === "a") {
+    const text = inline(node.children);
+    const href = absoluteUrl(node.attrs.href || "");
+    if (!text) return "";
+    return href ? `[${text}](${href})` : text;
+  }
+  if (node.tag === "strong" || node.tag === "b") {
+    const text = inline(node.children);
+    return text ? `**${text}**` : "";
+  }
+  if (node.tag === "em" || node.tag === "i") {
+    const text = inline(node.children);
+    return text ? `*${text}*` : "";
+  }
+  if (node.tag === "code") {
+    const text = inline(node.children);
+    if (!text) return "";
+    const fence = text.includes("`") ? "``" : "`";
+    return `${fence}${text}${fence}`;
+  }
+  if (node.tag === "img") return node.attrs.alt?.trim() || "";
+  if (node.tag === "input") return node.attrs.value?.trim() || "";
+  if (classList(node).includes("who") || classList(node).includes("k")) {
+    const text = inline(node.children);
+    return text ? `${text}\n` : "";
+  }
+  return inline(node.children);
+}
+
+function rawText(nodes) {
+  let out = "";
+  for (const node of nodes) {
+    if (node.type === "text") out += decodeEntities(node.text);
+    else if (!skipped(node)) out += rawText(node.children);
+  }
+  return out;
+}
+
+function renderList(el, ordered) {
+  const items = [];
+  for (const child of el.children) {
+    if (child.type !== "el" || child.tag !== "li" || skipped(child)) continue;
+    const body = renderItem(child).replace(/\n/g, "\n  ");
+    items.push(`${ordered ? `${items.length + 1}. ` : "- "}${body}`);
+  }
+  return items.join("\n");
+}
+
+function renderItem(li) {
+  const parts = [];
+  let inlineBuf = [];
+  const flush = () => {
+    const text = inline(inlineBuf);
+    inlineBuf = [];
+    if (text) parts.push(text);
+  };
+  for (const child of li.children) {
+    if (child.type === "text" || (child.type === "el" && INLINE_TAGS.has(child.tag))) inlineBuf.push(child);
+    else {
+      flush();
+      const block = renderBlock(child).trim();
+      if (block) parts.push(block);
+    }
+  }
+  flush();
+  return parts.filter(Boolean).join("\n\n");
+}
+
+function fence(text) {
+  const tick = text.includes("```") ? "````" : "```";
+  return `${tick}\n${text.replace(/\n$/, "")}\n${tick}`;
+}
+
+function renderBlock(node) {
+  if (node.type === "text") {
+    const text = decodeEntities(node.text).replace(/\s+/g, " ").trim();
+    return text ? `\n\n${text}` : "";
+  }
+  if (skipped(node)) return "";
+  const tag = node.tag;
+  if (/^h[1-6]$/.test(tag)) return `\n\n${"#".repeat(Number(tag[1]))} ${inline(node.children)}`;
+  if (tag === "p" || tag === "label" || tag === "summary") {
+    const text = inline(node.children);
+    return text ? `\n\n${text}` : "";
+  }
+  if (tag === "ul" || tag === "ol") return `\n\n${renderList(node, tag === "ol")}`;
+  if (tag === "pre") return `\n\n${fence(rawText(node.children).replace(/\n$/, ""))}`;
+  if (tag === "blockquote") {
+    const inner = renderBlocks(node.children).trim();
+    return inner ? `\n\n${inner.split("\n").map((line) => `> ${line}`).join("\n")}` : "";
+  }
+  if (tag === "textarea") {
+    const text = rawText(node.children).trim();
+    const hint = node.attrs.placeholder?.trim() || "";
+    const parts = [text, hint && hint !== text ? hint : ""].filter(Boolean);
+    return parts.length ? `\n\n${parts.join("\n\n")}` : "";
+  }
+  if (tag === "select") {
+    const options = [];
+    const walk = (nodes) => {
+      for (const child of nodes) {
+        if (child.type !== "el" || skipped(child)) continue;
+        if (child.tag === "option") {
+          const text = inline(child.children);
+          if (text) options.push(text);
+        } else walk(child.children);
+      }
+    };
+    walk(node.children);
+    return options.length ? `\n\n${options.map((option) => `- ${option}`).join("\n")}` : "";
+  }
+  if (tag === "li") return "";
+  if (tag === "br") return "\n";
+  if (tag === "hr") return "\n\n---";
+  if (tag === "input") {
+    const value = node.attrs.value?.trim();
+    return value ? `\n\n${value}` : "";
+  }
+  if (tag === "button") {
+    const text = inline(node.children);
+    return text ? `\n\n${text}` : "";
+  }
+  if (tag === "img") {
+    const alt = node.attrs.alt?.trim();
+    return alt ? `\n\n${alt}` : "";
+  }
+  if (INLINE_TAGS.has(tag) || tag === "span" || tag === "small") {
+    const text = inline([node]);
+    return text ? `\n\n${text}` : "";
+  }
+  return renderBlocks(node.children);
+}
+
+function renderBlocks(nodes) {
+  return nodes.map(renderBlock).join("");
+}
+
+function htmlToMarkdown(html) {
+  const stripped = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+  const body = stripped.match(/<body[^>]*>([\s\S]*)<\/body>/i)?.[1] ?? stripped;
+  return `${renderBlocks(parseHtml(body)).replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
 
 // Cookieless page counts for the website only, plus PostHog when GRILL_POSTHOG_KEY is set (see
 // scripts/siteAnalytics.mjs). Not added to site/page.html itself: that file is also published as a
@@ -297,6 +537,14 @@ writeFileSync(
     "",
   ].join("\n"),
 );
+// Every other public page: the same words as its HTML, minus the nav chrome and styles.
+// A new page added to publicPages is covered here without a hand-written twin. The homepage
+// brief below stays as it is: that is the Markdown agents already fetch for /.
+for (const p of publicPages) {
+  if (p.url === SITE_URL) continue;
+  const rel = p.url.slice(SITE_URL.length);
+  writeFileSync(join(OUT, rel, "index.md"), htmlToMarkdown(readFileSync(join(OUT, rel, "index.html"), "utf8")));
+}
 // Same words as the homepage, for an agent that sends Accept: text/markdown. vercel.json
 // routes / to this file only for that header. Nothing here is a new claim.
 writeFileSync(
