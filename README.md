@@ -3,7 +3,7 @@
 **Hear the strongest case against your plan, then decide for yourself.**
 
 **Setup guide:** [grillyour.ai](https://grillyour.ai)
-**See it first:** [three made-up decisions, grilled](https://grillyour.ai/demo/)
+**See it first:** [four made-up decisions, grilled](https://grillyour.ai/demo/)
 
 Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, Gemini, Grok or Muse. It sends the decision as you said it. An outside judge, a model from a different company, comes back with a short note: one verdict line, the sharpest point, and one cheap test, in about 50 words. Say more, options, or your call when you want the rest. A thin line gets a quick take and one question, not a refusal. A record is written only after you answer, and a percent is optional. Grill does not store it on the installed tool.
 
