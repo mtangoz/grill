@@ -472,11 +472,11 @@ writePage("contact.html", {
   blurb: "Write to support@grillyour.ai for your account, sign-in, privacy, or deleting your data.",
 });
 writePage("demo.html", {
-  description: "Three made-up decisions, and what Grill said about each.",
+  description: "Four made-up decisions, and what Grill said about each.",
   url: `${SITE_URL}demo/`,
   outDir: "demo",
   name: "Demo",
-  blurb: "Three made-up decisions, and what Grill said about each.",
+  blurb: "Four made-up decisions, and what Grill said about each.",
 });
 // The miss page is built only when GRILL_MISS=1, the same switch that opens /miss/send. Its fields
 // and its in-browser check come from scripts/missCore.mjs, the module the server checks with.
@@ -568,7 +568,7 @@ writeFileSync(
     "",
     "**Any AI (easiest)** ChatGPT, Copilot, Gemini, Grok, Muse · free",
     "",
-    "[See three more examples](https://grillyour.ai/demo/)",
+    "[See four more examples](https://grillyour.ai/demo/)",
     "",
     "Every detail of what is sent and counted is in [Privacy](https://grillyour.ai/privacy/).",
     "",
