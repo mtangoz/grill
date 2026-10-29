@@ -837,14 +837,16 @@ describe("the privacy page", () => {
   });
 });
 
-// /demo lets a visitor see the grill format on three made-up everyday decisions
-// before they connect anything. The verdicts are illustrative. Nothing here is a saved record.
+// /demo lets a visitor see the grill format on four made-up decisions
+// before they connect anything. The first is the work memo from the tagline.
+// The verdicts are illustrative. Nothing here is a saved record.
 describe("the /demo page", () => {
   const demoPath = join(ROOT, "site/demo.html");
   const VERDICTS = ["solid", "solid, if\u2026", "shaky", "doesn\u2019t hold up"];
   const closing = "Say \u2018more\u2019, \u2018options\u2019, or your call.";
+  const disclaimer = "These are made-up decisions and illustrative verdicts, written to show the format, not real users\u2019 decisions and not saved records.";
 
-  it("is three made-up chats, with a visible label and no script", () => {
+  it("is four made-up chats, with a visible label and no script", () => {
     assert.ok(existsSync(demoPath), "site/demo.html exists");
     const demo = readFileSync(demoPath, "utf8");
     const contribute = readFileSync(join(ROOT, "site/contribute.html"), "utf8");
@@ -859,7 +861,7 @@ describe("the /demo page", () => {
     assert.doesNotMatch(demo, /<script/i);
     assert.doesNotMatch(demo, /onclick=|javascript:/i);
 
-    const label = "made-up decisions and illustrative verdicts, written to show the format, not real users\u2019 decisions and not saved records";
+    const label = disclaimer.slice("These are ".length);
     const labelAt = demo.toLowerCase().indexOf(label);
     const h1 = demo.indexOf("<h1>");
     const firstChat = demo.indexOf('class="chat"');
@@ -867,7 +869,12 @@ describe("the /demo page", () => {
     assert.doesNotMatch(demo, /<!--[\s\S]*made-up decisions/);
 
     const chats = [...demo.matchAll(/<div class="chat"[\s\S]*?<\/div>/g)].map((match) => match[0]);
-    assert.equal(chats.length, 3);
+    assert.equal(chats.length, 4);
+    assert.match(chats[0], /ChatGPT drafted my memo/);
+    assert.match(chats[0], /\bboss\b/);
+    assert.match(chats[1], /used car/);
+    assert.match(chats[2], /two-year lease/);
+    assert.match(chats[3], /school across town/);
     const seen = [];
     for (const chat of chats) {
       assert.match(chat, /class="you"[\s\S]*Grill this:/);
@@ -886,7 +893,7 @@ describe("the /demo page", () => {
     assert.equal(new Set(seen).size, 3, `three different verdicts, got ${seen.join(", ")}`);
 
     const details = [...demo.matchAll(/<details>[\s\S]*?<\/details>/g)].map((match) => match[0]);
-    assert.equal(details.length, 3);
+    assert.equal(details.length, 4);
     for (const block of details) {
       assert.match(block, /<summary>more<\/summary>/);
       const text = block.replace(/<summary>more<\/summary>/, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -895,7 +902,7 @@ describe("the /demo page", () => {
       assert.match(text, /strongest case against/i);
       assert.match(text, /your call/i);
     }
-    assert.doesNotMatch(demo, /\b(boss|coworker|workplace|office|sprint|standup|ticket|company|team)\b/i);
+    assert.doesNotMatch(demo, /\b(coworker|workplace|office|sprint|standup|company)\b/i);
 
     const lastDetails = demo.lastIndexOf("</details>");
     const cta = demo.indexOf('class="cta"');
@@ -914,13 +921,35 @@ describe("the /demo page", () => {
     const sitemap = readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8");
     assert.ok(sitemap.includes("<loc>https://grillyour.ai/demo/</loc>"));
     const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
-    assert.match(llms, /\[Demo\]\(https:\/\/grillyour\.ai\/demo\/\): Three made-up decisions, and what Grill said about each\./);
+    assert.match(llms, /\[Demo\]\(https:\/\/grillyour\.ai\/demo\/\): Four made-up decisions, and what Grill said about each\./);
+    const builtChats = [...built.matchAll(/<div class="chat"[\s\S]*?<\/div>/g)].map((match) => match[0]);
+    assert.equal(builtChats.length, 4);
+    assert.match(builtChats[0], /ChatGPT drafted my memo/);
+    assert.match(builtChats[0], /\bboss\b/);
+    assert.ok(built.includes(disclaimer), "the disclaimer is still present");
+    assert.doesNotMatch(readFileSync(demoPath, "utf8"), /<script/i);
+    const rest = built.replace(analyticsSnippet(process.env), "");
+    assert.equal(rest.match(/<script\b/gi)?.length ?? 0, 0, "/demo has a script of its own");
+    const threeMadeUp = /three made-up/i;
+    const textFiles = [];
+    const walk = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (/\.(html|md|txt|xml)$/i.test(entry.name)) textFiles.push(path);
+      }
+    };
+    walk(join(ROOT, "_site"));
+    const hits = textFiles.filter((path) => threeMadeUp.test(readFileSync(path, "utf8"))).map((path) => relative(ROOT, path));
+    assert.deepEqual(hits, [], `three made-up remains in ${hits.join(", ")}`);
+    assert.doesNotMatch(llms, threeMadeUp);
+    assert.doesNotMatch(readFileSync(join(ROOT, "README.md"), "utf8"), threeMadeUp);
   });
 
   it("the home page links /demo/ once, right after the example", () => {
     const links = page.match(/href="\/demo\/"/g) ?? [];
     assert.equal(links.length, 1);
-    assert.match(page, /<a href="\/demo\/">See three more examples<\/a>/);
+    assert.match(page, /<a href="\/demo\/">See four more examples<\/a>/);
     const scale = page.indexOf('class="scale"');
     const link = page.indexOf('href="/demo/"');
     const how = page.indexOf('id="how"');
@@ -1080,7 +1109,7 @@ describe("markdown for agents", () => {
       "Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email your invite went to, every time.",
       "Any AI (easiest)",
       "ChatGPT, Copilot, Gemini, Grok, Muse",
-      "See three more examples",
+      "See four more examples",
       "Every detail of what is sent and counted is in",
     ];
     for (const phrase of phrases) {
