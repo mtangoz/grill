@@ -560,7 +560,7 @@ writeFileSync(
     "",
     "1. **Say “grill this”** Tell the AI you already use what you’re deciding.",
     "2. **A different AI pushes back** A model from another company gives a verdict and one cheap test.",
-    "3. **You make the call** The verdict never becomes the decision. Grill keeps nothing.",
+    "3. **You make the call** The verdict never becomes the decision. The free tool keeps nothing; Grill in chat keeps only what you choose, encrypted, and you can delete it.",
     "",
     "## Get started: pick the AI you use",
     "",

@@ -13,6 +13,10 @@ const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
 // The home page stays short. The paste-and-look-back tool and the full privacy text have their own pages.
 const lookBack = readFileSync(join(ROOT, "site/look-back.html"), "utf8");
 const privacyPage = readFileSync(join(ROOT, "site/privacy.html"), "utf8");
+// The standalone sentence "Grill keeps nothing." A word boundary keeps this from matching
+// "The free tool has no account and keeps nothing." on /privacy.
+const GRILL_KEEPS_NOTHING = /\bGrill keeps nothing\./;
+const CHAT_KEEPS_CHOSEN = "Grill in chat keeps only what you choose";
 
 describe("site/page.html", () => {
   it("is a body with no document skeleton, so it publishes as an artifact unchanged", () => {
@@ -1029,6 +1033,13 @@ describe("the about and contact pages", () => {
     assert.match(text, /A model from another company gives a verdict and one cheap test\./);
     assert.match(text, /An AI from a different company argues the other side; you decide; later you look back and see how your judgement did\./);
     assert.match(text, /The verdict never becomes the decision\./);
+    assert.ok(source.includes(CHAT_KEEPS_CHOSEN), "about source should say what Grill in chat keeps");
+    assert.ok(text.includes(CHAT_KEEPS_CHOSEN), "about page should say what Grill in chat keeps");
+    assert.doesNotMatch(source, GRILL_KEEPS_NOTHING);
+    assert.doesNotMatch(text, GRILL_KEEPS_NOTHING);
+    const aboutMd = readFileSync(join(ROOT, "_site/about/index.md"), "utf8");
+    assert.ok(aboutMd.includes(CHAT_KEEPS_CHOSEN), "about markdown twin should say what Grill in chat keeps");
+    assert.doesNotMatch(aboutMd, GRILL_KEEPS_NOTHING);
     assert.match(text, /Grill in chat is invite-only for now\./);
     assert.match(text, /Your decisions are never public\./);
     assert.match(text, /We never publish a decision, and we never tie one to your name in public\./);
@@ -1103,7 +1114,7 @@ describe("markdown for agents", () => {
       "A different AI pushes back",
       "A model from another company gives a verdict and one cheap test.",
       "You make the call",
-      "The verdict never becomes the decision. Grill keeps nothing.",
+      "The verdict never becomes the decision. The free tool keeps nothing; Grill in chat keeps only what you choose, encrypted, and you can delete it.",
       "Get started: pick the AI you use",
       "Invited to Grill in chat?",
       "Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email your invite went to, every time.",
@@ -1116,6 +1127,14 @@ describe("markdown for agents", () => {
       assert.ok(page.includes(phrase), `homepage is missing the wording ${phrase}`);
       assert.ok(md.includes(phrase), `markdown homepage is missing ${phrase}`);
     }
+    const homeHtml = readFileSync(join(ROOT, "_site/index.html"), "utf8");
+    assert.ok(homeHtml.includes(CHAT_KEEPS_CHOSEN), "built homepage is missing what Grill in chat keeps");
+    assert.ok(md.includes(CHAT_KEEPS_CHOSEN), "homepage markdown is missing what Grill in chat keeps");
+    assert.doesNotMatch(homeHtml, GRILL_KEEPS_NOTHING);
+    assert.doesNotMatch(md, GRILL_KEEPS_NOTHING);
+    assert.equal(GRILL_KEEPS_NOTHING.test("The free tool has no account and keeps nothing."), false);
+    assert.doesNotMatch(privacyPage, GRILL_KEEPS_NOTHING);
+    assert.match(privacyPage, /The free tool has no account and keeps nothing\. Grill in chat keeps only what you choose, encrypted, and you can delete it\./);
     for (const url of [
       "https://grillyour.ai/demo/",
       "https://grillyour.ai/start/",
