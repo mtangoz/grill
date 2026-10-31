@@ -1184,6 +1184,7 @@ describe("markdown for agents", () => {
       { source: "/.well-known/openid-configuration/:extra*", destination: "/api/hosted?__route=oidc" },
       { source: "/decisions/calendar/:link", destination: "/api/hosted?__route=calendar&t=:link" },
       { source: "/decisions", destination: "/api/hosted?__route=decisions" },
+      { source: "/judge", destination: "/api/hosted?__route=judge" },
       { source: "/account", destination: "/api/hosted?__route=account" },
       { source: "/redeem", destination: "/api/hosted?__route=redeem" },
     ]);
@@ -1228,7 +1229,7 @@ describe("markdown for agents", () => {
     assert.match(header(notFound, "vary"), /\bAccept\b/);
     const notFoundPath = new RegExp(notFound.src ?? notFound.source);
     assert.ok(notFoundPath.test("/nope-404-check"));
-    for (const kept of ["/mcp", "/decisions", "/decisions/calendar/abc", "/account", "/redeem", "/api/hosted", "/.well-known/oauth-protected-resource", "/pro", "/pro/auth", "/welcome", "/notify/confirm", "/miss/send"]) {
+    for (const kept of ["/mcp", "/decisions", "/judge", "/decisions/calendar/abc", "/account", "/redeem", "/api/hosted", "/.well-known/oauth-protected-resource", "/pro", "/pro/auth", "/welcome", "/notify/confirm", "/miss/send"]) {
       assert.equal(notFoundPath.test(kept), false, `${kept} stays on its rewrite`);
     }
   });
@@ -1327,6 +1328,7 @@ describe("markdown for agents", () => {
       "/.well-known/openid-configuration/:extra*",
       "/decisions/calendar/:link",
       "/decisions",
+      "/judge",
       "/account",
       "/redeem",
     ]);
@@ -1394,7 +1396,7 @@ describe("markdown for agents", () => {
         }
       }
     }
-    const kept = ["/mcp", "/decisions", "/decisions/calendar/abc", "/account", "/redeem", "/api/hosted", "/.well-known/oauth-protected-resource", "/pro", "/pro/auth", "/welcome", "/notify/confirm", "/miss/send", "/checkout"];
+    const kept = ["/mcp", "/decisions", "/judge", "/decisions/calendar/abc", "/account", "/redeem", "/api/hosted", "/.well-known/oauth-protected-resource", "/pro", "/pro/auth", "/welcome", "/notify/confirm", "/miss/send", "/checkout"];
     for (const path of kept) {
       const stolen = before.filter((route) => answers(route, path, "text/markdown") && (route.dest ?? route.destination));
       assert.equal(stolen.length, 0, `${path} stays on its rewrite`);

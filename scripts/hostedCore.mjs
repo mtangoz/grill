@@ -18,6 +18,8 @@ export const CLAUDE_WEB_REDIRECT = "https://claude.ai/api/mcp/auth_callback";
 export const CLAUDE_CODE_CLIENT_ID = "https://claude.ai/oauth/claude-code-client-metadata";
 export const TYPICAL_GRILL_USD = 0.03;
 export const MAX_SUBJECT_CHARS = 200_000;
+/** A /judge link carries the decision in the query string. Longer than this is refused and not sent. */
+export const JUDGE_PACKET_MAX = 4000;
 export const MAX_QUESTION_CHARS = 600;
 export const MAX_PASTE_CHARS = 100_000;
 export const JOB_TTL_SECONDS = 15 * 60;
