@@ -904,17 +904,23 @@ export function changeCountLines(summary) {
   return lines;
 }
 
+/** How many pasted records the changes view reads. The rest of the paste is left out. */
+export const CHANGES_PASTE_CAP = 30;
+
 /**
  * "What has Grill done for me?" Read pasted records (and what happened, if given) and show where
- * the calls changed. Nothing is stored. The same input always returns the same text.
+ * the calls changed. A paste longer than CHANGES_PASTE_CAP is read from the start, and the text says so.
+ * Nothing is stored. The same input always returns the same text.
  */
 export function changesView({ records = "", happened = "", limit = 10 } = {}) {
-  const parsed = parseRecords(records).slice(0, 30);
+  const all = parseRecords(records);
+  const parsed = all.slice(0, CHANGES_PASTE_CAP);
   if (!parsed.length) {
     return ["## What changed", "", "No decision record was in that paste. Nothing is stored either way.", ""].join("\n");
   }
   const summary = changeSummary({ records: parsed, outcomes: oneLine(happened) ? parseOutcomes(happened) : [] });
-  return changesText(summary, { limit, storedNote: "Nothing is stored. This stays in the chat." });
+  const readNote = all.length > parsed.length ? `Read the first ${parsed.length} of ${all.length} pasted records.` : "";
+  return changesText(summary, { limit, storedNote: "Nothing is stored. This stays in the chat.", readNote });
 }
 
 /** Saved records with their own look-back notes. An untitled note belongs to its own record only. */
@@ -932,9 +938,10 @@ export function outcomesForSaved(rows = []) {
 }
 
 /** The text of the changes view, from a summary. */
-export function changesText(summary, { limit = 10, storedNote = "" } = {}) {
+export function changesText(summary, { limit = 10, storedNote = "", readNote = "" } = {}) {
   const lines = ["## What changed", ""];
   if (storedNote) lines.push(storedNote, "");
+  if (readNote) lines.push(readNote, "");
   if (!summary.withChoice) {
     lines.push("None of these records says what you chose yet, so there is nothing to show changing. Say your choice after a grill and it is added.", "");
     return lines.join("\n");
