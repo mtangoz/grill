@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { activeKeys, activeMember, AUTH_METADATA_CACHE_MS, describeError, handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
+import { activeKeys, activeMember, AUTH_METADATA_CACHE_MS, changesForAccount, describeError, handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import {
   CLAUDE_CODE_CLIENT_ID,
@@ -41,7 +41,7 @@ import {
 } from "./hostedCore.mjs";
 import { countWords } from "./judgeCore.mjs";
 import { ONCE_DISCLOSURE as LOCAL_DISCLOSURE } from "../server/index.mjs";
-import { parseRecords, sourceAppLabel } from "./reflection.mjs";
+import { parseRecords, recordBlock, sourceAppLabel } from "./reflection.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ANTHROPIC = readFileSync(join(ROOT, "scripts/fixtures/anthropic-served-response.json"), "utf8");
@@ -2629,5 +2629,37 @@ describe("hosted judge budget and provenance", { concurrency: false }, () => {
     const res = await postMcp(ctx, resultArgs({ job_id: jobId }), { token, deps: { waitMs: 20 } });
     assert.equal(res.json.result.isError, true);
     assert.equal(textOf(res.json), NO_JOB_TEXT);
+  });
+});
+
+describe("what changed, from saved records", () => {
+  const block = (n, decided = "Keep the fixture plan") =>
+    recordBlock({
+      date: "2026-06-01",
+      title: `Fixture call ${n}`,
+      verdict: "shaky",
+      falsifier: "the fixture check",
+      review: "2026-06-15",
+      decided,
+    });
+
+  it("says when it read only the latest 200 saved decisions, and stays quiet under the cap", () => {
+    const account = { records: "keep" };
+    const under = Array.from({ length: 200 }, (_, n) => ({ title: `Fixture call ${n}`, block: block(n) }));
+    const quiet = changesForAccount("", "", account, under);
+    assert.match(quiet, /Read from the records you chose to keep/);
+    assert.match(quiet, /200 calls with a choice/);
+    assert.doesNotMatch(quiet, /Read the latest|saved decisions/);
+
+    const over = Array.from({ length: 245 }, (_, n) => ({
+      title: `Fixture call ${n}`,
+      block: block(n, n === 0 || n === 244 ? "Smaller pilot | after challenge 1" : "Keep the fixture plan"),
+    }));
+    const out = changesForAccount("", "", account, over);
+    assert.match(out, /Read the latest 200 of your 245 saved decisions\./);
+    assert.match(out, /200 calls with a choice\. 1 changed after a challenge or a later rethink/);
+    assert.match(out, /\*\*Fixture call 244\*\*/);
+    assert.doesNotMatch(out, /Fixture call 0/);
+    assert.doesNotMatch(out, /245 calls with a choice/);
   });
 });

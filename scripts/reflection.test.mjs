@@ -682,6 +682,31 @@ describe("what changed", () => {
   it("says so when no record has a choice, or none was pasted", () => {
     assert.match(changesView({ records: rec({ date: "2026-10-01", title: "t" }) }), /None of these records says what you chose yet/);
     assert.match(changesView({ records: "notes" }), /No decision record was in that paste/);
+    assert.doesNotMatch(changesView({ records: rec({ date: "2026-10-01", title: "t" }) }), /Read the first/);
+  });
+
+  it("says when a paste is longer than the 30 records it reads, and stays quiet under the cap", () => {
+    const fixture = (n, decided) =>
+      rec({ date: "2026-06-01", title: `Fixture call ${n}`, decided: decided ?? "Keep the fixture plan" });
+    const under = Array.from({ length: 30 }, (_, n) => fixture(n));
+    const quiet = changesView({ records: under.join("\n") });
+    assert.match(quiet, /30 calls with a choice/);
+    assert.doesNotMatch(quiet, /Read the first|pasted records/);
+
+    const over = Array.from({ length: 45 }, (_, n) =>
+      fixture(n, n === 0 || n === 44 ? "Smaller pilot | after challenge 1" : "Keep the fixture plan"),
+    );
+    const out = changesView({ records: over.join("\n") });
+    assert.match(out, /Read the first 30 of 45 pasted records\./);
+    assert.match(out, /30 calls with a choice\. 1 changed after a challenge or a later rethink/);
+    assert.match(out, /\*\*Fixture call 0\*\*/);
+    assert.doesNotMatch(out, /Fixture call 44/);
+    assert.doesNotMatch(out, /45 calls with a choice/);
+
+    const unreadChoice = Array.from({ length: 31 }, (_, n) => fixture(n, ""));
+    const none = changesView({ records: unreadChoice.join("\n") });
+    assert.match(none, /Read the first 30 of 31 pasted records\./);
+    assert.match(none, /None of these records says what you chose yet/);
   });
 
   it("reads a saved record's untitled look-back note as its own", () => {

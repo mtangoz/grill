@@ -1406,17 +1406,21 @@ async function callLookBack(args, account, deps) {
   return toolText(savedAny ? `${text}\n\nSaved with your decision record.` : text);
 }
 
-/** "What has Grill done for me?" A paste wins; otherwise every saved record, with its own look-back notes. */
-function changesForAccount(records, happened, account, saved) {
+/** How many saved records the changes view reads. Older ones are left out. */
+const SAVED_CHANGES_CAP = 200;
+
+/** "What has Grill done for me?" A paste wins; otherwise the latest saved records, with their own look-back notes. */
+export function changesForAccount(records, happened, account, saved) {
   if (parseRecords(records).length) return changesView({ records, happened });
   if (account.records !== "keep") {
     return "Saving is off on this account, so Grill has no records to read. Paste one or more decision records. Grill stores nothing either way.";
   }
-  const rows = saved.slice(-200);
+  const rows = saved.slice(-SAVED_CHANGES_CAP);
   const parsed = rows.map((row) => parseRecords(row.block || "")[0]).filter(Boolean);
   if (!parsed.length) return "No saved decisions yet. After a grill, say what you chose and it is saved here.";
   const summary = changeSummary({ records: parsed, outcomes: outcomesForSaved(rows) });
-  return changesText(summary, { storedNote: "Read from the records you chose to keep. Nothing new is stored." });
+  const readNote = saved.length > rows.length ? `Read the latest ${rows.length} of your ${saved.length} saved decisions.` : "";
+  return changesText(summary, { storedNote: "Read from the records you chose to keep. Nothing new is stored.", readNote });
 }
 
 function matchesRef(item, ref) {
