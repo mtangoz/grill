@@ -306,6 +306,17 @@ describe("invite codes", { concurrency: false }, () => {
     assert.ok(ctx.router.patches.some((row) => row.limit_reset === "monthly"));
   });
 
+  it("the success page's next step is a plain link to /start, with no script", async () => {
+    resetHostedCaches();
+    const ctx = world({ codes: "friend-code" });
+    const done = await page(ctx, "user_friend", "code=friend-code&confirm=redeem");
+    assert.match(done.html, /You're in\./);
+    assert.match(done.html, /Early-tester access is on for this email/);
+    assert.match(done.html, /<p>Next: <a href="\/start">connect Grill to your AI<\/a>\.<\/p>/);
+    assert.equal(done.html.includes("<script"), false);
+    assert.doesNotMatch(done.html, /javascript:|onclick=|addEventListener/i);
+  });
+
   it("stops at the max, leaves an unlimited code open, and ignores a code of zero", async () => {
     resetHostedCaches();
     const ctx = world({ codes: "once:1, open, none:0" });

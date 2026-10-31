@@ -2398,6 +2398,7 @@ function renderRedeemed(env) {
     <h1>You're in.</h1>
     <p>Early-tester access is on for this email.</p>
     <p>Free for life: $${Number.isInteger(userMonthlyCapUsd(env)) ? String(userMonthlyCapUsd(env)) : userMonthlyCapUsd(env).toFixed(2)} of use each month, resets on the 1st.</p>
+    <p>Next: <a href="/start">connect Grill to your AI</a>.</p>
     <p><a class="button" href="/decisions">Your decisions</a></p>
     <p><a href="/">Back to Grill</a></p>`,
   );

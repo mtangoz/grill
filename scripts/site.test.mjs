@@ -650,11 +650,12 @@ describe("the site build", () => {
 
 // /start has one job: connect Grill in chat to the AI an invitee uses. One section per AI,
 // under Claude.ai. No script: the address and steps are plain text a person can select and copy.
-// Every section says to use the same email each time.
+// Every section says to sign in with the same email you signed up with, every time.
 describe("the /start page", () => {
   const startPath = join(ROOT, "site/start.html");
   const SAME_EMAIL = /the same email each time/i;
   const INVITE_EMAIL = /the email your invite went to, every time/i;
+  const SIGNED_UP = /sign in with the same email you signed up with, every time/i;
   const section = (html, id) => {
     const marker = `<h2 id="${id}">`;
     const from = html.indexOf(marker);
@@ -672,6 +673,17 @@ describe("the /start page", () => {
     assert.doesNotMatch(start, /data-copy|<button/i);
   });
 
+  it("tells a code user to sign in with the email they signed up with", () => {
+    const start = readFileSync(startPath, "utf8");
+    const signedUp = /sign in with the same email you signed up with, every time/i;
+    assert.match(start.slice(0, start.indexOf('<h2 id="claude">')), signedUp);
+    assert.doesNotMatch(start, /the email your invite went to/i);
+    assert.doesNotMatch(start, /<script/i);
+    for (const id of ["claude", "chatgpt", "grok", "gemini", "soon"]) {
+      assert.match(section(start, id), signedUp, id);
+    }
+  });
+
   it("gives Claude.ai connector steps with the URL as selectable text", () => {
     const start = readFileSync(startPath, "utf8");
     const claude = section(start, "claude");
@@ -679,8 +691,7 @@ describe("the /start page", () => {
     assert.match(claude, /Customize → Connectors → Add custom connector/);
     assert.match(claude, /<input id="connector-url" type="text" readonly value="https:\/\/grillyour\.ai\/mcp"/);
     assert.match(claude, /<code>https:\/\/grillyour\.ai\/mcp<\/code>/);
-    assert.match(claude, SAME_EMAIL);
-    assert.match(claude, INVITE_EMAIL);
+    assert.match(claude, SIGNED_UP);
     assert.match(claude, /check spam/i);
     assert.doesNotMatch(claude, /Google/);
     assert.match(claude, /Grill this:/);
@@ -702,8 +713,7 @@ describe("the /start page", () => {
     assert.match(chatgpt, /I understand and want to continue/);
     assert.match(chatgpt, /Create/);
     assert.match(chatgpt, /Install/);
-    assert.match(chatgpt, SAME_EMAIL);
-    assert.match(chatgpt, INVITE_EMAIL);
+    assert.match(chatgpt, SIGNED_UP);
     assert.match(chatgpt, /check spam/i);
   });
 
@@ -713,8 +723,7 @@ describe("the /start page", () => {
     assert.match(grok, /Verified working/);
     assert.match(grok, /Add this MCP server: https:\/\/grillyour\.ai\/mcp/);
     assert.match(grok, /sign in when asked/i);
-    assert.match(grok, SAME_EMAIL);
-    assert.match(grok, INVITE_EMAIL);
+    assert.match(grok, SIGNED_UP);
   });
 
   it("marks Gemini as should work, with the limits, and still gives the steps", () => {
@@ -731,8 +740,7 @@ describe("the /start page", () => {
     assert.match(gemini, /<code>https:\/\/grillyour\.ai\/mcp<\/code>/);
     assert.match(gemini, /Next/);
     assert.match(gemini, /sign in/i);
-    assert.match(gemini, SAME_EMAIL);
-    assert.match(gemini, INVITE_EMAIL);
+    assert.match(gemini, SIGNED_UP);
   });
 
   it("leaves only Meta AI coming soon, with no setup steps", () => {
@@ -742,8 +750,7 @@ describe("the /start page", () => {
     assert.match(soon, /Coming soon/);
     assert.doesNotMatch(soon, /ChatGPT|Grok|Gemini/);
     assert.doesNotMatch(soon, /<li>|RNdHSHmWCRJO40vd/);
-    assert.match(soon, SAME_EMAIL);
-    assert.match(soon, INVITE_EMAIL);
+    assert.match(soon, SIGNED_UP);
     const order = ["claude", "chatgpt", "grok", "gemini", "soon"];
     let at = -1;
     for (const id of order) {
@@ -1269,7 +1276,7 @@ describe("markdown for agents", () => {
       }
       const start = readFileSync(twinPath("https://grillyour.ai/start/"), "utf8");
       assert.ok(start.includes("Grill in chat is invite-only for now."));
-      assert.ok(start.includes("the email your invite went to, every time"));
+      assert.ok(start.includes("sign in with the same email you signed up with, every time"));
       assert.ok(start.includes("https://grillyour.ai/mcp"));
       assert.ok(start.includes("[Privacy](https://grillyour.ai/privacy/)"));
       const privacy = readFileSync(twinPath("https://grillyour.ai/privacy/"), "utf8");
