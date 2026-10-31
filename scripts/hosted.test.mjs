@@ -1269,6 +1269,7 @@ describe("hosted Grill", { concurrency: false }, () => {
         { token, deps: { ...judgeDeps(fake), waitMs: 20_000 } },
       );
       assert.equal(textOf(json), INVITE_ONLY);
+      assert.match(textOf(json), /https:\/\/mcp\.example\/redeem/);
       assert.equal(fake.seen.chat.length, 0);
       assert.equal(ctx.management.creates.length, 0);
     } finally {

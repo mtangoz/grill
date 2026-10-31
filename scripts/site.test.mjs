@@ -1178,6 +1178,7 @@ describe("markdown for agents", () => {
       { source: "/decisions/calendar/:link", destination: "/api/hosted?__route=calendar&t=:link" },
       { source: "/decisions", destination: "/api/hosted?__route=decisions" },
       { source: "/account", destination: "/api/hosted?__route=account" },
+      { source: "/redeem", destination: "/api/hosted?__route=redeem" },
     ]);
     assert.ok(!config.rewrites.some((rule) => rule.source === "/" || rule.source === "/:path*" || rule.source === "/(.*)"));
 
