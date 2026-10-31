@@ -244,7 +244,7 @@ function tryAgainPage() {
 function formCopy() {
   return `<h1>Coming later: saved history and look-back reminders</h1>
 <p>An optional Pro plan will keep your decision records across the assistants you use (Claude, ChatGPT, Gemini, Grok), remind you when a look-back is due, and send a monthly look-back report. The free tool stays free, with no account.</p>
-<p>Want to hear when it's ready? Leave your email.</p>`;
+<p>Email me when Pro ships:</p>`;
 }
 
 function formPage({ via, email = "", issued = "", message = "", error = "" }) {

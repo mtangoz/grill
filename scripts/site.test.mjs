@@ -261,10 +261,11 @@ describe("the contribute page", () => {
     assert.match(readFileSync(join(ROOT, "site/terms.html"), "utf8"), /href="\/contribute\/"/);
   });
 
-  it("says why help matters, the three ways, and how a change is reviewed", () => {
+  it("says why help matters, the ways to help, and how a change is reviewed", () => {
     assert.match(contribute, /<title>Contribute to Grill<\/title>/);
     assert.match(contribute, /one model, from a different company/);
-    assert.match(contribute, /No ads\. No selling your data\. No training on your decisions\. Grill is paid for by subscriptions only\./);
+    assert.match(contribute, /no ads, no selling your data, and no training on your decisions\. Grill is paid for by subscriptions only\./);
+    assert.match(contribute, /<h2>Ways to help<\/h2>/);
     assert.match(contribute, /issues\/new\?template=idea\.yml/);
     assert.match(contribute, /label%3A%22good\+first\+issue%22/);
     assert.match(contribute, /prompts\/grill\.md/);
@@ -303,7 +304,7 @@ describe("the site build", () => {
     assert.match(html, /^<!doctype html>/);
     assert.match(head, /<title>Grill: grill your AI before you send it to your boss<\/title>/);
     assert.match(head, /<meta property="og:title" content="Grill: grill your AI before you send it to your boss">/);
-    assert.match(head, /<meta name="description" content="Grill your AI before you send it to your boss\. Get a second opinion before you decide/);
+    assert.match(head, /<meta name="description" content="Grill your AI before you send it to your boss\. A model from another company finds the weak spots in your plan and one cheap way to test them\. Works with ChatGPT, Claude, Gemini and more\.">/);
     assert.match(head, /<link rel="canonical" href="https:\/\/grillyour\.ai\/">/);
     assert.match(head, /<meta name="color-scheme" content="light dark">/);
     assert.match(head, /<meta name="theme-color" content="#f7f4ef" media="\(prefers-color-scheme: light\)">/);
@@ -1052,10 +1053,10 @@ describe("the about and contact pages", () => {
       description: "Hear the strongest case against your plan, then decide for yourself. Grill is made by Hold.",
     });
     assert.match(text, /Hear the strongest case against your plan, then decide for yourself\./);
-    assert.match(text, /Get a second opinion before you decide\./);
+    assert.doesNotMatch(text, /Get a second opinion before you decide\./);
     assert.match(text, /A model from another company gives a verdict and one cheap test\./);
-    assert.match(text, /An AI from a different company argues the other side; you decide; later you look back and see how your judgement did\./);
-    assert.match(text, /The verdict never becomes the decision\./);
+    assert.match(text, /An AI from a different company argues the other side\. You decide\. Later you can look back and see how your judgement did\./);
+    assert.doesNotMatch(text, /The verdict never becomes the decision\./);
     assert.ok(source.includes(CHAT_KEEPS_CHOSEN), "about source should say what Grill in chat keeps");
     assert.ok(text.includes(CHAT_KEEPS_CHOSEN), "about page should say what Grill in chat keeps");
     assert.doesNotMatch(source, GRILL_KEEPS_NOTHING);
