@@ -108,6 +108,7 @@ describe("the /judge page", { concurrency: false }, () => {
       assert.match(html, /name="keep" value="no"/);
       assert.equal(html.includes(">Grill this</button>"), false);
       assert.equal(html.includes('id="verdict"'), false);
+      assert.equal(html.includes("Judge: not from"), false);
       assert.equal(html.includes("<script"), false);
       assert.equal(fake.seen.chat.length, 0);
       assert.equal(fake.seen.decisions.length, 0);
@@ -240,11 +241,61 @@ describe("the /judge page", { concurrency: false }, () => {
       assert.equal(back.searchParams.get("from"), "signin");
       assert.equal(fake.seen.chat.length, 0);
 
+      const hinted = await open(ctx, fake, `/judge?q=${encodeURIComponent(PACKET)}&from=gemini`, { cookie: "" });
+      const hintedBack = new URL(new URL(hinted.res.headers.get("location")).searchParams.get("redirect_url"));
+      assert.equal(hintedBack.searchParams.get("q"), PACKET);
+      assert.deepEqual(hintedBack.searchParams.getAll("from"), ["signin", "gemini"]);
+
       const dropped = await open(ctx, fake, `/judge?q=${encodeURIComponent("Z".repeat(JUDGE_PACKET_MAX + 1))}`, { cookie: "" });
       const droppedBack = new URL(new URL(dropped.res.headers.get("location")).searchParams.get("redirect_url"));
       assert.equal(droppedBack.searchParams.get("q"), null);
       assert.equal(droppedBack.searchParams.get("over"), "1");
       assert.equal(dropped.res.headers.get("location").includes("ZZZZ"), false);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("brings from=gemini back after the sign-in handshake", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      const start = await handleJudge(
+        new Request(`https://grillyour.ai/judge?q=${encodeURIComponent(PACKET)}&from=gemini`, {
+          headers: { cookie: "__client_uat=1760000000" },
+        }),
+        { ...ctx, ...judgeDeps(fake) },
+      );
+      assert.equal(start.status, 307);
+      const back = new URL(new URL(start.headers.get("location")).searchParams.get("redirect_url"));
+      assert.equal(back.searchParams.get("q"), PACKET);
+      assert.equal(back.searchParams.get("from"), "gemini");
+      const state = back.searchParams.get("__grill_hs");
+      const hs = start.headers.getSetCookie().find((cookie) => cookie.startsWith("__Host-grill_hs="));
+      assert.ok(state && hs?.startsWith(`__Host-grill_hs=${state}`));
+      back.searchParams.set("__clerk_handshake_nonce", "nonce-1");
+      const jwt = session();
+      const inner = ctx.fetch;
+      ctx.fetch = async (url, init = {}) => {
+        if (String(url).startsWith("https://api.clerk.com/v1/clients/handshake_payload")) {
+          return Response.json({ directives: [`__session=${jwt}; Path=/; Secure; SameSite=Lax`] });
+        }
+        return inner(url, init);
+      };
+      const done = await handleJudge(new Request(back, { headers: { cookie: `__Host-grill_hs=${state}` } }), { ...ctx, ...judgeDeps(fake) });
+      assert.equal(done.status, 303);
+      const landed = new URL(done.headers.get("location"));
+      assert.equal(landed.pathname, "/judge");
+      assert.equal(landed.searchParams.get("q"), PACKET);
+      assert.equal(landed.searchParams.get("from"), "gemini");
+      assert.equal(landed.searchParams.getAll("from").includes("signin"), false);
+      const pageCookie = done.headers.getSetCookie().find((cookie) => cookie.startsWith("__Host-grill_page=")).split(";")[0];
+      const page = await handleJudge(new Request(landed, { headers: { cookie: pageCookie } }), { ...ctx, ...judgeDeps(fake) });
+      const html = await page.text();
+      assert.match(html, /Judge: not from Google/);
+      assert.match(html, /name="from" value="gemini"/);
+      assert.equal(fake.seen.chat.length, 0);
     } finally {
       await fake.close();
     }
@@ -300,6 +351,60 @@ describe("the /judge page", { concurrency: false }, () => {
       const removed = await open(ctx, fake, "/judge", { method: "DELETE" });
       assert.equal(removed.res.status, 405);
       assert.equal(fake.seen.chat.length, 0);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("excludes the company named by from, and carries that hint in the form", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      const cases = [
+        ["gemini", "Google", ["google/*"]],
+        ["claude", "Anthropic", ["anthropic/*", "*/claude-*"]],
+        ["chatgpt", "OpenAI", ["openai/*"]],
+        ["grok", "xAI", ["x-ai/*"]],
+      ];
+      for (const [from, label, excluded] of cases) {
+        const shown = await open(ctx, fake, `/judge?q=${encodeURIComponent(PACKET)}&from=${from}`);
+        assert.match(shown.html, new RegExp(`Judge: not from ${label}`));
+        assert.match(shown.html, new RegExp(`name="from" value="${from}"`));
+        assert.equal(shown.html.includes("<script"), false);
+        const before = fake.seen.chat.length;
+        const grilled = await open(ctx, fake, "/judge", {
+          method: "POST",
+          body: new URLSearchParams({ q: PACKET, keep: "no", from }).toString(),
+        });
+        assert.match(grilled.html, new RegExp(`Judge: not from ${label}`));
+        assert.match(grilled.html, new RegExp(`name="from" value="${from}"`));
+        const sent = fake.seen.chat[before];
+        assert.ok(sent, `${from} sent a judge request`);
+        assert.equal(sent.body.model, "openrouter/auto");
+        assert.equal(sent.body.models, undefined);
+        assert.deepEqual(sent.body.plugins[0].excluded_models, excluded);
+      }
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("leaves the judge unexcluded when from is missing or unknown", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      const shown = await open(ctx, fake, `/judge?q=${encodeURIComponent(PACKET)}&from=banana`);
+      assert.equal(shown.html.includes("Judge: not from"), false);
+      assert.equal(shown.html.includes('name="from"'), false);
+      const grilled = await open(ctx, fake, "/judge", {
+        method: "POST",
+        body: new URLSearchParams({ q: PACKET, keep: "no", from: "banana" }).toString(),
+      });
+      assert.equal(grilled.html.includes("Judge: not from"), false);
+      assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
+      assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
     } finally {
       await fake.close();
     }

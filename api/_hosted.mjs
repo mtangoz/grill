@@ -1750,7 +1750,10 @@ async function handshakeReturn(request, deps) {
     const value = pageCookieValue(sub, deps.env, deps.now);
     if (value) headers.append("Set-Cookie", pageCookieHeader(value));
     const clean = cleanPageUrl(request);
+    // `from=signin` only marks this return. An assistant hint on /judge stays.
+    const keptFrom = clean.searchParams.getAll("from").filter((value) => value !== "signin");
     clean.searchParams.delete("from");
+    for (const value of keptFrom) clean.searchParams.append("from", value);
     headers.set("Location", clean.toString());
   } else {
     headers.set("Location", cleanPageUrl(request, { keepMark: true }).toString());
@@ -1991,10 +1994,15 @@ function returnTo(request) {
   const back = new URL(`${publicOrigin(request)}${url.pathname}`);
   // The decision is the whole point of coming back to /judge. Keep a short q.
   // An over-long one is not copied into the sign-in company's redirect.
+  // `from=signin` is this return. An assistant hint is a second `from`, so both survive.
   if (url.pathname === "/judge") {
     const q = url.searchParams.get("q");
     if (typeof q === "string" && q.length > JUDGE_PACKET_MAX) back.searchParams.set("over", "1");
     else if (typeof q === "string" && q.length > 0) back.searchParams.set("q", q);
+    const hint = judgeHintFromList(url.searchParams.getAll("from"));
+    back.searchParams.set("from", "signin");
+    if (hint) back.searchParams.append("from", hint.name);
+    return back.toString();
   }
   back.searchParams.set("from", "signin");
   return back.toString();
@@ -2546,8 +2554,37 @@ export async function handleRedeem(request, deps) {
 
 const JUDGE_BODY_MAX = 60_000;
 
+/** Company names for the one line on /judge. The keys are hintFromClientInfo's companies. */
+const JUDGE_FROM_LABEL = {
+  google: "Google",
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  "x-ai": "xAI",
+};
+
 function needsRecordChoice(account) {
   return account?.records !== "keep" && account?.records !== "off";
+}
+
+/**
+ * A /judge `from` the existing client hint understands (gemini, claude, chatgpt, grok).
+ * `signin` is the sign-in return, not an assistant. Anything else excludes nobody.
+ */
+function judgeHint(raw) {
+  const name = String(raw || "").trim();
+  if (!name || name.toLowerCase() === "signin") return null;
+  const mapped = sourceAppFromClient({ clientInfo: { name } });
+  const label = JUDGE_FROM_LABEL[mapped.company];
+  if (!mapped.company || !label) return null;
+  return { name, company: mapped.company, label };
+}
+
+function judgeHintFromList(values) {
+  for (const value of values) {
+    const hint = judgeHint(value);
+    if (hint) return hint;
+  }
+  return null;
 }
 
 /** The decision from `q`, or a refusal. An over-long value is not returned. */
@@ -2568,9 +2605,11 @@ function personVerdict(text) {
   return raw.replace(/\n*follow:\s*\S+\s*$/g, "").trim();
 }
 
-function renderJudge({ packet, tooLong, askRecords, verdict, note }) {
+function renderJudge({ packet, tooLong, askRecords, verdict, note, hint }) {
   const capped = tooLong ? `<p>That decision is over ${JUDGE_PACKET_MAX} characters. Shorten it, then try again.</p>` : "";
   const empty = note ? `<p>${esc(note)}</p>` : "";
+  const fromLine = hint ? `<p class="small">Judge: not from ${esc(hint.label)}</p>` : "";
+  const fromField = hint ? `<input type="hidden" name="from" value="${esc(hint.name)}">` : "";
   const result = verdict
     ? `<h2>Verdict</h2>
     <p>Copy this back into your assistant.</p>
@@ -2584,8 +2623,9 @@ function renderJudge({ packet, tooLong, askRecords, verdict, note }) {
     "Grill this decision · Grill",
     `<h1>Grill this decision</h1>
     <p>This uses the same outside judge as Grill in chat. Nothing is sent until you press the button.</p>
-    ${capped}${empty}${result}
+    ${capped}${empty}${fromLine}${result}
     <form method="post" action="/judge">
+      ${fromField}
       <label for="q">Decision</label>
       <textarea id="q" name="q">${esc(packet || "")}</textarea>
       ${buttons}
@@ -2613,7 +2653,8 @@ export async function handleJudge(request, deps) {
     const url = pageUrl(request);
     if (request.method === "GET" || request.method === "HEAD") {
       const packet = packetFromQuery(url);
-      return htmlPage(renderJudge({ packet: packet.text, tooLong: packet.tooLong, askRecords: needsRecordChoice(session.account), verdict: "" }));
+      const hint = judgeHintFromList(url.searchParams.getAll("from"));
+      return htmlPage(renderJudge({ packet: packet.text, tooLong: packet.tooLong, askRecords: needsRecordChoice(session.account), verdict: "", hint }));
     }
     const raw = await request.text();
     if (raw.length > JUDGE_BODY_MAX) {
@@ -2621,38 +2662,26 @@ export async function handleJudge(request, deps) {
     }
     const form = new URLSearchParams(raw);
     const posted = form.get("q") ?? "";
+    const hint = judgeHint(form.get("from"));
+    const pageFor = (extra) => htmlPage(renderJudge({ packet: extra.packet ?? "", tooLong: false, askRecords: needsRecordChoice(session.account), verdict: "", hint, ...extra }));
     if (posted.length > JUDGE_PACKET_MAX) {
-      return htmlPage(renderJudge({ packet: "", tooLong: true, askRecords: needsRecordChoice(session.account), verdict: "" }));
+      return pageFor({ packet: "", tooLong: true });
     }
     if (!posted.trim()) {
-      return htmlPage(
-        renderJudge({
-          packet: posted,
-          tooLong: false,
-          askRecords: needsRecordChoice(session.account),
-          verdict: "",
-          note: "There's no decision to grill.",
-        }),
-      );
+      return pageFor({ packet: posted, note: "There's no decision to grill." });
     }
     const keep = form.get("keep");
     const args = { subject: posted };
     if (keep === "yes") args.keep_records = true;
     else if (keep === "no") args.keep_records = false;
     const waited = { ...deps, waitMs: Number.isInteger(deps.waitMs) ? deps.waitMs : 240_000 };
-    const result = await callGrill(args, session.account, { sub: session.sub }, {}, waited);
+    const params = hint ? { clientInfo: { name: hint.name } } : {};
+    const result = await callGrill(args, session.account, { sub: session.sub }, params, waited);
     const text = result?.content?.[0]?.text || "";
     if (text.trim() === CONSENT_TEXT) {
-      return htmlPage(renderJudge({ packet: posted, tooLong: false, askRecords: true, verdict: "" }));
+      return pageFor({ packet: posted, askRecords: true });
     }
-    return htmlPage(
-      renderJudge({
-        packet: posted,
-        tooLong: false,
-        askRecords: needsRecordChoice(session.account),
-        verdict: personVerdict(text),
-      }),
-    );
+    return pageFor({ packet: posted, verdict: personVerdict(text), askRecords: needsRecordChoice(session.account) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
