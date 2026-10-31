@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build the public onboarding site. The home page's one source is site/page.html; the other pages
- * (terms, contribute, look-back, start, privacy, about, contact, demo) borrow its styles.
+ * (terms, contribute, look-back, start, privacy, about, contact, demo, check-your-ai) borrow its styles.
  *
  * site/page.html is a page body (title, styles, markup, script) with no document skeleton, so the
  * same file publishes as a Claude artifact unchanged. This wraps it into a full document with the
@@ -478,6 +478,13 @@ writePage("demo.html", {
   name: "Demo",
   blurb: "Four made-up decisions, and what Grill said about each.",
 });
+writePage("check-your-ai.html", {
+  description: "Plain checks for an AI draft before you send it to your boss: the assumption, the facts, and one cheap test.",
+  url: `${SITE_URL}check-your-ai/`,
+  outDir: "check-your-ai",
+  name: "Check your AI's work",
+  blurb: "Four quick checks before you send an AI draft to your boss.",
+});
 // The miss page is built only when GRILL_MISS=1, the same switch that opens /miss/send. Its fields
 // and its in-browser check come from scripts/missCore.mjs, the module the server checks with.
 if (process.env.GRILL_MISS === "1") {
@@ -588,4 +595,4 @@ writeFileSync(
     "",
   ].join("\n"),
 );
-console.log(`built _site/index.html and the terms, contribute, look-back, start, privacy and demo pages, plus about and contact${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);
+console.log(`built _site/index.html and the terms, contribute, look-back, start, privacy and demo pages, plus about, contact and check-your-ai${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);
