@@ -31,6 +31,7 @@ const EMAILS = {
   user_second: "second@example.com",
   user_third: "third@example.com",
   user_owner: "owner@example.com",
+  user_fourth: "fourth@example.com",
   user_agent: "agent.one@inbox.example",
 };
 
@@ -263,7 +264,7 @@ describe("invite codes", { concurrency: false }, () => {
     assert.match(shown.html, /name="confirm" value="redeem"/);
     assert.match(shown.html, /a&lt;b&amp;c&quot;&gt;d/);
     assert.equal(shown.html.includes("<script"), false);
-    assert.equal(shown.html.includes("<b"), false);
+    assert.equal(shown.html.includes("<b&"), false);
     assert.match(shown.html, /<form method="post" action="\/redeem">/);
     assert.match(shown.html, /min-height:\s*44px/);
     assert.match(shown.html, /free, \$5 of use each month/i);
@@ -322,10 +323,10 @@ describe("invite codes", { concurrency: false }, () => {
     assert.deepEqual([a.status, b.status].sort(), [303, 303]);
     assert.equal(ctx.memory.command(["GET", usesKey("open")]), "2");
 
-    const zero = await page(ctx, "user_owner", "code=none&confirm=redeem");
+    const zero = await page(ctx, "user_fourth", "code=none&confirm=redeem");
     assert.match(zero.html, /used up/);
     assert.equal(ctx.memory.command(["GET", usesKey("none")]), null);
-    assert.equal(ctx.memory.command(["GET", grantKey("owner@example.com")]), null);
+    assert.equal(ctx.memory.command(["GET", grantKey("fourth@example.com")]), null);
   });
 
   it("does not let one code be used twice when two confirms race", async () => {

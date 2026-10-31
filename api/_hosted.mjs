@@ -51,7 +51,6 @@ import {
   CREDIT_CACHE_MS,
   DAILY_GRILL_LIMIT,
   HOSTED_INSTRUCTIONS,
-  INVITE_ONLY,
   JOB_TTL_SECONDS,
   MAX_PASTE_CHARS,
   MAX_QUESTION_CHARS,
@@ -61,6 +60,11 @@ import {
   RUNNING_JOB_LIMIT,
   CAP_COUNTER_TTL_SECONDS,
   allowlistAllows,
+  inviteCodeHash,
+  inviteCodesEnabled,
+  inviteOnlyText,
+  normalizeInviteCode,
+  parseInviteCodes,
   authorForJudge,
   calendarFeed,
   calendarTokenHash,
@@ -303,6 +307,13 @@ function serviceSpendKey(month) {
 function personSpendKey(email, month) {
   const hash = createHash("sha256").update(String(email || "").trim().toLowerCase()).digest("hex");
   return `grill:hosted:capspend:person:${hash}:${month}`;
+}
+/** A redeemed invite, keyed by a hash of the email. The value is a hash of the code, never the code. */
+function inviteGrantKey(email) {
+  return `grill:hosted:invite:grant:${createHash("sha256").update(String(email || "").trim().toLowerCase()).digest("hex")}`;
+}
+function inviteUsesKey(code) {
+  return `grill:hosted:invite:uses:${inviteCodeHash(code)}`;
 }
 const SPEND_LOG_MAX = 400;
 /**
@@ -600,14 +611,27 @@ async function cachedOwnerEmail(userId, deps) {
  * the email the starter cap is keyed to: the owner for an agent admitted that
  * way, otherwise their own email.
  */
+/** True when this email redeemed a code that is still on GRILL_INVITE_CODES. Off when that var is unset. */
+async function inviteGrantAllows(email, deps) {
+  const codes = parseInviteCodes(deps.env);
+  const who = cleanEmail(email);
+  if (!codes.length || !who) return false;
+  const raw = await redis(deps, ["GET", inviteGrantKey(who)]);
+  if (typeof raw !== "string" || !/^[a-f0-9]{64}$/.test(raw)) return false;
+  const known = new Set(codes.map((row) => inviteCodeHash(row.code)));
+  return known.has(raw);
+}
+
 async function admit(user, deps, userId) {
   const email = verifiedEmail(user);
   if (!email) return { email: "", human: "", allowed: false };
   if (!agentIdSignIn(user) || allowlistAllows(email, deps.env)) {
-    return { email, human: email, allowed: allowlistAllows(email, deps.env) };
+    const allowed = allowlistAllows(email, deps.env) || (await inviteGrantAllows(email, deps));
+    return { email, human: email, allowed };
   }
+  if (await inviteGrantAllows(email, deps)) return { email, human: email, allowed: true };
   const owner = await cachedOwnerEmail(user?.id || userId, deps);
-  const allowed = Boolean(owner) && allowlistAllows(owner, deps.env);
+  const allowed = Boolean(owner) && (allowlistAllows(owner, deps.env) || (await inviteGrantAllows(owner, deps)));
   return { email, human: allowed ? owner : email, allowed };
 }
 
@@ -1807,7 +1831,7 @@ export async function handleMcp(request, deps) {
       const user = await clerkUser(who.payload.sub, deps);
       const gate = await admit(user, deps, who.payload.sub);
       if (!gate.email) return rpcResponse(rpcId, toolText("Grill needs a verified email on this account before it can run.", true), request);
-      if (!gate.allowed) return rpcResponse(rpcId, toolText(INVITE_ONLY, true), request);
+      if (!gate.allowed) return rpcResponse(rpcId, toolText(inviteOnlyText(publicOrigin(request)), true), request);
       const personId = await resolvePerson(who.payload.sub, gate.email, deps);
       const account = await ensureAccount(personId, gate.email, deps, gate.human);
       await countActive(account, deps);
@@ -1987,7 +2011,7 @@ function signInMissed(request, deps) {
   );
 }
 
-async function pageUser(request, deps) {
+async function pageVisitor(request, deps) {
   const who = await identity(request, deps, { audience: false });
   if (who.error) return { redirect: who.error };
   if (who.missing || !who.payload) {
@@ -2006,12 +2030,30 @@ async function pageUser(request, deps) {
   }
   const user = await clerkUser(who.payload.sub, deps);
   if (!user) return { missing: true };
-  const gate = await admit(user, deps, who.payload.sub);
+  const email = verifiedEmail(user);
+  if (!email) return { html: terminal("Verified email needed · Grill", "<h1>Grill needs a verified email on this account.</h1><p>Add one with your sign-in company, then come back.</p>") };
+  return { user, email, sub: who.payload.sub };
+}
+
+async function pageUser(request, deps) {
+  const visitor = await pageVisitor(request, deps);
+  if (visitor.redirect || visitor.missing || visitor.html || !visitor.user) return visitor;
+  const gate = await admit(visitor.user, deps, visitor.sub);
   if (!gate.email) return { html: terminal("Verified email needed · Grill", "<h1>Grill needs a verified email on this account.</h1><p>Add one with your sign-in company, then come back.</p>") };
-  if (!gate.allowed) return { html: terminal("Invite only · Grill", `<h1>${esc(INVITE_ONLY)}</h1>`) };
-  const personId = await resolvePerson(who.payload.sub, gate.email, deps);
+  if (!gate.allowed) return { html: inviteOnlyPage() };
+  const personId = await resolvePerson(visitor.sub, gate.email, deps);
   const account = await ensureAccount(personId, gate.email, deps, gate.human);
-  return { account, email: gate.email, sub: who.payload.sub };
+  return { account, email: gate.email, sub: visitor.sub };
+}
+
+function inviteOnlyPage() {
+  return terminal(
+    "Invite only · Grill",
+    `<h1>Grill in chat is invite-only for now.</h1>
+    <p>This email isn't on the list yet. If you were invited, disconnect Grill, connect again, and sign in with the email your invite went to.</p>
+    <p>If you have an invite code, <a href="/redeem">enter it here</a>.</p>
+    <p>To ask for an invite, write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p>`,
+  );
 }
 
 function html(status, body) {
@@ -2326,6 +2368,166 @@ async function deleteAccount(account, deps, sub) {
   await redis(deps, ["DEL", ownerCacheKey(sub)]);
   userCache.delete(sub);
   creditCache.delete(account.id);
+}
+
+const REDEEM_NARROW = `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>`;
+const REDEEM_ERRORS = {
+  empty: "Enter an invite code.",
+  bad: "That code didn't work.",
+  used: "That code has been used up.",
+};
+
+function redeemSpec(code, env) {
+  const trimmed = String(code ?? "").trim();
+  if (!trimmed) return { reason: "empty" };
+  const normalized = normalizeInviteCode(trimmed);
+  if (!normalized) return { reason: "bad" };
+  const spec = parseInviteCodes(env).find((row) => row.code === normalized);
+  if (!spec) return { reason: "bad" };
+  return { spec, normalized };
+}
+
+function renderRedeemed(env) {
+  return page(
+    "You're in · Grill",
+    `${REDEEM_NARROW}
+    <h1>You're in.</h1>
+    <p>Early-tester access is on for this email.</p>
+    <p>Free for life: $${Number.isInteger(userMonthlyCapUsd(env)) ? String(userMonthlyCapUsd(env)) : userMonthlyCapUsd(env).toFixed(2)} of use each month, resets on the 1st.</p>
+    <p><a class="button" href="/decisions">Your decisions</a></p>
+    <p><a href="/">Back to Grill</a></p>`,
+  );
+}
+
+function renderInviteOff() {
+  return terminal(
+    "Invite codes aren't on · Grill",
+    `<h1>Invite codes aren't on.</h1>
+    <p>There isn't an invite code to enter right now. To ask for an invite, write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p>`,
+  );
+}
+
+function renderRedeemForm(error) {
+  const note = REDEEM_ERRORS[error] ? `<p><strong>${REDEEM_ERRORS[error]}</strong></p>` : "";
+  return page(
+    "Enter an invite code · Grill",
+    `${REDEEM_NARROW}
+    <h1>Enter an invite code</h1>
+    <p>Grill in chat is invite-only. A code lets you in as an early tester: free, $5 of use each month, reset on the 1st.</p>
+    ${note}
+    <form method="post" action="/redeem">
+      <label for="code">Invite code</label>
+      <input id="code" name="code" type="text" maxlength="80" autocomplete="off" spellcheck="false" required>
+      <p class="row"><button type="submit">Continue</button></p>
+    </form>
+    <p><a href="/">Back to Grill</a></p>`,
+  );
+}
+
+function renderRedeemConfirm(code) {
+  return page(
+    "Use this invite code? · Grill",
+    `${REDEEM_NARROW}
+    <h1>Use this invite code?</h1>
+    <p>This gives you early-tester access: free, $5 of use each month, reset on the 1st.</p>
+    <p class="banner">${esc(code)}</p>
+    <form method="post" action="/redeem">
+      <input type="hidden" name="code" value="${esc(code)}">
+      <button type="submit" name="confirm" value="redeem">Use this code</button>
+    </form>
+    <p><a href="/redeem">Use a different code</a></p>
+    <p><a href="/">Back to Grill</a></p>`,
+  );
+}
+
+/**
+ * Count one use and remember the email. The same email a second time does not count again.
+ * Past the max, the count is put back and this email is not granted.
+ */
+async function redeemInvite(email, code, deps) {
+  if (!inviteCodesEnabled(deps.env)) return { ok: false, reason: "off" };
+  const found = redeemSpec(code, deps.env);
+  if (found.reason) return { ok: false, reason: found.reason };
+  const { spec, normalized } = found;
+  const who = cleanEmail(email);
+  if (!who) return { ok: false, reason: "bad" };
+  const grantKey = inviteGrantKey(who);
+  const known = new Set(parseInviteCodes(deps.env).map((row) => inviteCodeHash(row.code)));
+  const existing = await redis(deps, ["GET", grantKey]);
+  if (typeof existing === "string" && known.has(existing)) return { ok: true, already: true };
+  if (spec.max != null) {
+    const current = Number(await redis(deps, ["GET", inviteUsesKey(normalized)])) || 0;
+    if (current >= spec.max) return { ok: false, reason: "used" };
+  }
+  if (existing) await redis(deps, ["DEL", grantKey]);
+  const claimed = await redis(deps, ["SET", grantKey, inviteCodeHash(normalized), "NX"]);
+  if (!claimed) return { ok: true, already: true };
+  let n;
+  try {
+    n = Number(await redis(deps, ["INCR", inviteUsesKey(normalized)]));
+  } catch (error) {
+    await redis(deps, ["DEL", grantKey]);
+    throw error;
+  }
+  if (spec.max != null && n > spec.max) {
+    await redis(deps, ["DEL", grantKey]);
+    await redis(deps, ["INCRBY", inviteUsesKey(normalized), "-1"]);
+    return { ok: false, reason: "used" };
+  }
+  return { ok: true, already: false };
+}
+
+async function previewInvite(email, code, deps) {
+  if (!inviteCodesEnabled(deps.env)) return { ok: false, reason: "off" };
+  if (await inviteGrantAllows(email, deps)) return { ok: true, already: true };
+  const found = redeemSpec(code, deps.env);
+  if (found.reason) return { ok: false, reason: found.reason };
+  if (found.spec.max != null) {
+    const current = Number(await redis(deps, ["GET", inviteUsesKey(found.normalized)])) || 0;
+    if (current >= found.spec.max) return { ok: false, reason: "used" };
+  }
+  return { ok: true, confirm: true, code: found.normalized };
+}
+
+export async function handleRedeem(request, deps) {
+  const id = requestId();
+  deps = { ...deps, requestId: id };
+  if (!hostedEnabled(deps.env)) return notFound();
+  if (request.method === "DELETE") return methodNotAllowed();
+  if (request.method !== "GET" && request.method !== "POST" && request.method !== "HEAD") return methodNotAllowed();
+  try {
+    const visitor = await pageVisitor(request, deps);
+    if (visitor.redirect) return visitor.redirect;
+    if (visitor.missing) return html(200, terminal("Account deleted · Grill", "<h1>This account has been deleted.</h1>"));
+    if (visitor.html) return html(200, visitor.html);
+    const gate = await admit(visitor.user, deps, visitor.sub);
+    if (gate.allowed) {
+      if (request.method === "POST") return seeOther(`${publicOrigin(request)}/redeem?done=1`);
+      return htmlPage(renderRedeemed(deps.env));
+    }
+    if (!inviteCodesEnabled(deps.env)) return html(200, renderInviteOff());
+    if (request.method === "POST") {
+      const form = new URLSearchParams(await request.text());
+      const typed = form.get("code") ?? "";
+      if (form.get("confirm") === "redeem") {
+        const result = await redeemInvite(visitor.email, typed, deps);
+        if (result.ok) return seeOther(`${publicOrigin(request)}/redeem?done=1`);
+        if (result.reason === "off") return html(200, renderInviteOff());
+        return html(200, renderRedeemForm(result.reason));
+      }
+      const preview = await previewInvite(visitor.email, typed, deps);
+      if (preview.already) return seeOther(`${publicOrigin(request)}/redeem?done=1`);
+      if (preview.confirm) return html(200, renderRedeemConfirm(preview.code));
+      if (preview.reason === "off") return html(200, renderInviteOff());
+      return html(200, renderRedeemForm(preview.reason || "bad"));
+    }
+    return htmlPage(renderRedeemForm(""));
+  } catch (error) {
+    const code = error instanceof Coded ? error.code : "";
+    if (code) logHosted(id, code);
+    else logHosted(id, `error ${describeError(error)}`);
+    return fixedError(id, 500, code);
+  }
 }
 
 export async function handleDecisions(request, deps) {

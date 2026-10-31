@@ -1,6 +1,6 @@
 # Grill inside your chat
 
-Not live yet. The code is off unless `GRILL_HOSTED=on`. When it is on, it is invite-only: set `GRILL_HOSTED_ALLOWLIST` to the emails that may grill. Anyone else gets a short message and no grill. Open sign-up is a separate switch, `GRILL_OPEN_SIGNUP=on`, and is off by default.
+Not live yet. The code is off unless `GRILL_HOSTED=on`. When it is on, it is invite-only: set `GRILL_HOSTED_ALLOWLIST` to the emails that may grill. Anyone else gets a short message and no grill, with a link to `/redeem`. A code from `GRILL_INVITE_CODES` lets a signed-in person in. Open sign-up is a separate switch, `GRILL_OPEN_SIGNUP=on`, and is off by default. Unset `GRILL_INVITE_CODES` and redeem does nothing.
 
 Grill pays for the starter credit, so two hard monthly caps sit in front of every grill: one for the whole service and one per person. When either is reached, the grill does not run and the person gets one plain sentence saying the free grills for the month are used up and nothing was charged to them. Each person's router key is also hard-capped by the router itself.
 
@@ -11,7 +11,7 @@ The judge is always OpenRouter's Auto Router (`openrouter/auto`). Grill excludes
 ## What a person does
 
 1. Follow the steps for the AI at `https://grillyour.ai/start/` (on a preview, use that preview's origin instead of grillyour.ai). Claude.ai, ChatGPT and Grok Bot are verified working. Gemini should work and is still being tested. Meta AI is coming soon. The connector URL is `https://<host>/mcp`. On a preview that host is the preview origin. `https://mcp.grillyour.ai/mcp` comes later, when the owner adds that domain.
-2. Connect. A sign-in opens. Sign in with an emailed code: use the same email each time, the email your invite went to, every time, and check spam if the code isn't there in a minute. No key to paste, no password, and no card.
+2. Connect. A sign-in opens. Sign in with an emailed code: use the same email each time, the email your invite went to, every time, and check spam if the code isn't there in a minute. No key to paste, no password, and no card. If you have an invite code instead, sign in, open `/redeem`, enter the code, and confirm. That gives early-tester access: free, $5 of use each month, on the same $20 service cap.
 3. The first grill asks, once, whether to keep decision records. Answer once. The outside-judge disclosure is shown once per account, then not again.
 4. Say the decision as you mean it. The assistant sends that. It does not show a template or wait for an OK. The note comes back in the chat. If three grills are already running, the assistant waits and retries on its own.
 
@@ -28,6 +28,7 @@ On the preview environment only, until the spike in [hosted-spike.md](hosted-spi
 | `GRILL_HOSTED` | `on` to serve `/mcp`, the sign-in metadata, the authorization-server metadata, `/decisions`, the calendar link and `/account`. Anything else, including unset, is a 404. |
 | `GRILL_HOSTED_ALLOWLIST` | Comma-separated emails that may grill while sign-up is invite-only. If unset or empty, nobody is let in. |
 | `GRILL_OPEN_SIGNUP` | `on` lets any verified email grill, ignoring the list. Anything else, including unset, keeps it invite-only. Turn it on only with the caps below set. |
+| `GRILL_INVITE_CODES` | Comma-separated invite codes. Add `:N` to cap a code at N uses (`friend:10`). A code with no count has no use limit. A colon that is not a whole number is skipped. Unset or empty turns redeem off, and a stored redemption does not admit anyone. This does not change the $5 and $20 caps. |
 | `GRILL_MONTHLY_CAP_USD` | Optional. Hard cap on what Grill pays for all hosted grills in a calendar month (UTC). Default `20`. `0` stops every grill. |
 | `GRILL_USER_MONTHLY_CAP_USD` | Optional. Hard cap per person per calendar month (UTC), keyed to a hash of the email the starter credit belongs to, so an agent shares its owner's cap. Default `5`: the early-tester allowance, free for life, reset on the 1st. Each person's router key is minted at the same amount with a monthly reset. |
 | `CLERK_ISSUER` | Clerk Frontend API URL, no trailing slash. This is the authorization server in the protected-resource metadata. It does not serve the sign-in page. |
