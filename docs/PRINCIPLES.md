@@ -2,7 +2,7 @@
 
 ## Mission
 
-Grill helps people make better decisions with AI. An AI from a different company argues the other side; you decide; later you look back and see how your judgement did.
+An AI from a different company argues the other side. You decide. Later you can look back and see how your judgement did.
 
 Enforced by: a different company is [scripts/judgeCore.mjs](../scripts/judgeCore.mjs), test "excludes the author's company on that router, and only that company" in [scripts/judgeCore.test.mjs](../scripts/judgeCore.test.mjs), and test "excludes the host's company when the call leaves author empty, and a call's own author still wins" in [scripts/server.test.mjs](../scripts/server.test.mjs). You decide is prompt text + review in [skills/grill/SKILL.md](../skills/grill/SKILL.md). Looking back is [scripts/reflection.mjs](../scripts/reflection.mjs), test "the skill and the prompt ask for the call in one line, and the site still shows a record" in [scripts/reflection.test.mjs](../scripts/reflection.test.mjs).
 

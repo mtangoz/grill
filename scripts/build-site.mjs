@@ -23,7 +23,7 @@ const GITHUB_URL = "https://github.com/mtangoz/grill";
 const TAGLINE = "Grill your AI before you send it to your boss.";
 const HOME_TITLE = "Grill: grill your AI before you send it to your boss";
 const DESCRIPTION =
-  `${TAGLINE} Get a second opinion before you decide. A different AI finds the weak spots in your plan, with a quick way to check each one. Works with ChatGPT, Claude, Gemini and more.`;
+  `${TAGLINE} A model from another company finds the weak spots in your plan and one cheap way to test them. Works with ChatGPT, Claude, Gemini and more.`;
 // One schema.org block on the homepage. The description is the meta description above.
 // ProductivityApplication is the closer category: Grill challenges a plan before you act.
 // Nothing here is an offer, a rating, a review, or a claim the homepage does not already make.
@@ -520,7 +520,7 @@ writeFileSync(
 // The "when" lines are sentences already on the homepage. index.md is a separate brief and stays as it is.
 const WHEN_TO_USE = [
   "Hear the strongest case against your plan, then decide for yourself.",
-  "Get a second opinion before you decide. A model from another company gives a verdict and one cheap test.",
+  "A model from another company gives a verdict and one cheap test.",
   "The judge never comes from the company behind your AI, so it won\u2019t share its blind spots.",
   "To keep a record and look back later, use the look-back page.",
 ];
