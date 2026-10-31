@@ -11,7 +11,7 @@ import {
   CLAUDE_CODE_CLIENT_ID,
   CLAUDE_WEB_REDIRECT,
   CONSENT_TEXT,
-  INVITE_ONLY,
+  inviteOnlyText,
   OUT_OF_CREDIT,
   SERVICE_CAP_TEXT,
   USER_CAP_TEXT,
@@ -1268,7 +1268,8 @@ describe("hosted Grill", { concurrency: false }, () => {
         { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: not invited.", keep_records: true, quality_check: false } } },
         { token, deps: { ...judgeDeps(fake), waitMs: 20_000 } },
       );
-      assert.equal(textOf(json), INVITE_ONLY);
+      assert.equal(textOf(json), inviteOnlyText("https://mcp.example"));
+      assert.match(textOf(json), /https:\/\/mcp\.example\/redeem/);
       assert.equal(fake.seen.chat.length, 0);
       assert.equal(ctx.management.creates.length, 0);
     } finally {
@@ -1407,7 +1408,7 @@ describe("AgentID owner email", () => {
         { tokens: { user_agent: tokens }, userinfo },
       );
       const { json } = await postMcp(ctx, askGrill(), { token: signJwt(claims({ sub: "user_agent" })) });
-      assert.equal(textOf(json), INVITE_ONLY, label);
+      assert.equal(textOf(json), inviteOnlyText("https://mcp.example"), label);
       assert.equal(json.result.isError, true, label);
       assert.equal(userinfoCalls(ctx), infoCalls, label);
       assert.equal(ctx.management.creates.length, 0, label);
@@ -1423,8 +1424,8 @@ describe("AgentID owner email", () => {
     );
     const first = await postMcp(down, askGrill(1), { token: signJwt(claims({ sub: "user_agent" })) });
     const second = await postMcp(down, askGrill(2), { token: signJwt(claims({ sub: "user_agent" })) });
-    assert.equal(textOf(first.json), INVITE_ONLY);
-    assert.equal(textOf(second.json), INVITE_ONLY);
+    assert.equal(textOf(first.json), inviteOnlyText("https://mcp.example"));
+    assert.equal(textOf(second.json), inviteOnlyText("https://mcp.example"));
     assert.equal(userinfoCalls(down), 1);
     assert.equal(down.management.creates.length, 0);
     assert.equal(first.res.status, 200);
@@ -1435,7 +1436,7 @@ describe("AgentID owner email", () => {
       { tokens: { user_agent: new Response("no", { status: 502 }) }, userinfo: Response.json({ owner_email: OWNER_EMAIL, owner_email_verified: true }) },
     );
     const denied = await postMcp(clerkDown, askGrill(), { token: signJwt(claims({ sub: "user_agent" })) });
-    assert.equal(textOf(denied.json), INVITE_ONLY);
+    assert.equal(textOf(denied.json), inviteOnlyText("https://mcp.example"));
     assert.equal(userinfoCalls(clerkDown), 0);
     assert.equal(clerkDown.management.creates.length, 0);
   });
@@ -2049,7 +2050,7 @@ describe("hosted Grill: spending caps, open sign-up, races and plain errors", ()
       const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
       const deps = { ...judgeDeps(fake), waitMs: 20_000 };
       const shut = await postMcp(ctx, grillCall(1, "Decision: closed door."), { token, deps });
-      assert.equal(textOf(shut.json), INVITE_ONLY);
+      assert.equal(textOf(shut.json), inviteOnlyText("https://mcp.example"));
       ctx.env.GRILL_OPEN_SIGNUP = "on";
       resetHostedCaches();
       const open = await postMcp(ctx, grillCall(2, "Decision: open door."), { token, deps });

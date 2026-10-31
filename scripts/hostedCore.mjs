@@ -33,8 +33,14 @@ export const DAILY_GRILL_LIMIT = 30;
 export const RUNNING_JOB_LIMIT = 3;
 export const CREDIT_CACHE_MS = 60_000;
 export const OUT_OF_CREDIT = "You're out of grill credit for this month, so this one didn't run. It starts again on the 1st. Nothing was charged to you. If you need more sooner, write to support@grillyour.ai.";
-export const INVITE_ONLY =
-  "Grill in chat is invite-only for now, and this email isn't on the list yet. If you were invited, disconnect Grill, connect again, and sign in with the email your invite went to. To ask for an invite, write to support@grillyour.ai.";
+/** The invite-only reply. `origin` makes the redeem link absolute for the host they are on. */
+export function inviteOnlyText(origin = "") {
+  const base = String(origin || "").replace(/\/$/, "");
+  const redeem = base ? `${base}/redeem` : "/redeem";
+  return `Grill in chat is invite-only for now, and this email isn't on the list yet. If you were invited, disconnect Grill, connect again, and sign in with the email your invite went to. If you have an invite code, enter it at ${redeem}. To ask for an invite, write to support@grillyour.ai.`;
+}
+
+export const INVITE_ONLY = inviteOnlyText();
 export const CONSENT_TEXT = [
   "Keep a record of your decisions on your Grill account? Yes / No",
   "",
@@ -238,6 +244,62 @@ export function allowlistAllows(email, env = {}) {
   if (!raw) return false;
   const list = raw.split(",").map((part) => part.trim().toLowerCase()).filter(Boolean);
   return list.includes(who);
+}
+
+const INVITE_CODE_MAX_LEN = 80;
+const INVITE_MAX_USES = 1_000_000;
+
+/** A shareable code: trimmed, lowercased, at most 80 characters, no control characters. */
+export function normalizeInviteCode(raw) {
+  const text = String(raw ?? "").trim().toLowerCase();
+  if (!text || text.length > INVITE_CODE_MAX_LEN) return "";
+  if (/[\u0000-\u001f\u007f]/.test(text)) return "";
+  return text;
+}
+
+/**
+ * GRILL_INVITE_CODES: comma-separated codes. A trailing `:N` (a whole number, 0 to
+ * 1,000,000) is that code's max uses. No count means no limit. A colon that is not
+ * a use count skips that entry, so a typo cannot become an unlimited code. The first
+ * copy of a code wins. Unset, blank, or nothing valid means the feature is off.
+ * This does not change the $5 or $20 caps.
+ */
+export function parseInviteCodes(env = {}) {
+  const raw = typeof env.GRILL_INVITE_CODES === "string" ? env.GRILL_INVITE_CODES : "";
+  if (!raw.trim()) return [];
+  const seen = new Set();
+  const out = [];
+  for (const part of raw.split(",")) {
+    const piece = part.trim();
+    if (!piece) continue;
+    const counted = piece.match(/^(.*):(\d+)$/);
+    let code = "";
+    let max = null;
+    if (counted) {
+      code = normalizeInviteCode(counted[1]);
+      max = Number(counted[2]);
+      if (!code || !Number.isInteger(max) || max > INVITE_MAX_USES) continue;
+    } else if (piece.includes(":")) {
+      continue;
+    } else {
+      code = normalizeInviteCode(piece);
+      if (!code) continue;
+    }
+    if (seen.has(code)) continue;
+    seen.add(code);
+    out.push({ code, max });
+  }
+  return out;
+}
+
+export function inviteCodesEnabled(env = {}) {
+  return parseInviteCodes(env).length > 0;
+}
+
+export function inviteCodeHash(code) {
+  const normalized = normalizeInviteCode(code);
+  if (!normalized) return "";
+  return createHash("sha256").update(normalized).digest("hex");
 }
 
 // ── Spending caps ────────────────────────────────────────────────────────────

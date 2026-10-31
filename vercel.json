@@ -21,7 +21,8 @@
     { "source": "/.well-known/openid-configuration/:extra*", "destination": "/api/hosted?__route=oidc" },
     { "source": "/decisions/calendar/:link", "destination": "/api/hosted?__route=calendar&t=:link" },
     { "source": "/decisions", "destination": "/api/hosted?__route=decisions" },
-    { "source": "/account", "destination": "/api/hosted?__route=account" }
+    { "source": "/account", "destination": "/api/hosted?__route=account" },
+    { "source": "/redeem", "destination": "/api/hosted?__route=redeem" }
   ],
   "routes": [
     {
@@ -31,7 +32,7 @@
       "headers": { "Content-Type": "text/markdown; charset=utf-8", "Vary": "Accept" }
     },
     {
-      "src": "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|account/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
+      "src": "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|account/?$|redeem/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
       "has": [{ "type": "header", "key": "accept", "value": ".*text/markdown.*" }],
       "dest": "/$1/index.md",
       "check": true,
@@ -44,14 +45,14 @@
       "headers": { "Vary": "Accept" }
     },
     {
-      "src": "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|account/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
+      "src": "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|account/?$|redeem/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
       "dest": "/$1/index.html",
       "check": true,
       "headers": { "Vary": "Accept" }
     },
     { "handle": "error" },
     {
-      "src": "^/(?!api(?:/|$)|mcp$|\\.well-known(?:/|$)|decisions(?:/|$)|account$|welcome$|checkout$|pro(?:/|$)|notify(?:/|$)|miss/send$).*$",
+      "src": "^/(?!api(?:/|$)|mcp$|\\.well-known(?:/|$)|decisions(?:/|$)|account$|redeem$|welcome$|checkout$|pro(?:/|$)|notify(?:/|$)|miss/send$).*$",
       "has": [{ "type": "header", "key": "accept", "value": ".*text/markdown.*" }],
       "status": 404,
       "dest": "/404.md",

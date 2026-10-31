@@ -1,9 +1,9 @@
-// Hosted endpoints (/mcp, /account, /decisions, /decisions/calendar/<link>,
+// Hosted endpoints (/mcp, /account, /decisions, /redeem, /decisions/calendar/<link>,
 // /.well-known/oauth-protected-resource, including the /mcp path-inserted form,
 // which serves the same metadata as the root path, and Clerk's authorization-server
 // metadata at /.well-known/oauth-authorization-server and openid-configuration,
 // including the /mcp path-inserted forms). 404 unless GRILL_HOSTED=on.
-import { handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleMcp, handleProtectedResource } from "./_hosted.mjs";
+import { handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleMcp, handleProtectedResource, handleRedeem } from "./_hosted.mjs";
 
 export const maxDuration = 300;
 
@@ -13,6 +13,7 @@ function deps() {
 
 const PUBLIC_PATH = {
   account: "/account",
+  redeem: "/redeem",
   calendar: "/decisions/calendar",
   decisions: "/decisions",
   prm: "/.well-known/oauth-protected-resource",
@@ -26,6 +27,7 @@ function pick(request) {
   const r = url.searchParams.get("__route");
   const p = url.pathname;
   if (r === "account" || p === "/account") return ["account", handleAccount];
+  if (r === "redeem" || p === "/redeem") return ["redeem", handleRedeem];
   if (r === "calendar" || p.startsWith("/decisions/calendar/")) return ["calendar", handleCalendar];
   if (r === "decisions" || p === "/decisions") return ["decisions", handleDecisions];
   if (r === "prm" || p.startsWith("/.well-known/oauth-protected-resource")) return ["prm", handleProtectedResource];

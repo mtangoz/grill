@@ -74,6 +74,12 @@ Each of those pages has a specific title, `lang="en"`, a viewport meta, and `noi
 
 Enforced by: test "gives every dead-end page a way back" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
 
+## An invite code
+
+`/redeem` is for a signed-in person who is not on the invite list. They enter a code, then a confirm page. The confirm value is the button on that page. The page runs no script. The invite-only message links here.
+
+Enforced by: test "asks on a confirm page before a code is used, with no script" and test "points the invite-only page at the redeem page" in [scripts/inviteCode.test.mjs](../scripts/inviteCode.test.mjs).
+
 ## No script
 
 The decisions page, the account page and the dead-end pages ship no `<script>`. The shared response headers are `WELCOME_HEADERS` in [api/_pro.mjs](../api/_pro.mjs): a strict content security policy, no third-party script, no analytics.

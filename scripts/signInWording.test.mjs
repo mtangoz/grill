@@ -48,5 +48,6 @@ describe("sign-in wording", () => {
     assert.match(INVITE_ONLY, /^Grill in chat is invite-only for now/);
     assert.match(INVITE_ONLY, /email your invite went to/);
     assert.match(INVITE_ONLY, /support@grillyour\.ai/);
+    assert.match(INVITE_ONLY, /\/redeem/);
   });
 });
