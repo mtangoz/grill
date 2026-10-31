@@ -126,6 +126,9 @@ const userCache = new Map();
 const creditCache = new Map();
 // Clerk's authorization-server documents, keyed by the upstream URL. Public metadata only.
 const authMetadataCache = new Map();
+// Company named on initialize, keyed by the sign-in subject. This process only.
+// The grill request also reads User-Agent, so a different instance still sees that.
+const clientHintBySub = new Map();
 export const AUTH_METADATA_CACHE_MS = 60_000;
 
 export function resetHostedCaches() {
@@ -133,6 +136,7 @@ export function resetHostedCaches() {
   userCache.clear();
   creditCache.clear();
   authMetadataCache.clear();
+  clientHintBySub.clear();
 }
 
 class Coded extends Error {
@@ -1056,13 +1060,33 @@ function schedule(promise, deps, id) {
   promise.catch(() => logHosted(id, "background"));
 }
 
-function clientFromToken(payload, params) {
-  const clientInfo = params?._meta?.clientInfo || params?.clientInfo || null;
+function clientInfoOf(params) {
+  return params?._meta?.clientInfo || params?.clientInfo || null;
+}
+
+function clientFromToken(payload, params, deps) {
+  const sub = typeof payload?.sub === "string" ? payload.sub : "";
   return sourceAppFromClient({
     redirectUri: typeof payload.redirect_uri === "string" ? payload.redirect_uri : "",
     clientId: typeof payload.client_id === "string" ? payload.client_id : typeof payload.azp === "string" ? payload.azp : "",
-    clientInfo,
+    clientInfo: clientInfoOf(params),
+    userAgent: deps?.userAgent || "",
+    remembered: sub ? clientHintBySub.get(sub) : null,
   });
+}
+
+/** Keep the initialize handshake's company for later tool calls in this process. */
+function rememberClientCompany(payload, params, userAgent) {
+  const sub = typeof payload?.sub === "string" ? payload.sub : "";
+  if (!sub) return;
+  const hint = sourceAppFromClient({
+    redirectUri: typeof payload?.redirect_uri === "string" ? payload.redirect_uri : "",
+    clientId: typeof payload?.client_id === "string" ? payload.client_id : typeof payload?.azp === "string" ? payload.azp : "",
+    clientInfo: clientInfoOf(params),
+    userAgent,
+  });
+  if (hint.company) clientHintBySub.set(sub, hint);
+  else clientHintBySub.delete(sub);
 }
 
 function oneLine(value) {
@@ -1250,7 +1274,7 @@ async function callGrill(args, account, payload, params, deps) {
   if (!subject.trim()) return toolText("There's no subject to grill. Write it, show it to the person, then call again.", true);
   if (subject.length > MAX_SUBJECT_CHARS) return toolText(`The subject is ${subject.length} characters; trim it under ${MAX_SUBJECT_CHARS}.`, true);
   if (question.length > MAX_QUESTION_CHARS) return toolText(`The question is over ${MAX_QUESTION_CHARS} characters; shorten it.`, true);
-  const client = clientFromToken(payload, params);
+  const client = clientFromToken(payload, params, deps);
   const author = authorForJudge({ explicit: args.author, company: client.company });
   if (author.error) return toolText(author.error, true);
   if (account.records === "keep" && !keyFromEnv(deps.env, "GRILL_RECORD_KEY")) {
@@ -1782,7 +1806,8 @@ function rpcResponse(id, result, request) {
 
 export async function handleMcp(request, deps) {
   const id = requestId();
-  deps = { ...deps, requestId: id };
+  const userAgent = String(request.headers.get("user-agent") || "").replace(/[\r\n]+/g, " ").slice(0, 300);
+  deps = { ...deps, requestId: id, userAgent };
   if (!hostedEnabled(deps.env)) return notFound();
   let toolCallId;
   try {
@@ -1822,6 +1847,7 @@ export async function handleMcp(request, deps) {
     toolCallId = msg.method === "tools/call" ? rpcId : undefined;
     if (rpcId === undefined || rpcId === null) return new Response(null, { status: 202 });
     if (msg.method === "initialize") {
+      rememberClientCompany(who.payload, msg.params, userAgent);
       return rpcResponse(
         rpcId,
         {
@@ -2554,7 +2580,7 @@ export async function handleRedeem(request, deps) {
 
 const JUDGE_BODY_MAX = 60_000;
 
-/** Company names for the one line on /judge. The keys are hintFromClientInfo's companies. */
+/** Company names for the one line on /judge. The keys are clientCompanyHint's companies. */
 const JUDGE_FROM_LABEL = {
   google: "Google",
   anthropic: "Anthropic",
@@ -2567,7 +2593,7 @@ function needsRecordChoice(account) {
 }
 
 /**
- * A /judge `from` the existing client hint understands (gemini, claude, chatgpt, grok).
+ * A /judge `from` run through the same clientCompanyHint list as a connector.
  * `signin` is the sign-in return, not an assistant. Anything else excludes nobody.
  */
 function judgeHint(raw) {

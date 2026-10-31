@@ -17,10 +17,11 @@
  * environment, then the key file `node scripts/judge.mjs --set-key` writes (scripts/apiKey.mjs). It goes into the judge's environment and nowhere else: it is never returned,
  * logged or echoed.
  *
- * WHO WROTE IT. A host that is not Claude (Cursor, VS Code with Copilot, Codex, Gemini CLI) sets
- * GRILL_AUTHOR in its MCP config, for example `openai` for Codex. The judge then excludes that
- * company, even when the assistant leaves the tool's `author` field empty. A value the tool call
- * sends still wins. Unset, the judge excludes Anthropic, as before.
+ * WHO WROTE IT. On initialize, clientInfo.name (the same list the hosted connector uses for
+ * Claude and ChatGPT) names the company behind this client. Gemini, Gemini CLI, Antigravity
+ * and Google-Discovery-Engine are Google, so the judge excludes google/* and stays on the
+ * default router. GRILL_AUTHOR in the MCP config still wins, for example `openai` for Codex,
+ * and so does `author` on the tool call. Unrecognized, the judge excludes Anthropic, as before.
  *
  * AS A COMMAND. `npx -y grillyour` with no arguments is this MCP server over stdio. With
  * `--set-key` it saves a key from stdin to the key file (scripts/apiKey.mjs), so an MCP config
@@ -63,6 +64,7 @@ import {
   DEEPEN_OFF,
   DEEPEN_ONLY_BIG,
   SCOPE_GUARD,
+  clientCompanyHint,
   deepenTestEnabled,
   normalizeDetail,
   renderDeepen,
@@ -115,10 +117,14 @@ function waitClock() {
   };
 }
 
-/** GRILL_AUTHOR from the host's config: a model-family name, or "" when unset or not one. */
+/** Company read from initialize. Empty until then, and empty when the name matches nobody. */
+let sessionCompany = "";
+
+/** GRILL_AUTHOR from the host's config wins. Otherwise the company named at initialize. */
 function defaultAuthor(env = process.env) {
   const value = typeof env.GRILL_AUTHOR === "string" ? env.GRILL_AUTHOR.trim().toLowerCase() : "";
-  return AUTHOR_RE.test(value) ? value : "";
+  if (AUTHOR_RE.test(value)) return value;
+  return AUTHOR_RE.test(sessionCompany) ? sessionCompany : "";
 }
 
 /** The user's key: the install dialog, the environment, then the key file (../scripts/apiKey.mjs). */
@@ -622,6 +628,8 @@ async function handle(msg) {
   const isRequest = id !== undefined && id !== null;
   switch (method) {
     case "initialize": {
+      const hint = clientCompanyHint({ clientInfo: params?.clientInfo || params?._meta?.clientInfo || null });
+      sessionCompany = hint?.company || "";
       const asked = params?.protocolVersion;
       send({
         id,

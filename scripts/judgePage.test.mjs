@@ -363,6 +363,9 @@ describe("the /judge page", { concurrency: false }, () => {
       const ctx = world();
       const cases = [
         ["gemini", "Google", ["google/*"]],
+        ["gemini-cli", "Google", ["google/*"]],
+        ["antigravity", "Google", ["google/*"]],
+        ["Google-Discovery-Engine", "Google", ["google/*"]],
         ["claude", "Anthropic", ["anthropic/*", "*/claude-*"]],
         ["chatgpt", "OpenAI", ["openai/*"]],
         ["grok", "xAI", ["x-ai/*"]],

@@ -98,9 +98,9 @@ function connect(env) {
   return { request, raw, close, notifications, transcript: () => transcript };
 }
 
-async function initialized(env) {
+async function initialized(env, clientInfo = { name: "test", version: "0" }) {
   const client = connect(env);
-  await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } });
+  await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo });
   client.raw.bind(null); // keep the helper shape obvious
   return client;
 }
@@ -706,6 +706,82 @@ describe("GRILL_AUTHOR: a host that is not Claude", () => {
       await c.close();
     }
     await fake.close();
+  });
+});
+
+describe("MCP initialize: the company behind the client", () => {
+  const subject = { subject: "We will raise prices 20% in Q4." };
+  const outside = () => {
+    const payload = JSON.parse(readFileSync(USABLE, "utf8"));
+    return (body) => {
+      const excluded = body?.plugins?.[0]?.excluded_models || [];
+      payload.model = excluded.some((item) => String(item).startsWith("openai"))
+        ? "google/gemini-2.5-pro"
+        : excluded.some((item) => String(item).startsWith("google"))
+          ? "deepseek/deepseek-chat"
+          : "openai/gpt-5.6-sol";
+      return { text: JSON.stringify(payload) };
+    };
+  };
+
+  it("excludes google/* for a Gemini client and keeps the non-Google default router", async () => {
+    const fake = await startFakeOpenRouter({ chat: outside() });
+    try {
+      for (const name of ["gemini", "GEMINI-CLI", "Antigravity", "Google-Discovery-Engine"]) {
+        const client = await initialized({ GRILL_API_KEY: KEY, GRILL_CHECK: "false", ...fake.env }, { name, version: "0" });
+        const res = await client.request("tools/call", { name: "grill", arguments: subject });
+        assert.equal(res.result.isError, false, `${name}: ${textOf(res)}`);
+        const body = fake.seen.chat.at(-1).body;
+        assert.equal(body.model, "openrouter/auto", name);
+        assert.deepEqual(body.plugins[0].excluded_models, ["google/*"], name);
+        await client.close();
+      }
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("uses the same client list as Claude and ChatGPT, and an explicit author or GRILL_AUTHOR still wins", async () => {
+    const fake = await startFakeOpenRouter({ chat: outside() });
+    try {
+      const claude = await initialized({ GRILL_API_KEY: KEY, GRILL_CHECK: "false", ...fake.env }, { name: "Claude", version: "0" });
+      const claudeRes = await claude.request("tools/call", { name: "grill", arguments: subject });
+      assert.equal(claudeRes.result.isError, false, textOf(claudeRes));
+      assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
+      await claude.close();
+
+      const chatgpt = await initialized({ GRILL_API_KEY: KEY, GRILL_CHECK: "false", ...fake.env }, { name: "ChatGPT", version: "0" });
+      const chatRes = await chatgpt.request("tools/call", { name: "grill", arguments: subject });
+      assert.equal(chatRes.result.isError, false, textOf(chatRes));
+      assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
+      assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["openai/*"]);
+      await chatgpt.close();
+
+      const told = await initialized({ GRILL_API_KEY: KEY, GRILL_CHECK: "false", ...fake.env }, { name: "gemini-cli", version: "0" });
+      const toldRes = await told.request("tools/call", { name: "grill", arguments: { ...subject, author: "xai" } });
+      assert.equal(toldRes.result.isError, false, textOf(toldRes));
+      const toldExcluded = fake.seen.chat.at(-1).body.plugins[0].excluded_models;
+      assert.ok(toldExcluded.includes("x-ai/*") || toldExcluded.includes("xai/*"), toldExcluded.join(","));
+      assert.ok(!toldExcluded.includes("google/*"));
+      await told.close();
+
+      const configured = await initialized(
+        { GRILL_API_KEY: KEY, GRILL_AUTHOR: "openai", GRILL_CHECK: "false", ...fake.env },
+        { name: "gemini-cli", version: "0" },
+      );
+      const configuredRes = await configured.request("tools/call", { name: "grill", arguments: subject });
+      assert.equal(configuredRes.result.isError, false, textOf(configuredRes));
+      assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["openai/*"]);
+      await configured.close();
+
+      const cursor = await initialized({ GRILL_API_KEY: KEY, GRILL_CHECK: "false", ...fake.env }, { name: "Cursor", version: "0" });
+      const cursorRes = await cursor.request("tools/call", { name: "grill", arguments: subject });
+      assert.equal(cursorRes.result.isError, false, textOf(cursorRes));
+      assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
+      await cursor.close();
+    } finally {
+      await fake.close();
+    }
   });
 });
 

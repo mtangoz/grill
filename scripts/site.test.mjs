@@ -656,6 +656,11 @@ describe("the /start page", () => {
   const SAME_EMAIL = /the same email each time/i;
   const INVITE_EMAIL = /the email your invite went to, every time/i;
   const SIGNED_UP = /sign in with the same email you signed up with, every time/i;
+  const GEMINI_CLI_SNIPPET = `{
+  "mcpServers": {
+    "grill": { "httpUrl": "https://grillyour.ai/mcp" }
+  }
+}`;
   const section = (html, id) => {
     const marker = `<h2 id="${id}">`;
     const from = html.indexOf(marker);
@@ -741,6 +746,17 @@ describe("the /start page", () => {
     assert.match(gemini, /Next/);
     assert.match(gemini, /sign in/i);
     assert.match(gemini, SIGNED_UP);
+    assert.match(gemini, /If you use Gemini in the terminal/);
+    assert.match(gemini, /<code>~\/\.gemini\/settings\.json<\/code>/);
+    assert.ok(gemini.includes(GEMINI_CLI_SNIPPET), "Gemini section includes the CLI settings snippet");
+    assert.doesNotMatch(gemini, /<script/i);
+
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+    const built = section(readFileSync(join(ROOT, "_site/start/index.html"), "utf8"), "gemini");
+    assert.match(built, /If you use Gemini in the terminal/);
+    assert.ok(built.includes(GEMINI_CLI_SNIPPET), "the built /start page renders the Gemini CLI snippet");
+    assert.match(built, SIGNED_UP);
+    assert.doesNotMatch(built, /<script/i);
   });
 
   it("leaves only Meta AI coming soon, with no setup steps", () => {
