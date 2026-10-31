@@ -984,6 +984,118 @@ describe("the /demo page", () => {
   });
 });
 
+// /check-your-ai is a short guide for someone about to forward an AI draft.
+// It is built like /demo and /about: shared styles, the prose nav and footer, no script of its own.
+describe("the /check-your-ai page", () => {
+  const sourcePath = join(ROOT, "site/check-your-ai.html");
+  const TITLE = "How to check your AI's work before you send it to your boss | Grill";
+  const H1 = "Check your AI's work before you send it to your boss.";
+  const DESCRIPTION = "Plain checks for an AI draft before you send it to your boss: the assumption, the facts, and one cheap test.";
+  const CANONICAL = "https://grillyour.ai/check-your-ai/";
+  const JUDGE_BLIND_SPOTS = "The judge never comes from the company behind your AI, so it won\u2019t share its blind spots.";
+  const nav = (html) => html.match(/<nav aria-label="Sections">[\s\S]*?<\/nav>/)?.[0];
+  const footer = (html) => html.match(/<div class="footer">[\s\S]*?<\/div>/)?.[0];
+
+  function adviceText(html) {
+    const start = html.indexOf("<h1>");
+    const end = html.indexOf('<div class="footer">');
+    assert.ok(start > 0 && end > start, "advice sits between the h1 and the footer");
+    return html.slice(start, end)
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;|&apos;/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  it("is a script-free guide in the same chrome as the other prose pages", () => {
+    assert.ok(existsSync(sourcePath), "site/check-your-ai.html exists");
+    const source = readFileSync(sourcePath, "utf8");
+    const about = readFileSync(join(ROOT, "site/about.html"), "utf8");
+    assert.match(source, new RegExp(`^<title>${TITLE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}</title>`));
+    assert.doesNotMatch(source, /<!doctype|<html[\s>]|<head[\s>]|<body[\s>]|<style[\s>]|<script/i);
+    assert.equal((source.match(/<h1>/g) ?? []).length, 1);
+    assert.ok(source.includes(`<h1>${H1}</h1>`));
+    assert.equal(nav(source), nav(about));
+    assert.equal(footer(source), footer(about));
+    assert.match(source, /href="\/demo\/"/);
+    assert.match(source, /href="\/#setup"/);
+    assert.ok(source.includes(JUDGE_BLIND_SPOTS));
+    assert.match(source, /Say [“"]grill this[”"]/);
+    assert.match(source, /made-up/);
+    assert.match(source, /Nothing in that example is a real decision/);
+    assert.ok(!source.includes("—") && !source.includes("–"), "no em dash or en dash");
+
+    const whyAt = source.indexOf("<h2>Why AI drafts sound sure even when they are wrong</h2>");
+    assert.ok(whyAt > 0, "the sure-tone section is there");
+    const why = source.slice(whyAt).split("<h2>")[1] ?? "";
+    const whyText = why.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const sentences = whyText.split(/(?<=[.!?])\s+/).filter(Boolean);
+    assert.ok(sentences.length >= 1 && sentences.length <= 2, whyText);
+    assert.doesNotMatch(whyText, /\d/);
+
+    const checks = source.slice(source.indexOf("<h2>Four quick checks</h2>"), source.indexOf("<h2>Why a second AI helps</h2>"));
+    assert.equal((checks.match(/<li>/g) ?? []).length, 4);
+    assert.match(checks, /Find the one assumption the whole draft rests on/);
+    assert.match(checks, /Check every number and every name against the source/);
+    assert.match(checks, /Ask what would make the recommendation wrong/);
+    assert.match(checks, /Pick one cheap test you could run before deciding/);
+
+    const words = adviceText(source).split(" ").filter(Boolean);
+    assert.ok(words.length >= 300 && words.length <= 450, `advice is ${words.length} words`);
+    assert.doesNotMatch(adviceText(source), /\d/);
+    assert.doesNotMatch(adviceText(source), /\b(testimonial|testimonials|studies|study)\b/i);
+  });
+
+  it("builds to /check-your-ai/ with a markdown twin, and is listed for people and agents", () => {
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+    const builtPath = join(ROOT, "_site/check-your-ai/index.html");
+    const mdPath = join(ROOT, "_site/check-your-ai/index.md");
+    assert.ok(existsSync(builtPath), "_site/check-your-ai/index.html exists");
+    assert.ok(existsSync(mdPath), "the markdown twin exists");
+    const built = readFileSync(builtPath, "utf8");
+    const md = readFileSync(mdPath, "utf8");
+    assert.match(built, new RegExp(`<title>${TITLE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}</title>`));
+    assert.ok(built.includes(`<h1>${H1}</h1>`));
+    assert.match(built, new RegExp(`<link rel="canonical" href="${CANONICAL}">`));
+    assert.match(built, new RegExp(`<meta property="og:url" content="${CANONICAL}">`));
+    assert.match(built, new RegExp(`<meta property="og:title" content="${TITLE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}">`));
+    const description = built.match(/<meta name="description" content="([^"]*)">/)?.[1];
+    assert.equal(description, DESCRIPTION);
+    assert.ok(description.length < 160, `meta description is ${description.length} characters`);
+    assert.match(built, new RegExp(`<meta property="og:description" content="${DESCRIPTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}">`));
+    assert.match(built, /--paper:/, "the page borrows the site's styles");
+    assert.match(built, /href="\/demo\/"/);
+    assert.match(built, /href="\/#setup"/);
+    const source = readFileSync(sourcePath, "utf8");
+    assert.doesNotMatch(source, /<script/i);
+    const rest = built.replace(analyticsSnippet(process.env), "");
+    assert.equal(rest.match(/<script\b/gi)?.length ?? 0, 0, "/check-your-ai has a script of its own");
+    assert.ok(md.includes(H1));
+    assert.ok(md.includes(JUDGE_BLIND_SPOTS));
+    assert.ok(md.includes("https://grillyour.ai/demo/"));
+    assert.ok(md.includes("https://grillyour.ai/#setup"));
+    assert.doesNotMatch(md, /<script/i);
+    const sitemap = readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8");
+    assert.ok(sitemap.includes(`<loc>${CANONICAL}</loc>`));
+    const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
+    assert.match(llms, /\[Check your AI's work\]\(https:\/\/grillyour\.ai\/check-your-ai\/\): Four quick checks before you send an AI draft to your boss\./);
+  });
+
+  it("the demo page links the guide once, under the examples", () => {
+    const demo = readFileSync(join(ROOT, "site/demo.html"), "utf8");
+    const needle = '<a href="/check-your-ai/">How to check your AI\'s work</a>';
+    assert.equal(demo.split(needle).length - 1, 1);
+    const link = demo.indexOf(needle);
+    const cta = demo.indexOf('class="cta"');
+    const foot = demo.indexOf('class="footer"');
+    assert.ok(cta > 0 && cta < link && link < foot, "the guide link sits at the bottom, after the call to action");
+  });
+});
+
 // /about and /contact are trust pages. Assistants look for them before trusting the site.
 // They are built like privacy and terms: the shared template, no script of their own.
 describe("the about and contact pages", () => {
