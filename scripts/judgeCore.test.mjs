@@ -37,10 +37,21 @@ import {
   MAX_CHALLENGES,
   MAX_LINK_TIMEOUT_MS,
   MIN_LINK_TIMEOUT_MS,
+  buildDeepenMessages,
   buildJudgeMessages,
+  closingAsk,
+  deepenTestEnabled,
+  readDepth,
+  renderDeepen,
   nextAttempt,
   reconcileVerdict,
   CLOSING_ASK,
+  CLOSING_ASK_DEEPEN,
+  DEEPEN_OFF,
+  DEEPEN_ONLY_BIG,
+  DEEPEN_TEST_OPTION,
+  DEEPEN_TOOL,
+  DEPTH_QUESTIONS,
   LAYER1_WORD_BUDGET,
   LAYER2_WORD_BUDGET,
   SCOPE_GUARD,
@@ -1640,5 +1651,109 @@ describe("cited sources the judge cannot open", () => {
       assert.ok(readFileSync(join(root, file), "utf8").includes(sentence), `${file} is missing the numbers rule`);
     }
     assert.match(KIND_DESCRIPTIONS["evidence-mismatch"], /a count compared across periods or groups of different size with no rate/);
+  });
+});
+
+describe("the optional deepen layer", () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const result = {
+    verdict: "weak",
+    verdictReason: "The headline number is asserted rather than supported.",
+    missingOption: "Cap the free tier instead of dropping it.",
+    challenges: [
+      {
+        challenge: "No baseline is cited for the multiplier.",
+        falsifier: "Pull the signup curve from the last comparable launch.",
+      },
+    ],
+  };
+  const subject = "We will raise prices 20% in Q4 because paid users cover the support cost.";
+
+  it("keeps deepen off the default closing line, and names it only for a big decision when the test is on", () => {
+    assert.equal(DEEPEN_TEST_OPTION, "GRILL_DEEPEN_TEST");
+    assert.equal(deepenTestEnabled({}), false);
+    assert.equal(deepenTestEnabled({ GRILL_DEEPEN_TEST: "${user_config.deepen}" }), false);
+    assert.equal(deepenTestEnabled({ GRILL_DEEPEN_TEST: "no" }), false);
+    assert.equal(deepenTestEnabled({ GRILL_DEEPEN_TEST: "1" }), true);
+    assert.equal(closingAsk({}), CLOSING_ASK);
+    assert.equal(closingAsk({ big: true, deepenTest: false }), CLOSING_ASK);
+    assert.equal(closingAsk({ big: false, deepenTest: true }), CLOSING_ASK);
+    assert.equal(closingAsk({ big: true, deepenTest: true }), CLOSING_ASK_DEEPEN);
+    assert.doesNotMatch(CLOSING_ASK, /deepen/);
+
+    const plain = renderLayers(result, { subject });
+    const quick = renderLayers(result, { subject, big: false, deepenTest: true });
+    const flagged = renderLayers(result, { subject, big: true, deepenTest: false });
+    const big = renderLayers(result, { subject, big: true, deepenTest: true });
+    for (const layers of [plain, quick, flagged]) {
+      assert.match(layers.brief, /Say 'more', 'options', or your call\./);
+      assert.doesNotMatch(layers.brief, /deepen/);
+      assert.ok(countWords(layers.brief) <= LAYER1_WORD_BUDGET, layers.brief);
+      assert.match(layers.brief, /^\*\*Shaky\.\*\*/);
+    }
+    assert.match(big.brief, /Say 'more', 'options', 'deepen', or your call\./);
+    assert.ok(countWords(big.brief) <= LAYER1_WORD_BUDGET, `${countWords(big.brief)}: ${big.brief}`);
+    assert.doesNotMatch(big.brief, /top professional|Rewritten plan|Raw material/);
+    assert.equal(renderUserFacing(result, { subject, detail: "deepen", big: true, deepenTest: true }), "");
+
+    const thin = renderLayers(
+      { needsFacts: true, verdict: "weak", verdictReason: "Not enough to drop it yet.", factsNeeded: ["What share of free users pay within 90 days?"] },
+      { subject: "drop it?", big: true, deepenTest: true },
+    );
+    assert.match(thin.brief, /^Quick take, on thin input:/);
+    assert.match(thin.brief, /deepen/);
+    assert.ok(countWords(thin.brief) <= LAYER1_WORD_BUDGET, thin.brief);
+  });
+
+  it("asks the four depth questions and rewrites the plan, and does not turn that into a verdict", () => {
+    const [system, user] = buildDeepenMessages({ subject, question: "Which way?" });
+    for (const q of DEPTH_QUESTIONS) assert.ok(system.content.includes(q), q);
+    assert.match(user.content, /BEGIN SUBJECT/);
+    assert.match(user.content, /raise prices 20%/);
+    assert.doesNotMatch(`${system.content}\n${user.content}`, /try to BREAK|report_challenge|openrouter\//);
+    assert.equal(DEEPEN_TOOL.name, "report_depth");
+    assert.equal(DEEPEN_TOOL.parameters.additionalProperties, false);
+    assert.deepEqual(buildJudgeMessages({ subject })[0].content.includes("rawest material"), false);
+
+    const raw = {
+      professional: "A pricing lead would start from the raw signup events, not the slide.",
+      raw_material: "The event log of signups and later payments, not the quarterly summary.",
+      methods: "A survival model, fit on one window and checked on a later week.",
+      outside_check: "That later week, counted by someone who did not write the plan.",
+      rewritten_plan: "Rebuild the price call from the raw signup log. Fit a survival model. Show that it predicts a week it has not seen.",
+    };
+    const depth = readDepth(raw);
+    assert.equal(depth.rawMaterial.includes("event log"), true);
+    assert.equal(readDepth({ ...raw, methods: "  " }), null);
+    const note = renderDeepen(raw);
+    assert.match(note, /Deeper, not bigger\./);
+    assert.match(note, /1\. A top professional would:/);
+    assert.match(note, /2\. Raw material:/);
+    assert.match(note, /3\. Methods and tools:/);
+    assert.match(note, /4\. What would show it is right:/);
+    assert.match(note, /Rewritten plan:/);
+    assert.match(note, /The rewrite is not the decision\./);
+    assert.doesNotMatch(note, /solid|shaky|verdict|gpt-/i);
+    assert.equal(renderDeepen(null), "");
+    assert.match(DEEPEN_OFF, /test and is off/);
+    assert.match(DEEPEN_ONLY_BIG, /marked as big/);
+  });
+
+  it("the skill and the docs name Grill as the essay's outside judge, and keep the four questions with the judge", () => {
+    const skill = readFileSync(join(root, "skills/grill/SKILL.md"), "utf8");
+    const why = readFileSync(join(root, "docs/WHY.md"), "utf8");
+    for (const text of [skill, why]) {
+      assert.match(text, /outside judge/);
+      assert.match(text, /felixrieseberg\.com\/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/);
+    }
+    assert.match(skill, /only when the person asks to deepen or go bigger/);
+    assert.match(skill, /detail` `deepen`/);
+    assert.match(skill, /Never add a question or a step before the verdict/);
+    assert.match(skill, /Never ask whether it is big/);
+    for (const file of ["skills/grill/paste-prompt.md", "prompts/grill.md"]) {
+      const text = readFileSync(join(root, file), "utf8");
+      for (const q of DEPTH_QUESTIONS) assert.ok(text.includes(q), `${file} is missing ${q}`);
+      assert.match(text, /Never add a question or a step before the verdict|Never add a required question before the verdict/);
+    }
   });
 });

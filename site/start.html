@@ -1,0 +1,92 @@
+<title>Start using Grill</title>
+<main id="top" class="prose">
+  <div class="top">
+    <a class="mark" href="/"><img src="/brand/favicon-32.png" alt="" width="24" height="24">grill</a>
+    <nav aria-label="Sections">
+      <a href="/#setup">Get started</a>
+      <a href="/#how">How it works</a>
+      <a href="/privacy/">Privacy</a>
+      <a href="/contribute/">Contribute</a>
+      <a href="https://github.com/mtangoz/grill">GitHub</a>
+    </nav>
+  </div>
+
+  <h1>Connect Grill to your AI.</h1>
+  <p class="lede">For people invited to Grill in chat. About two minutes. No key, no install, no card.</p>
+  <p class="note"><strong>One login:</strong> sign in with the same email you signed up with, every time, in every AI. That’s how your saved decisions follow you.</p>
+
+  <h2 id="claude">Claude.ai</h2>
+  <p class="note">On the web, on Claude’s Free, Pro or Max plan. On a Team or Enterprise plan, an owner may need to allow custom connectors first.</p>
+  <div class="routes">
+    <ol class="steps">
+      <li>In Claude.ai, open Customize → Connectors → Add custom connector.</li>
+      <li>Paste this address as the URL, name it Grill, then click Add and Connect:
+        <div class="copyrow">
+          <input id="connector-url" type="text" readonly value="https://grillyour.ai/mcp" aria-label="Connector URL">
+        </div>
+        <code>https://grillyour.ai/mcp</code>
+      </li>
+      <li>Sign in with the same email you signed up with, every time. We email you a code. If it isn’t there in a minute, check spam.</li>
+      <li>Start a new chat and type “Grill this:” followed by a decision you’re weighing. The verdict takes a minute or two.</li>
+    </ol>
+  </div>
+
+  <h2 id="chatgpt">ChatGPT</h2>
+  <p class="note">Verified working. On the web, with a paid plan.</p>
+  <div class="routes">
+    <ol class="steps">
+      <li>Go to Plugins, click the plus button, then Add custom MCP server.</li>
+      <li>Name it Grill. Paste this address as the Server URL, and choose OAuth:
+        <div class="copyrow">
+          <input id="chatgpt-url" type="text" readonly value="https://grillyour.ai/mcp" aria-label="Server URL">
+        </div>
+        <code>https://grillyour.ai/mcp</code>
+      </li>
+      <li>Click I understand and want to continue, then Create.</li>
+      <li>Install it, then sign in with the same email you signed up with, every time. We email you a code. If it isn’t there in a minute, check spam.</li>
+    </ol>
+  </div>
+
+  <h2 id="grok">Grok Bot</h2>
+  <p class="note">Verified working.</p>
+  <div class="routes">
+    <ol class="steps">
+      <li>Tell your bot: <code>Add this MCP server: https://grillyour.ai/mcp</code></li>
+      <li>Sign in when asked: sign in with the same email you signed up with, every time. We email you a code. If it isn’t there in a minute, check spam.</li>
+    </ol>
+  </div>
+
+  <h2 id="gemini">Gemini</h2>
+  <p class="note">Should work, testing now. US only, a personal Google account, and Keep Activity on.</p>
+  <div class="routes">
+    <ol class="steps">
+      <li>On gemini.google.com, open Settings, then Connected Apps, then Add a custom app.</li>
+      <li>Paste this address, then Next:
+        <div class="copyrow">
+          <input id="gemini-url" type="text" readonly value="https://grillyour.ai/mcp" aria-label="Server URL">
+        </div>
+        <code>https://grillyour.ai/mcp</code>
+      </li>
+      <li>If you use Gemini in the terminal, add this to <code>~/.gemini/settings.json</code>:
+<pre>{
+  "mcpServers": {
+    "grill": { "httpUrl": "https://grillyour.ai/mcp" }
+  }
+}</pre></li>
+      <li>Sign in with the same email you signed up with, every time. We email you a code. If it isn’t there in a minute, check spam.</li>
+    </ol>
+  </div>
+
+  <h2 id="soon">Meta AI</h2>
+  <p class="note">Coming soon. Sign in with the same email you signed up with, every time, on an AI above. We’ll email you when Meta AI works.</p>
+
+  <h2>If something goes wrong</h2>
+  <p class="note"><strong>“Grill in chat is invite-only for now.”</strong> You signed in with a different email. Disconnect Grill, connect again, and sign in with the same email you signed up with. If you have an invite code, enter it at <a href="/redeem">/redeem</a>.</p>
+  <p class="note"><strong>No code arrived.</strong> Check spam, then ask for a new code on the sign-in screen.</p>
+  <p class="note">Anything else: write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>. Your decisions stay private. See <a href="/privacy/">Privacy</a>.</p>
+
+  <div class="footer">
+    <span>Open source · <a href="/contribute/">Contribute</a> · <a href="https://github.com/mtangoz/grill">GitHub</a> · <a href="/privacy/">Privacy</a></span>
+    <span>Made at <a href="https://hold.quest">Hold</a></span>
+  </div>
+</main>

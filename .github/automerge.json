@@ -50,7 +50,9 @@
     ".github/automerge.json",
     "SECURITY.md",
     "docs/PRIVACY.md",
-    "site/terms.html"
+    "site/terms.html",
+    "LICENSE",
+    "TRADEMARKS.md"
   ],
   "denySubstrings": ["stripe", "auth", "key", "secret"],
   "denyPageBasenames": ["terms", "privacy"],
@@ -67,7 +69,9 @@
     ".github/workflows/**",
     "SECURITY.md",
     "docs/PRIVACY.md",
-    "site/terms.html"
+    "site/terms.html",
+    "LICENSE",
+    "TRADEMARKS.md"
   ],
   "highSubstrings": ["stripe", "auth", "key", "secret", "payment"],
   "highPageBasenames": ["terms", "privacy"]

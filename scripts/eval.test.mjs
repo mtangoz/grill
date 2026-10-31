@@ -6,7 +6,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,9 +65,11 @@ describe("eval.mjs over a temp copy of 2 cases, replaying a fixture", () => {
   // false alarm on both — chosen specifically so this test does not depend on any
   // must_target substring-matching behaviour, only on the CLI's plumbing.
   const dir = tempCasesDir("sound-ab-test-pricing-page", "sound-vendor-pilot-before-commit");
+  // Results go to their own dir: a results file left among the cases would be read as a case.
+  const outDir = mkdtempSync(join(tmpdir(), "eval-out-"));
 
   it("writes a results file with both scores and a summary, and exits 1 on the resulting false-alarm regression", async () => {
-    const outPath = join(dir, "out.json");
+    const outPath = join(outDir, "out.json");
     const env = envFor({ JUDGE_FIXTURE: join(FIXTURES, "usable-response.json") });
 
     const { code, stdout } = await runCli(["--cases", dir, "--out", outPath, "--concurrency", "2"], env);
@@ -98,8 +100,8 @@ describe("eval.mjs over a temp copy of 2 cases, replaying a fixture", () => {
   });
 
   it("appends the same markdown to $GITHUB_STEP_SUMMARY when it is set", async () => {
-    const outPath = join(dir, "out-summary.json");
-    const summaryPath = join(dir, "step-summary.md");
+    const outPath = join(outDir, "out-summary.json");
+    const summaryPath = join(outDir, "step-summary.md");
     const env = envFor({ JUDGE_FIXTURE: join(FIXTURES, "usable-response.json"), GITHUB_STEP_SUMMARY: summaryPath });
 
     const { code } = await runCli(["--cases", dir, "--out", outPath], env);
@@ -111,7 +113,7 @@ describe("eval.mjs over a temp copy of 2 cases, replaying a fixture", () => {
   });
 
   it("creates the --out directory when it does not already exist", async () => {
-    const nestedOut = join(dir, "nested", "deeper", "out.json");
+    const nestedOut = join(outDir, "nested", "deeper", "out.json");
     const env = envFor({ JUDGE_FIXTURE: join(FIXTURES, "usable-response.json") });
 
     const { code } = await runCli(["--cases", dir, "--out", nestedOut], env);
@@ -239,5 +241,73 @@ describe("the quality check in the eval loop", () => {
     assert.ok(written.summary.regressions.some((r) => r.startsWith("catchRate")));
     assert.equal(code, 1, "the phrase-match gate still decides the exit code");
     assert.match(stdout, /Planted flaw identified, semantic \(Jev\) \| 1\.00 \| 1 of 1 flawed\/loaded cases scored; phrase match caught 0 of the same 1/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("a held-out set stays private", () => {
+  const REPO = join(HERE, "..");
+  /** A temp dir outside the repo with one public case re-marked as a held-out case under a new id. */
+  function heldOutDir(parent = tmpdir()) {
+    const dir = mkdtempSync(join(parent, "eval-held-out-"));
+    const c = JSON.parse(readFileSync(join(CASES_DIR, "hidden-assumption-annual-billing.json"), "utf8"));
+    const held = { ...c, id: "private-held-out-case", heldOut: true };
+    writeFileSync(join(dir, `${held.id}.json`), JSON.stringify(held));
+    return dir;
+  }
+  const fixtureEnv = (extra = {}) => envFor({ JUDGE_FIXTURE: join(FIXTURES, "usable-response.json"), ...extra });
+
+  it("prints and posts rates only, and keeps the full scores in the results file outside the repo", async () => {
+    const dir = heldOutDir();
+    const outPath = join(mkdtempSync(join(tmpdir(), "eval-held-out-results-")), "results.json");
+    const summaryPath = join(dir, "step-summary.md");
+    const { code, stdout, stderr } = await runCli(["--cases", dir, "--out", outPath], fixtureEnv({ GITHUB_STEP_SUMMARY: summaryPath }));
+
+    assert.equal(code, 1, "the one flawed case is a phrase-match miss under this fixture");
+    for (const text of [stdout, stderr, readFileSync(summaryPath, "utf8")]) {
+      assert.ok(!text.includes("private-held-out-case"), "no case id is printed or posted");
+      assert.ok(!text.includes("commit annually without complaint"), "no expect phrase is printed or posted");
+    }
+    assert.match(stdout, /# Grill self-eval results \(held-out set\)/);
+    assert.match(stdout, /1 of 1 cases failed/);
+    const written = JSON.parse(readFileSync(outPath, "utf8"));
+    assert.equal(written.scores[0].id, "private-held-out-case", "the private results file keeps the detail");
+  });
+
+  it("refuses to write a held-out run's results inside the repo, the default included", async () => {
+    const dir = heldOutDir();
+    const inside = join(REPO, "evals", "results", "held-out-should-not-exist.json");
+    for (const args of [["--cases", dir], ["--cases", dir, "--out", inside]]) {
+      const { code, stderr } = await runCli(args, fixtureEnv());
+      assert.equal(code, 1, args.join(" "));
+      assert.match(stderr, /writes its results outside this repository/);
+    }
+    assert.ok(!existsSync(inside));
+  });
+
+  it("refuses held-out cases that sit inside the repo", async () => {
+    const scratch = join(REPO, "evals", "results");
+    mkdirSync(scratch, { recursive: true });
+    const dir = heldOutDir(scratch);
+    try {
+      const outPath = join(mkdtempSync(join(tmpdir(), "eval-held-out-results-")), "results.json");
+      const { code, stderr } = await runCli(["--cases", dir, "--out", outPath], fixtureEnv());
+      assert.equal(code, 1);
+      assert.match(stderr, /held-out cases never live inside this repository/);
+      assert.ok(!existsSync(outPath));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("stops before any judge call when a case file is malformed, naming the problem", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "eval-bad-case-"));
+    const c = JSON.parse(readFileSync(join(CASES_DIR, "hidden-assumption-annual-billing.json"), "utf8"));
+    writeFileSync(join(dir, `${c.id}.json`), JSON.stringify({ ...c, expect: { must_target: ["nowhere in the subject"], verdict_not: ["holds"] } }));
+    const outPath = join(dir, "out.json");
+    const { code, stderr } = await runCli(["--cases", dir, "--out", outPath], fixtureEnv());
+    assert.equal(code, 1);
+    assert.match(stderr, /is malformed: "nowhere in the subject" not found in subject/);
+    assert.ok(!existsSync(outPath));
   });
 });

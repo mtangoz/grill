@@ -6,16 +6,25 @@
  * the one that wrote the write-up, not whichever chat the person is sitting in.
  *
  * Request and response bodies are not logged. Errors return a fixed sentence and a
- * request id.
+ * request id. A rejected bearer on /mcp logs the reason and public claims only:
+ * never the token, and never an email.
  */
-import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createCappedKey, esc, page, readManagedKey, removeManagedKey, WELCOME_HEADERS } from "./_pro.mjs";
-import { isThinGrill, normalizeDetail, renderLayers } from "../scripts/judgeCore.mjs";
+import { createCappedKey, esc, page, readManagedKey, removeManagedKey, setMonthlyLimit, WELCOME_HEADERS } from "./_pro.mjs";
+import {
+  DEEPEN_OFF,
+  DEEPEN_ONLY_BIG,
+  deepenTestEnabled,
+  isThinGrill,
+  normalizeDetail,
+  renderDeepen,
+  renderLayers,
+} from "../scripts/judgeCore.mjs";
 import {
   REVIEW_DAYS,
   addDays,
@@ -42,21 +51,27 @@ import {
   CREDIT_CACHE_MS,
   DAILY_GRILL_LIMIT,
   HOSTED_INSTRUCTIONS,
-  INVITE_ONLY,
   JOB_TTL_SECONDS,
   MAX_PASTE_CHARS,
   MAX_QUESTION_CHARS,
+  JUDGE_PACKET_MAX,
   MAX_SUBJECT_CHARS,
   ONCE_DISCLOSURE,
   OUT_OF_CREDIT,
   RUNNING_JOB_LIMIT,
   CAP_COUNTER_TTL_SECONDS,
   allowlistAllows,
+  inviteCodeHash,
+  inviteCodesEnabled,
+  inviteOnlyText,
+  normalizeInviteCode,
+  parseInviteCodes,
   authorForJudge,
   calendarFeed,
   calendarTokenHash,
   calendarTokenShape,
   daysOverdue,
+  formatDay,
   dueForLookBack,
   dueReminderLine,
   newCalendarToken,
@@ -68,6 +83,10 @@ import {
   encryptString,
   hostedEnabled,
   hostedStillRunningText,
+  HOSTED_JUDGE_ATTEMPT_MS,
+  HOSTED_JUDGE_DEADLINE_MS,
+  NO_JOB_TEXT,
+  provenanceLine,
   hostedTools,
   isoDay,
   isoMonth,
@@ -86,7 +105,8 @@ import {
   serviceFailureText,
   signInUrl,
   sourceAppFromClient,
-  starterCreditUsd,
+  allowanceLine,
+  userMonthlyCapUsd,
   toMicros,
   wwwAuthenticate,
 } from "../scripts/hostedCore.mjs";
@@ -106,6 +126,9 @@ const userCache = new Map();
 const creditCache = new Map();
 // Clerk's authorization-server documents, keyed by the upstream URL. Public metadata only.
 const authMetadataCache = new Map();
+// Company named on initialize, keyed by the sign-in subject. This process only.
+// The grill request also reads User-Agent, so a different instance still sees that.
+const clientHintBySub = new Map();
 export const AUTH_METADATA_CACHE_MS = 60_000;
 
 export function resetHostedCaches() {
@@ -113,6 +136,7 @@ export function resetHostedCaches() {
   userCache.clear();
   creditCache.clear();
   authMetadataCache.clear();
+  clientHintBySub.clear();
 }
 
 class Coded extends Error {
@@ -289,6 +313,13 @@ function personSpendKey(email, month) {
   const hash = createHash("sha256").update(String(email || "").trim().toLowerCase()).digest("hex");
   return `grill:hosted:capspend:person:${hash}:${month}`;
 }
+/** A redeemed invite, keyed by a hash of the email. The value is a hash of the code, never the code. */
+function inviteGrantKey(email) {
+  return `grill:hosted:invite:grant:${createHash("sha256").update(String(email || "").trim().toLowerCase()).digest("hex")}`;
+}
+function inviteUsesKey(code) {
+  return `grill:hosted:invite:uses:${inviteCodeHash(code)}`;
+}
 const SPEND_LOG_MAX = 400;
 /**
  * Active-user counts for the operator's metrics summary. Each key is an Upstash HyperLogLog:
@@ -348,9 +379,65 @@ async function loadJwks(url, fetchImpl) {
   return keys;
 }
 
-async function verifyJwt(token, { issuer, jwksUrl, resource, fetchImpl, requireAudience }) {
+function blankAuthClaims() {
+  return { iss: "", aud: "", azp: "", client_id: "", exp: null, expired: false };
+}
+
+/**
+ * Claims that may be written when a bearer is rejected. The 60 second leeway
+ * matches the check below. Email, subject and every other claim are left out.
+ */
+function jwtPublicClaims(payload) {
+  const body = payload && typeof payload === "object" ? payload : {};
+  const exp = typeof body.exp === "number" ? body.exp : null;
+  const now = Math.floor(Date.now() / 1000);
+  let aud = "";
+  if (typeof body.aud === "string") aud = body.aud;
+  else if (Array.isArray(body.aud)) aud = body.aud.filter((item) => typeof item === "string");
+  return {
+    iss: typeof body.iss === "string" ? body.iss : "",
+    aud,
+    azp: typeof body.azp === "string" ? body.azp : "",
+    client_id: typeof body.client_id === "string" ? body.client_id : "",
+    exp,
+    expired: exp === null || exp + 60 < now,
+  };
+}
+
+function authRejectLog(request, reason, claims) {
+  const safe = claims || blankAuthClaims();
+  const ua = String(request.headers.get("user-agent") || "").replace(/[\r\n]+/g, " ").slice(0, 300);
+  return `[grill-hosted] auth-reject ${JSON.stringify({
+    reason,
+    iss: safe.iss,
+    aud: safe.aud,
+    azp: safe.azp,
+    client_id: safe.client_id,
+    exp: safe.exp,
+    expired: safe.expired === true,
+    user_agent: ua,
+  })}`;
+}
+
+/** One warning line for a presented bearer that did not verify. */
+function logBearerReject(request, reason, claims) {
+  const text = authRejectLog(request, reason, claims);
+  console.warn(text);
+}
+
+function jwtFail(reason, claims) {
+  return { reason, claims: claims || blankAuthClaims() };
+}
+
+/** RS256 signature against the Clerk JWKS. Returns the payload, or null. Claims are not checked here. */
+async function verifiedPayload(token, jwksUrl, fetchImpl) {
+  const checked = await readSignedPayload(token, jwksUrl, fetchImpl);
+  return checked.payload || null;
+}
+
+async function readSignedPayload(token, jwksUrl, fetchImpl) {
   const parts = String(token || "").split(".");
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3) return jwtFail("malformed");
   const [h64, p64, s64] = parts;
   let header;
   let payload;
@@ -358,27 +445,46 @@ async function verifyJwt(token, { issuer, jwksUrl, resource, fetchImpl, requireA
     header = JSON.parse(Buffer.from(h64, "base64url").toString("utf8"));
     payload = JSON.parse(Buffer.from(p64, "base64url").toString("utf8"));
   } catch {
-    return null;
+    return jwtFail("malformed");
   }
-  if (header.alg !== "RS256" || !header.kid) return null;
+  const claims = jwtPublicClaims(payload);
+  if (header.alg !== "RS256" || !header.kid) return jwtFail("alg", claims);
   const keys = await loadJwks(jwksUrl, fetchImpl);
   const jwk = keys.find((key) => key.kid === header.kid) || null;
-  if (!jwk) return null;
+  if (!jwk) return jwtFail("kid", claims);
   const cryptoKey = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
   const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", cryptoKey, Buffer.from(s64, "base64url"), Buffer.from(`${h64}.${p64}`));
-  if (!ok) return null;
+  if (!ok) return jwtFail("signature", claims);
+  return { payload };
+}
+
+/** Payload when the token is accepted, otherwise null. Page sign-in uses this. */
+async function verifyJwt(token, options) {
+  const checked = await checkJwt(token, options);
+  return checked.payload || null;
+}
+
+async function checkJwt(token, { issuer, jwksUrl, resource, fetchImpl, requireAudience }) {
+  const signed = await readSignedPayload(token, jwksUrl, fetchImpl);
+  if (!signed.payload) return signed.reason ? signed : jwtFail("malformed");
+  const payload = signed.payload;
+  const claims = jwtPublicClaims(payload);
   const iss = String(payload.iss || "").replace(/\/$/, "");
   const want = String(issuer || "").replace(/\/$/, "");
-  if (!want || iss !== want) return null;
+  if (!want || iss !== want) return jwtFail("issuer", claims);
   const now = Math.floor(Date.now() / 1000);
-  if (typeof payload.exp !== "number" || payload.exp + 60 < now) return null;
-  if (typeof payload.nbf === "number" && payload.nbf - 60 > now) return null;
-  if (typeof payload.sub !== "string" || !payload.sub) return null;
+  if (typeof payload.exp !== "number" || payload.exp + 60 < now) {
+    claims.expired = true;
+    return jwtFail("expired", claims);
+  }
+  claims.expired = false;
+  if (typeof payload.nbf === "number" && payload.nbf - 60 > now) return jwtFail("nbf", claims);
+  if (typeof payload.sub !== "string" || !payload.sub) return jwtFail("sub", claims);
   if (requireAudience) {
     const aud = Array.isArray(payload.aud) ? payload.aud : typeof payload.aud === "string" ? [payload.aud] : [];
-    if (!aud.includes(resource)) return null;
+    if (!aud.includes(resource)) return jwtFail("audience", claims);
   }
-  return payload;
+  return { payload };
 }
 
 function jwksUrl(env) {
@@ -510,14 +616,27 @@ async function cachedOwnerEmail(userId, deps) {
  * the email the starter cap is keyed to: the owner for an agent admitted that
  * way, otherwise their own email.
  */
+/** True when this email redeemed a code that is still on GRILL_INVITE_CODES. Off when that var is unset. */
+async function inviteGrantAllows(email, deps) {
+  const codes = parseInviteCodes(deps.env);
+  const who = cleanEmail(email);
+  if (!codes.length || !who) return false;
+  const raw = await redis(deps, ["GET", inviteGrantKey(who)]);
+  if (typeof raw !== "string" || !/^[a-f0-9]{64}$/.test(raw)) return false;
+  const known = new Set(codes.map((row) => inviteCodeHash(row.code)));
+  return known.has(raw);
+}
+
 async function admit(user, deps, userId) {
   const email = verifiedEmail(user);
   if (!email) return { email: "", human: "", allowed: false };
   if (!agentIdSignIn(user) || allowlistAllows(email, deps.env)) {
-    return { email, human: email, allowed: allowlistAllows(email, deps.env) };
+    const allowed = allowlistAllows(email, deps.env) || (await inviteGrantAllows(email, deps));
+    return { email, human: email, allowed };
   }
+  if (await inviteGrantAllows(email, deps)) return { email, human: email, allowed: true };
   const owner = await cachedOwnerEmail(user?.id || userId, deps);
-  const allowed = Boolean(owner) && allowlistAllows(owner, deps.env);
+  const allowed = Boolean(owner) && (allowlistAllows(owner, deps.env) || (await inviteGrantAllows(owner, deps)));
   return { email, human: allowed ? owner : email, allowed };
 }
 
@@ -545,6 +664,7 @@ async function saveAccount(account, deps) {
     keyCipher: account.keyCipher || null,
     keyHash: account.keyHash || null,
     keyLimitUsd: account.keyLimitUsd ?? null,
+    keyReset: account.keyReset || null,
     keyName: account.keyName || null,
     recordKeyCipher: account.recordKeyCipher || null,
     spend: (account.spend || []).map((row) => ({
@@ -650,6 +770,7 @@ async function ensureAccount(userId, email, deps, human) {
         account.keyCipher = holder.keyCipher;
         account.keyHash = holder.keyHash;
         account.keyLimitUsd = holder.keyLimitUsd ?? null;
+        account.keyReset = holder.keyReset || null;
         account.keyName = holder.keyName || null;
         account.capFrom = prior;
         account.human = capEmail;
@@ -669,8 +790,8 @@ async function ensureAccount(userId, email, deps, human) {
       env: deps.env,
       fetch: deps.fetch,
       name,
-      limit: starterCreditUsd(deps.env),
-      reset: null,
+      limit: userMonthlyCapUsd(deps.env),
+      reset: "monthly",
     });
   } catch {
     throw new Coded("starter-key");
@@ -692,9 +813,28 @@ async function ensureAccount(userId, email, deps, human) {
   account.keyCipher = encryptString(made.key, master);
   account.keyHash = made.hash;
   account.keyLimitUsd = made.limitUsd;
+  account.keyReset = "monthly";
   account.keyName = name;
   await saveAccount(account, deps);
   return account;
+}
+
+/**
+ * Early testers get a monthly allowance. A key minted before that was a one-off starter credit
+ * with no reset; move it once to the monthly cap. A failure leaves the old key as it was.
+ */
+async function ensureMonthlyAllowance(account, deps) {
+  const cap = userMonthlyCapUsd(deps.env);
+  if (!account.keyHash || (account.keyReset === "monthly" && Number(account.keyLimitUsd) === cap)) return;
+  try {
+    await setMonthlyLimit(account.keyHash, cap, { env: deps.env, fetch: deps.fetch });
+  } catch {
+    logHosted(deps.requestId || "credit", "key-monthly");
+    return;
+  }
+  account.keyReset = "monthly";
+  account.keyLimitUsd = cap;
+  await saveAccount(account, deps);
 }
 
 async function creditOf(account, deps) {
@@ -702,13 +842,15 @@ async function creditOf(account, deps) {
   const hit = creditCache.get(account.id);
   if (hit && now - hit.at < CREDIT_CACHE_MS) return hit;
   if (!account.keyHash) return { at: now, remaining: 0, out: true };
+  await ensureMonthlyAllowance(account, deps);
   const live = await readManagedKey(account.keyHash, { env: deps.env, fetch: deps.fetch });
   if (!live || live.disabled) {
     const row = { at: now, remaining: 0, out: true };
     creditCache.set(account.id, row);
     return row;
   }
-  const usage = Number(live.usageTotalUsd) || 0;
+  // A monthly key counts this month's use; an old one-off key, if it couldn't be moved, its total.
+  const usage = Number(account.keyReset === "monthly" ? live.usageUsd : live.usageTotalUsd) || 0;
   const limit = Number.isFinite(live.limitUsd) ? live.limitUsd : Number(account.keyLimitUsd) || 0;
   const remaining = Math.max(0, limit - usage);
   const row = { at: now, remaining, out: remaining <= 0 };
@@ -801,7 +943,11 @@ async function calendarTitles(account, deps, titles) {
 
 /** Form actions shared by /decisions and /account. Returns a fresh link token when one was made. */
 async function calendarAction(account, deps, value) {
-  if (value === "on") return calendarOn(account, deps, false);
+  if (value === "on") {
+    const state = await calendarState(account, deps);
+    if (state.on) return "";
+    return calendarOn(account, deps, false);
+  }
   if (value === "reset") {
     const state = await calendarState(account, deps);
     return calendarOn(account, deps, state.titles);
@@ -824,17 +970,22 @@ function judgeChildEnv(apiKey, deps) {
     PATH: process.env.PATH || "",
     TMPDIR: process.env.TMPDIR || tmpdir(),
     OPENROUTER_API_KEY: apiKey,
+    JUDGE_TIMEOUT_MS: String(Number.isInteger(deps.judgeAttemptMs) ? deps.judgeAttemptMs : HOSTED_JUDGE_ATTEMPT_MS),
   };
   if (deps.judgeOpenRouterUrl) env.JUDGE_OPENROUTER_URL = deps.judgeOpenRouterUrl;
   if (deps.judgeDecisionsUrl) env.JUDGE_DECISIONS_URL = deps.judgeDecisionsUrl;
   return env;
 }
 
-function startJudge({ subject, question, author, check, apiKey, deps }) {
-  const dir = mkdtempSync(join(tmpdir(), "grill-hosted-"));
-  const args = [JUDGE, "--json", "--out", join(dir, "report.md"), "--author", author];
-  if (question) args.push("--question", question);
-  if (check) args.push("--check");
+function startJudge({ subject, question, author, check, apiKey, deps, deepen = false }) {
+  const dir = deepen ? "" : mkdtempSync(join(tmpdir(), "grill-hosted-"));
+  const args = [JUDGE, "--json", "--author", author];
+  if (deepen) args.push("--deepen");
+  else {
+    args.push("--out", join(dir, "report.md"));
+    if (question) args.push("--question", question);
+    if (check) args.push("--check");
+  }
   const child = spawn(process.execPath, args, { env: judgeChildEnv(apiKey, deps), stdio: ["pipe", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
@@ -845,16 +996,27 @@ function startJudge({ subject, question, author, check, apiKey, deps }) {
     stderr += chunk;
   });
   const job = { done: false };
+  // Stop the judge before the function's own limit does, so a slow run still stores a
+  // "took too long" result instead of vanishing and reading as expired.
+  const deadlineMs = Number.isInteger(deps.judgeDeadlineMs) ? deps.judgeDeadlineMs : HOSTED_JUDGE_DEADLINE_MS;
+  const timer = setTimeout(() => {
+    stderr += `\n[hosted] deadline: judge stopped after ${deadlineMs}ms, timed out\n`;
+    child.kill("SIGKILL");
+  }, deadlineMs);
+  timer.unref?.();
   job.promise = new Promise((resolve) => {
     const finish = (code) => {
       if (job.done) return;
+      clearTimeout(timer);
       let report = "";
-      try {
-        report = readFileSync(join(dir, "report.md"), "utf8");
-      } catch {
-        report = "";
+      if (dir) {
+        try {
+          report = readFileSync(join(dir, "report.md"), "utf8");
+        } catch {
+          report = "";
+        }
+        rmSync(dir, { recursive: true, force: true });
       }
-      rmSync(dir, { recursive: true, force: true });
       let parsed = null;
       try {
         parsed = JSON.parse(stdout);
@@ -898,13 +1060,33 @@ function schedule(promise, deps, id) {
   promise.catch(() => logHosted(id, "background"));
 }
 
-function clientFromToken(payload, params) {
-  const clientInfo = params?._meta?.clientInfo || params?.clientInfo || null;
+function clientInfoOf(params) {
+  return params?._meta?.clientInfo || params?.clientInfo || null;
+}
+
+function clientFromToken(payload, params, deps) {
+  const sub = typeof payload?.sub === "string" ? payload.sub : "";
   return sourceAppFromClient({
     redirectUri: typeof payload.redirect_uri === "string" ? payload.redirect_uri : "",
     clientId: typeof payload.client_id === "string" ? payload.client_id : typeof payload.azp === "string" ? payload.azp : "",
-    clientInfo,
+    clientInfo: clientInfoOf(params),
+    userAgent: deps?.userAgent || "",
+    remembered: sub ? clientHintBySub.get(sub) : null,
   });
+}
+
+/** Keep the initialize handshake's company for later tool calls in this process. */
+function rememberClientCompany(payload, params, userAgent) {
+  const sub = typeof payload?.sub === "string" ? payload.sub : "";
+  if (!sub) return;
+  const hint = sourceAppFromClient({
+    redirectUri: typeof payload?.redirect_uri === "string" ? payload.redirect_uri : "",
+    clientId: typeof payload?.client_id === "string" ? payload.client_id : typeof payload?.azp === "string" ? payload.azp : "",
+    clientInfo: clientInfoOf(params),
+    userAgent,
+  });
+  if (hint.company) clientHintBySub.set(sub, hint);
+  else clientHintBySub.delete(sub);
 }
 
 function oneLine(value) {
@@ -1003,15 +1185,21 @@ async function firstDisclosure(account, deps) {
   return won === "OK";
 }
 
-async function composeReport({ outcome, subject, sourceApp, account, credit, supersedes, changed, deps }) {
+async function composeReport({ outcome, subject, sourceApp, account, credit, supersedes, changed, deps, depthJob, big }) {
   const stderr = String(outcome?.stderr || "");
   const parsed = outcome?.parsed || null;
   if (!outcome || outcome.code !== 0 || (!parsed && !String(outcome.report || "").trim())) {
+    if (depthJob) await depthJob.promise;
     logHosted(deps.requestId, `judge-exit ${outcome?.code ?? "none"}`);
     return { text: judgeFailureText(stderr, deps.requestId), isError: true };
   }
   const now = typeof deps.now === "number" ? new Date(deps.now) : new Date();
-  const layers = renderLayers(parsed || {}, { subject });
+  const layers = renderLayers(parsed || {}, { subject, big: big === true, deepenTest: deepenTestEnabled(deps.env) });
+  layers.provenance = provenanceLine(parsed, now);
+  if (depthJob) {
+    const depthOutcome = await depthJob.promise;
+    if (big === true && deepenTestEnabled(deps.env)) layers.deepen = renderDeepen(depthOutcome?.parsed?.depth) || "";
+  }
   const keep = account.records === "keep";
   if (keep) {
     await writePending(
@@ -1049,8 +1237,14 @@ async function storeJobResult(credential, result, deps) {
   await redis(deps, ["SET", jobRedisKey(credential.id), cipher, "EX", JOB_TTL_SECONDS]);
 }
 
+function deepenReply(layer) {
+  if (typeof layer !== "string") return `${DEEPEN_ONLY_BIG}\n`;
+  if (!layer.trim()) return "The judge did not answer the four depth questions.\n";
+  return layer.endsWith("\n") ? layer : `${layer}\n`;
+}
+
 function layerFromStored(stored, detail) {
-  const key = detail === "more" || detail === "options" || detail === "full" ? detail : "brief";
+  const key = ["more", "options", "full", "deepen", "provenance"].includes(detail) ? detail : "brief";
   if (key === "brief") return String(stored?.text || stored?.layers?.brief || "");
   const layer = stored?.layers?.[key];
   return typeof layer === "string" && layer.trim() ? layer : "";
@@ -1080,7 +1274,7 @@ async function callGrill(args, account, payload, params, deps) {
   if (!subject.trim()) return toolText("There's no subject to grill. Write it, show it to the person, then call again.", true);
   if (subject.length > MAX_SUBJECT_CHARS) return toolText(`The subject is ${subject.length} characters; trim it under ${MAX_SUBJECT_CHARS}.`, true);
   if (question.length > MAX_QUESTION_CHARS) return toolText(`The question is over ${MAX_QUESTION_CHARS} characters; shorten it.`, true);
-  const client = clientFromToken(payload, params);
+  const client = clientFromToken(payload, params, deps);
   const author = authorForJudge({ explicit: args.author, company: client.company });
   if (author.error) return toolText(author.error, true);
   if (account.records === "keep" && !keyFromEnv(deps.env, "GRILL_RECORD_KEY")) {
@@ -1109,6 +1303,8 @@ async function callGrill(args, account, payload, params, deps) {
   const credential = newJobCredential();
   await redis(deps, ["SADD", runningKey(account.id), credential.id]);
   await redis(deps, ["EXPIRE", runningKey(account.id), JOB_TTL_SECONDS]);
+  const wantDeepen = args.big === true && deepenTestEnabled(deps.env);
+  const depthJob = wantDeepen ? startJudge({ subject, author: author.author, apiKey, deps, deepen: true }) : null;
   const job = startJudge({
     subject,
     question,
@@ -1133,6 +1329,8 @@ async function callGrill(args, account, payload, params, deps) {
       supersedes: args.supersedes,
       changed: args.changed,
       deps,
+      depthJob,
+      big: wantDeepen,
     });
     if (account.records !== "keep" && !result.isError) {
       const credential = newJobCredential();
@@ -1143,16 +1341,25 @@ async function callGrill(args, account, payload, params, deps) {
   }
   const pending = job.promise.then(async (outcome) => {
     try {
-      const result = await composeReport({
-        outcome,
-        subject,
-        sourceApp: client.sourceApp,
-        account,
-        credit,
-        supersedes: args.supersedes,
-        changed: args.changed,
-        deps,
-      });
+      let result;
+      try {
+        result = await composeReport({
+          outcome,
+          subject,
+          sourceApp: client.sourceApp,
+          account,
+          credit,
+          supersedes: args.supersedes,
+          changed: args.changed,
+          deps,
+          depthJob,
+          big: wantDeepen,
+        });
+      } catch {
+        // Store a told failure rather than nothing, so grill_result does not read it as expired.
+        logHosted(deps.requestId, "compose");
+        result = { text: `${serviceFailureText("store", deps.requestId)}\n`, layers: null, isError: true };
+      }
       await storeJobResult(credential, result, deps);
     } finally {
       await release();
@@ -1171,9 +1378,14 @@ async function layerFromPending(account, deps, detail) {
 }
 
 async function callResult(args, account, deps) {
-  const detail = normalizeDetail(args.detail);
+  const detail = String(args.detail || "").trim().toLowerCase() === "provenance" ? "provenance" : normalizeDetail(args.detail);
+  if (detail === "deepen" && !deepenTestEnabled(deps.env)) return toolText(`${DEEPEN_OFF}\n`);
   const credential = parseJobCredential(typeof args.job_id === "string" ? args.job_id : "");
   if (!credential) {
+    if (detail === "deepen") {
+      const pendings = account.records === "keep" ? await loadPendings(account, deps) : [];
+      return toolText(deepenReply(pendings.at(-1)?.layers?.deepen));
+    }
     const layer = await layerFromPending(account, deps, detail);
     if (!layer.trim()) {
       return toolText("No stored layer for that. Pass the job id from the grill, including a follow: line, and do not show that line.", true);
@@ -1191,7 +1403,7 @@ async function callResult(args, account, deps) {
   }
   if (typeof cipher !== "string" || !cipher) {
     const running = Number(await redis(deps, ["SISMEMBER", runningKey(account.id), credential.id])) || 0;
-    if (!running) return toolText("No grill is running with that job id. It may already have expired.", true);
+    if (!running) return toolText(NO_JOB_TEXT, true);
     return toolText(hostedStillRunningText(credential.jobId));
   }
   let stored;
@@ -1201,6 +1413,7 @@ async function callResult(args, account, deps) {
     logHosted(deps.requestId, "job-decrypt");
     return toolText("Grill couldn't read that stored result. Run the grill again to get a fresh one.", true);
   }
+  if (detail === "deepen") return toolText(deepenReply(stored?.layers?.deepen));
   const layer = layerFromStored(stored, detail);
   if (!layer.trim()) return toolText("That layer is not stored for this grill.", true);
   return toolText(layer.endsWith("\n") ? layer : `${layer}\n`, Boolean(stored.isError));
@@ -1242,17 +1455,21 @@ async function callLookBack(args, account, deps) {
   return toolText(savedAny ? `${text}\n\nSaved with your decision record.` : text);
 }
 
-/** "What has Grill done for me?" A paste wins; otherwise every saved record, with its own look-back notes. */
-function changesForAccount(records, happened, account, saved) {
+/** How many saved records the changes view reads. Older ones are left out. */
+const SAVED_CHANGES_CAP = 200;
+
+/** "What has Grill done for me?" A paste wins; otherwise the latest saved records, with their own look-back notes. */
+export function changesForAccount(records, happened, account, saved) {
   if (parseRecords(records).length) return changesView({ records, happened });
   if (account.records !== "keep") {
     return "Saving is off on this account, so Grill has no records to read. Paste one or more decision records. Grill stores nothing either way.";
   }
-  const rows = saved.slice(-200);
+  const rows = saved.slice(-SAVED_CHANGES_CAP);
   const parsed = rows.map((row) => parseRecords(row.block || "")[0]).filter(Boolean);
   if (!parsed.length) return "No saved decisions yet. After a grill, say what you chose and it is saved here.";
   const summary = changeSummary({ records: parsed, outcomes: outcomesForSaved(rows) });
-  return changesText(summary, { storedNote: "Read from the records you chose to keep. Nothing new is stored." });
+  const readNote = saved.length > rows.length ? `Read the latest ${rows.length} of your ${saved.length} saved decisions.` : "";
+  return changesText(summary, { storedNote: "Read from the records you chose to keep. Nothing new is stored.", readNote });
 }
 
 function matchesRef(item, ref) {
@@ -1358,18 +1575,214 @@ async function identity(request, deps, { audience }) {
   if (queryHasToken(pageUrl(request).href)) return { error: unauthorized(publicOrigin(request)) };
   const origin = publicOrigin(request);
   const token = audience ? (request.headers.get("authorization") || "").match(/^Bearer\s+(\S+)$/i)?.[1] || "" : cookieValue(request.headers.get("cookie"), "__session");
-  if (!token) return { error: audience ? unauthorized(origin) : null, missing: true };
+  if (!audience) {
+    // Clerk's session token lives about a minute. After a handshake, Grill's own signed
+    // cookie keeps the person signed in to these pages for a few hours.
+    const clerk = token ? await clerkCookieIdentity(request, deps) : null;
+    if (clerk) return clerk;
+    const sub = readPageCookie(cookieValue(request.headers.get("cookie"), PAGE_COOKIE), deps.env, deps.now);
+    return sub ? { payload: { sub }, origin } : { error: null, missing: true };
+  }
+  if (!token) return { error: unauthorized(origin), missing: true };
   const url = jwksUrl(deps.env);
   if (!url || !deps.env.CLERK_ISSUER) throw new Coded("clerk");
-  const payload = await verifyJwt(token, {
+  const checked = await checkJwt(token, {
     issuer: deps.env.CLERK_ISSUER,
     jwksUrl: url,
     resource: mcpResource(origin),
     fetchImpl: deps.fetch,
-    requireAudience: audience,
+    requireAudience: true,
   });
-  if (!payload) return { error: audience ? unauthorized(origin) : null, missing: true };
-  return { payload, origin };
+  if (!checked.payload) {
+    logBearerReject(request, checked.reason, checked.claims);
+    return { error: unauthorized(origin), missing: true };
+  }
+  return { payload: checked.payload, origin };
+}
+
+async function clerkCookieIdentity(request, deps) {
+  const origin = publicOrigin(request);
+  const token = cookieValue(request.headers.get("cookie"), "__session");
+  const url = jwksUrl(deps.env);
+  if (!url || !deps.env.CLERK_ISSUER) throw new Coded("clerk");
+  const payload = await verifyJwt(token, { issuer: deps.env.CLERK_ISSUER, jwksUrl: url, fetchImpl: deps.fetch, requireAudience: false });
+  return payload ? { payload, origin } : null;
+}
+
+// Grill's pages run no Clerk script. A production Clerk instance only hands this site a
+// session through its handshake: the browser visits Clerk's Frontend API, which sends it
+// back with a one-time nonce that the server trades for the session cookie. This is the
+// same exchange Clerk's own server SDK does (format "nonce").
+const PAGE_COOKIE = "__Host-grill_page";
+const FLASH_COOKIE = "__Host-grill_flash";
+const FLASH_SECONDS = 120;
+const HANDSHAKE_STATE_COOKIE = "__Host-grill_hs";
+const HANDSHAKE_MARK = "__grill_hs";
+const PAGE_SESSION_SECONDS = 12 * 60 * 60;
+const CLERK_API_VERSION = "2026-05-12";
+const CLERK_HANDSHAKE_PARAMS = ["__clerk_handshake", "__clerk_handshake_nonce", "__clerk_help", "__clerk_db_jwt", "__clerk_hs_reason"];
+
+function pageSessionKey(env) {
+  const master = keyFromEnv(env, "GRILL_RECORD_KEY");
+  return master ? createHmac("sha256", master).update("grill-page-session-v1").digest() : null;
+}
+
+function pageCookieValue(sub, env, now) {
+  const key = pageSessionKey(env);
+  if (!key || !sub) return "";
+  const at = typeof now === "number" ? now : Date.now();
+  const body = Buffer.from(JSON.stringify({ sub, exp: Math.floor(at / 1000) + PAGE_SESSION_SECONDS })).toString("base64url");
+  return `${body}.${createHmac("sha256", key).update(body).digest("base64url")}`;
+}
+
+function readPageCookie(value, env, now) {
+  const key = pageSessionKey(env);
+  const [body, mac, extra] = String(value || "").split(".");
+  if (!key || !body || !mac || extra !== undefined) return "";
+  const want = createHmac("sha256", key).update(body).digest();
+  const got = Buffer.from(mac, "base64url");
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return "";
+  let claims;
+  try {
+    claims = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  } catch {
+    return "";
+  }
+  const at = Math.floor((typeof now === "number" ? now : Date.now()) / 1000);
+  if (typeof claims?.sub !== "string" || !claims.sub || typeof claims.exp !== "number" || claims.exp < at) return "";
+  return claims.sub;
+}
+
+function pageCookieHeader(value, maxAge = PAGE_SESSION_SECONDS) {
+  return `${PAGE_COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+}
+
+/** The new calendar link, carried to the next GET and then forgotten. Not stored on the server. */
+function flashCookieHeader(value, maxAge = FLASH_SECONDS) {
+  return `${FLASH_COOKIE}=${value ? encodeURIComponent(value) : ""}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+}
+
+function readFlashLink(request) {
+  const value = cookieValue(request.headers.get("cookie"), FLASH_COOKIE);
+  if (!value) return "";
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return "";
+  }
+  if (url.origin !== publicOrigin(request)) return "";
+  if (!/^\/decisions\/calendar\/[A-Za-z0-9_-]{43}\.ics$/.test(url.pathname)) return "";
+  return url.toString();
+}
+
+function seeOther(location, cookies = []) {
+  const headers = new Headers({ Location: location, "Cache-Control": "no-store" });
+  for (const cookie of cookies) headers.append("Set-Cookie", cookie);
+  return new Response(null, { status: 303, headers });
+}
+
+/** The page path and query this request was for, on the public origin, without handshake leftovers. */
+function cleanPageUrl(request, { keepMark = false } = {}) {
+  const url = pageUrl(request);
+  const clean = new URL(`${publicOrigin(request)}${url.pathname}`);
+  for (const [k, v] of url.searchParams) {
+    if (CLERK_HANDSHAKE_PARAMS.includes(k) || k === HANDSHAKE_MARK) continue;
+    clean.searchParams.append(k, v);
+  }
+  if (keepMark) clean.searchParams.set(HANDSHAKE_MARK, "done");
+  return clean;
+}
+
+/** A browser that may be signed in to Clerk: Clerk's client marker is set, or it just came back from sign-in. */
+function mayBeSignedIn(request) {
+  const uat = Number(cookieValue(request.headers.get("cookie"), "__client_uat"));
+  return (Number.isFinite(uat) && uat > 0) || pageUrl(request).searchParams.get("from") === "signin";
+}
+
+function handshakeStart(request, deps) {
+  if (request.method !== "GET" || pageUrl(request).searchParams.has(HANDSHAKE_MARK) || !mayBeSignedIn(request)) return null;
+  const issuer = String(deps.env.CLERK_ISSUER || "").replace(/\/+$/, "");
+  if (!/^https:\/\//.test(issuer)) return null;
+  const state = randomBytes(16).toString("base64url");
+  const back = cleanPageUrl(request);
+  back.searchParams.set(HANDSHAKE_MARK, state);
+  const to = new URL(`${issuer}/v1/client/handshake`);
+  to.searchParams.set("redirect_url", back.toString());
+  to.searchParams.set("__clerk_api_version", CLERK_API_VERSION);
+  to.searchParams.set("suffixed_cookies", "false");
+  to.searchParams.set("__clerk_hs_reason", "grill-page");
+  to.searchParams.set("format", "nonce");
+  const headers = new Headers({ Location: to.toString(), "Cache-Control": "no-store" });
+  headers.append("Set-Cookie", `${HANDSHAKE_STATE_COOKIE}=${state}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
+  return new Response(null, { status: 307, headers });
+}
+
+/** The cookie directives Clerk sent back: from the nonce (Backend API) or a signed handshake token. */
+async function handshakeDirectives(request, deps) {
+  const url = pageUrl(request);
+  const cookies = request.headers.get("cookie");
+  const nonce = url.searchParams.get("__clerk_handshake_nonce") || cookieValue(cookies, "__clerk_handshake_nonce");
+  const token = url.searchParams.get("__clerk_handshake") || cookieValue(cookies, "__clerk_handshake");
+  if (nonce) {
+    const secret = deps.env.CLERK_SECRET_KEY;
+    if (!secret) throw new Coded("clerk");
+    const res = await deps.fetch(`${CLERK_API}/v1/clients/handshake_payload?nonce=${encodeURIComponent(nonce)}`, {
+      headers: { Authorization: `Bearer ${secret}`, "Clerk-API-Version": CLERK_API_VERSION },
+      redirect: "error",
+    });
+    if (!res.ok) return [];
+    const body = await res.json().catch(() => null);
+    return Array.isArray(body?.directives) ? body.directives.filter((x) => typeof x === "string") : [];
+  }
+  if (token) {
+    const payload = await verifiedPayload(token, jwksUrl(deps.env), deps.fetch);
+    return Array.isArray(payload?.handshake) ? payload.handshake.filter((x) => typeof x === "string") : [];
+  }
+  return null;
+}
+
+/**
+ * Back from Clerk's handshake. Only a return that carries the state this browser was sent
+ * with is used, so a link with someone else's nonce cannot sign this browser in as them.
+ */
+async function handshakeReturn(request, deps) {
+  if (request.method !== "GET") return null;
+  const url = pageUrl(request);
+  const mark = url.searchParams.get(HANDSHAKE_MARK) || "";
+  const state = cookieValue(request.headers.get("cookie"), HANDSHAKE_STATE_COOKIE);
+  if (!mark || mark === "done") return null;
+  const headers = new Headers({ "Cache-Control": "no-store" });
+  headers.append("Set-Cookie", `${HANDSHAKE_STATE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
+  let sub = "";
+  if (state && state.length === mark.length && timingSafeEqual(Buffer.from(state), Buffer.from(mark))) {
+    const directives = (await handshakeDirectives(request, deps)) || [];
+    let session = "";
+    for (const directive of directives) {
+      const name = directive.slice(0, directive.indexOf("=")).trim();
+      // Clerk's own cookies only, as Clerk sent them: the session, its client marker, and handshake clean-up.
+      if (!/^__(session|client_uat|refresh|clerk_[a-z_]+)$/.test(name) || /[\r\n]/.test(directive)) continue;
+      headers.append("Set-Cookie", directive);
+      if (name === "__session") session = directive.slice(directive.indexOf("=") + 1).split(";")[0].trim();
+    }
+    if (session) {
+      const payload = await verifyJwt(session, { issuer: deps.env.CLERK_ISSUER, jwksUrl: jwksUrl(deps.env), fetchImpl: deps.fetch, requireAudience: false });
+      if (payload?.sub) sub = payload.sub;
+    }
+  }
+  if (sub) {
+    const value = pageCookieValue(sub, deps.env, deps.now);
+    if (value) headers.append("Set-Cookie", pageCookieHeader(value));
+    const clean = cleanPageUrl(request);
+    // `from=signin` only marks this return. An assistant hint on /judge stays.
+    const keptFrom = clean.searchParams.getAll("from").filter((value) => value !== "signin");
+    clean.searchParams.delete("from");
+    for (const value of keptFrom) clean.searchParams.append("from", value);
+    headers.set("Location", clean.toString());
+  } else {
+    headers.set("Location", cleanPageUrl(request, { keepMark: true }).toString());
+  }
+  return new Response(null, { status: 303, headers });
 }
 
 function sseWanted(request) {
@@ -1393,7 +1806,8 @@ function rpcResponse(id, result, request) {
 
 export async function handleMcp(request, deps) {
   const id = requestId();
-  deps = { ...deps, requestId: id };
+  const userAgent = String(request.headers.get("user-agent") || "").replace(/[\r\n]+/g, " ").slice(0, 300);
+  deps = { ...deps, requestId: id, userAgent };
   if (!hostedEnabled(deps.env)) return notFound();
   let toolCallId;
   try {
@@ -1433,6 +1847,7 @@ export async function handleMcp(request, deps) {
     toolCallId = msg.method === "tools/call" ? rpcId : undefined;
     if (rpcId === undefined || rpcId === null) return new Response(null, { status: 202 });
     if (msg.method === "initialize") {
+      rememberClientCompany(who.payload, msg.params, userAgent);
       return rpcResponse(
         rpcId,
         {
@@ -1450,7 +1865,7 @@ export async function handleMcp(request, deps) {
       const user = await clerkUser(who.payload.sub, deps);
       const gate = await admit(user, deps, who.payload.sub);
       if (!gate.email) return rpcResponse(rpcId, toolText("Grill needs a verified email on this account before it can run.", true), request);
-      if (!gate.allowed) return rpcResponse(rpcId, toolText(INVITE_ONLY, true), request);
+      if (!gate.allowed) return rpcResponse(rpcId, toolText(inviteOnlyText(publicOrigin(request)), true), request);
       const personId = await resolvePerson(who.payload.sub, gate.email, deps);
       const account = await ensureAccount(personId, gate.email, deps, gate.human);
       await countActive(account, deps);
@@ -1549,7 +1964,8 @@ function authMetadataKind(request) {
  * connector host (RFC 8414 path insertion included) instead of only following
  * authorization_servers on the protected-resource document. The body is Clerk's
  * document at CLERK_ISSUER, returned as JSON with CORS, cached briefly. A failed
- * read redirects to that same document. Protected-resource metadata is untouched.
+ * read redirects to that same document. Protected-resource metadata is a separate
+ * document: the /mcp path serves the same JSON as the root path.
  */
 export async function handleAuthorizationServer(request, deps) {
   if (!hostedEnabled(deps.env)) return notFound();
@@ -1600,7 +2016,20 @@ export async function handleProtectedResource(request, deps) {
 }
 
 function returnTo(request) {
-  const back = new URL(`${publicOrigin(request)}${pageUrl(request).pathname}`);
+  const url = pageUrl(request);
+  const back = new URL(`${publicOrigin(request)}${url.pathname}`);
+  // The decision is the whole point of coming back to /judge. Keep a short q.
+  // An over-long one is not copied into the sign-in company's redirect.
+  // `from=signin` is this return. An assistant hint is a second `from`, so both survive.
+  if (url.pathname === "/judge") {
+    const q = url.searchParams.get("q");
+    if (typeof q === "string" && q.length > JUDGE_PACKET_MAX) back.searchParams.set("over", "1");
+    else if (typeof q === "string" && q.length > 0) back.searchParams.set("q", q);
+    const hint = judgeHintFromList(url.searchParams.getAll("from"));
+    back.searchParams.set("from", "signin");
+    if (hint) back.searchParams.append("from", hint.name);
+    return back.toString();
+  }
   back.searchParams.set("from", "signin");
   return back.toString();
 }
@@ -1614,49 +2043,89 @@ function signInRedirect(request, deps) {
   });
 }
 
+function terminal(title, inner) {
+  return page(title, `${inner}<p><a href="/">Back to Grill</a></p>`);
+}
+
 function signInMissed(request, deps) {
   const again = signInUrl(deps.env, returnTo(request));
   const link = again ? `<p><a href="${esc(again)}">Try sign-in again</a></p>` : "";
-  return page(
-    "Grill",
+  return terminal(
+    "Sign-in didn't come back · Grill",
     `<h1>Sign-in didn't come back to this page.</h1>
-    <p>The sign-in page is open, but this browser has no session for this site. Add this site's address to Clerk's allowed origins, or open Grill on your own domain, then try again.</p>
+    <p>This browser has no session for this site. Try signing in again. If it still doesn't come back, write to support@grillyour.ai.</p>
     ${link}`,
   );
 }
 
-async function pageUser(request, deps) {
+async function pageVisitor(request, deps) {
   const who = await identity(request, deps, { audience: false });
   if (who.error) return { redirect: who.error };
   if (who.missing || !who.payload) {
+    const back = await handshakeReturn(request, deps);
+    if (back) return { redirect: back };
+    if (request.method === "POST") {
+      // A form sent after the session lapsed: go back to the page, which signs in again. The form is not applied.
+      return { redirect: new Response(null, { status: 303, headers: { Location: cleanPageUrl(request).toString(), "Cache-Control": "no-store" } }) };
+    }
+    const start = handshakeStart(request, deps);
+    if (start) return { redirect: start };
     if (pageUrl(request).searchParams.get("from") === "signin") return { html: signInMissed(request, deps) };
     const redirect = signInRedirect(request, deps);
-    if (!redirect) return { html: page("Grill", "<h1>Sign-in isn't set up.</h1><p>Set CLERK_SIGN_IN_URL to your Clerk Account Portal sign-in page.</p>") };
+    if (!redirect) return { html: terminal("Sign-in isn't set up · Grill", "<h1>Sign-in isn't set up.</h1><p>This page can't open a sign-in right now. Write to support@grillyour.ai.</p>") };
     return { redirect };
   }
   const user = await clerkUser(who.payload.sub, deps);
   if (!user) return { missing: true };
-  const gate = await admit(user, deps, who.payload.sub);
-  if (!gate.email) return { html: page("Grill", "<h1>Grill needs a verified email on this account.</h1>") };
-  if (!gate.allowed) return { html: page("Grill", `<h1>${esc(INVITE_ONLY)}</h1>`) };
-  const personId = await resolvePerson(who.payload.sub, gate.email, deps);
+  const email = verifiedEmail(user);
+  if (!email) return { html: terminal("Verified email needed · Grill", "<h1>Grill needs a verified email on this account.</h1><p>Add one with your sign-in company, then come back.</p>") };
+  return { user, email, sub: who.payload.sub };
+}
+
+async function pageUser(request, deps) {
+  const visitor = await pageVisitor(request, deps);
+  if (visitor.redirect || visitor.missing || visitor.html || !visitor.user) return visitor;
+  const gate = await admit(visitor.user, deps, visitor.sub);
+  if (!gate.email) return { html: terminal("Verified email needed · Grill", "<h1>Grill needs a verified email on this account.</h1><p>Add one with your sign-in company, then come back.</p>") };
+  if (!gate.allowed) return { html: inviteOnlyPage() };
+  const personId = await resolvePerson(visitor.sub, gate.email, deps);
   const account = await ensureAccount(personId, gate.email, deps, gate.human);
-  return { account, email: gate.email, sub: who.payload.sub };
+  return { account, email: gate.email, sub: visitor.sub };
+}
+
+function inviteOnlyPage() {
+  return terminal(
+    "Invite only · Grill",
+    `<h1>Grill in chat is invite-only for now.</h1>
+    <p>This email isn't on the list yet. If you were invited, disconnect Grill, connect again, and sign in with the email your invite went to.</p>
+    <p>If you have an invite code, <a href="/redeem">enter it here</a>.</p>
+    <p>To ask for an invite, write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p>`,
+  );
 }
 
 function html(status, body) {
   return new Response(body, { status, headers: WELCOME_HEADERS });
 }
 
+function htmlPage(body, { clearFlash = false } = {}) {
+  const res = html(200, body);
+  if (clearFlash) res.headers.append("Set-Cookie", flashCookieHeader("", 0));
+  return res;
+}
+
+function showDay(iso) {
+  return formatDay(iso) || String(iso || "");
+}
+
 function chainNote(row, byId) {
   const parts = [];
   if (row.replacesId && byId.get(row.replacesId)) {
     const prev = byId.get(row.replacesId);
-    parts.push(`Replaces ${prev.date} ${prev.title}.`);
+    parts.push(`Replaces ${showDay(prev.date)} ${prev.title}.`);
   }
   if (row.replacedByIds?.length) {
     const next = row.replacedByIds.map((id) => byId.get(id)).filter(Boolean);
-    if (next.length) parts.push(`Later call: ${next.map((item) => `${item.date} ${item.title}`).join("; ")}.`);
+    if (next.length) parts.push(`Later call: ${next.map((item) => `${showDay(item.date)} ${item.title}`).join("; ")}.`);
   }
   return parts.join(" ");
 }
@@ -1698,7 +2167,7 @@ function renderDue(rows, now) {
     .map((row) => {
       const late = daysOverdue(row.review, now);
       const when = late === 0 ? "due today" : `${late} day${late === 1 ? "" : "s"} overdue`;
-      return `<li>${esc(row.title || "Untitled")} · review ${esc(row.review)} · ${esc(when)}</li>`;
+      return `<li>${esc(row.title || "Untitled")} · review ${esc(showDay(row.review))} · ${esc(when)}</li>`;
     })
     .join("");
   return `<section class="banner">
@@ -1738,27 +2207,53 @@ function renderCalendar(action, calendar, freshUrl) {
   </section>`;
 }
 
+const APP_LABELS = { claude: "Claude", "claude-code": "Claude Code", chatgpt: "ChatGPT", grok: "Grok", gemini: "Gemini", meta: "Meta AI", muse: "Meta AI" };
+
+/** One short line: the verdict in bold, the day, the app if known, and the look-back date in words. */
+function recordMeta(row) {
+  const parts = [];
+  if (row.verdict) parts.push(`<strong>${esc(row.verdict)}</strong>`);
+  if (row.date) parts.push(esc(showDay(row.date)));
+  const app = String(row.sourceApp || "").trim();
+  if (app && app !== "unknown") parts.push(`from ${esc(APP_LABELS[app] || app)}`);
+  if (row.review) parts.push(`Look back on ${esc(showDay(row.review))}`);
+  return `<p class="record-meta">${parts.join(" · ")}</p>`;
+}
+
+const EMPTY_DECISIONS = "<p><strong>No decisions saved yet.</strong></p>\n    <p>Say “grill this: …” in your AI. When you tell it your call, it’s saved here.</p>";
+
 function renderDecisions(account, rows, credit, habits, extra = {}) {
   const linked = linkChains(rows);
   const byId = new Map(linked.map((row) => [row.id, row]));
   const cards = [...linked].reverse().map((row) => {
-    const look = row.lookback?.happened ? `<p>Look-back: ${esc(row.lookback.happened)}</p>` : "<p>Look-back: not yet.</p>";
+    const look = row.lookback?.happened ? `<p>Look-back: ${esc(row.lookback.happened)}</p>` : "";
     const chain = chainNote(row, byId);
+    const chained = Boolean(row.replacesId || row.replacedByIds?.length);
+    const id = encodeURIComponent(row.id);
+    const chainLink = chained ? ` <a class="button" href="/decisions?confirm=delete-chain&amp;id=${esc(id)}">Delete this chain</a>` : "";
     return `<article class="banner">
-      <h2>${esc(row.title || "Untitled")}</h2>
-      <p>${esc(row.date || "")} · ${esc(row.verdict || "")} · ${esc(row.sourceApp || "unknown")} · review ${esc(row.review || "")}</p>
+      <p class="record-title">${esc(row.title || "Untitled")}</p>
+      ${recordMeta(row)}
       ${chain ? `<p>${esc(chain)}</p>` : ""}
       ${look}
-      <form method="post" action="/decisions"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="${esc(row.id)}"><button type="submit">Delete this record</button></form>
-      <form method="post" action="/decisions"><input type="hidden" name="action" value="delete-chain"><input type="hidden" name="id" value="${esc(row.id)}"><button type="submit">Delete this chain</button></form>
+      <p class="row"><a class="button" href="/decisions?confirm=delete&amp;id=${esc(id)}">Delete this record</a>${chainLink}</p>
     </article>`;
   });
   const keeping = account.records === "keep";
+  const records = cards.length
+    ? `${cards.join("\n")}
+    <p><a class="button" href="/decisions?confirm=delete-all">Delete all records</a></p>`
+    : EMPTY_DECISIONS;
   return page(
     "Your decisions · Grill",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Your decisions</h1>
-    <p>${credit?.out ? esc(OUT_OF_CREDIT) : `About ${Math.max(0, Math.floor((credit?.remaining || 0) / 0.03))} grills of credit left.`}</p>
+    ${renderDue(rows, extra.now)}
+    ${renderHabits(habits)}
+    ${renderChanges(rows)}
+    ${records}
+    <h2>Manage</h2>
+    <p>${credit?.out ? esc(OUT_OF_CREDIT) : esc(allowanceLine(credit?.remaining, extra.env))}</p>
     <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them.</p>
     <form method="post" action="/decisions" class="row">
       <input type="hidden" name="action" value="records">
@@ -1766,12 +2261,43 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
       <button type="submit" name="value" value="off">Don't keep records</button>
     </form>
     <p class="row"><a class="button" href="/decisions?export=text">Export as text</a> <a class="button" href="/decisions?export=json">Export as JSON</a> <a href="/account">Account</a></p>
-    ${renderDue(rows, extra.now)}
-    ${renderCalendar("/decisions", extra.calendar, extra.freshUrl || "")}
-    ${renderHabits(habits)}
-    ${renderChanges(rows)}
-    ${cards.join("\n") || "<p>No records yet.</p>"}
-    <form method="post" action="/decisions"><input type="hidden" name="action" value="delete-all"><input type="hidden" name="confirm" value="delete"><button type="submit">Delete all records</button></form>`,
+    ${renderCalendar("/decisions", extra.calendar, extra.freshUrl || "")}`,
+  );
+}
+
+/** Asks before one record, or a whole chain, is deleted. The confirm value is the button they press. */
+function renderDeleteOneConfirm(row, chainCount) {
+  const chain = chainCount > 0;
+  const what = chain ? "Delete this chain" : "Delete this record";
+  const detail = chain
+    ? `This removes ${chainCount} record${chainCount === 1 ? "" : "s"} in this chain, including “${esc(row.title || "Untitled")}”.`
+    : `This removes “${esc(row.title || "Untitled")}”.`;
+  return page(
+    `${what}? · Grill`,
+    `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
+    <h1>${what}?</h1>
+    <p>${detail} Export first if you want a copy. This cannot be undone.</p>
+    <form method="post" action="/decisions">
+      <input type="hidden" name="action" value="${chain ? "delete-chain" : "delete"}">
+      <input type="hidden" name="id" value="${esc(row.id)}">
+      <button type="submit" name="confirm" value="delete">${what}</button>
+    </form>
+    <p><a href="/decisions">Keep it</a></p>`,
+  );
+}
+
+/** A page the person has to read. The confirm value is the button they press, not a hidden field. */
+function renderDeleteAllConfirm() {
+  return page(
+    "Delete all records? · Grill",
+    `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
+    <h1>Delete all records?</h1>
+    <p>This removes every saved decision on this page. Export first if you want a copy. This cannot be undone.</p>
+    <form method="post" action="/decisions">
+      <input type="hidden" name="action" value="delete-all">
+      <button type="submit" name="confirm" value="delete">Delete all records</button>
+    </form>
+    <p><a href="/decisions">Keep them</a></p>`,
   );
 }
 
@@ -1782,7 +2308,8 @@ function renderAccount(account, credit, extra = {}) {
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Your account</h1>
     <p>${esc(account.email)}</p>
-    <p>Records: ${esc(keeping)}. ${credit?.out ? esc(OUT_OF_CREDIT) : `About ${Math.max(0, Math.floor((credit?.remaining || 0) / 0.03))} grills of credit left.`}</p>
+    <p>Records: ${esc(keeping)}.</p>
+    <p>${credit?.out ? esc(OUT_OF_CREDIT) : esc(allowanceLine(credit?.remaining, extra.env))}</p>
     <p>Grill holds a model-router key for you. It is not shown here. The write-up you approve passes through Grill's server in memory and is not stored.</p>
     <form method="post" action="/account" class="row">
       <input type="hidden" name="action" value="records">
@@ -1791,12 +2318,22 @@ function renderAccount(account, credit, extra = {}) {
     </form>
     <p><a href="/decisions">Your decisions</a></p>
     ${renderCalendar("/account", extra.calendar, extra.freshUrl || "")}
+    <p><a class="button" href="/account?confirm=delete">Delete this account</a></p>
+    <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
+  );
+}
+
+function renderDeleteAccountConfirm() {
+  return page(
+    "Delete this account? · Grill",
+    `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
+    <h1>Delete this account?</h1>
+    <p>This removes your records, switches off the model-router key, and deletes the sign-in. This cannot be undone.</p>
     <form method="post" action="/account">
       <input type="hidden" name="action" value="delete-account">
-      <input type="hidden" name="confirm" value="delete">
-      <button type="submit">Delete this account</button>
+      <button type="submit" name="confirm" value="delete">Delete this account</button>
     </form>
-    <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
+    <p><a href="/account">Keep this account</a></p>`,
   );
 }
 
@@ -1880,6 +2417,305 @@ async function deleteAccount(account, deps, sub) {
   creditCache.delete(account.id);
 }
 
+const REDEEM_NARROW = `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>`;
+const REDEEM_ERRORS = {
+  empty: "Enter an invite code.",
+  bad: "That code didn't work.",
+  used: "That code has been used up.",
+};
+
+function redeemSpec(code, env) {
+  const trimmed = String(code ?? "").trim();
+  if (!trimmed) return { reason: "empty" };
+  const normalized = normalizeInviteCode(trimmed);
+  if (!normalized) return { reason: "bad" };
+  const spec = parseInviteCodes(env).find((row) => row.code === normalized);
+  if (!spec) return { reason: "bad" };
+  return { spec, normalized };
+}
+
+function renderRedeemed(env) {
+  return page(
+    "You're in · Grill",
+    `${REDEEM_NARROW}
+    <h1>You're in.</h1>
+    <p>Early-tester access is on for this email.</p>
+    <p>Free for life: $${Number.isInteger(userMonthlyCapUsd(env)) ? String(userMonthlyCapUsd(env)) : userMonthlyCapUsd(env).toFixed(2)} of use each month, resets on the 1st.</p>
+    <p>Next: <a href="/start">connect Grill to your AI</a>.</p>
+    <p><a class="button" href="/decisions">Your decisions</a></p>
+    <p><a href="/">Back to Grill</a></p>`,
+  );
+}
+
+function renderInviteOff() {
+  return terminal(
+    "Invite codes aren't on · Grill",
+    `<h1>Invite codes aren't on.</h1>
+    <p>There isn't an invite code to enter right now. To ask for an invite, write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p>`,
+  );
+}
+
+function renderRedeemForm(error) {
+  const note = REDEEM_ERRORS[error] ? `<p><strong>${REDEEM_ERRORS[error]}</strong></p>` : "";
+  return page(
+    "Enter an invite code · Grill",
+    `${REDEEM_NARROW}
+    <h1>Enter an invite code</h1>
+    <p>Grill in chat is invite-only. A code lets you in as an early tester: free, $5 of use each month, reset on the 1st.</p>
+    ${note}
+    <form method="post" action="/redeem">
+      <label for="code">Invite code</label>
+      <input id="code" name="code" type="text" maxlength="80" autocomplete="off" spellcheck="false" required>
+      <p class="row"><button type="submit">Continue</button></p>
+    </form>
+    <p><a href="/">Back to Grill</a></p>`,
+  );
+}
+
+function renderRedeemConfirm(code) {
+  return page(
+    "Use this invite code? · Grill",
+    `${REDEEM_NARROW}
+    <h1>Use this invite code?</h1>
+    <p>This gives you early-tester access: free, $5 of use each month, reset on the 1st.</p>
+    <p class="banner">${esc(code)}</p>
+    <form method="post" action="/redeem">
+      <input type="hidden" name="code" value="${esc(code)}">
+      <button type="submit" name="confirm" value="redeem">Use this code</button>
+    </form>
+    <p><a href="/redeem">Use a different code</a></p>
+    <p><a href="/">Back to Grill</a></p>`,
+  );
+}
+
+/**
+ * Count one use and remember the email. The same email a second time does not count again.
+ * Past the max, the count is put back and this email is not granted.
+ */
+async function redeemInvite(email, code, deps) {
+  if (!inviteCodesEnabled(deps.env)) return { ok: false, reason: "off" };
+  const found = redeemSpec(code, deps.env);
+  if (found.reason) return { ok: false, reason: found.reason };
+  const { spec, normalized } = found;
+  const who = cleanEmail(email);
+  if (!who) return { ok: false, reason: "bad" };
+  const grantKey = inviteGrantKey(who);
+  const known = new Set(parseInviteCodes(deps.env).map((row) => inviteCodeHash(row.code)));
+  const existing = await redis(deps, ["GET", grantKey]);
+  if (typeof existing === "string" && known.has(existing)) return { ok: true, already: true };
+  if (spec.max != null) {
+    const current = Number(await redis(deps, ["GET", inviteUsesKey(normalized)])) || 0;
+    if (current >= spec.max) return { ok: false, reason: "used" };
+  }
+  if (existing) await redis(deps, ["DEL", grantKey]);
+  const claimed = await redis(deps, ["SET", grantKey, inviteCodeHash(normalized), "NX"]);
+  if (!claimed) return { ok: true, already: true };
+  let n;
+  try {
+    n = Number(await redis(deps, ["INCR", inviteUsesKey(normalized)]));
+  } catch (error) {
+    await redis(deps, ["DEL", grantKey]);
+    throw error;
+  }
+  if (spec.max != null && n > spec.max) {
+    await redis(deps, ["DEL", grantKey]);
+    await redis(deps, ["INCRBY", inviteUsesKey(normalized), "-1"]);
+    return { ok: false, reason: "used" };
+  }
+  return { ok: true, already: false };
+}
+
+async function previewInvite(email, code, deps) {
+  if (!inviteCodesEnabled(deps.env)) return { ok: false, reason: "off" };
+  if (await inviteGrantAllows(email, deps)) return { ok: true, already: true };
+  const found = redeemSpec(code, deps.env);
+  if (found.reason) return { ok: false, reason: found.reason };
+  if (found.spec.max != null) {
+    const current = Number(await redis(deps, ["GET", inviteUsesKey(found.normalized)])) || 0;
+    if (current >= found.spec.max) return { ok: false, reason: "used" };
+  }
+  return { ok: true, confirm: true, code: found.normalized };
+}
+
+export async function handleRedeem(request, deps) {
+  const id = requestId();
+  deps = { ...deps, requestId: id };
+  if (!hostedEnabled(deps.env)) return notFound();
+  if (request.method === "DELETE") return methodNotAllowed();
+  if (request.method !== "GET" && request.method !== "POST" && request.method !== "HEAD") return methodNotAllowed();
+  try {
+    const visitor = await pageVisitor(request, deps);
+    if (visitor.redirect) return visitor.redirect;
+    if (visitor.missing) return html(200, terminal("Account deleted · Grill", "<h1>This account has been deleted.</h1>"));
+    if (visitor.html) return html(200, visitor.html);
+    const gate = await admit(visitor.user, deps, visitor.sub);
+    if (gate.allowed) {
+      if (request.method === "POST") return seeOther(`${publicOrigin(request)}/redeem?done=1`);
+      return htmlPage(renderRedeemed(deps.env));
+    }
+    if (!inviteCodesEnabled(deps.env)) return html(200, renderInviteOff());
+    if (request.method === "POST") {
+      const form = new URLSearchParams(await request.text());
+      const typed = form.get("code") ?? "";
+      if (form.get("confirm") === "redeem") {
+        const result = await redeemInvite(visitor.email, typed, deps);
+        if (result.ok) return seeOther(`${publicOrigin(request)}/redeem?done=1`);
+        if (result.reason === "off") return html(200, renderInviteOff());
+        return html(200, renderRedeemForm(result.reason));
+      }
+      const preview = await previewInvite(visitor.email, typed, deps);
+      if (preview.already) return seeOther(`${publicOrigin(request)}/redeem?done=1`);
+      if (preview.confirm) return html(200, renderRedeemConfirm(preview.code));
+      if (preview.reason === "off") return html(200, renderInviteOff());
+      return html(200, renderRedeemForm(preview.reason || "bad"));
+    }
+    return htmlPage(renderRedeemForm(""));
+  } catch (error) {
+    const code = error instanceof Coded ? error.code : "";
+    if (code) logHosted(id, code);
+    else logHosted(id, `error ${describeError(error)}`);
+    return fixedError(id, 500, code);
+  }
+}
+
+const JUDGE_BODY_MAX = 60_000;
+
+/** Company names for the one line on /judge. The keys are clientCompanyHint's companies. */
+const JUDGE_FROM_LABEL = {
+  google: "Google",
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  "x-ai": "xAI",
+};
+
+function needsRecordChoice(account) {
+  return account?.records !== "keep" && account?.records !== "off";
+}
+
+/**
+ * A /judge `from` run through the same clientCompanyHint list as a connector.
+ * `signin` is the sign-in return, not an assistant. Anything else excludes nobody.
+ */
+function judgeHint(raw) {
+  const name = String(raw || "").trim();
+  if (!name || name.toLowerCase() === "signin") return null;
+  const mapped = sourceAppFromClient({ clientInfo: { name } });
+  const label = JUDGE_FROM_LABEL[mapped.company];
+  if (!mapped.company || !label) return null;
+  return { name, company: mapped.company, label };
+}
+
+function judgeHintFromList(values) {
+  for (const value of values) {
+    const hint = judgeHint(value);
+    if (hint) return hint;
+  }
+  return null;
+}
+
+/** The decision from `q`, or a refusal. An over-long value is not returned. */
+function packetFromQuery(url) {
+  if (url.searchParams.get("over") === "1") return { text: "", tooLong: true };
+  const q = url.searchParams.get("q");
+  if (typeof q !== "string" || q.length === 0) return { text: "", tooLong: false };
+  if (q.length > JUDGE_PACKET_MAX) return { text: "", tooLong: true };
+  return { text: q, tooLong: false };
+}
+
+/** What a person copies. A job id is for an assistant, so it never reaches this page. */
+function personVerdict(text) {
+  const raw = String(text || "").trim();
+  if (/^Still grilling \(job /.test(raw)) {
+    return "The judge is still working, and this page has nothing to copy yet. Wait a minute, then press the button again with the same decision.";
+  }
+  return raw.replace(/\n*follow:\s*\S+\s*$/g, "").trim();
+}
+
+function renderJudge({ packet, tooLong, askRecords, verdict, note, hint }) {
+  const capped = tooLong ? `<p>That decision is over ${JUDGE_PACKET_MAX} characters. Shorten it, then try again.</p>` : "";
+  const empty = note ? `<p>${esc(note)}</p>` : "";
+  const fromLine = hint ? `<p class="small">Judge: not from ${esc(hint.label)}</p>` : "";
+  const fromField = hint ? `<input type="hidden" name="from" value="${esc(hint.name)}">` : "";
+  const result = verdict
+    ? `<h2>Verdict</h2>
+    <p>Copy this back into your assistant.</p>
+    <pre id="verdict" class="config">${esc(verdict)}</pre>`
+    : "";
+  const buttons = askRecords
+    ? `<p>${esc(CONSENT_TEXT.split("\n")[0])}</p>
+    <div class="row"><button type="submit" name="keep" value="yes">Yes</button> <button type="submit" name="keep" value="no">No</button></div>`
+    : `<p class="row"><button type="submit">Grill this</button></p>`;
+  return page(
+    "Grill this decision · Grill",
+    `<h1>Grill this decision</h1>
+    <p>This uses the same outside judge as Grill in chat. Nothing is sent until you press the button.</p>
+    ${capped}${empty}${fromLine}${result}
+    <form method="post" action="/judge">
+      ${fromField}
+      <label for="q">Decision</label>
+      <textarea id="q" name="q">${esc(packet || "")}</textarea>
+      ${buttons}
+    </form>
+    <p class="small"><a href="/decisions">Your decisions</a></p>`,
+  );
+}
+
+/**
+ * A signed-in page for an assistant that cannot add a connector.
+ * GET only shows the decision from `q`. POST runs the same hosted grill as
+ * the connector: the same judge, the same caps, and the same record default.
+ * A `q` over JUDGE_PACKET_MAX is refused and not sent.
+ */
+export async function handleJudge(request, deps) {
+  const id = requestId();
+  deps = { ...deps, requestId: id };
+  if (!hostedEnabled(deps.env)) return notFound();
+  if (request.method !== "GET" && request.method !== "POST" && request.method !== "HEAD") return methodNotAllowed();
+  try {
+    const session = await pageUser(request, deps);
+    if (session.redirect) return session.redirect;
+    if (session.missing) return html(200, terminal("Account deleted · Grill", "<h1>This account has been deleted.</h1>"));
+    if (session.html) return html(200, session.html);
+    const url = pageUrl(request);
+    if (request.method === "GET" || request.method === "HEAD") {
+      const packet = packetFromQuery(url);
+      const hint = judgeHintFromList(url.searchParams.getAll("from"));
+      return htmlPage(renderJudge({ packet: packet.text, tooLong: packet.tooLong, askRecords: needsRecordChoice(session.account), verdict: "", hint }));
+    }
+    const raw = await request.text();
+    if (raw.length > JUDGE_BODY_MAX) {
+      return htmlPage(renderJudge({ packet: "", tooLong: true, askRecords: needsRecordChoice(session.account), verdict: "" }));
+    }
+    const form = new URLSearchParams(raw);
+    const posted = form.get("q") ?? "";
+    const hint = judgeHint(form.get("from"));
+    const pageFor = (extra) => htmlPage(renderJudge({ packet: extra.packet ?? "", tooLong: false, askRecords: needsRecordChoice(session.account), verdict: "", hint, ...extra }));
+    if (posted.length > JUDGE_PACKET_MAX) {
+      return pageFor({ packet: "", tooLong: true });
+    }
+    if (!posted.trim()) {
+      return pageFor({ packet: posted, note: "There's no decision to grill." });
+    }
+    const keep = form.get("keep");
+    const args = { subject: posted };
+    if (keep === "yes") args.keep_records = true;
+    else if (keep === "no") args.keep_records = false;
+    const waited = { ...deps, waitMs: Number.isInteger(deps.waitMs) ? deps.waitMs : 240_000 };
+    const params = hint ? { clientInfo: { name: hint.name } } : {};
+    const result = await callGrill(args, session.account, { sub: session.sub }, params, waited);
+    const text = result?.content?.[0]?.text || "";
+    if (text.trim() === CONSENT_TEXT) {
+      return pageFor({ packet: posted, askRecords: true });
+    }
+    return pageFor({ packet: posted, verdict: personVerdict(text), askRecords: needsRecordChoice(session.account) });
+  } catch (error) {
+    const code = error instanceof Coded ? error.code : "";
+    if (code) logHosted(id, code);
+    else logHosted(id, `error ${describeError(error)}`);
+    return fixedError(id, 500, code);
+  }
+}
+
 export async function handleDecisions(request, deps) {
   const id = requestId();
   deps = { ...deps, requestId: id };
@@ -1888,12 +2724,21 @@ export async function handleDecisions(request, deps) {
   try {
     const session = await pageUser(request, deps);
     if (session.redirect) return session.redirect;
-    if (session.missing) return html(200, page("Grill", "<h1>This account has been deleted.</h1>"));
+    if (session.missing) return html(200, terminal("Account deleted · Grill", "<h1>This account has been deleted.</h1>"));
     if (session.html) return html(200, session.html);
     const url = pageUrl(request);
     let fresh = "";
     if (request.method === "GET" && url.searchParams.get("export") === "text") return exportRecords(session.account, deps, "text");
     if (request.method === "GET" && url.searchParams.get("export") === "json") return exportRecords(session.account, deps, "json");
+    if (request.method === "GET" && url.searchParams.get("confirm") === "delete-all") return html(200, renderDeleteAllConfirm());
+    const confirmOne = request.method === "GET" ? url.searchParams.get("confirm") : "";
+    if (confirmOne === "delete" || confirmOne === "delete-chain") {
+      const rows = await loadRecords(session.account, deps);
+      const target = rows.find((row) => row.id === (url.searchParams.get("id") || ""));
+      if (!target) return seeOther(`${publicOrigin(request)}/decisions`);
+      const count = confirmOne === "delete-chain" ? chainIds(rows, target.id).length : 0;
+      return html(200, renderDeleteOneConfirm(target, count));
+    }
     if (request.method === "POST") {
       const form = new URLSearchParams(await request.text());
       const action = form.get("action") || "";
@@ -1903,9 +2748,9 @@ export async function handleDecisions(request, deps) {
           session.account.records = value;
           await saveAccount(session.account, deps);
         }
-      } else if (action === "delete") {
+      } else if (action === "delete" && form.get("confirm") === "delete") {
         await deleteRecordIds(session.account, deps, [form.get("id") || ""]);
-      } else if (action === "delete-chain") {
+      } else if (action === "delete-chain" && form.get("confirm") === "delete") {
         const rows = await loadRecords(session.account, deps);
         await deleteRecordIds(session.account, deps, chainIds(rows, form.get("id") || ""));
       } else if (action === "delete-all" && form.get("confirm") === "delete") {
@@ -1914,15 +2759,17 @@ export async function handleDecisions(request, deps) {
       } else if (action === "calendar") {
         fresh = await calendarAction(session.account, deps, form.get("value") || "");
       }
+      const cookies = fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), fresh))] : [];
+      return seeOther(`${publicOrigin(request)}/decisions`, cookies);
     }
+    const flashed = readFlashLink(request);
     const rows = await loadRecords(session.account, deps);
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
     const waiting = (await loadPendings(session.account, deps)).length;
     const now = typeof deps.now === "number" ? deps.now : Date.now();
     const habits = decisionHabits({ records: rows, waiting, now });
     const calendar = await calendarState(session.account, deps);
-    const freshUrl = fresh ? calendarUrl(publicOrigin(request), fresh) : "";
-    return html(200, renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl }));
+    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed, env: deps.env }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
@@ -1936,11 +2783,15 @@ export async function handleAccount(request, deps) {
   deps = { ...deps, requestId: id };
   if (!hostedEnabled(deps.env)) return notFound();
   if (request.method === "DELETE") return methodNotAllowed();
+  if (request.method === "GET" && pageUrl(request).searchParams.get("deleted") === "1") {
+    return html(200, terminal("Account deleted · Grill", "<h1>Your Grill account is deleted.</h1><p>The records and the model-router key are gone.</p>"));
+  }
   try {
     const session = await pageUser(request, deps);
     if (session.redirect) return session.redirect;
-    if (session.missing) return html(200, page("Grill", "<h1>This account has been deleted.</h1>"));
+    if (session.missing) return html(200, terminal("Account deleted · Grill", "<h1>This account has been deleted.</h1>"));
     if (session.html) return html(200, session.html);
+    if (request.method === "GET" && pageUrl(request).searchParams.get("confirm") === "delete") return html(200, renderDeleteAccountConfirm());
     let fresh = "";
     if (request.method === "POST") {
       const form = new URLSearchParams(await request.text());
@@ -1954,13 +2805,15 @@ export async function handleAccount(request, deps) {
       }
       if (form.get("action") === "delete-account" && form.get("confirm") === "delete") {
         await deleteAccount(session.account, deps, session.sub);
-        return html(200, page("Account deleted · Grill", "<h1>Your Grill account is deleted.</h1><p>The records and the model-router key are gone.</p>"));
+        return seeOther(`${publicOrigin(request)}/account?deleted=1`, [pageCookieHeader("", 0)]);
       }
+      const cookies = fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), fresh))] : [];
+      return seeOther(`${publicOrigin(request)}/account`, cookies);
     }
+    const flashed = readFlashLink(request);
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
     const calendar = await calendarState(session.account, deps);
-    const freshUrl = fresh ? calendarUrl(publicOrigin(request), fresh) : "";
-    return html(200, renderAccount(session.account, credit, { calendar, freshUrl }));
+    return htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);

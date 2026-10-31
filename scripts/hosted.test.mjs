@@ -5,13 +5,13 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { activeKeys, activeMember, AUTH_METADATA_CACHE_MS, describeError, handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
+import { activeKeys, activeMember, AUTH_METADATA_CACHE_MS, changesForAccount, describeError, handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import {
   CLAUDE_CODE_CLIENT_ID,
   CLAUDE_WEB_REDIRECT,
   CONSENT_TEXT,
-  INVITE_ONLY,
+  inviteOnlyText,
   OUT_OF_CREDIT,
   SERVICE_CAP_TEXT,
   USER_CAP_TEXT,
@@ -31,13 +31,17 @@ import {
   footerLine,
   linkChains,
   ONCE_DISCLOSURE,
+  HOSTED_JUDGE_ATTEMPT_MS,
+  HOSTED_JUDGE_DEADLINE_MS,
+  NO_JOB_TEXT,
   parseJobCredential,
+  provenanceLine,
   sourceAppFromClient,
   wwwAuthenticate,
 } from "./hostedCore.mjs";
 import { countWords } from "./judgeCore.mjs";
 import { ONCE_DISCLOSURE as LOCAL_DISCLOSURE } from "../server/index.mjs";
-import { parseRecords, sourceAppLabel } from "./reflection.mjs";
+import { parseRecords, recordBlock, sourceAppLabel } from "./reflection.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ANTHROPIC = readFileSync(join(ROOT, "scripts/fixtures/anthropic-served-response.json"), "utf8");
@@ -151,10 +155,11 @@ function judgeDeps(fake, extra = {}) {
   return { judgeOpenRouterUrl: fake.env.JUDGE_OPENROUTER_URL, judgeDecisionsUrl: fake.env.JUDGE_DECISIONS_URL, ...extra };
 }
 
-async function postMcp(ctx, body, { token, url = RESOURCE, accept, deps = {} } = {}) {
+async function postMcp(ctx, body, { token, url = RESOURCE, accept, deps = {}, userAgent } = {}) {
   const headers = { "content-type": "application/json" };
   if (token) headers.authorization = `Bearer ${token}`;
   if (accept) headers.accept = accept;
+  if (userAgent) headers["user-agent"] = userAgent;
   const res = await handleMcp(new Request(url, { method: "POST", headers, body: JSON.stringify(body) }), { ...ctx, ...deps });
   const type = res.headers.get("content-type") || "";
   if (type.includes("application/json")) return { res, json: await res.json(), raw: "" };
@@ -379,6 +384,136 @@ describe("hosted Grill", { concurrency: false }, () => {
     }
   });
 
+  it("logs a rejected bearer with public claims only, and omits the token", async () => {
+    const warnings = [];
+    const errors = [];
+    const origWarn = console.warn;
+    const origError = console.error;
+    console.warn = (...args) => {
+      warnings.push(args.map((part) => String(part)).join(" "));
+    };
+    console.error = (...args) => {
+      errors.push(args.map((part) => String(part)).join(" "));
+    };
+    const authLogs = () => warnings.filter((line) => line.startsWith("[grill-hosted] auth-reject "));
+    const parseLog = (line) => JSON.parse(line.slice("[grill-hosted] auth-reject ".length));
+    try {
+      const ctx = world();
+      const email = "reject-log-secret@example.com";
+      const ua = "GrillAuthProbe/9f3a";
+      const future = Math.floor(Date.now() / 1000) + 3600;
+      const past = Math.floor(Date.now() / 1000) - 120;
+      const secretClaims = {
+        sub: "user_do_not_log_9f3a",
+        email,
+        azp: "azp_public_9f3a",
+        client_id: "client_public_9f3a",
+      };
+      const ping = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" });
+      const posted = async (token, { url = RESOURCE, cookie = false } = {}) => {
+        warnings.length = 0;
+        errors.length = 0;
+        const headers = { "content-type": "application/json", "user-agent": ua };
+        if (cookie) headers.cookie = `__session=${token}`;
+        else if (token) headers.authorization = `Bearer ${token}`;
+        if (cookie) return handleDecisions(new Request("https://grillyour.ai/decisions", { headers }), ctx);
+        return handleMcp(new Request(url, { method: "POST", headers, body: ping }), ctx);
+      };
+      const omits = (line, secret) => {
+        assert.equal(line.includes(secret), false);
+        assert.equal(line.includes(email), false);
+        assert.equal(line.includes("user_do_not_log_9f3a"), false);
+        assert.equal(line.includes("\n"), false);
+      };
+
+      const signed = signJwt(claims({ ...secretClaims, exp: future, aud: [RESOURCE, "https://other.example/mcp"] }), { tamper: true });
+      const bad = await posted(signed);
+      assert.equal(bad.status, 401);
+      assert.equal(bad.headers.get("www-authenticate"), wwwAuthenticate("https://mcp.example"));
+      assert.equal(authLogs().length, 1);
+      const line = authLogs()[0];
+      omits(line, signed);
+      for (const part of signed.split(".")) assert.equal(line.includes(part), false);
+      const logged = parseLog(line);
+      assert.deepEqual(Object.keys(logged).sort(), ["aud", "azp", "client_id", "exp", "expired", "iss", "reason", "user_agent"]);
+      assert.deepEqual(logged, {
+        reason: "signature",
+        iss: "https://clerk.example.test",
+        aud: [RESOURCE, "https://other.example/mcp"],
+        azp: "azp_public_9f3a",
+        client_id: "client_public_9f3a",
+        exp: future,
+        expired: false,
+        user_agent: ua,
+      });
+      assert.equal(errors.some((row) => row.includes(signed) || row.includes(email)), false);
+
+      const expiredToken = signJwt(claims({ ...secretClaims, exp: past }));
+      const expired = await posted(expiredToken);
+      assert.equal(expired.status, 401);
+      assert.equal(authLogs().length, 1);
+      omits(authLogs()[0], expiredToken);
+      const expiredBody = parseLog(authLogs()[0]);
+      assert.equal(expiredBody.reason, "expired");
+      assert.equal(expiredBody.expired, true);
+      assert.equal(expiredBody.exp, past);
+      assert.equal(expiredBody.user_agent, ua);
+
+      const raw = "raw-bearer-do-not-log-9f3a";
+      const malformed = await posted(raw);
+      assert.equal(malformed.status, 401);
+      assert.equal(malformed.headers.get("www-authenticate"), wwwAuthenticate("https://mcp.example"));
+      assert.equal(authLogs().length, 1);
+      omits(authLogs()[0], raw);
+      assert.deepEqual(parseLog(authLogs()[0]), {
+        reason: "malformed",
+        iss: "",
+        aud: "",
+        azp: "",
+        client_id: "",
+        exp: null,
+        expired: false,
+        user_agent: ua,
+      });
+
+      const wrongAud = signJwt(claims({ ...secretClaims, aud: "https://evil.example/mcp", exp: future }));
+      const audRes = await posted(wrongAud);
+      assert.equal(audRes.status, 401);
+      assert.equal(authLogs().length, 1);
+      omits(authLogs()[0], wrongAud);
+      const audBody = parseLog(authLogs()[0]);
+      assert.equal(audBody.reason, "audience");
+      assert.equal(audBody.aud, "https://evil.example/mcp");
+      assert.equal(audBody.expired, false);
+
+      const missing = await posted("");
+      assert.equal(missing.status, 401);
+      assert.equal(authLogs().length, 0);
+
+      const queryToken = signJwt(claims({ ...secretClaims, exp: future }));
+      const query = await posted(queryToken, { url: `${RESOURCE}?access_token=${queryToken}` });
+      assert.equal(query.status, 401);
+      assert.equal(authLogs().length, 0);
+      assert.equal(warnings.some((row) => row.includes(queryToken) || row.includes(email)), false);
+
+      warnings.length = 0;
+      const good = signJwt(claims({ exp: future }));
+      const ok = await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "ping" }, { token: good });
+      assert.equal(ok.res.status, 200);
+      assert.equal(authLogs().length, 0);
+
+      const cookie = signJwt(claims({ ...secretClaims, exp: future }), { tamper: true });
+      const page = await posted(cookie, { cookie: true });
+      assert.equal(page.status, 302);
+      assert.equal(authLogs().length, 0);
+      assert.equal(warnings.some((row) => row.includes(cookie) || row.includes(email)), false);
+      assert.equal(errors.some((row) => row.includes(cookie) || row.includes(email)), false);
+    } finally {
+      console.warn = origWarn;
+      console.error = origError;
+    }
+  });
+
   it("negotiates the hosted protocol versions and lists tools with annotations", async () => {
     const ctx = world();
     const token = signJwt(claims());
@@ -433,8 +568,84 @@ describe("hosted Grill", { concurrency: false }, () => {
     assert.doesNotMatch(grill.description, /call grill_result until the verdict arrives/);
     assert.equal(
       tools.find((tool) => tool.name === "grill_result").description,
-      "Collect a grill that returned a job id, or a later layer of one. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person. detail is brief, more, options, or full. Do not write a layer yourself.",
+      "Collect a grill that returned a job id, or a later layer of one. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person. detail is brief, more, options, full, deepen, or provenance. Call detail deepen only when the person asks to deepen or go bigger. Call detail provenance only to write a lasting record of the grill, such as an audit log: put that one line in the record, not in the chat reply, unless the person asks which model judged. Do not write a layer yourself.",
     );
+  });
+
+  it("prepares deepen during the grill only for a big decision when the test is on, and layer 1 stays first", async () => {
+    const usable = readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8");
+    const depth = readFileSync(join(ROOT, "scripts/fixtures/deepen-response.json"), "utf8");
+    const fake = await startFakeOpenRouter({
+      chat: (body) => ({ text: body?.tools?.[0]?.function?.name === "report_depth" ? depth : usable }),
+    });
+    try {
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const subject = "We will raise prices 20% in Q4 because paid users cover support. CANARY-DEEPEN-WRITEUP stays in the write-up.";
+      const call = (ctx, env, big) =>
+        postMcp(
+          ctx,
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "grill", arguments: { subject, keep_records: false, quality_check: false, ...(big ? { big: true } : {}) } },
+          },
+          { token, deps: { ...judgeDeps(fake), waitMs: 20_000, env, now: Date.parse("2026-10-03T15:00:00Z") } },
+        );
+      const offCtx = world();
+      const off = await call(offCtx, offCtx.env, true);
+      assert.match(textOf(off.json), /Say 'more', 'options', or your call\./);
+      assert.doesNotMatch(textOf(off.json), /deepen/);
+      assert.equal(fake.seen.chat.length, 1);
+      const offJob = textOf(off.json).match(/follow: (\S+)/)[1];
+      const offDeep = await postMcp(
+        offCtx,
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: { job_id: offJob, detail: "deepen" } } },
+        { token, deps: { ...judgeDeps(fake), waitMs: 20_000, env: offCtx.env } },
+      );
+      assert.match(textOf(offDeep.json), /Deepen is a test and is off/);
+
+      const smallCtx = world();
+      const small = await call(smallCtx, { ...smallCtx.env, GRILL_DEEPEN_TEST: "1" }, false);
+      assert.doesNotMatch(textOf(small.json), /deepen|Rewritten plan/);
+      assert.equal(fake.seen.chat.length, 2);
+      assert.equal(fake.seen.chat.every((row) => row.body.tools[0].function.name === "report_challenge"), true);
+
+      const ctx = world();
+      const before = fake.seen.chat.length;
+      const grilled = await call(ctx, { ...ctx.env, GRILL_DEEPEN_TEST: "1" }, true);
+      const brief = textOf(grilled.json);
+      assert.equal(grilled.json.result.isError, false, brief);
+      assert.match(brief, /Say 'more', 'options', 'deepen', or your call\./);
+      assert.doesNotMatch(brief, /Rewritten plan|top professional/);
+      const layer = brief.replace(/^This goes to an outside judge[^\n]*\n\n/, "").split(/\n\nfollow:/)[0];
+      assert.ok(countWords(layer) <= 50, `${countWords(layer)}: ${layer}`);
+      const added = fake.seen.chat.slice(before);
+      assert.equal(added.length, 2);
+      for (const row of added) {
+        assert.equal(row.body.model, "openrouter/auto");
+        assert.equal(row.body.models, undefined);
+        assert.equal(row.body.provider.zdr, true);
+        assert.deepEqual(row.body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
+      }
+      assert.equal(added.some((row) => row.body.tools[0].function.name === "report_depth"), true);
+      assert.equal(added.some((row) => String(row.raw).includes("CANARY-DEEPEN-WRITEUP")), true);
+      assert.equal(ctx.writes.some((row) => row.join(" ").includes("CANARY-DEEPEN-WRITEUP")), false);
+      const jobId = brief.match(/follow: (\S+)/)[1];
+      const deep = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId, detail: "deepen" } } },
+        { token, deps: { ...judgeDeps(fake), waitMs: 20_000, env: { ...ctx.env, GRILL_DEEPEN_TEST: "1" } } },
+      );
+      const note = textOf(deep.json);
+      assert.equal(deep.json.result.isError, false, note);
+      assert.match(note, /Deeper, not bigger\./);
+      assert.match(note, /Rewritten plan:/);
+      assert.match(note, /The rewrite is not the decision\./);
+      assert.doesNotMatch(note, /CANARY-DEEPEN-WRITEUP|gpt-/);
+    } finally {
+      await fake.close();
+    }
   });
 
   it("returns plain JSON unless the client asks only for event streams", async () => {
@@ -558,6 +769,76 @@ describe("hosted Grill", { concurrency: false }, () => {
         );
         assert.equal(none.json.result.isError, false, textOf(none.json));
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
+      } finally {
+        await fake.close();
+      }
+    });
+
+    it("reads a Gemini client on initialize, and falls back to User-Agent", async () => {
+      const usable = JSON.parse(readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8"));
+      const fake = await startFakeOpenRouter({
+        chat: (body) => {
+          const excluded = body?.plugins?.[0]?.excluded_models || [];
+          const model = excluded.some((item) => String(item).startsWith("openai"))
+            ? "google/gemini-2.5-pro"
+            : excluded.some((item) => String(item).startsWith("google"))
+              ? "deepseek/deepseek-chat"
+              : "openai/gpt-5.6-sol";
+          return { text: JSON.stringify({ ...usable, model }) };
+        },
+      });
+      const decision = { subject: "Decision: wait a week.", keep_records: false, quality_check: false };
+      const grill = (id) => ({
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: { name: "grill", arguments: decision },
+      });
+      try {
+        const ctx = world();
+        const deps = { ...judgeDeps(fake), waitMs: 20_000 };
+        const antigravity = signJwt(claims({ sub: "user_antigravity" }));
+        const init = await postMcp(
+          ctx,
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "initialize",
+            params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "Antigravity", version: "1" } },
+          },
+          { token: antigravity },
+        );
+        assert.equal(init.json.result.serverInfo.name, "grill");
+        const afterInit = await postMcp(ctx, grill(2), { token: antigravity, deps });
+        assert.equal(afterInit.json.result.isError, false, textOf(afterInit.json));
+        assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
+
+        const discovery = signJwt(claims({ sub: "user_discovery" }));
+        const viaAgent = await postMcp(ctx, grill(3), { token: discovery, userAgent: "Google-Discovery-Engine/1.0", deps });
+        assert.equal(viaAgent.json.result.isError, false, textOf(viaAgent.json));
+        assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
+
+        const remembered = signJwt(claims({ sub: "user_discovery_init" }));
+        await postMcp(
+          ctx,
+          {
+            jsonrpc: "2.0",
+            id: 4,
+            method: "initialize",
+            params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "unknown-client", version: "0" } },
+          },
+          { token: remembered, userAgent: "Google-Discovery-Engine/1.0" },
+        );
+        const later = await postMcp(ctx, grill(5), { token: remembered, deps });
+        assert.equal(later.json.result.isError, false, textOf(later.json));
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
+
+        const claude = signJwt(claims({ sub: "user_claude_ua", redirect_uri: CLAUDE_WEB_REDIRECT }));
+        const claudeCall = await postMcp(ctx, grill(6), { token: claude, userAgent: "Google-Discovery-Engine/1.0", deps });
+        assert.equal(claudeCall.json.result.isError, false, textOf(claudeCall.json));
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
       } finally {
         await fake.close();
       }
@@ -870,7 +1151,7 @@ describe("hosted Grill", { concurrency: false }, () => {
       const html = await page.text();
       assert.match(html, /Hire contractor/);
       assert.match(html, /Hire in house/);
-      assert.match(html, /Replaces 2026-01-10 Hire contractor/);
+      assert.match(html, /Replaces 10 Jan Hire contractor/);
       assert.doesNotMatch(html, /flip-flop|consistency score/i);
       assert.match(html, /Your habits/);
       assert.match(html, /Grills you answered with a choice: 2\./);
@@ -919,11 +1200,11 @@ describe("hosted Grill", { concurrency: false }, () => {
         new Request("https://grillyour.ai/decisions", {
           method: "POST",
           headers: { cookie: `__session=${session}`, "content-type": "application/x-www-form-urlencoded" },
-          body: `action=delete-chain&id=${id}`,
+          body: `action=delete-chain&id=${id}&confirm=delete`,
         }),
         ctx,
       );
-      assert.equal(removed.status, 200);
+      assert.equal(removed.status, 303);
       const left = JSON.parse(await (await handleDecisions(new Request("https://grillyour.ai/decisions?export=json", { headers: { cookie: `__session=${session}` } }), ctx)).text());
       assert.equal(left.length, 0);
     } finally {
@@ -999,7 +1280,7 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.equal(ctx.management.creates.length, 1);
       assert.equal(ctx.management.creates[0].name.includes("@"), false);
       assert.equal(ctx.management.creates[0].name.includes("invitee"), false);
-      assert.equal(ctx.management.creates[0].limit, 1);
+      assert.equal(ctx.management.creates[0].limit, 5);
       const secondUser = signJwt(claims({ sub: "user_second", redirect_uri: CLAUDE_WEB_REDIRECT }));
       const shared = await postMcp(
         ctx,
@@ -1034,7 +1315,9 @@ describe("hosted Grill", { concurrency: false }, () => {
         }),
         ctx,
       );
-      assert.match(await gone.text(), /account is deleted/);
+      assert.equal(gone.status, 303);
+      assert.match(gone.headers.get("location"), /\/account\?deleted=1$/);
+      assert.match(await (await handleAccount(new Request(gone.headers.get("location")), ctx)).text(), /account is deleted/);
       assert.equal(ctx.management.removed.length, 1);
       assert.equal(ctx.management.removedUsers, 1);
       assert.equal(ctx.management.deletedUser, "user_invitee");
@@ -1056,7 +1339,8 @@ describe("hosted Grill", { concurrency: false }, () => {
         { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: not invited.", keep_records: true, quality_check: false } } },
         { token, deps: { ...judgeDeps(fake), waitMs: 20_000 } },
       );
-      assert.equal(textOf(json), INVITE_ONLY);
+      assert.equal(textOf(json), inviteOnlyText("https://mcp.example"));
+      assert.match(textOf(json), /https:\/\/mcp\.example\/redeem/);
       assert.equal(fake.seen.chat.length, 0);
       assert.equal(ctx.management.creates.length, 0);
     } finally {
@@ -1195,7 +1479,7 @@ describe("AgentID owner email", () => {
         { tokens: { user_agent: tokens }, userinfo },
       );
       const { json } = await postMcp(ctx, askGrill(), { token: signJwt(claims({ sub: "user_agent" })) });
-      assert.equal(textOf(json), INVITE_ONLY, label);
+      assert.equal(textOf(json), inviteOnlyText("https://mcp.example"), label);
       assert.equal(json.result.isError, true, label);
       assert.equal(userinfoCalls(ctx), infoCalls, label);
       assert.equal(ctx.management.creates.length, 0, label);
@@ -1211,8 +1495,8 @@ describe("AgentID owner email", () => {
     );
     const first = await postMcp(down, askGrill(1), { token: signJwt(claims({ sub: "user_agent" })) });
     const second = await postMcp(down, askGrill(2), { token: signJwt(claims({ sub: "user_agent" })) });
-    assert.equal(textOf(first.json), INVITE_ONLY);
-    assert.equal(textOf(second.json), INVITE_ONLY);
+    assert.equal(textOf(first.json), inviteOnlyText("https://mcp.example"));
+    assert.equal(textOf(second.json), inviteOnlyText("https://mcp.example"));
     assert.equal(userinfoCalls(down), 1);
     assert.equal(down.management.creates.length, 0);
     assert.equal(first.res.status, 200);
@@ -1223,7 +1507,7 @@ describe("AgentID owner email", () => {
       { tokens: { user_agent: new Response("no", { status: 502 }) }, userinfo: Response.json({ owner_email: OWNER_EMAIL, owner_email_verified: true }) },
     );
     const denied = await postMcp(clerkDown, askGrill(), { token: signJwt(claims({ sub: "user_agent" })) });
-    assert.equal(textOf(denied.json), INVITE_ONLY);
+    assert.equal(textOf(denied.json), inviteOnlyText("https://mcp.example"));
     assert.equal(userinfoCalls(clerkDown), 0);
     assert.equal(clerkDown.management.creates.length, 0);
   });
@@ -1282,7 +1566,9 @@ describe("AgentID owner email", () => {
       }),
       ctx,
     );
-    assert.match(await gone.text(), /account is deleted/);
+    assert.equal(gone.status, 303);
+    assert.match(gone.headers.get("location"), /\/account\?deleted=1$/);
+    assert.match(await (await handleAccount(new Request(gone.headers.get("location")), ctx)).text(), /account is deleted/);
     assert.equal(ctx.management.removed.length, 0);
     const still = await storedAccount(ctx, "user_agent_a");
     assert.equal(still.keyHash, holder.keyHash);
@@ -1374,14 +1660,24 @@ describe("one hosted function", () => {
     unknown.env.CLERK_ISSUER = "https://fapi.example.test";
     const unset = await handleAccount(new Request("https://grillyour.ai/account"), unknown);
     assert.equal(unset.status, 200);
-    assert.match(await unset.text(), /CLERK_SIGN_IN_URL/);
+    const unsetHtml = await unset.text();
+    assert.match(unsetHtml, /Sign-in isn't set up/);
+    assert.doesNotMatch(unsetHtml, /Clerk|CLERK_|allowed origins/);
+    assert.match(unsetHtml, /href="\/">Back to Grill/);
     assert.equal(unset.headers.get("location"), null);
 
+    // Back from sign-in with no session: the handshake is tried first, once.
     const returned = world();
-    const stuck = await handleDecisions(new Request("https://grillyour.ai/decisions?from=signin"), returned);
+    const first = await handleDecisions(new Request("https://grillyour.ai/decisions?from=signin"), returned);
+    assert.equal(first.status, 307);
+    assert.match(first.headers.get("location"), /^https:\/\/clerk\.example\.test\/v1\/client\/handshake\?/);
+    // It came back with nothing: say so, and don't loop.
+    const stuck = await handleDecisions(new Request("https://grillyour.ai/decisions?from=signin&__grill_hs=done"), returned);
     assert.equal(stuck.status, 200);
     const body = await stuck.text();
     assert.match(body, /no session for this site/);
+    assert.doesNotMatch(body, /Clerk|CLERK_|allowed origins/);
+    assert.match(body, /href="\/">Back to Grill/);
     assert.match(body, /https:\/\/accounts\.example\.test\/sign-in/);
     assert.equal(body.includes("clerk.example.test/sign-in"), false);
     assert.equal(stuck.headers.get("location"), null);
@@ -1447,6 +1743,18 @@ describe("one hosted function", () => {
       assert.equal(oidc.status, 200);
       assert.deepEqual(await oidc.json(), { issuer: "https://clerk.example.test", kind: "openid-configuration" });
       assert.equal(metadataFetches.at(-1).url, "https://clerk.example.test/.well-known/openid-configuration");
+
+      const prmRoot = await GET(new Request("https://grillyour.ai/.well-known/oauth-protected-resource"));
+      const prmPath = await GET(new Request("https://grillyour.ai/.well-known/oauth-protected-resource/mcp"));
+      assert.equal(prmRoot.status, 200);
+      assert.equal(prmPath.status, 200);
+      const prmRootBody = await prmRoot.json();
+      const prmPathBody = await prmPath.json();
+      assert.equal(typeof prmRootBody.resource, "string");
+      assert.ok(prmRootBody.resource.length > 0);
+      assert.ok(prmRootBody.authorization_servers?.length > 0);
+      assert.deepEqual(prmPathBody, prmRootBody);
+      assert.equal(prmPath.headers.get("content-type"), prmRoot.headers.get("content-type"));
 
       const preflight = await OPTIONS(new Request("https://grillyour.ai/.well-known/oauth-authorization-server/mcp", { method: "OPTIONS" }));
       assert.equal(preflight.status, 204);
@@ -1650,6 +1958,32 @@ describe("hosted mappings and ledger pins", () => {
       [{ redirectUri: "https://gemini.google.com/oauth" }, "google", "gemini"],
       [{ redirectUri: "https://unknown.example/cb" }, "", "unknown"],
       [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Gemini" } }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "gemini-cli" } }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Antigravity" } }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Google-Discovery-Engine" } }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", userAgent: "Google-Discovery-Engine/1.0" }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Cursor" }, userAgent: "Google-Discovery-Engine/1.0" }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", userAgent: "ChatGPT-User" }, "openai", "chatgpt"],
+      [{ redirectUri: CLAUDE_WEB_REDIRECT, userAgent: "Google-Discovery-Engine/1.0" }, "anthropic", "claude"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Claude" }, userAgent: "Google-Discovery-Engine/1.0" }, "anthropic", "claude"],
+      [
+        {
+          redirectUri: "https://unknown.example/cb",
+          clientInfo: { name: "gemini-cli" },
+          remembered: { company: "openai", sourceApp: "chatgpt" },
+        },
+        "google",
+        "gemini",
+      ],
+      [
+        {
+          redirectUri: "https://unknown.example/cb",
+          remembered: { company: "google", sourceApp: "gemini" },
+          userAgent: "ChatGPT-User",
+        },
+        "google",
+        "gemini",
+      ],
     ];
     for (const [input, company, sourceApp] of table) {
       assert.deepEqual(sourceAppFromClient(input), { company, sourceApp });
@@ -1742,14 +2076,15 @@ describe("hosted Grill: spending caps, open sign-up, races and plain errors", ()
 
   it("reads the caps from env with safe defaults", () => {
     assert.equal(monthlyCapUsd({}), 20);
-    assert.equal(userMonthlyCapUsd({}), 1);
+    assert.equal(userMonthlyCapUsd({}), 5);
     assert.equal(monthlyCapUsd({ GRILL_MONTHLY_CAP_USD: "35" }), 35);
     assert.equal(monthlyCapUsd({ GRILL_MONTHLY_CAP_USD: "nonsense" }), 20);
     assert.equal(monthlyCapUsd({ GRILL_MONTHLY_CAP_USD: "-4" }), 20);
     assert.equal(monthlyCapUsd({ GRILL_MONTHLY_CAP_USD: "0" }), 0);
     assert.equal(capBlock({ serviceMicros: 19_999_999, userMicros: 0 }), null);
     assert.equal(capBlock({ serviceMicros: 20_000_000, userMicros: 0 }).text, SERVICE_CAP_TEXT);
-    assert.equal(capBlock({ serviceMicros: 0, userMicros: 1_000_000 }).text, USER_CAP_TEXT);
+    assert.equal(capBlock({ serviceMicros: 0, userMicros: 4_999_999 }), null);
+    assert.equal(capBlock({ serviceMicros: 0, userMicros: 5_000_000 }).text, USER_CAP_TEXT);
     for (const text of [SERVICE_CAP_TEXT, USER_CAP_TEXT]) {
       assert.doesNotMatch(text, /\b[45]\d\d\b|error|code/i);
       assert.match(text, /Nothing was charged to you/);
@@ -1812,7 +2147,7 @@ describe("hosted Grill: spending caps, open sign-up, races and plain errors", ()
       const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
       const deps = { ...judgeDeps(fake), waitMs: 20_000 };
       const shut = await postMcp(ctx, grillCall(1, "Decision: closed door."), { token, deps });
-      assert.equal(textOf(shut.json), INVITE_ONLY);
+      assert.equal(textOf(shut.json), inviteOnlyText("https://mcp.example"));
       ctx.env.GRILL_OPEN_SIGNUP = "on";
       resetHostedCaches();
       const open = await postMcp(ctx, grillCall(2, "Decision: open door."), { token, deps });
@@ -1928,7 +2263,13 @@ describe("look-back reminders", { concurrency: false }, () => {
   const page = async (ctx, handler, path, { now, body } = {}) => {
     const headers = { cookie: `__session=${session()}` };
     if (body) headers["content-type"] = "application/x-www-form-urlencoded";
-    const res = await handler(new Request(`https://grillyour.ai${path}`, body ? { method: "POST", headers, body } : { headers }), { ...ctx, now });
+    let res = await handler(new Request(`https://grillyour.ai${path}`, body ? { method: "POST", headers, body } : { headers }), { ...ctx, now });
+    if (res.status === 303 && res.headers.get("location")) {
+      const extra = (typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [])
+        .map((cookie) => cookie.split(";")[0])
+        .filter((pair) => pair && !pair.endsWith("="));
+      res = await handler(new Request(res.headers.get("location"), { headers: { cookie: [`__session=${session()}`, ...extra].join("; ") } }), { ...ctx, now });
+    }
     return res.text();
   };
   const feed = (ctx, url, now = FEB) => handleCalendar(new Request(url), { ...ctx, now });
@@ -1958,7 +2299,8 @@ describe("look-back reminders", { concurrency: false }, () => {
       // The due list names only what waits for a look-back.
       let html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
       assert.match(html, /Due for a look-back/);
-      assert.match(html, /Hire contractor · review 2026-01-15 · 17 days overdue/);
+      assert.match(html, /Hire contractor · review 15 Jan · 17 days overdue/);
+      assert.equal(html.includes("2026-01-15"), false);
       assert.doesNotMatch(html, /<li>Move office/);
       assert.match(html, /Get a calendar link/);
 
@@ -2033,6 +2375,165 @@ describe("look-back reminders", { concurrency: false }, () => {
     }
   });
 
+  it("offers delete this chain only on a record that is in a chain", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN);
+      assert.equal((await page(ctx, handleDecisions, "/decisions", { now: FEB })).includes("Delete this chain"), false);
+      const deps = { ...judgeDeps(fake), now: FEB };
+      await postMcp(ctx, call(1, "grill", { subject: "Decision: Delay the beta\nI'm 60% sure.", keep_records: true, quality_check: false, supersedes: "2026-01-01 Hire contractor", changed: "evidence the trial slipped" }), { token, deps });
+      await postMcp(ctx, call(2, "grill_decided", { decided: "Delay it." }), { token, deps });
+      await decide(ctx, fake, token, "Cut prices", FEB);
+      const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
+      assert.equal((html.match(/Delete this chain/g) || []).length, 2);
+      assert.equal((html.match(/Delete this record/g) || []).length, 3);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("gives every dead-end page a way back", async () => {
+    const ctx = world();
+    const deleted = await handleAccount(new Request("https://grillyour.ai/account?deleted=1"), ctx);
+    assert.match(await deleted.text(), /href="\/">Back to Grill/);
+    ctx.env.GRILL_HOSTED_ALLOWLIST = "someone-else@example.com";
+    const token = signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 });
+    const invite = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${token}` } }), ctx);
+    const inviteHtml = await invite.text();
+    assert.match(inviteHtml, /invite-only/);
+    assert.match(inviteHtml, /href="\/">Back to Grill/);
+    assert.doesNotMatch(inviteHtml, /Clerk|CLERK_|allowed origins/);
+  });
+
+  it("gives a button and an input a 44px tap target", async () => {
+    const ctx = world();
+    const cookie = `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+    const res = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx);
+    const html = await res.text();
+    assert.match(html, /button, \.button \{[^}]*min-height:\s*44px/);
+    assert.match(html, /(^|\n)\s*input, select \{[^}]*min-height:\s*44px/);
+  });
+
+  it("lets a long one-word title wrap inside a card", async () => {
+    const ctx = world();
+    const cookie = `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+    const res = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx);
+    const html = await res.text();
+    assert.match(html, /\.banner \{[^}]*overflow-wrap:\s*anywhere/);
+  });
+
+  it("shows a record title as the person wrote it, not as a section label", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "iPhone launch", JAN);
+      const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
+      assert.match(html, /<p class="record-title">iPhone launch<\/p>/);
+      assert.equal(html.includes("<h2>iPhone launch</h2>"), false);
+      assert.match(html, /\.record-title \{[^}]*text-transform:\s*none/);
+      assert.match(html, /\.record-title \{[^}]*color:\s*var\(--ink\)/);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("puts the due list above credit, the records switch and export", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN);
+      const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
+      const due = html.indexOf("Due for a look-back");
+      const credit = html.indexOf("Free for life");
+      const records = html.indexOf("Records are");
+      const exported = html.indexOf("Export as text");
+      assert.ok(due > 0, "due list is missing");
+      assert.ok(due < credit && due < records && due < exported, `due at ${due}, credit ${credit}, records ${records}, export ${exported}`);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("asks on a page before deleting every record or the account", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Keep the stand", JAN);
+      const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
+      assert.equal(html.includes('type="hidden" name="confirm"'), false);
+      assert.match(html, /href="\/decisions\?confirm=delete-all"/);
+      assert.match(html, /Keep the stand/);
+
+      const ask = await handleDecisions(
+        new Request("https://grillyour.ai/decisions?confirm=delete-all", { headers: { cookie: `__session=${session()}` } }),
+        { ...ctx, now: FEB },
+      );
+      assert.equal(ask.status, 200);
+      const askHtml = await ask.text();
+      assert.match(askHtml, /Delete all records\?/);
+      assert.match(askHtml, /<button type="submit" name="confirm" value="delete">Delete all records<\/button>/);
+      assert.equal(askHtml.includes('type="hidden" name="confirm"'), false);
+      assert.match(await page(ctx, handleDecisions, "/decisions", { now: FEB }), /Keep the stand/);
+
+      const account = await page(ctx, handleAccount, "/account", { now: FEB });
+      assert.equal(account.includes('type="hidden" name="confirm"'), false);
+      assert.match(account, /href="\/account\?confirm=delete"/);
+      const askAccount = await handleAccount(
+        new Request("https://grillyour.ai/account?confirm=delete", { headers: { cookie: `__session=${session()}` } }),
+        { ...ctx, now: FEB },
+      );
+      const askAccountHtml = await askAccount.text();
+      assert.match(askAccountHtml, /Delete this account\?/);
+      assert.match(askAccountHtml, /<button type="submit" name="confirm" value="delete">Delete this account<\/button>/);
+      assert.equal(askAccountHtml.includes('type="hidden" name="confirm"'), false);
+      assert.match(await page(ctx, handleAccount, "/account", { now: FEB }), /invitee@example.com/);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("answers 303 after a successful form, shows a new calendar link once, and does not replace it on a second on", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Keep the stand", JAN);
+      const headers = { cookie: `__session=${session()}`, "content-type": "application/x-www-form-urlencoded" };
+      const post = (body) => handleDecisions(new Request("https://grillyour.ai/decisions", { method: "POST", headers, body }), { ...ctx, now: FEB });
+      const first = await post("action=calendar&value=on");
+      assert.equal(first.status, 303);
+      assert.equal(first.headers.get("location"), "https://grillyour.ai/decisions");
+      assert.equal(await first.text(), "");
+      const flash = first.headers.getSetCookie().find((cookie) => cookie.startsWith("__Host-grill_flash="));
+      assert.match(flash, /HttpOnly; Secure; SameSite=Lax; Max-Age=120/);
+      const link = decodeURIComponent(flash.split(";")[0].slice("__Host-grill_flash=".length)).match(/([A-Za-z0-9_-]{43})/)[1];
+      assert.ok(!ctx.writes.some((args) => args.join(" ").includes(link)));
+      const shown = await handleDecisions(
+        new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${session()}; ${flash.split(";")[0]}` } }),
+        { ...ctx, now: FEB },
+      );
+      assert.match(await shown.text(), /shown only once/);
+      assert.match(shown.headers.getSetCookie().join("\n"), /__Host-grill_flash=;.*Max-Age=0/);
+      const later = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${session()}` } }), { ...ctx, now: FEB });
+      assert.equal((await later.text()).includes(link), false);
+      const second = await post("action=calendar&value=on");
+      assert.equal(second.status, 303);
+      assert.equal(second.headers.getSetCookie().some((cookie) => cookie.startsWith("__Host-grill_flash=") && !cookie.startsWith("__Host-grill_flash=;")), false);
+      assert.equal((await feed(ctx, `https://grillyour.ai/decisions/calendar/${link}.ics`)).status, 200);
+      const kept = await post("action=records&value=keep");
+      assert.equal(kept.status, 303);
+      assert.equal((await post("action=records&value=keep")).status, 303);
+      assert.equal(JSON.parse(ctx.memory.command(["GET", `grill:hosted:acct:${personOf(ctx)}`])).records, "keep");
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("answers 404 for a malformed link, and for every link while hosted is off", async () => {
     const ctx = world();
     assert.equal((await feed(ctx, "https://grillyour.ai/decisions/calendar/short.ics")).status, 404);
@@ -2042,3 +2543,221 @@ describe("look-back reminders", { concurrency: false }, () => {
   });
 });
 
+describe("page sign-in through Clerk's handshake", { concurrency: false }, () => {
+  beforeEach(() => resetHostedCaches());
+
+  const sessionJwt = () => signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 60 });
+  const setCookies = (res) => res.headers.getSetCookie();
+  const cookieOf = (res, name) => setCookies(res).find((c) => c.startsWith(`${name}=`))?.split(";")[0].slice(name.length + 1) ?? null;
+
+  function withHandshake(ctx, directives) {
+    const seen = [];
+    const inner = ctx.fetch;
+    ctx.fetch = async (url, init = {}) => {
+      const u = String(url);
+      if (u.startsWith("https://api.clerk.com/v1/clients/handshake_payload")) {
+        seen.push({ nonce: new URL(u).searchParams.get("nonce"), auth: init.headers?.Authorization });
+        return Response.json({ directives: directives() });
+      }
+      return inner(url, init);
+    };
+    return seen;
+  }
+
+  async function startHandshake(ctx, path = "/decisions") {
+    const res = await handleDecisions(new Request(`https://grillyour.ai${path}`, { headers: { cookie: "__client_uat=1760000000" } }), ctx);
+    assert.equal(res.status, 307);
+    const to = new URL(res.headers.get("location"));
+    assert.equal(`${to.origin}${to.pathname}`, "https://clerk.example.test/v1/client/handshake");
+    assert.equal(to.searchParams.get("format"), "nonce");
+    const back = new URL(to.searchParams.get("redirect_url"));
+    const state = back.searchParams.get("__grill_hs");
+    assert.ok(state && cookieOf(res, "__Host-grill_hs") === state);
+    assert.match(setCookies(res).find((c) => c.startsWith("__Host-grill_hs=")), /HttpOnly; Secure; SameSite=Lax/);
+    return { back, state };
+  }
+
+  it("a signed-in Clerk browser gets a session on these pages through the handshake, and keeps it past Clerk's minute", async () => {
+    const ctx = world();
+    const jwt = sessionJwt();
+    const seen = withHandshake(ctx, () => [`__session=${jwt}; Path=/; Secure; SameSite=Lax`, "__clerk_handshake_nonce=; Path=/; Max-Age=0", "evil=1; Path=/"]);
+    const { back, state } = await startHandshake(ctx);
+    back.searchParams.set("__clerk_handshake_nonce", "nonce-1");
+    const res = await handleDecisions(new Request(back, { headers: { cookie: `__Host-grill_hs=${state}` } }), ctx);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), "https://grillyour.ai/decisions");
+    assert.deepEqual(seen, [{ nonce: "nonce-1", auth: "Bearer sk_test_clerk" }]);
+    assert.equal(cookieOf(res, "__session"), jwt);
+    assert.equal(cookieOf(res, "evil"), null, "only Clerk's own cookies are passed on");
+    const pageCookie = cookieOf(res, "__Host-grill_page");
+    assert.ok(pageCookie);
+    assert.match(setCookies(res).find((c) => c.startsWith("__Host-grill_page=")), /HttpOnly; Secure; SameSite=Lax; Max-Age=43200/);
+    assert.equal(cookieOf(res, "__Host-grill_hs"), "");
+
+    // Later, Clerk's token has lapsed, and only Grill's page cookie is left: still signed in, and forms work.
+    const later = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__Host-grill_page=${pageCookie}` } }), ctx);
+    assert.equal(later.status, 200);
+    assert.match(await later.text(), /Your decisions/);
+    const form = await handleAccount(
+      new Request("https://grillyour.ai/account", {
+        method: "POST",
+        headers: { cookie: `__Host-grill_page=${pageCookie}`, "content-type": "application/x-www-form-urlencoded" },
+        body: "action=calendar&value=on",
+      }),
+      ctx,
+    );
+    assert.equal(form.status, 303);
+    const flash = setCookies(form).find((c) => c.startsWith("__Host-grill_flash="));
+    assert.match(flash, /HttpOnly; Secure; SameSite=Lax/);
+    const flashPair = flash.split(";")[0];
+    const shown = await handleAccount(
+      new Request(form.headers.get("location"), { headers: { cookie: `__Host-grill_page=${pageCookie}; ${flashPair}` } }),
+      ctx,
+    );
+    assert.match(await shown.text(), /shown only once/);
+    assert.match(shown.headers.get("set-cookie") || "", /__Host-grill_flash=;/);
+
+    // A changed cookie is not a session.
+    const forged = `${pageCookie.split(".")[0]}.${"A".repeat(43)}`;
+    const bad = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__Host-grill_page=${forged}` } }), ctx);
+    assert.equal(bad.status, 302);
+    assert.match(bad.headers.get("location"), /accounts\.example\.test\/sign-in/);
+  });
+
+  it("ignores a handshake return whose state this browser was not sent with", async () => {
+    const ctx = world();
+    const seen = withHandshake(ctx, () => [`__session=${sessionJwt()}; Path=/`]);
+    const { back } = await startHandshake(ctx);
+    back.searchParams.set("__clerk_handshake_nonce", "someone-elses");
+    const res = await handleDecisions(new Request(back, { headers: { cookie: "__Host-grill_hs=another-state-value-xx" } }), ctx);
+    assert.equal(res.status, 303);
+    assert.equal(seen.length, 0);
+    assert.equal(cookieOf(res, "__Host-grill_page"), null);
+    assert.equal(new URL(res.headers.get("location")).searchParams.get("__grill_hs"), "done");
+    // Done means no second handshake: a signed-out browser goes to sign-in.
+    const next = await handleDecisions(new Request(res.headers.get("location"), { headers: { cookie: "__client_uat=1760000000" } }), ctx);
+    assert.equal(next.status, 302);
+    assert.match(next.headers.get("location"), /accounts\.example\.test\/sign-in/);
+  });
+
+  it("a signed-out handshake leads to sign-in, and a signed-out browser with no Clerk marker goes straight there", async () => {
+    const ctx = world();
+    withHandshake(ctx, () => ["__session=; Path=/; Max-Age=0", "__client_uat=0; Path=/"]);
+    const { back, state } = await startHandshake(ctx);
+    back.searchParams.set("__clerk_handshake_nonce", "nonce-2");
+    const res = await handleDecisions(new Request(back, { headers: { cookie: `__Host-grill_hs=${state}` } }), ctx);
+    assert.equal(res.status, 303);
+    assert.equal(cookieOf(res, "__Host-grill_page"), null);
+    assert.equal(new URL(res.headers.get("location")).searchParams.get("__grill_hs"), "done");
+    const fresh = await handleDecisions(new Request("https://grillyour.ai/decisions"), ctx);
+    assert.equal(fresh.status, 302);
+    assert.match(fresh.headers.get("location"), /accounts\.example\.test\/sign-in/);
+  });
+
+  it("a form sent with no session goes back to the page instead of applying", async () => {
+    const ctx = world();
+    const res = await handleDecisions(
+      new Request("https://grillyour.ai/decisions", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "action=delete-all&confirm=delete" }),
+      ctx,
+    );
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), "https://grillyour.ai/decisions");
+  });
+});
+
+
+describe("hosted judge budget and provenance", { concurrency: false }, () => {
+  const grillArgs = (subject) => ({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "grill", arguments: { subject, keep_records: false, quality_check: false } } });
+  const resultArgs = (args) => ({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: args } });
+
+  it("stops the judge, and stores the result, inside the function's maxDuration", () => {
+    const vercel = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
+    const maxMs = vercel.functions["api/hosted.js"].maxDuration * 1000;
+    assert.ok(HOSTED_JUDGE_DEADLINE_MS + 30_000 <= maxMs, "leave 30 seconds after the judge to store the result");
+    assert.ok(HOSTED_JUDGE_ATTEMPT_MS < HOSTED_JUDGE_DEADLINE_MS);
+  });
+
+  it("a judge that runs past the deadline stores a took-too-long result instead of expiring", async () => {
+    const fake = await startFakeOpenRouter({ chat: () => new Promise(() => {}) });
+    const backgrounds = [];
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const started = await postMcp(ctx, grillArgs("Decision: move the launch to March."), {
+        token,
+        deps: { ...judgeDeps(fake), waitMs: 40, backgrounds, judgeDeadlineMs: 300 },
+      });
+      const jobId = textOf(started.json).match(/job (g1\.[0-9a-f]{32}\.[A-Za-z0-9_-]+)/)[1];
+      await Promise.all(backgrounds);
+      const collected = await postMcp(ctx, resultArgs({ job_id: jobId }), { token, deps: { waitMs: 500 } });
+      assert.equal(collected.json.result.isError, true);
+      assert.match(textOf(collected.json), /took too long/);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("detail provenance returns one line naming the served model, and the brief does not", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse("2026-10-22T15:00:00Z") };
+      const first = await postMcp(ctx, grillArgs("Decision: move the launch to March."), { token, deps });
+      assert.doesNotMatch(textOf(first.json), /gpt-5\.6/);
+      const jobId = textOf(first.json).match(/follow: (\S+)/)[1];
+      const line = await postMcp(ctx, resultArgs({ job_id: jobId, detail: "provenance" }), { token, deps: { waitMs: 50 } });
+      assert.equal(line.json.result.isError, false, textOf(line.json));
+      assert.equal(textOf(line.json).trim(), "Judge: openai/gpt-5.6-sol · excluded: anthropic · decorrelated: yes · at: 2026-10-22T15:00:00Z");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("provenanceLine never invents a model", () => {
+    assert.equal(provenanceLine(null, new Date("2026-10-22T15:00:00Z")), "Judge: unattributable · excluded: anthropic · decorrelated: no · at: 2026-10-22T15:00:00Z");
+    assert.match(provenanceLine({ servedModel: "google/gemini-3", declaredAuthor: "openai", decorrelated: true }, new Date(Number.NaN)), /^Judge: google\/gemini-3 · excluded: openai · decorrelated: yes · at: unknown$/);
+  });
+
+  it("an unknown job id tells the assistant to grill again", async () => {
+    const ctx = world();
+    const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+    const jobId = `g1.${"0".repeat(32)}.${Buffer.alloc(32).toString("base64url")}`;
+    assert.ok(parseJobCredential(jobId));
+    const res = await postMcp(ctx, resultArgs({ job_id: jobId }), { token, deps: { waitMs: 20 } });
+    assert.equal(res.json.result.isError, true);
+    assert.equal(textOf(res.json), NO_JOB_TEXT);
+  });
+});
+
+describe("what changed, from saved records", () => {
+  const block = (n, decided = "Keep the fixture plan") =>
+    recordBlock({
+      date: "2026-06-01",
+      title: `Fixture call ${n}`,
+      verdict: "shaky",
+      falsifier: "the fixture check",
+      review: "2026-06-15",
+      decided,
+    });
+
+  it("says when it read only the latest 200 saved decisions, and stays quiet under the cap", () => {
+    const account = { records: "keep" };
+    const under = Array.from({ length: 200 }, (_, n) => ({ title: `Fixture call ${n}`, block: block(n) }));
+    const quiet = changesForAccount("", "", account, under);
+    assert.match(quiet, /Read from the records you chose to keep/);
+    assert.match(quiet, /200 calls with a choice/);
+    assert.doesNotMatch(quiet, /Read the latest|saved decisions/);
+
+    const over = Array.from({ length: 245 }, (_, n) => ({
+      title: `Fixture call ${n}`,
+      block: block(n, n === 0 || n === 244 ? "Smaller pilot | after challenge 1" : "Keep the fixture plan"),
+    }));
+    const out = changesForAccount("", "", account, over);
+    assert.match(out, /Read the latest 200 of your 245 saved decisions\./);
+    assert.match(out, /200 calls with a choice\. 1 changed after a challenge or a later rethink/);
+    assert.match(out, /\*\*Fixture call 244\*\*/);
+    assert.doesNotMatch(out, /Fixture call 0/);
+    assert.doesNotMatch(out, /245 calls with a choice/);
+  });
+});

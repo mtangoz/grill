@@ -5,7 +5,7 @@ description: Grill a decision, plan or forecast. An outside AI judge, a model fr
 
 # Grill a decision
 
-The user has been thinking with you, so your critique is correlated with theirs. Grilling sends the decision to a judge from a **different model family**. The judge writes:
+The user has been thinking with you, so your critique is correlated with theirs. Grilling sends the decision to a judge from a **different model family**. Grill is the outside judge step Felix Rieseberg recommends in [How to be more ambitious](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/): do not ask the model to judge itself. The judge writes:
 - a steelman of the decision, and a counter-steelman;
 - challenges, each with a **falsifier**: the cheapest test that would settle it;
 - a verdict, in the same words as the website: solid, solid if, shaky, or doesn't hold up. The tool's own result uses `holds`, `holds-with-conditions`, `weak` or `refuted` for those four.
@@ -33,7 +33,7 @@ Leave out names of people who aren't needed, and anything personal, health- or H
 ## 2. Send it
 
 **If you have the `grill` tool** (from the Grill extension in Claude Desktop, or the plugin in Claude Code):
-1. Call it with `subject` and `question`. If the subject came from another assistant, add `author`, for example `openai`, so that family is excluded too.
+1. Call it with `subject` and `question`. If the subject came from another assistant, add `author`, for example `openai`, so that family is excluded too. Pass `big: true` only when the person already marked the decision as big. Never ask whether it is big. Leave it off on a quick or bulk grill.
 2. If it returns a job id, call `grill_result` with it until the note arrives, before you reply. Do not ask the user for a job id, and do not tell them how long it takes.
 3. If it says Grill isn't set up, relay its steps. Never ask the user to paste their key into the chat. A Grill Pro key goes in the same settings field as their own key. If Grill's settings name a judge model, the tool already uses it. That judge has to be a different company from the assistant they think with. If they name one from the same company, say so and don't treat it as the outside judge.
 
@@ -105,6 +105,8 @@ Layer 1 already ends with this line. If it does not, add it once. Do not add a c
 Say 'more', 'options', or your call.
 
 When they say more, why, or what else, show the next challenge, its cheap test, and the one or two facts that would flip the call. About 60 to 80 words. On the tool, call `grill_result` with `detail` `more` and relay that. Do not write it yourself. When they say options, help me decide, or they are stuck, call `grill_result` with `detail` `options`, or on the paste route show the judge's options lines. About 60 to 80 words. A full report only when they say full report (`detail` `full`). On the paste route, use only the judge's lines for each layer.
+
+Call `grill_result` with `detail` `deepen` only when the person asks to deepen or go bigger, and relay that layer. Do not call it otherwise, and do not write it yourself. It runs only for a decision they already marked as big, and only when that test is on. On a quick or bulk grill, do not mention deepen. The closing line may name deepen only for a big decision. Never add a question or a step before the verdict. On the paste route, same rule: only after the verdict, give them the second block in `paste-prompt.md` for the same outside judge. Do not answer it yourself.
 
 - **Plain words, the same ones the website uses.** Say solid, solid if…, shaky or doesn't hold up. "Solid if" always comes with its conditions; never shorten it to "solid". Quote the judge; don't soften it: no "overall, the judge agrees with you".
 - **Checked for you, then Your call.** When the note lists challenges, show "Checked for you" first (bugs, facts, figures, consistency) and "Your call" second (values and unwritten rules). Never move a challenge between groups.

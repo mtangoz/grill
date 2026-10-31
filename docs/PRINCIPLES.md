@@ -30,7 +30,7 @@ If you turn on anonymous usage stats (off by default), the tool also sends a met
 
 Enforced by: [scripts/usageStats.mjs](../scripts/usageStats.mjs), test "posts exactly the allowed keys to the ping URL, with no decision text" in [scripts/usageStats.test.mjs](../scripts/usageStats.test.mjs), and test "when off, a finished grill makes no request to grillyour.ai and creates no state file" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs).
 
-The optional Jev quality check sees the masked write-up and the report. That check is zero-retention. It keeps nothing.
+The Jev quality check is on by default. It sees the masked write-up and the report. Say "skip the check" to skip it for one grill, or switch it off in Grill's settings. That check is zero-retention. It keeps nothing.
 
 Enforced by: [scripts/upstreamCore.mjs](../scripts/upstreamCore.mjs), test "flags a second endpoint from the same provider that is not zero-retention" in [scripts/upstreamCore.test.mjs](../scripts/upstreamCore.test.mjs). The judge request itself is zero-retention, test "shows the privacy fields on the payload it would send" in [scripts/judge.test.mjs](../scripts/judge.test.mjs).
 
@@ -63,6 +63,20 @@ A Grill account is opt-in, and invite-only until Grill turns it on. It can keep 
 Grill Pro is accounts and stored history. It is not live. It will be disclosed in [docs/PRIVACY.md](PRIVACY.md) and on the site before launch. It will be opt-in.
 
 Enforced by: prompt text + review in [docs/PRIVACY.md](PRIVACY.md).
+
+## Open source
+
+The code that handles your decision or your keys stays open source under the MIT license, for good. That covers the tool, the skill and the paste prompt, the judge and its checks, the masking, the miss-card check, and the server code behind a Grill account in chat. Anything Grill charges for later may be closed only if it never touches decision text or keys, such as billing or team admin. Code already released under MIT stays MIT.
+
+Enforced by: [LICENSE](../LICENSE), test "one license everywhere, and the MIT text beside it" and test "the code that handles a decision is here, under MIT, with no other license in it" in [scripts/packaging.test.mjs](../scripts/packaging.test.mjs). A change to the license never merges itself: test "a license or trademark change is high risk and never merges itself" in [scripts/automergeCore.test.mjs](../scripts/automergeCore.test.mjs).
+
+What you can check depends on where Grill runs. On the free tool, Claude Desktop, Claude Code and `npx`, the code is on your computer, so what runs is what you can read. With a Grill account in chat, the same public code runs on Grill's server, so you are trusting that it is the published code. The footer of grillyour.ai's public pages names the commit that is live, and the site and the server deploy together from that one commit.
+
+Enforced by: [scripts/build-site.mjs](../scripts/build-site.mjs), test "names the live commit in every public page footer when the deploy provides one, and nothing otherwise" in [scripts/site.test.mjs](../scripts/site.test.mjs).
+
+The name is not part of the license. Forks are welcome under another name.
+
+Enforced by: [TRADEMARKS.md](../TRADEMARKS.md) and review.
 
 ## Product guardrails
 
@@ -105,3 +119,7 @@ Enforced by: [scripts/judgeCore.mjs](../scripts/judgeCore.mjs), test "renders Ch
 Speed comes first on quick or bulk grills. Never add a required question before the verdict on a quick or bulk grill. Reflection, such as a forecast, is an optional one-line offer after the verdict, for decisions you mark as big.
 
 Enforced by: [server/index.mjs](../server/index.mjs) and [skills/grill/SKILL.md](../skills/grill/SKILL.md), test "tells Claude to send the decision as stated, and not to wait for an OK" in [scripts/server.test.mjs](../scripts/server.test.mjs), and test "the skill and the prompt ask for the call in one line, and the site still shows a record" in [scripts/reflection.test.mjs](../scripts/reflection.test.mjs).
+
+An optional deepen layer is a test, off unless `GRILL_DEEPEN_TEST` is on. It never adds a question or a step before the layer-1 verdict. Layer 1 stays at most 50 words. The closing line may mention deepen only for a decision marked as big, never on a quick or bulk grill. The same judge then answers four depth questions and rewrites the plan. The judge stays the Auto Router, excluding only the author's company, with no pin.
+
+Enforced by: [scripts/judgeCore.mjs](../scripts/judgeCore.mjs) and [server/index.mjs](../server/index.mjs), test "keeps deepen off the default closing line, and names it only for a big decision when the test is on" in [scripts/judgeCore.test.mjs](../scripts/judgeCore.test.mjs), and test "runs deepen only after the verdict, only for a big decision, and only when the test is on" in [scripts/server.test.mjs](../scripts/server.test.mjs).

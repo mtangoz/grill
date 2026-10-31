@@ -251,6 +251,13 @@ export async function createCappedKey({ env, fetch: fetchImpl, name, limit, rese
   return { key, hash, limitUsd: cap };
 }
 
+/** Set a key's cap and make it reset monthly. Used to move a one-off starter key to a monthly allowance. */
+export async function setMonthlyLimit(hash, limit, { env, fetch: fetchImpl }) {
+  const { router } = clients(env, fetchImpl);
+  const r = await router.update(hash, { limit, limit_reset: "monthly" });
+  if (!r.ok) throw new UpstreamError(`the router didn't accept a monthly limit (${r.status})`);
+}
+
 /** Switch every listed key off. A key the router has already forgotten is fine. */
 export async function disableManagedKeys(hashes, { env, fetch: fetchImpl }) {
   const { router } = clients(env, fetchImpl);
@@ -397,11 +404,13 @@ const STYLE = `
   .mark { font-weight: 700; font-size: 1.1rem; text-decoration: none; }
   h1 { font-size: clamp(1.8rem, 5vw, 2.4rem); line-height: 1.12; letter-spacing: -0.02em; margin: 2.4rem 0 0.8rem; }
   h2 { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--quiet); margin: 2rem 0 0.7rem; }
+  .record-title { font-size: 1.15rem; font-weight: 650; letter-spacing: normal; text-transform: none; color: var(--ink); margin: 0 0 0.35rem; }
   p, li { color: var(--muted); }
   ol { padding-left: 1.25rem; } li { margin: 0.4rem 0; }
   .key { display: flex; gap: 8px; margin: 1.2rem 0; flex-wrap: wrap; }
   .key input { flex: 1 1 16rem; min-width: 0; font: 0.9rem var(--mono); padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--code-bg); color: var(--ink); }
-  button, .button { font: 600 0.95rem var(--sans); padding: 10px 18px; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); cursor: pointer; text-decoration: none; display: inline-block; }
+  button, .button { font: 600 0.95rem var(--sans); padding: 10px 18px; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); cursor: pointer; text-decoration: none; display: inline-block; box-sizing: border-box; min-height: 44px; }
+  input, select { box-sizing: border-box; min-height: 44px; }
   .small { font-size: 0.9rem; color: var(--quiet); }
   label { display: block; font-weight: 600; margin: 1rem 0 0.35rem; }
   input[type="email"], input[type="text"], textarea, select { width: 100%; box-sizing: border-box; font: 0.95rem var(--sans); padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: transparent; color: var(--ink); }
@@ -410,7 +419,7 @@ const STYLE = `
   pre.config { background: var(--code-bg); padding: 12px; border-radius: 8px; }
   fieldset { border: 1px solid var(--rule); border-radius: 8px; margin: 1rem 0; }
   .choice { font-weight: 400; margin: 0.35rem 0; }
-  .banner { border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; margin: 1rem 0; }
+  .banner { border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; margin: 1rem 0; overflow-wrap: anywhere; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 1rem 0; }
   :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }`;
 

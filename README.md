@@ -1,8 +1,9 @@
-# <img src="https://raw.githubusercontent.com/mtangoz/grill/main/site/brand/logo-256.png" alt="" width="40" height="40" align="top"> Grill
+# <img src="https://raw.githubusercontent.com/mtangoz/grill/main/site/brand/logo-256.png" alt="" width="40" height="40" align="top"> Grill: grill your AI before you send it to your boss
 
 **Hear the strongest case against your plan, then decide for yourself.**
 
 **Setup guide:** [grillyour.ai](https://grillyour.ai)
+**See it first:** [four made-up decisions, grilled](https://grillyour.ai/demo/)
 
 Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, Gemini, Grok or Muse. It sends the decision as you said it. An outside judge, a model from a different company, comes back with a short note: one verdict line, the sharpest point, and one cheap test, in about 50 words. Say more, options, or your call when you want the rest. A thin line gets a quick take and one question, not a refusal. A record is written only after you answer, and a percent is optional. Grill does not store it on the installed tool.
 
@@ -58,7 +59,7 @@ Want it in one step? Use Claude Desktop, above.
 1. In the Meta AI app, open **Muse → Settings → Connectors → Add custom connector**.
 2. URL: `https://grillyour.ai/mcp`
 3. Client ID: `RNdHSHmWCRJO40vd`. Same for everyone. No secret.
-4. Tap **Add**, then sign in with the code we email you.
+4. Tap **Add**, then sign in with the email your invite went to, every time. We email you a code; check spam if it isn't there in a minute.
 
 ### Cursor, VS Code, Codex, Gemini CLI, or any app that runs MCP servers
 
@@ -77,9 +78,21 @@ Then add a server named `grill` that runs `npx -y grillyour`. The config holds n
 
 It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTER_API_KEY` works when that is unset. Or save the key once for every app on this computer with `npx -y grillyour --set-key`. It goes in `~/.config/grill/key`, outside any project's `.env`.
 
-### Inside Claude.ai
+When Claude Code shows you a plan to approve, Grill adds one line, once a session: want an outside judge on this plan first? Keep planning and say "grill this plan". Claude Code hands the hook the plan, and the hook ignores it: it sends nothing and keeps nothing of the plan. To ask once, it keeps an empty marker file per session in the plugin's data folder, and removes markers older than two days the next time it runs. Turn it off with `GRILL_PLAN_OFFER=off`.
 
-Invite-only, and not live yet. When Grill turns it on, you add a custom connector at the address Grill gives you, sign in, and grill in the chat. Until then, use Claude Desktop or the paste route above. Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
+Claude Code's advisor (`/advisor`) has a stronger Claude look over the work. That is a second opinion from the same company. Grill's judge is from a different one. Use both.
+
+### Grill in chat
+
+Invite-only. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). Use the same email each time, the email your invite went to, every time.
+
+- **Claude.ai**, verified working. On the web, on a Free, Pro or Max plan: Customize → Connectors → Add custom connector. URL `https://grillyour.ai/mcp`, name it Grill, then sign in.
+- **ChatGPT**, verified working. On the web, with a paid plan: Plugins, the plus button, Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Click I understand and want to continue, then Create. Install it, then sign in.
+- **Grok Bot**, verified working. Tell the bot `Add this MCP server: https://grillyour.ai/mcp`, then sign in when asked.
+- **Gemini**: Should work, testing now. US only, a personal Google account, Keep Activity on. On gemini.google.com: Settings, Connected Apps, Add a custom app, paste `https://grillyour.ai/mcp`, Next, then sign in.
+- **Meta AI**, coming soon.
+
+Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
 
 ## What it costs
 
@@ -92,7 +105,7 @@ Coming later: an optional Pro plan with saved decision history and look-back rem
 - Your notes stay in your tools. Only the write-up you approve is sent. The reflection you write stays in your chat or your own notes.
 - The free tool has no account. Grill's makers never see your decisions on that tool. Anonymous usage stats are off unless you turn them on. An in-chat account is invite-only and not live yet; what it stores is in [docs/DATA-LEDGER.md](docs/DATA-LEDGER.md).
 - A key or token in the write-up stops the run. Email addresses, phone numbers and card numbers are masked.
-- The optional quality check (Jev) also sees the masked write-up; the website counts visits without cookies.
+- The quality check (Jev) is on by default and also sees the masked write-up. Say "skip the check" to skip it for one grill, or switch it off in Grill's settings. The website counts visits without cookies.
 - Grill news line: after a finished grill, at most once a session, and only within 7 days of a release or on the first 3 days of a month, a line with a link to hear when an optional Pro plan is ready. Showing the line sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own.
 - Anonymous usage stats: off by default. One metadata ping to Grill's website after the first successful grill, and never again. Never the decision, the question, the verdict, or your key.
 
@@ -117,4 +130,4 @@ Optional, in Claude, when you keep your own decision log: [docs/WEEKLY-REVIEW.md
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). The code that handles your decision stays MIT for good ([docs/PRINCIPLES.md](docs/PRINCIPLES.md#open-source)). The name and logo are not part of the license: [TRADEMARKS.md](TRADEMARKS.md).

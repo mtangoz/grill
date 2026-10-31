@@ -191,6 +191,19 @@ describe("blocked paths fail", () => {
     assert.match(commentBody(result), /api\/_account\.mjs/);
   });
 
+  it("a license or trademark change is high risk and never merges itself", () => {
+    for (const path of ["LICENSE", "TRADEMARKS.md", "license", "Trademarks.md"]) {
+      const result = classify(pull({ files: [file(path)] }), config);
+      assert.equal(result.lowRisk, false, path);
+      assert.equal(result.tier, "high", path);
+      assert.ok(rules(result).includes("path"), path);
+    }
+    // Joining a safe docs change does not carry it through.
+    const mixed = classify(pull({ files: [file("docs/PRINCIPLES.md"), file("LICENSE", { additions: 1, deletions: 1 })] }), config);
+    assert.equal(mixed.lowRisk, false);
+    assert.match(commentBody(mixed), /LICENSE/);
+  });
+
   it("matches the denylist case-insensitively", () => {
     assert.equal(classify(pull({ files: [file("API/_pro.mjs")] }), config).lowRisk, false);
     assert.equal(classify(pull({ files: [file("Docs/PRIVACY.md")] }), config).lowRisk, false);

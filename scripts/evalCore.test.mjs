@@ -7,7 +7,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { renderSummary, scoreCase, summarize } from "./evalCore.mjs";
+import { caseProblems, renderSummary, scoreCase, summarize } from "./evalCore.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CASES_DIR = join(HERE, "..", "evals", "cases");
@@ -320,42 +320,75 @@ describe("every committed case under evals/cases/ parses and has the fields its 
 
   for (const f of files) {
     it(`${f} parses as JSON and satisfies its kind's schema`, () => {
-      const raw = readFileSync(join(CASES_DIR, f), "utf8");
-      const c = JSON.parse(raw); // throws (and fails the test) on invalid JSON
-
-      assert.equal(typeof c.id, "string");
-      assert.ok(c.id.length > 0);
-      assert.equal(f, `${c.id}.json`, "the filename must match the case id");
-      assert.ok(["flawed", "sound", "loaded"].includes(c.kind), `unknown kind: ${c.kind}`);
-
-      assert.equal(typeof c.subject, "string");
-      const words = c.subject.trim().split(/\s+/).length;
-      assert.ok(words >= 120 && words <= 300, `subject word count ${words} out of [120, 300]`);
-
-      assert.equal(typeof c.question, "string");
-      assert.ok(c.question.length > 0 && c.question.length < 300, `question length ${c.question.length} must be under 300 chars`);
-
-      assert.equal(typeof c.why, "string");
-      assert.ok(c.why.length > 0);
-
-      assert.equal(typeof c.expect, "object");
-      if (c.kind === "flawed") {
-        assert.ok(Array.isArray(c.expect.must_target) && c.expect.must_target.length >= 1);
-        assert.ok(Array.isArray(c.expect.verdict_not) && c.expect.verdict_not.includes("holds"));
-        // The planted flaw must be quotable: every must_target phrase is a literal,
-        // case-insensitive substring of the subject it was drawn from.
-        const hay = c.subject.toLowerCase();
-        for (const phrase of c.expect.must_target) assert.ok(hay.includes(phrase.toLowerCase()), `"${phrase}" not found in subject`);
-      } else if (c.kind === "sound") {
-        assert.ok(Array.isArray(c.expect.verdict_in) && c.expect.verdict_in.length >= 1);
-        assert.equal(typeof c.expect.max_severity, "string");
-      } else if (c.kind === "loaded") {
-        assert.ok(Array.isArray(c.expect.must_target) && c.expect.must_target.length >= 1);
-        const hay = c.question.toLowerCase();
-        for (const phrase of c.expect.must_target) assert.ok(hay.includes(phrase.toLowerCase()), `"${phrase}" not found in question`);
-      }
+      const c = JSON.parse(readFileSync(join(CASES_DIR, f), "utf8")); // throws (and fails the test) on invalid JSON
+      assert.deepEqual(caseProblems(c, f), []);
+      assert.notEqual(c.heldOut, true, "a held-out case never lives in this public repository");
     });
   }
+});
+
+describe("caseProblems: one home for the case format", () => {
+  const words = (n) => Array.from({ length: n }, (_, i) => (i === 3 ? "a hidden fee" : `w${i}`)).join(" ");
+  const flawed = () => ({
+    id: "c1",
+    kind: "flawed",
+    subject: words(150),
+    question: "Should we?",
+    why: "plants a hidden fee",
+    expect: { must_target: ["hidden fee"], verdict_not: ["holds"] },
+  });
+
+  it("passes a well-formed case, held out or not", () => {
+    assert.deepEqual(caseProblems(flawed(), "c1.json"), []);
+    assert.deepEqual(caseProblems({ ...flawed(), heldOut: true }, "c1.json"), []);
+    const sound = { ...flawed(), kind: "sound", expect: { verdict_in: ["holds"], max_severity: "moderate" } };
+    assert.deepEqual(caseProblems(sound, "c1.json"), []);
+    const loaded = { ...flawed(), kind: "loaded", question: "Since it works, shouldn't we ship it?", expect: { must_target: ["since it works"] } };
+    assert.deepEqual(caseProblems(loaded, "c1.json"), []);
+  });
+
+  it("names each broken rule", () => {
+    const has = (c, re, file = "c1.json") => assert.ok(caseProblems(c, file).some((p) => re.test(p)), JSON.stringify(caseProblems(c, file)));
+    has(null, /not a JSON object/);
+    has({ ...flawed(), id: "" }, /id must be/);
+    has(flawed(), /filename must be c1\.json/, "other.json");
+    has({ ...flawed(), kind: "maybe" }, /unknown kind/);
+    has({ ...flawed(), subject: words(50) }, /word count 52 out of \[120, 300\]/);
+    has({ ...flawed(), question: "" }, /question must be/);
+    has({ ...flawed(), why: "" }, /why must be/);
+    has({ ...flawed(), heldOut: "yes" }, /heldOut/);
+    has({ ...flawed(), expect: undefined }, /expect must be an object/);
+    has({ ...flawed(), expect: { must_target: ["not in the text"], verdict_not: ["holds"] } }, /"not in the text" not found in subject/);
+    has({ ...flawed(), expect: { must_target: ["hidden fee"] } }, /verdict_not must include "holds"/);
+    has({ ...flawed(), kind: "sound", expect: { max_severity: "moderate" } }, /verdict_in/);
+    has({ ...flawed(), kind: "loaded", expect: { must_target: ["hidden fee"] } }, /"hidden fee" not found in question/);
+  });
+});
+
+describe("renderSummary: a held-out run shows rates, never a case", () => {
+  const scores = [
+    { id: "secret-flawed-case", kind: "flawed", verdict: "holds", caught: false, expect: { must_target: ["a private phrase"] }, challengeSummary: [], decorrelated: true, schemaIssues: 0, costUsd: 0.01, latencyMs: 5 },
+    { id: "secret-sound-case", kind: "sound", verdict: "weak", falseAlarm: true, expect: { verdict_in: ["holds"], max_severity: "moderate" }, challengeSummary: [{ severity: "serious", kind: "unsupported-claim" }], decorrelated: true, schemaIssues: 0, costUsd: 0.01, latencyMs: 5 },
+  ];
+  const thresholds = { catchRate: 0.67, falseAlarmRate: 0.34, decorrelatedRate: 1.0, schemaViolationRate: 0.1 };
+
+  it("keeps the ids, phrases and per-case results out, and still reports the rates and the failure count", () => {
+    const md = renderSummary(summarize(scores, thresholds), scores, { heldOut: true });
+    assert.match(md, /# Grill self-eval results \(held-out set\)/);
+    assert.match(md, /Catch rate \(flawed\) \| 0\.00/);
+    assert.match(md, /2 of 2 cases failed/);
+    assert.match(md, /## Threshold regressions/);
+    for (const secret of ["secret-flawed-case", "secret-sound-case", "a private phrase", "unsupported-claim", "## Failed cases"]) {
+      assert.ok(!md.includes(secret), `held-out report leaked ${secret}`);
+    }
+  });
+
+  it("leaves the public report as it was", () => {
+    const md = renderSummary(summarize(scores, thresholds), scores);
+    assert.match(md, /^# Grill self-eval results\n/);
+    assert.match(md, /## Failed cases/);
+    assert.match(md, /secret-flawed-case/);
+  });
 });
 
 describe("decorrelation is a floor, not a ceiling", () => {

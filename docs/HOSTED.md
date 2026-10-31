@@ -1,6 +1,6 @@
 # Grill inside your chat
 
-Not live yet. The code is off unless `GRILL_HOSTED=on`. When it is on, it is invite-only: set `GRILL_HOSTED_ALLOWLIST` to the emails that may grill. Anyone else gets a short message and no grill. Open sign-up is a separate switch, `GRILL_OPEN_SIGNUP=on`, and is off by default.
+Not live yet. The code is off unless `GRILL_HOSTED=on`. When it is on, it is invite-only: set `GRILL_HOSTED_ALLOWLIST` to the emails that may grill. Anyone else gets a short message and no grill, with a link to `/redeem`. A code from `GRILL_INVITE_CODES` lets a signed-in person in. Open sign-up is a separate switch, `GRILL_OPEN_SIGNUP=on`, and is off by default. Unset `GRILL_INVITE_CODES` and redeem does nothing.
 
 Grill pays for the starter credit, so two hard monthly caps sit in front of every grill: one for the whole service and one per person. When either is reached, the grill does not run and the person gets one plain sentence saying the free grills for the month are used up and nothing was charged to them. Each person's router key is also hard-capped by the router itself.
 
@@ -10,10 +10,12 @@ The judge is always OpenRouter's Auto Router (`openrouter/auto`). Grill excludes
 
 ## What a person does
 
-1. Add a custom connector. The URL is `https://<host>/mcp`. On a preview that host is the preview origin. `https://mcp.grillyour.ai/mcp` comes later, when the owner adds that domain.
-2. Connect. A sign-in opens. Google, or an emailed code. No key to paste, and no card.
+1. Follow the steps for the AI at `https://grillyour.ai/start/` (on a preview, use that preview's origin instead of grillyour.ai). Claude.ai, ChatGPT and Grok Bot are verified working. Gemini should work and is still being tested. Meta AI is coming soon. The connector URL is `https://<host>/mcp`. On a preview that host is the preview origin. `https://mcp.grillyour.ai/mcp` comes later, when the owner adds that domain.
+2. Connect. A sign-in opens. Sign in with an emailed code: use the same email each time, the email your invite went to, every time, and check spam if the code isn't there in a minute. No key to paste, no password, and no card. If you have an invite code instead, sign in, open `/redeem`, enter the code, and confirm. That gives early-tester access: free, $5 of use each month, on the same $20 service cap.
 3. The first grill asks, once, whether to keep decision records. Answer once. The outside-judge disclosure is shown once per account, then not again.
 4. Say the decision as you mean it. The assistant sends that. It does not show a template or wait for an OK. The note comes back in the chat. If three grills are already running, the assistant waits and retries on its own.
+
+An assistant that cannot add a connector can still use this grill. It gives the person a link, `/judge?q=` plus the decision, at most 4000 characters. Add `from` with the same client names a connector already matches, such as `gemini`, `gemini-cli`, `antigravity`, `claude`, `chatgpt` or `grok`, so that company is excluded. The page names the company in one line. With no `from`, or one it does not know, nobody is excluded. The page is signed in the same way as `/decisions`. It shows the decision and does not run a grill until they press the button. The verdict is on the page to copy back. Keeping records follows the same rule as a grill in chat: the first time asks, and a later grill uses that answer.
 
 Decisions you chose to keep are at `/decisions`. Each gets a look-back date 14 days out. When the date comes, `/decisions` lists it under "Due for a look-back", and the next `grill_decided` adds one line counting the calls due, at most once a UTC day. To be reminded outside the chat, switch on a calendar link on `/decisions` or `/account` and subscribe to it in your calendar app. It is off by default, shown once, and shows "Grill look-back due" on each date, with titles only if you switch them on. Turning it off, getting a new link, or deleting the account stops the old link. The link is `https://<host>/decisions/calendar/<secret>.ics`. Why it works this way: [PRD-lookback-reminders.md](PRD-lookback-reminders.md).
 
@@ -25,17 +27,18 @@ On the preview environment only, until the spike in [hosted-spike.md](hosted-spi
 
 | Variable | What it is |
 |---|---|
-| `GRILL_HOSTED` | `on` to serve `/mcp`, the sign-in metadata, the authorization-server metadata, `/decisions`, the calendar link and `/account`. Anything else, including unset, is a 404. |
+| `GRILL_HOSTED` | `on` to serve `/mcp`, the sign-in metadata, the authorization-server metadata, `/decisions`, `/judge`, the calendar link and `/account`. Anything else, including unset, is a 404. |
 | `GRILL_HOSTED_ALLOWLIST` | Comma-separated emails that may grill while sign-up is invite-only. If unset or empty, nobody is let in. |
 | `GRILL_OPEN_SIGNUP` | `on` lets any verified email grill, ignoring the list. Anything else, including unset, keeps it invite-only. Turn it on only with the caps below set. |
+| `GRILL_INVITE_CODES` | Comma-separated invite codes. Add `:N` to cap a code at N uses (`friend:10`). A code with no count has no use limit. A colon that is not a whole number is skipped. Unset or empty turns redeem off, and a stored redemption does not admit anyone. This does not change the $5 and $20 caps. |
 | `GRILL_MONTHLY_CAP_USD` | Optional. Hard cap on what Grill pays for all hosted grills in a calendar month (UTC). Default `20`. `0` stops every grill. |
-| `GRILL_USER_MONTHLY_CAP_USD` | Optional. Hard cap per person per calendar month (UTC), keyed to a hash of the email the starter credit belongs to, so an agent shares its owner's cap. Default `1`. |
+| `GRILL_USER_MONTHLY_CAP_USD` | Optional. Hard cap per person per calendar month (UTC), keyed to a hash of the email the starter credit belongs to, so an agent shares its owner's cap. Default `5`: the early-tester allowance, free for life, reset on the 1st. Each person's router key is minted at the same amount with a monthly reset. |
 | `CLERK_ISSUER` | Clerk Frontend API URL, no trailing slash. This is the authorization server in the protected-resource metadata. It does not serve the sign-in page. |
 | `CLERK_SIGN_IN_URL` | Optional. Absolute URL of the Clerk Account Portal sign-in page. When unset, Grill derives it from `CLERK_ISSUER`: `name.clerk.accounts.dev` becomes `https://name.accounts.dev/sign-in`, `name.clerk.accountsstage.dev` becomes `https://name.accountsstage.dev/sign-in`, and `clerk.example.com` becomes `https://accounts.example.com/sign-in`. Set this when the Frontend API host does not follow those shapes. |
 | `CLERK_JWKS_URL` | Optional. Defaults to `<CLERK_ISSUER>/.well-known/jwks.json`. |
 | `CLERK_SECRET_KEY` | Clerk secret key. Used to read the verified email, to read an AgentID access token when the sign-in is an agent, and to delete the user when they delete the account. |
 | `OPENROUTER_MANAGEMENT_KEY` | Creates one capped key per person. Never put this where a visitor can read it. |
-| `GRILL_STARTER_CREDIT_USD` | Optional. Hard limit on that key. Default `1.00`. No monthly reset. |
+| `GRILL_STARTER_CREDIT_USD` | No longer used by Grill in chat. The key's limit is the per-person monthly cap above, and it resets monthly. A key made before that change, a one-off credit, is moved to the monthly cap the next time its credit is read. |
 | `UPSTASH_REDIS_REST_URL` | Redis for the account, the short-lived report, the records, and the spend counters for the caps. |
 | `UPSTASH_REDIS_REST_TOKEN` | Redis token. |
 | `GRILL_KEY_ENCRYPTION_KEY` | 32 bytes, base64. Encrypts the model-router key at rest. |
@@ -52,11 +55,11 @@ The function that runs the judge is allowed 300 seconds, and its bundle includes
 For this preview:
 
 - Publish Client ID Metadata Documents and Dynamic Client Registration. Require PKCE. Scopes `openid`, `profile`, `email`.
-- Older MCP clients look up the authorization server on this host, including the path-inserted `/mcp` forms from RFC 8414. Grill answers `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration` (and both with `/mcp`) with Clerk's own document from `CLERK_ISSUER`, as JSON, `Access-Control-Allow-Origin: *`, cached for about a minute. If Clerk cannot be read, the response redirects there. Protected-resource metadata is unchanged and still names `CLERK_ISSUER`.
-- Google, and an emailed code.
+- Older MCP clients look up the authorization server on this host, including the path-inserted `/mcp` forms from RFC 8414. Grill answers `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration` (and both with `/mcp`) with Clerk's own document from `CLERK_ISSUER`, as JSON, `Access-Control-Allow-Origin: *`, cached for about a minute. If Clerk cannot be read, the response redirects there. Protected-resource metadata still names `CLERK_ISSUER`. `GET /.well-known/oauth-protected-resource/mcp` serves the same metadata as the root path.
+- An emailed code. Google is off in production, so invitees are told to use the email their invite went to.
 - Redirect `https://claude.ai/api/mcp/auth_callback` for Claude on the web, desktop, mobile and Cowork.
 - Port-agnostic loopback `http://localhost/callback` and `http://127.0.0.1/callback` for Claude Code.
-- Add this site's origin to Clerk's allowed origins. Signed-out visits to `/decisions` and `/account` redirect to the Account Portal sign-in page, then back here. Grill reads the `__session` cookie with the same JWKS. A development instance does not set that cookie on a `*.vercel.app` preview: the dev session stays on Clerk's host, and Clerk will not send the browser back until this origin is allowed. A return with no session shows a short message instead of another redirect. On a production instance, use your own domain (`accounts.<domain>` for sign-in, the app on that same domain) so the cookie can come back with the person.
+- Add this site's origin to Clerk's allowed origins. Signed-out visits to `/decisions` and `/account` redirect to the Account Portal sign-in page, then back here. Grill runs no Clerk script on these pages, so it gets the session the way Clerk's own server SDK does: when the browser carries Clerk's `__client_uat` marker, or has just come back from sign-in, Grill sends it once to Clerk's handshake (`<CLERK_ISSUER>/v1/client/handshake`, nonce format). Clerk sends it back with a nonce, which Grill trades for the session through Clerk's Backend API (`/v1/clients/handshake_payload`, with `CLERK_SECRET_KEY`), then checks the `__session` token with the same JWKS. A short-lived state cookie (`__Host-grill_hs`, 10 minutes) ties that return to this browser, so a link carrying someone else's nonce does nothing. Clerk's session token lasts about a minute, so Grill then sets its own signed cookie (`__Host-grill_page`: the Clerk user ID and an expiry, HMAC-signed with a key derived from `GRILL_RECORD_KEY`, HttpOnly, 12 hours). A form sent after that lapses goes back to the page instead of applying. A development instance does not set that cookie on a `*.vercel.app` preview: the dev session stays on Clerk's host, and Clerk will not send the browser back until this origin is allowed. A return with no session shows a short message instead of another redirect. On a production instance, use your own domain (`accounts.<domain>` for sign-in, the app on that same domain) so the cookie can come back with the person.
 - AgentID is optional. Turn on Clerk's built-in AgentID connection when an agent should sign in. To let Grill check the human owner's email against the allowlist, register an AgentID app, use those custom credentials in Clerk, and add the `owner_email` scope. Details are in [hosted-spike.md](hosted-spike.md).
 
 Grill maps the OAuth client, not the chat's own guess:
@@ -82,7 +85,7 @@ Then `/mcp`, choose grill, Authenticate, and sign in with an allowlisted email.
 
 ## Grok
 
-Grok is not part of the pass rule in the spike. When you try it, add a custom connector at the same `/mcp` URL and sign in with an allowlisted email. Grill treats a redirect on `grok.com` or `grok.x.ai` as Grok and excludes x-ai from the judge. If Grok's redirect host is different, the client is unknown and nothing is excluded until the call names an author. Do not pin Grok's own model to save time.
+Grok Bot is verified working. The person tells the bot `Add this MCP server: https://<host>/mcp`, then signs in with the same email each time, the email your invite went to, every time. Grill treats a redirect on `grok.com` or `grok.x.ai` as Grok and excludes x-ai from the judge. If Grok's redirect host is different, the client is unknown and nothing is excluded until the call names an author. Do not pin Grok's own model to save time. The spike's pass rule is still the Claude web runs in [hosted-spike.md](hosted-spike.md).
 
 ## Grill IDs, and leaving Clerk
 

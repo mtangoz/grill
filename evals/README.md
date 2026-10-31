@@ -29,3 +29,21 @@ skips. A change to the judge prompt or the severity scale needs a live run on a 
 (`OPENROUTER_API_KEY=… node scripts/eval.mjs`), ideally twice, since the same case can score
 differently run to run. Severity is graded against the choice between the options, so a sound case
 fails when a fix to its plan's details is filed as "serious".
+
+**A held-out set keeps the score honest.** Every case above is public, so a model can be trained on
+it and a prompt can be tuned to it, and over time a good score would stop meaning anything. The
+maintainers keep a second set of fictional cases outside this repository, marked `"heldOut": true`,
+in the same format (`caseProblems` in `scripts/evalCore.mjs` checks both). Run it with:
+
+```bash
+OPENROUTER_API_KEY=… node scripts/eval.mjs --cases <held-out dir> --out <path outside this repo>/results.json
+```
+
+The script refuses a held-out run whose cases or results sit inside this repository. What it
+prints, and what it adds to a job summary, is the rates and a count of failures: no case id, no
+phrase, no per-case result. The full scores stay in the results file. The cases still go to the
+judge and the quality check, as in any run, and both are zero-retention. Report the public and
+held-out scores side by side: a change that lifts the public score but not the held-out one has
+learned the test. A held-out case may be published here, with `heldOut` removed, once a newer case
+replaces it. Keep the results file out of the cases directory, or the next run reads it as a case
+and stops.

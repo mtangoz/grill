@@ -12,13 +12,36 @@
   </div>
 
   <h1>Your privacy, in plain words.</h1>
-  <p class="lede">The free tool has no account and keeps nothing. Here is everything that is sent, and everything that is counted.</p>
+  <p class="lede">The free tool has no account and keeps nothing. Grill in chat keeps only what you choose, encrypted, and you can delete it. Here is everything that is sent, and everything that is counted.</p>
+
+  <h2>Our four promises</h2>
+  <ul class="steps">
+    <li><strong>Your decisions are never public.</strong> We never publish a decision, and we never tie one to your name in public. Not in examples, case studies, marketing or anywhere else.</li>
+    <li><strong>No ads.</strong> Grill shows no ads and has no advertising partners.</li>
+    <li><strong>We never sell your data.</strong> Not your decisions, your email or your usage. Not to anyone.</li>
+    <li><strong>We never train AI on your decisions.</strong> Grill improves by practising on made-up examples. The AI services that judge your decision are asked, on every request, not to keep it or collect it (zero data retention).</li>
+  </ul>
 
   <h2>Your decisions</h2>
   <p class="note">The reflection at the end of a grill stays in your notes. This website does not store it. Only the short summary you approve is shared, never your notes or files. If you copy and paste, it goes to the AI you paste it into. With the one-click version, it goes only to AI services that don’t store it, plus a quality check that’s on by default (Grill tells you each time, and you can turn it off). Email addresses, phone numbers and card numbers are hidden before anything is sent. And Grill gets better by practicing on made-up examples, never on your decisions.</p>
 
   <h2>Accounts and keys</h2>
-  <p class="note">An account is only for a key we manage. A starter allowance needs no card. Bring your own key and there is no account. We see your email, the assistant and judge you pick, and your key’s usage (cost and model, never the text). We count sign-ups, keys issued, first grills, allowances used up and upgrade clicks. We don’t keep what you decide unless you turn on saving copies of reports on that account, and you can delete them.</p>
+  <p class="note">An account is only for a key we manage. A starter allowance needs no card. Bring your own key and there is no account. We see your email, the assistant and judge you pick, and your key’s usage (cost and model, never the text). We count sign-ups, keys issued, first grills, allowances used up and upgrade clicks. We don't keep what you decide unless you choose to keep decision records (Grill in chat) or saved report copies (Pro), and you can delete them.</p>
+
+  <h2>Using Grill in chat (the connector)</h2>
+  <p class="note">Invited testers connect Grill to the AI they use at <a href="https://grillyour.ai/mcp">https://grillyour.ai/mcp</a>.</p>
+  <ul class="steps">
+    <li><strong>Sign-in.</strong> You sign in with a code we email you. Use the email your invite went to every time, and check spam if the code doesn't arrive. There's no password. Clerk runs the sign-in for us and keeps your email and the sign-in event.</li>
+    <li><strong>Your decision.</strong> The decision you send passes through Grill's server in memory to reach the judge, then it's gone. It's never logged.</li>
+    <li><strong>A page, when the assistant cannot connect.</strong> <a href="https://grillyour.ai/judge">/judge</a> shows the decision from the link and sends it only when you press the button. It is the same judge, the same caps, and the same choice about records. A decision over 4000 characters is not sent. The link stays in your browser's history. If the link names the assistant (`from=gemini`, `gemini-cli`, `antigravity`, `Google-Discovery-Engine`, `claude`, `chatgpt` or `grok`), the judge is not from that company.</li>
+    <li><strong>The verdict.</strong> The verdict is held encrypted for at most 15 minutes so your AI can fetch it.</li>
+    <li><strong>Records, only if you say yes.</strong> If you choose to keep records, a draft waits encrypted for up to 14 days for your call. Your decision records are then kept encrypted. If you say no, nothing is kept.</li>
+    <li><strong>You control them.</strong> See, export or delete any record, or all of them, at <a href="https://grillyour.ai/decisions">grillyour.ai/decisions</a>. Deleting your account at <a href="https://grillyour.ai/account">grillyour.ai/account</a> removes your records, your key and your sign-in.</li>
+    <li><strong>Who can read them.</strong> Only you see your records on the site. Grill's maintainers hold the encryption keys, so they could technically decrypt records you chose to keep. They don't read them, and they never publish them.</li>
+    <li><strong>What we count.</strong> We count the cost, time and model of each grill, plus a monthly spend number for the free allowance. We also keep an anonymous count of how many people use Grill each day, week and month. That count can't list who was counted, and none of it includes the words of a decision.</li>
+    <li><strong>An invite code.</strong> If you enter one, we check it and don't store it as you typed it. We keep a one-way hash of your email, a one-way hash of the code, and how many times that code has been used. Deleting your account does not remove that, so the same email can sign in again without using the code a second time.</li>
+    <li><strong>Who else is involved.</strong> OpenRouter routes your decision to the judge, under zero data retention. Upstash stores the encrypted records. Vercel hosts the site.</li>
+  </ul>
 
   <h2>This website and the installed tool</h2>
   <p class="note">This website counts visits anonymously, with no cookies and nothing that identifies you. The installed tool can optionally send one anonymous usage ping to this site after the first successful grill, if you turn that on at install; off by default; never again; never decision words.</p>
@@ -29,6 +52,7 @@
   <p class="note">If you join the Pro launch list, we keep your email address, and only that, in Resend until Pro launches, and you can unsubscribe with one click.</p>
 
   <p class="note">The details are in the <a href="https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md">privacy notes</a>. Questions: <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p>
+  <p class="note">Who makes Grill is on <a href="/about/">About</a>. How to reach us is on <a href="/contact/">Contact</a>.</p>
 
   <div class="footer">
     <span>Open source · <a href="/contribute/">Contribute</a> · <a href="https://github.com/mtangoz/grill">GitHub</a> · <a href="/privacy/">Privacy</a></span>

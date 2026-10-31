@@ -4,7 +4,7 @@
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { confidenceValue, parseRecords } from "./reflection.mjs";
-import { SCOPE_GUARD } from "./judgeCore.mjs";
+import { SCOPE_GUARD, clientCompanyHint } from "./judgeCore.mjs";
 import { buildGrillTools } from "../server/index.mjs";
 
 export { SCOPE_GUARD };
@@ -18,15 +18,31 @@ export const CLAUDE_WEB_REDIRECT = "https://claude.ai/api/mcp/auth_callback";
 export const CLAUDE_CODE_CLIENT_ID = "https://claude.ai/oauth/claude-code-client-metadata";
 export const TYPICAL_GRILL_USD = 0.03;
 export const MAX_SUBJECT_CHARS = 200_000;
+/** A /judge link carries the decision in the query string. Longer than this is refused and not sent. */
+export const JUDGE_PACKET_MAX = 4000;
 export const MAX_QUESTION_CHARS = 600;
 export const MAX_PASTE_CHARS = 100_000;
 export const JOB_TTL_SECONDS = 15 * 60;
+/**
+ * The hosted judge has to finish inside the function that runs it (vercel.json maxDuration
+ * for api/hosted.js). Past that, Vercel kills the function, nothing is stored, and the job
+ * reads as expired. Leave 30 seconds to write the result; a test pins this to vercel.json.
+ */
+export const HOSTED_JUDGE_DEADLINE_MS = 270_000;
+/** One judge attempt, so a hung first attempt still leaves room for one retry inside the deadline. */
+export const HOSTED_JUDGE_ATTEMPT_MS = 180_000;
 export const DAILY_GRILL_LIMIT = 30;
 export const RUNNING_JOB_LIMIT = 3;
 export const CREDIT_CACHE_MS = 60_000;
-export const OUT_OF_CREDIT = "You're out of grill credit. More is coming soon. Write to support@grillyour.ai for a top-up.";
-export const INVITE_ONLY =
-  "Grill in chat is invite-only for now, and this email isn't on the list yet. To ask for an invite, write to support@grillyour.ai.";
+export const OUT_OF_CREDIT = "You're out of grill credit for this month, so this one didn't run. It starts again on the 1st. Nothing was charged to you. If you need more sooner, write to support@grillyour.ai.";
+/** The invite-only reply. `origin` makes the redeem link absolute for the host they are on. */
+export function inviteOnlyText(origin = "") {
+  const base = String(origin || "").replace(/\/$/, "");
+  const redeem = base ? `${base}/redeem` : "/redeem";
+  return `Grill in chat is invite-only for now, and this email isn't on the list yet. If you were invited, disconnect Grill, connect again, and sign in with the email your invite went to. If you have an invite code, enter it at ${redeem}. To ask for an invite, write to support@grillyour.ai.`;
+}
+
+export const INVITE_ONLY = inviteOnlyText();
 export const CONSENT_TEXT = [
   "Keep a record of your decisions on your Grill account? Yes / No",
   "",
@@ -141,22 +157,20 @@ function isLoopbackRedirect(raw) {
   }
 }
 
-function hintFromClientInfo(clientInfo) {
-  const name = String(clientInfo?.name || clientInfo?.title || "").trim();
-  if (!name) return null;
-  if (/\bclaude[- ]code\b/i.test(name)) return { company: "anthropic", sourceApp: "claude-code" };
-  if (/\bclaude\b/i.test(name)) return { company: "anthropic", sourceApp: "claude" };
-  if (/\b(?:chatgpt|openai)\b/i.test(name)) return { company: "openai", sourceApp: "chatgpt" };
-  if (/\bgrok\b/i.test(name)) return { company: "x-ai", sourceApp: "grok" };
-  if (/\bgemini\b/i.test(name)) return { company: "google", sourceApp: "gemini" };
-  return null;
+function rememberedHint(remembered) {
+  const company = String(remembered?.company || "").trim().toLowerCase();
+  const sourceApp = String(remembered?.sourceApp || "").trim().toLowerCase();
+  if (!AUTHOR_RE.test(company) || !AUTHOR_RE.test(sourceApp)) return null;
+  return { company, sourceApp };
 }
 
 /**
  * Map an OAuth client to the company to exclude and the source_app to store.
- * clientInfo is used only when the OAuth client itself is unknown.
+ * The OAuth client wins. Otherwise the same name list as the local server:
+ * clientInfo from initialize, then a hint remembered from that handshake,
+ * then the User-Agent. An unknown client still excludes nothing.
  */
-export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInfo = null } = {}) {
+export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInfo = null, userAgent = "", remembered = null } = {}) {
   const redirect = String(redirectUri || "").trim();
   const client = String(clientId || "").trim();
   const redirectHost = hostOf(redirect);
@@ -192,7 +206,13 @@ export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInf
     return { company: "google", sourceApp: "gemini" };
   }
 
-  return hintFromClientInfo(clientInfo) || { company: "", sourceApp: "unknown" };
+  const fromName = clientCompanyHint({ clientInfo });
+  if (fromName) return fromName;
+  const kept = rememberedHint(remembered);
+  if (kept) return kept;
+  const fromAgent = clientCompanyHint({ userAgent });
+  if (fromAgent) return fromAgent;
+  return { company: "", sourceApp: "unknown" };
 }
 
 /** An explicit author wins. Unknown clients exclude nothing beyond that, which means `--author none`. */
@@ -232,17 +252,77 @@ export function allowlistAllows(email, env = {}) {
   return list.includes(who);
 }
 
+const INVITE_CODE_MAX_LEN = 80;
+const INVITE_MAX_USES = 1_000_000;
+
+/** A shareable code: trimmed, lowercased, at most 80 characters, no control characters. */
+export function normalizeInviteCode(raw) {
+  const text = String(raw ?? "").trim().toLowerCase();
+  if (!text || text.length > INVITE_CODE_MAX_LEN) return "";
+  if (/[\u0000-\u001f\u007f]/.test(text)) return "";
+  return text;
+}
+
+/**
+ * GRILL_INVITE_CODES: comma-separated codes. A trailing `:N` (a whole number, 0 to
+ * 1,000,000) is that code's max uses. No count means no limit. A colon that is not
+ * a use count skips that entry, so a typo cannot become an unlimited code. The first
+ * copy of a code wins. Unset, blank, or nothing valid means the feature is off.
+ * This does not change the $5 or $20 caps.
+ */
+export function parseInviteCodes(env = {}) {
+  const raw = typeof env.GRILL_INVITE_CODES === "string" ? env.GRILL_INVITE_CODES : "";
+  if (!raw.trim()) return [];
+  const seen = new Set();
+  const out = [];
+  for (const part of raw.split(",")) {
+    const piece = part.trim();
+    if (!piece) continue;
+    const counted = piece.match(/^(.*):(\d+)$/);
+    let code = "";
+    let max = null;
+    if (counted) {
+      code = normalizeInviteCode(counted[1]);
+      max = Number(counted[2]);
+      if (!code || !Number.isInteger(max) || max > INVITE_MAX_USES) continue;
+    } else if (piece.includes(":")) {
+      continue;
+    } else {
+      code = normalizeInviteCode(piece);
+      if (!code) continue;
+    }
+    if (seen.has(code)) continue;
+    seen.add(code);
+    out.push({ code, max });
+  }
+  return out;
+}
+
+export function inviteCodesEnabled(env = {}) {
+  return parseInviteCodes(env).length > 0;
+}
+
+export function inviteCodeHash(code) {
+  const normalized = normalizeInviteCode(code);
+  if (!normalized) return "";
+  return createHash("sha256").update(normalized).digest("hex");
+}
+
 // ── Spending caps ────────────────────────────────────────────────────────────
 // Two hard caps on what Grill pays for starter credit, counted in Upstash in
 // micro-dollars (whole numbers, so INCRBY stays atomic and exact):
 //   - one for the whole service per calendar month (UTC), GRILL_MONTHLY_CAP_USD, default $20;
-//   - one per person per calendar month, GRILL_USER_MONTHLY_CAP_USD, default $1.
+//   - one per person per calendar month, GRILL_USER_MONTHLY_CAP_USD, default $5: the early-tester
+//     allowance, free for life, which resets on the 1st. Each person's router key is minted at the
+//     same amount with a monthly reset.
 // A person is keyed by the human email the starter credit belongs to, so an agent
 // signed in for someone shares that person's cap. Each person's router key is
 // still capped by the router itself; these counters are the second lock.
 
 export const DEFAULT_MONTHLY_CAP_USD = 20;
-export const DEFAULT_USER_MONTHLY_CAP_USD = 1;
+/** Early testers: free for life, $5 of use each month, reset on the 1st (UTC). */
+export const TESTER_MONTHLY_USD = 5;
+export const DEFAULT_USER_MONTHLY_CAP_USD = TESTER_MONTHLY_USD;
 export const CAP_COUNTER_TTL_SECONDS = 40 * 24 * 60 * 60;
 
 export const SERVICE_CAP_TEXT =
@@ -264,6 +344,14 @@ export function monthlyCapUsd(env = {}) {
 
 export function userMonthlyCapUsd(env = {}) {
   return capFromEnv(env.GRILL_USER_MONTHLY_CAP_USD, DEFAULT_USER_MONTHLY_CAP_USD);
+}
+
+/** The allowance line /decisions and /account show, with what is left of this month's use. */
+export function allowanceLine(remainingUsd, env = {}) {
+  const cap = userMonthlyCapUsd(env);
+  const whole = Number.isInteger(cap) ? String(cap) : cap.toFixed(2);
+  const left = Math.max(0, Number(remainingUsd) || 0).toFixed(2);
+  return `Free for life: $${whole} of use each month, resets on the 1st. $${left} left this month.`;
 }
 
 /** "2026-10" in UTC. */
@@ -489,12 +577,30 @@ export function recordsForLookBack(saved, { records = "", now = Date.now() } = {
 }
 
 const HOSTED_COST_LINE =
-  "Uses a little of the person's Grill credit. Do not tell them the balance or how long it takes. The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. Do not ask the person for a job id. The first time, Grill asks whether to keep decision records before anything is sent: show that one question, and call again with keep_records true or false only after they answer Yes or No. Do not add your own disclosure. If the result starts with the outside-judge sentence, show that one line once. Later results leave it off. Layer 1 is at most 50 words. When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Do not write a layer yourself. A follow: line is a job id for you. Never show it. " +
+  "Uses a little of the person's Grill credit. Do not tell them the balance or how long it takes. The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. Do not ask the person for a job id. The first time, Grill asks whether to keep decision records before anything is sent: show that one question, and call again with keep_records true or false only after they answer Yes or No. Do not add your own disclosure. If the result starts with the outside-judge sentence, show that one line once. Later results leave it off. Layer 1 is at most 50 words. When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Do not write a layer yourself. A follow: line is a job id for you. Never show it. " +
   SCOPE_GUARD;
 
 /** What the assistant reads from grill_result. The next step, if the job is still running, is another call. */
 const HOSTED_RESULT_DESCRIPTION =
-  "Collect a grill that returned a job id, or a later layer of one. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person. detail is brief, more, options, or full. Do not write a layer yourself.";
+  "Collect a grill that returned a job id, or a later layer of one. This call waits up to 45 seconds. If it is still running, call grill_result again right now with the same job id, before you reply to the person. detail is brief, more, options, full, deepen, or provenance. Call detail deepen only when the person asks to deepen or go bigger. Call detail provenance only to write a lasting record of the grill, such as an audit log: put that one line in the record, not in the chat reply, unless the person asks which model judged. Do not write a layer yourself.";
+
+/**
+ * One line for an agent's written audit record: which model judged, which company was
+ * excluded, and when. The time joins it to the account's spend log, which keeps the same
+ * model. It is for the record, not the chat note.
+ */
+export function provenanceLine(parsed, at) {
+  const served = typeof parsed?.servedModel === "string" && parsed.servedModel.trim() ? parsed.servedModel.trim() : "unattributable";
+  const author = typeof parsed?.declaredAuthor === "string" && parsed.declaredAuthor.trim() ? parsed.declaredAuthor.trim() : "anthropic";
+  const excluded = author === "none" ? "none" : author;
+  const decorrelated = parsed?.decorrelated === true ? "yes" : "no";
+  const when = at instanceof Date && !Number.isNaN(at.getTime()) ? at.toISOString().replace(/\.\d{3}Z$/, "Z") : "unknown";
+  return `Judge: ${served} · excluded: ${excluded} · decorrelated: ${decorrelated} · at: ${when}`;
+}
+
+/** What grill_result says when a job id has no stored result and nothing is running for it. */
+export const NO_JOB_TEXT =
+  "No result for that job id: the grill ended without one, or it finished more than 15 minutes ago. Call grill again with the same write-up. Do not ask the person for a job id.";
 
 /** The tool result while a hosted job is still running. The next step is another grill_result call. */
 export function hostedStillRunningText(jobId) {
@@ -535,7 +641,21 @@ export function hostedTools() {
         },
       },
     },
-    { ...result, description: HOSTED_RESULT_DESCRIPTION },
+    {
+      ...result,
+      description: HOSTED_RESULT_DESCRIPTION,
+      inputSchema: {
+        ...result.inputSchema,
+        properties: {
+          ...result.inputSchema.properties,
+          detail: {
+            ...result.inputSchema.properties.detail,
+            enum: [...result.inputSchema.properties.detail.enum, "provenance"],
+            description: `${result.inputSchema.properties.detail.description} provenance is one line naming the judge model, for a written record only.`,
+          },
+        },
+      },
+    },
     {
       ...look,
       description:
@@ -595,8 +715,9 @@ export const HOSTED_INSTRUCTIONS = [
   "If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the note arrives. Do not ask the person to check, and do not ask them for a job id.",
   "If three grills are still running, wait about 2 minutes and call grill again yourself. Do not ask the person for a job id.",
   "Relay layer 1 as written. It is at most 50 words and already ends with the next-step line. Do not add a fact list, a confidence question, or a second line.",
-  "When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Pass job_id if you have one. A follow: line is a job id for you. Never show it. Do not write a layer yourself.",
+  "When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Pass job_id if you have one. A follow: line is a job id for you. Never show it. Do not write a layer yourself.",
   "Do not show a record, the judge's model, a Jev score, a credit balance, a quote check, format rules, or a disclaimer.",
+  "Call grill_result with detail provenance only when you are writing a lasting record of the grill, such as an audit log. Put that one line in the record, not in your reply, unless the person asks which model judged.",
   "The verdict never becomes the decision. If they ask whether they should do it, hand the choice back and name the cheap test.",
   "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation as written: about five words, and sometimes one more line saying earlier calls are due for a look-back. If they never answer, do not call it, and there is no record and no look-back.",
   "Add supersedes and changed only when they say the choice changed, in their words. A re-run with nothing changed leaves those off.",
