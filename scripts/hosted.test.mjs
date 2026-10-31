@@ -155,10 +155,11 @@ function judgeDeps(fake, extra = {}) {
   return { judgeOpenRouterUrl: fake.env.JUDGE_OPENROUTER_URL, judgeDecisionsUrl: fake.env.JUDGE_DECISIONS_URL, ...extra };
 }
 
-async function postMcp(ctx, body, { token, url = RESOURCE, accept, deps = {} } = {}) {
+async function postMcp(ctx, body, { token, url = RESOURCE, accept, deps = {}, userAgent } = {}) {
   const headers = { "content-type": "application/json" };
   if (token) headers.authorization = `Bearer ${token}`;
   if (accept) headers.accept = accept;
+  if (userAgent) headers["user-agent"] = userAgent;
   const res = await handleMcp(new Request(url, { method: "POST", headers, body: JSON.stringify(body) }), { ...ctx, ...deps });
   const type = res.headers.get("content-type") || "";
   if (type.includes("application/json")) return { res, json: await res.json(), raw: "" };
@@ -768,6 +769,76 @@ describe("hosted Grill", { concurrency: false }, () => {
         );
         assert.equal(none.json.result.isError, false, textOf(none.json));
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
+      } finally {
+        await fake.close();
+      }
+    });
+
+    it("reads a Gemini client on initialize, and falls back to User-Agent", async () => {
+      const usable = JSON.parse(readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8"));
+      const fake = await startFakeOpenRouter({
+        chat: (body) => {
+          const excluded = body?.plugins?.[0]?.excluded_models || [];
+          const model = excluded.some((item) => String(item).startsWith("openai"))
+            ? "google/gemini-2.5-pro"
+            : excluded.some((item) => String(item).startsWith("google"))
+              ? "deepseek/deepseek-chat"
+              : "openai/gpt-5.6-sol";
+          return { text: JSON.stringify({ ...usable, model }) };
+        },
+      });
+      const decision = { subject: "Decision: wait a week.", keep_records: false, quality_check: false };
+      const grill = (id) => ({
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: { name: "grill", arguments: decision },
+      });
+      try {
+        const ctx = world();
+        const deps = { ...judgeDeps(fake), waitMs: 20_000 };
+        const antigravity = signJwt(claims({ sub: "user_antigravity" }));
+        const init = await postMcp(
+          ctx,
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "initialize",
+            params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "Antigravity", version: "1" } },
+          },
+          { token: antigravity },
+        );
+        assert.equal(init.json.result.serverInfo.name, "grill");
+        const afterInit = await postMcp(ctx, grill(2), { token: antigravity, deps });
+        assert.equal(afterInit.json.result.isError, false, textOf(afterInit.json));
+        assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
+
+        const discovery = signJwt(claims({ sub: "user_discovery" }));
+        const viaAgent = await postMcp(ctx, grill(3), { token: discovery, userAgent: "Google-Discovery-Engine/1.0", deps });
+        assert.equal(viaAgent.json.result.isError, false, textOf(viaAgent.json));
+        assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
+
+        const remembered = signJwt(claims({ sub: "user_discovery_init" }));
+        await postMcp(
+          ctx,
+          {
+            jsonrpc: "2.0",
+            id: 4,
+            method: "initialize",
+            params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "unknown-client", version: "0" } },
+          },
+          { token: remembered, userAgent: "Google-Discovery-Engine/1.0" },
+        );
+        const later = await postMcp(ctx, grill(5), { token: remembered, deps });
+        assert.equal(later.json.result.isError, false, textOf(later.json));
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
+
+        const claude = signJwt(claims({ sub: "user_claude_ua", redirect_uri: CLAUDE_WEB_REDIRECT }));
+        const claudeCall = await postMcp(ctx, grill(6), { token: claude, userAgent: "Google-Discovery-Engine/1.0", deps });
+        assert.equal(claudeCall.json.result.isError, false, textOf(claudeCall.json));
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
       } finally {
         await fake.close();
       }
@@ -1887,6 +1958,32 @@ describe("hosted mappings and ledger pins", () => {
       [{ redirectUri: "https://gemini.google.com/oauth" }, "google", "gemini"],
       [{ redirectUri: "https://unknown.example/cb" }, "", "unknown"],
       [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Gemini" } }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "gemini-cli" } }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Antigravity" } }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Google-Discovery-Engine" } }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", userAgent: "Google-Discovery-Engine/1.0" }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Cursor" }, userAgent: "Google-Discovery-Engine/1.0" }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", userAgent: "ChatGPT-User" }, "openai", "chatgpt"],
+      [{ redirectUri: CLAUDE_WEB_REDIRECT, userAgent: "Google-Discovery-Engine/1.0" }, "anthropic", "claude"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Claude" }, userAgent: "Google-Discovery-Engine/1.0" }, "anthropic", "claude"],
+      [
+        {
+          redirectUri: "https://unknown.example/cb",
+          clientInfo: { name: "gemini-cli" },
+          remembered: { company: "openai", sourceApp: "chatgpt" },
+        },
+        "google",
+        "gemini",
+      ],
+      [
+        {
+          redirectUri: "https://unknown.example/cb",
+          remembered: { company: "google", sourceApp: "gemini" },
+          userAgent: "ChatGPT-User",
+        },
+        "google",
+        "gemini",
+      ],
     ];
     for (const [input, company, sourceApp] of table) {
       assert.deepEqual(sourceAppFromClient(input), { company, sourceApp });

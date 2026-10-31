@@ -178,6 +178,40 @@ export function autoRouterPlugin(primaryModel, author) {
   return { id, excluded_models };
 }
 
+/**
+ * Which company is behind this MCP client. One list for Claude, ChatGPT, Grok and
+ * Gemini, shared by the local server and the hosted connector. The name is
+ * `clientInfo.name` (or title) from the initialize handshake. User-Agent is only
+ * the fallback when that name does not match.
+ *
+ * A match names the company to exclude. The judge chain stays the existing default
+ * (`openrouter/auto`); `autoRouterPlugin` drops that company's models, so a Gemini
+ * client excludes `google/*` rather than pinning a different vendor.
+ */
+const CLIENT_COMPANY_HINTS = Object.freeze([
+  [/\bclaude[- ]code\b/i, "anthropic", "claude-code"],
+  [/\bclaude\b/i, "anthropic", "claude"],
+  [/\b(?:chatgpt|openai)\b/i, "openai", "chatgpt"],
+  [/\bgrok\b/i, "x-ai", "grok"],
+  [/\b(?:gemini-cli|gemini)\b/i, "google", "gemini"],
+  [/\bantigravity\b/i, "google", "gemini"],
+  [/google-discovery-engine/i, "google", "gemini"],
+]);
+
+function matchClientCompany(text) {
+  const value = String(text ?? "").trim();
+  if (!value) return null;
+  for (const [pattern, company, sourceApp] of CLIENT_COMPANY_HINTS) {
+    if (pattern.test(value)) return { company, sourceApp };
+  }
+  return null;
+}
+
+export function clientCompanyHint({ clientInfo = null, userAgent = "" } = {}) {
+  const name = String(clientInfo?.name || clientInfo?.title || "").trim();
+  return matchClientCompany(name) || matchClientCompany(userAgent);
+}
+
 // ── Which chain of models to try, and whether an override is visible in the output ──
 
 /**

@@ -4,7 +4,7 @@
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { confidenceValue, parseRecords } from "./reflection.mjs";
-import { SCOPE_GUARD } from "./judgeCore.mjs";
+import { SCOPE_GUARD, clientCompanyHint } from "./judgeCore.mjs";
 import { buildGrillTools } from "../server/index.mjs";
 
 export { SCOPE_GUARD };
@@ -155,22 +155,20 @@ function isLoopbackRedirect(raw) {
   }
 }
 
-function hintFromClientInfo(clientInfo) {
-  const name = String(clientInfo?.name || clientInfo?.title || "").trim();
-  if (!name) return null;
-  if (/\bclaude[- ]code\b/i.test(name)) return { company: "anthropic", sourceApp: "claude-code" };
-  if (/\bclaude\b/i.test(name)) return { company: "anthropic", sourceApp: "claude" };
-  if (/\b(?:chatgpt|openai)\b/i.test(name)) return { company: "openai", sourceApp: "chatgpt" };
-  if (/\bgrok\b/i.test(name)) return { company: "x-ai", sourceApp: "grok" };
-  if (/\bgemini\b/i.test(name)) return { company: "google", sourceApp: "gemini" };
-  return null;
+function rememberedHint(remembered) {
+  const company = String(remembered?.company || "").trim().toLowerCase();
+  const sourceApp = String(remembered?.sourceApp || "").trim().toLowerCase();
+  if (!AUTHOR_RE.test(company) || !AUTHOR_RE.test(sourceApp)) return null;
+  return { company, sourceApp };
 }
 
 /**
  * Map an OAuth client to the company to exclude and the source_app to store.
- * clientInfo is used only when the OAuth client itself is unknown.
+ * The OAuth client wins. Otherwise the same name list as the local server:
+ * clientInfo from initialize, then a hint remembered from that handshake,
+ * then the User-Agent. An unknown client still excludes nothing.
  */
-export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInfo = null } = {}) {
+export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInfo = null, userAgent = "", remembered = null } = {}) {
   const redirect = String(redirectUri || "").trim();
   const client = String(clientId || "").trim();
   const redirectHost = hostOf(redirect);
@@ -206,7 +204,13 @@ export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInf
     return { company: "google", sourceApp: "gemini" };
   }
 
-  return hintFromClientInfo(clientInfo) || { company: "", sourceApp: "unknown" };
+  const fromName = clientCompanyHint({ clientInfo });
+  if (fromName) return fromName;
+  const kept = rememberedHint(remembered);
+  if (kept) return kept;
+  const fromAgent = clientCompanyHint({ userAgent });
+  if (fromAgent) return fromAgent;
+  return { company: "", sourceApp: "unknown" };
 }
 
 /** An explicit author wins. Unknown clients exclude nothing beyond that, which means `--author none`. */
