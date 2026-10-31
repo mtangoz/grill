@@ -80,8 +80,16 @@ Enforced by: test "gives every dead-end page a way back" in [scripts/pages.test.
 
 Enforced by: test "asks on a confirm page before a code is used, with no script", test "points the invite-only page at the redeem page", and test "the success page's next step is a plain link to /start, with no script" in [scripts/inviteCode.test.mjs](../scripts/inviteCode.test.mjs), and test "tells a code user to sign in with the email they signed up with" in [scripts/site.test.mjs](../scripts/site.test.mjs).
 
+## A judge page, when the assistant cannot connect
+
+`/judge` is for a person whose assistant cannot add a connector. `/judge?q=` opens a signed-in page with that decision filled in. The page does not run a grill on GET. The button POSTs, and that runs the same hosted grill as the connector: the same judge, the same caps, and the same choice about records. The first time, the page asks whether to keep records and does not send the decision until they answer. A later grill uses that answer. The verdict is plain text to copy back. A decision over 4000 characters is refused and not sent. The page runs no script.
+
+An optional `from` names the assistant that wrote the decision. It uses the same client list as a connector, including `gemini`, `gemini-cli`, `antigravity`, `Google-Discovery-Engine`, `claude`, `chatgpt` and `grok`. The page says which company the judge is not from, and the POST excludes that company. The value is a hidden field, so it is sent with the decision. A missing or unknown `from` excludes nobody. `from=signin` is still only the sign-in return.
+
+Enforced by: [api/_hosted.mjs](../api/_hosted.mjs) (`handleJudge`), test "shows a prefilled form and does not grill on GET", test "asks before the first send, then grills on the answer and not before", and test "excludes the company named by from, and carries that hint in the form" in [scripts/judgePage.test.mjs](../scripts/judgePage.test.mjs).
+
 ## No script
 
-The decisions page, the account page and the dead-end pages ship no `<script>`. The shared response headers are `WELCOME_HEADERS` in [api/_pro.mjs](../api/_pro.mjs): a strict content security policy, no third-party script, no analytics.
+The decisions page, the account page, the judge page and the dead-end pages ship no `<script>`. The shared response headers are `WELCOME_HEADERS` in [api/_pro.mjs](../api/_pro.mjs): a strict content security policy, no third-party script, no analytics.
 
 Enforced by: test "renders the decisions page with no script" in [scripts/pages.test.mjs](../scripts/pages.test.mjs). The content security policy is prompt text + review in [api/_pro.mjs](../api/_pro.mjs).

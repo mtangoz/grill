@@ -1,9 +1,9 @@
-// Hosted endpoints (/mcp, /account, /decisions, /redeem, /decisions/calendar/<link>,
+// Hosted endpoints (/mcp, /account, /decisions, /judge, /redeem, /decisions/calendar/<link>,
 // /.well-known/oauth-protected-resource, including the /mcp path-inserted form,
 // which serves the same metadata as the root path, and Clerk's authorization-server
 // metadata at /.well-known/oauth-authorization-server and openid-configuration,
 // including the /mcp path-inserted forms). 404 unless GRILL_HOSTED=on.
-import { handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleMcp, handleProtectedResource, handleRedeem } from "./_hosted.mjs";
+import { handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleJudge, handleMcp, handleProtectedResource, handleRedeem } from "./_hosted.mjs";
 
 export const maxDuration = 300;
 
@@ -16,6 +16,7 @@ const PUBLIC_PATH = {
   redeem: "/redeem",
   calendar: "/decisions/calendar",
   decisions: "/decisions",
+  judge: "/judge",
   prm: "/.well-known/oauth-protected-resource",
   oauth: "/.well-known/oauth-authorization-server",
   oidc: "/.well-known/openid-configuration",
@@ -30,6 +31,7 @@ function pick(request) {
   if (r === "redeem" || p === "/redeem") return ["redeem", handleRedeem];
   if (r === "calendar" || p.startsWith("/decisions/calendar/")) return ["calendar", handleCalendar];
   if (r === "decisions" || p === "/decisions") return ["decisions", handleDecisions];
+  if (r === "judge" || p === "/judge") return ["judge", handleJudge];
   if (r === "prm" || p.startsWith("/.well-known/oauth-protected-resource")) return ["prm", handleProtectedResource];
   if (r === "oauth" || p.startsWith("/.well-known/oauth-authorization-server")) return ["oauth", handleAuthorizationServer];
   if (r === "oidc" || p.startsWith("/.well-known/openid-configuration")) return ["oidc", handleAuthorizationServer];
