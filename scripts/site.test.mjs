@@ -219,6 +219,32 @@ describe("site/page.html", () => {
     assert.match(readFileSync(join(ROOT, "README.md"), "utf8"), /about 2 minutes with a key, about 10 if you need one/);
   });
 
+  it("shows two worked examples with invented numbers, labelled as not a benchmark", () => {
+    const label = "Illustrative example, invented numbers, not a benchmark";
+    const how = page.indexOf('id="how"');
+    const examples = page.indexOf('id="examples"');
+    const setup = page.indexOf('id="setup"');
+    assert.ok(how > 0 && examples > how && setup > examples, "worked examples sit after how it works and before get started");
+    const block = page.slice(examples, setup);
+    const labelled = `<p class="note">${label}</p>`;
+    assert.equal((block.match(new RegExp(labelled.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length, 2);
+    assert.equal((page.match(new RegExp(labelled.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length, 2);
+    const chats = [...block.matchAll(/<div class="chat"[\s\S]*?<\/div>/g)].map((match) => match[0]);
+    assert.equal(chats.length, 2);
+    for (const chat of chats) {
+      assert.ok(chat.includes(label), chat);
+      const decision = chat.indexOf(">Decision<");
+      const verdict = chat.indexOf(">Verdict<");
+      const challenge = chat.indexOf(">Challenge<");
+      const question = chat.indexOf(">The question that would change this<");
+      assert.ok(decision >= 0 && decision < verdict && verdict < challenge && challenge < question, chat);
+      assert.match(chat, /<strong>[^<]+<\/strong>/);
+      assert.match(chat, /\d/);
+    }
+    assert.doesNotMatch(block, /<script/i);
+    assert.equal((page.match(/<script\b/gi) || []).length, 1);
+  });
+
   it("defines its colours as tokens for light, dark-by-system and dark-by-choice", () => {
     assert.match(page, /:root \{[\s\S]*--paper:/);
     assert.match(page, /@media \(prefers-color-scheme: dark\)[\s\S]*:root:not\(\[data-theme="light"\]\)/);
@@ -1272,6 +1298,8 @@ describe("markdown for agents", () => {
       "A different AI pushes back",
       "A model from another company gives a verdict and one cheap test.",
       "You make the call",
+      "Illustrative example, invented numbers, not a benchmark",
+      "The question that would change this",
       "The verdict never becomes the decision. The free tool keeps nothing; Grill in chat keeps only what you choose, encrypted, and you can delete it.",
       "Get started: pick the AI you use",
       "Invited to Grill in chat?",
