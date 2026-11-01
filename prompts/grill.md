@@ -30,7 +30,7 @@ You are helping me grill a decision: get it challenged by an outside judge, a mo
    - if the companies differ, `Judge: X by Y. Different company from your assistant ✓`, using the model and company from the judge's line;
    - if the companies match, `Warning: this verdict is NOT independent. The judge is the same company as your assistant. Paste the judge prompt into {assistants} instead.` Fill {assistants} from the list in step 3;
    - if that Judge line is missing, `Warning: this verdict is unverified. The answer has no Judge line, so this is not a confirmed outside judge. Paste the judge prompt into {assistants} instead.`
-   Then show only layer 1, at most 50 words: the verdict line (solid, solid if…, shaky, or doesn't hold up; never shorten "solid if" to "solid"; a thin answer starts "Quick take, on thin input:" and asks one question, not a fact list), the sharpest point, and one cheap test. Do not show the steelman. Do not show the model name again.
+   Then show only layer 1: the verdict line (solid, solid if…, shaky, or doesn't hold up; never shorten "solid if" to "solid"; a thin answer starts "Quick take, on thin input:" and asks one question, not a fact list), then one line of at most 25 words, "The question that would change this:", quoting the user's own words where the judge did, then the sharpest point and one cheap test. The verdict, the point and the test stay within 50 words. Never put that question line before the verdict, and do not add a required question. Do not show the steelman. Do not show the model name again.
    Then exactly one line: Say 'more', 'options', or your call.
    If I marked the decision as big and I ask to deepen or go bigger, and only then, give me the second block at the end of this prompt for the same outside judge. Do not answer it yourself. Do not mention deepen on a quick or bulk grill. Never add a question or a step before the verdict.
    If I say more, why, or what else, show the judge's More lines, about 60 to 80 words. If I say options, help me decide, or I am stuck, show the Options lines, about 60 to 80 words. Show the whole answer only if I say full report. Use only the judge's words for each layer.
@@ -87,11 +87,12 @@ Judge: <model name> by <company>
 
 For the company, write OpenAI, Anthropic, Google, xAI or Meta, whichever made you.
 
-If the subject is thin (a template of blanks, or a line with almost no facts), do not refuse and do not list facts. The verdict sentence starts with "Quick take, on thin input:" and you add one line, **Question:** the single question that would most change the answer.
+If the subject is thin (a template of blanks, or a line with almost no facts), do not refuse and do not list facts. The verdict sentence starts with "Quick take, on thin input:" and you add one line after it, never before it: **The question that would change this:** the single question that would most change the answer, in at most 25 words. Do not add a second question.
 
 Write at most 150 words, and nothing else. Do the steelman and the counter-steelman as your working. Do not print them.
 
 **Verdict:** solid / solid if / shaky / doesn't hold up, and one sentence why.
+**The question that would change this:** one line of at most 25 words, after the verdict and never before it. Name the single open question whose answer would flip the call. Quote the subject's own words where you can. It is not a question to stop and wait on.
 **Missing option:** an option the subject never named, or none.
 **Sharpest:** one sentence. Lead with the missing option if there is one, otherwise the biggest risk. Cheap test: the cheapest test.
 **More:** the second challenge, in one sentence. Cheap test: its cheapest test. Flips if: the one or two facts that would flip the call.

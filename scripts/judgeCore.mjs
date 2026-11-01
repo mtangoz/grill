@@ -1499,6 +1499,15 @@ export function renderJudgeReport(result) {
 /** Layer 1, including the next-step line. The person reads this first. */
 export const LAYER1_WORD_BUDGET = 50;
 
+/**
+ * One line after the verdict, never before it. It names the open question.
+ * It is not a question the person has to answer before the call.
+ */
+export const FLIP_LINE_PREFIX = "The question that would change this:";
+
+/** The flip line is the only extra text on the first answer. */
+export const FLIP_LINE_WORD_BUDGET = 25;
+
 /** Layer 2 and the decision frame. */
 export const LAYER2_WORD_BUDGET = 80;
 
@@ -1843,11 +1852,110 @@ function thinLayer(result, prefix, ask = CLOSING_ASK) {
   return body;
 }
 
+/** A short span of the subject's own words, when one is there to quote. */
+function quoteFromSubject(subject) {
+  const raw = String(subject || "")
+    .replace(/\s+/g, " ")
+    .replace(/^(?:grill this:\s*)/i, "")
+    .replace(/\bI['’]m\s+\d+%\s+sure\b.*$/i, "")
+    .trim();
+  if (!raw) return "";
+  const fit = (clause) => {
+    const words = String(clause || "")
+      .replace(/[?]+/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 8);
+    while (words.length > 3 && /^(and|or|because|if|the|a|an|to)$/i.test(words.at(-1))) words.pop();
+    return words.join(" ").replace(/[.,:;]+$/g, "").trim();
+  };
+  const because = raw.split(/\s+because\s+/i)[1];
+  if (because) {
+    const fromBecause = fit(because.split(/[.?!]/)[0]);
+    if (countWords(fromBecause) >= 3 && countWords(fromBecause) <= 8) return fromBecause;
+  }
+  const sized = raw
+    .split(/[.?!;]+/)
+    .map((part) => fit(part))
+    .filter((clause) => countWords(clause) >= 3 && countWords(clause) <= 8);
+  return sized.find((clause) => /\d/.test(clause)) || sized[0] || "";
+}
+
+/** Non-thin: a statement, not a question the person has to answer. */
+function flipQuestionLine(subject) {
+  const quote = quoteFromSubject(subject);
+  let words = quote ? quote.split(/\s+/) : [];
+  while (words.length >= 3) {
+    const line = `${FLIP_LINE_PREFIX} whether "${words.join(" ")}" holds.`;
+    if (countWords(line) <= FLIP_LINE_WORD_BUDGET) return line;
+    words = words.slice(0, -1);
+  }
+  return `${FLIP_LINE_PREFIX} whether one fact would flip this call.`;
+}
+
+/** Thin input already asks one question. This labels it. It does not ask a second one. */
+function thinFlipLine(question, subject) {
+  const ask = String(question || "").replace(/\s+/g, " ").trim();
+  const ready = /\?$/.test(ask) && !/,\s*\?$/.test(ask) ? ask : SHORT_QUESTION;
+  const quoted = quoteFromSubject(subject);
+  if (quoted) {
+    const line = `${FLIP_LINE_PREFIX} whether "${quoted}" holds: ${lowerFirst(ready)}`;
+    if (countWords(line) <= FLIP_LINE_WORD_BUDGET && (line.match(/\?/g) || []).length === 1) return line;
+  }
+  const plain = `${FLIP_LINE_PREFIX} ${ready}`;
+  if (countWords(plain) <= FLIP_LINE_WORD_BUDGET) return plain;
+  const room = FLIP_LINE_WORD_BUDGET - countWords(FLIP_LINE_PREFIX);
+  const opened = openingClause(ready.replace(/\?$/, ""), room);
+  if (opened) {
+    const asQuestion = `${FLIP_LINE_PREFIX} ${opened.replace(/\.$/, "?")}`;
+    if (countWords(asQuestion) <= FLIP_LINE_WORD_BUDGET && !/,\s*\?$/.test(asQuestion)) return asQuestion;
+  }
+  return `${FLIP_LINE_PREFIX} ${SHORT_QUESTION}`;
+}
+
+function briefParagraphs(paragraphs, ask) {
+  const body = paragraphs.map((part) => String(part || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+  return `${body.join("\n\n")}\n\n${ask}`;
+}
+
+/** The verdict, the point and the test stay inside the old cap. The flip line is extra. */
+function fitBriefBody(lead, rest, sources, ask) {
+  const room = Math.max(12, LAYER1_WORD_BUDGET - countWords(ask));
+  const source = String(sources || "").trim();
+  let head = String(lead || "").replace(/\s+/g, " ").trim();
+  let tail = String(rest || "").replace(/\s+/g, " ").trim();
+  const sourceWords = countWords(source);
+  if (countWords(head) + sourceWords > room) {
+    head = sentenceWithin(head, Math.max(12, room - sourceWords)) || "The judge did not finish the note.";
+    tail = "";
+  } else if (tail) {
+    const restRoom = room - countWords(head) - sourceWords;
+    tail = restRoom > 0 ? sentenceWithin(tail, restRoom) : "";
+  }
+  return { head, tail, source };
+}
+
+/** Pull the one thin question out of the capped paragraph and label it after the take. */
+function relocateThinQuestion(note, subject) {
+  const parts = String(note || "").split("\n\n");
+  const ask = parts.pop() || CLOSING_ASK;
+  const sentences = splitSentences(parts.join(" "));
+  const qIndex = sentences.findIndex((part) => /\?["']*$/.test(part));
+  if (qIndex === -1) return briefParagraphs([sentences.join(" "), thinFlipLine("", subject)], ask);
+  const before = sentences.slice(0, qIndex).join(" ");
+  const after = sentences.slice(qIndex + 1).join(" ");
+  return briefParagraphs([before, thinFlipLine(sentences[qIndex], subject), after], ask);
+}
+
 function renderBrief(result, subject, ask = CLOSING_ASK) {
   const degraded = Array.isArray(result?.degraded) && result.degraded.length > 0;
   const prefix = degraded ? "Not a clean review." : "";
   const sources = sourcesLine(findCitedSources(subject));
-  if (isThinGrill(result, subject)) return withClosing(thinLayer(result, prefix, ask), sources, ask);
+  if (isThinGrill(result, subject)) {
+    return relocateThinQuestion(withClosing(thinLayer(result, prefix, ask), sources, ask), subject);
+  }
   const missing = sentenceWithin(explicitMissing(result), 16);
   const top = challengeList(result)[0];
   const sharp = missing
@@ -1863,8 +1971,10 @@ function renderBrief(result, subject, ask = CLOSING_ASK) {
     : reason
       ? `**Quick read.** ${reason}`
       : "**No verdict.** The judge did not judge the decision.";
-  const body = [prefix, verdict, sentence(sharp), `Cheap test: ${sentence(test)}`].filter(Boolean).join(" ");
-  return withClosing(body, sources, ask);
+  const lead = [prefix, verdict].filter(Boolean).join(" ");
+  const rest = [sentence(sharp), `Cheap test: ${sentence(test)}`].join(" ");
+  const fitted = fitBriefBody(lead, rest, sources, ask);
+  return briefParagraphs([fitted.head, flipQuestionLine(subject), fitted.tail, fitted.source], ask);
 }
 
 /** The post-verdict deepen layer. Empty when the judge did not answer all four. */

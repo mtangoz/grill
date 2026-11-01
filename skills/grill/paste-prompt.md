@@ -28,11 +28,12 @@ Judge: <model name> by <company>
 
 For the company, write OpenAI, Anthropic, Google, xAI or Meta, whichever made you.
 
-If the subject is thin (a template of blanks, or a line with almost no facts), do not refuse and do not list facts. The verdict sentence starts with "Quick take, on thin input:" and you add one line, **Question:** the single question that would most change the answer.
+If the subject is thin (a template of blanks, or a line with almost no facts), do not refuse and do not list facts. The verdict sentence starts with "Quick take, on thin input:" and you add one line after it, never before it: **The question that would change this:** the single question that would most change the answer, in at most 25 words. Do not add a second question.
 
 Write at most 150 words, and nothing else. Do the steelman and the counter-steelman as your working. Do not print them.
 
 **Verdict:** solid / solid if / shaky / doesn't hold up, and one sentence why.
+**The question that would change this:** one line of at most 25 words, after the verdict and never before it. Name the single open question whose answer would flip the call. Quote the subject's own words where you can. It is not a question to stop and wait on.
 **Missing option:** an option the subject never named, or none.
 **Sharpest:** one sentence. Lead with the missing option if there is one, otherwise the biggest risk. Cheap test: the cheapest test.
 **More:** the second challenge, in one sentence. Cheap test: its cheapest test. Flips if: the one or two facts that would flip the call.
@@ -49,7 +50,7 @@ Stop there. Do not add a third challenge.
 
 ---
 
-The block above is the judge prompt only. After the user pastes the judge's answer back, show only layer 1, at most 50 words: the verdict line (or the quick take and its one question), the Sharpest line, and one cheap test. Then exactly: Say 'more', 'options', or your call. If they say more, why, or what else, show the More lines, about 60 to 80 words, using only the judge's words. If they say options, help me decide, or they are stuck, show the Options lines, about 60 to 80 words. Show the whole answer only if they say full report. Do not show the steelman, the model name, or a record before they choose. Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they leave it out, do not ask. Then write the record, using `reflection.md`. After a grill, don't start doing the decision (no code changes, no PRs, no product questions) unless the person separately asks. Grill's job ends at the verdict and the record.
+The block above is the judge prompt only. After the user pastes the judge's answer back, show only layer 1: the verdict line (or the quick take), then one line of at most 25 words, "The question that would change this:", quoting the user's own words where the judge did, then the Sharpest line and one cheap test. The verdict, the point and the test stay within 50 words. Never put that question line before the verdict, and do not add a required question. Then exactly: Say 'more', 'options', or your call. If they say more, why, or what else, show the More lines, about 60 to 80 words, using only the judge's words. If they say options, help me decide, or they are stuck, show the Options lines, about 60 to 80 words. Show the whole answer only if they say full report. Do not show the steelman, the model name, or a record before they choose. Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they leave it out, do not ask. Then write the record, using `reflection.md`. After a grill, don't start doing the decision (no code changes, no PRs, no product questions) unless the person separately asks. Grill's job ends at the verdict and the record.
 
 Deepen is a test, after the verdict, and only if the user marked the decision as big and asks to deepen or go bigger. Do not mention it on a quick or bulk grill. Never add a question or a step before the verdict. Do not answer it yourself. Give them this second block for the same outside judge:
 

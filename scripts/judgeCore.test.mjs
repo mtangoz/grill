@@ -1324,6 +1324,16 @@ describe("renderJudgeReport — the grounding footer and the Jev section", () =>
   });
 });
 
+function assertBriefBudget(text) {
+  const paras = String(text).split("\n\n").filter(Boolean);
+  const flip = paras.filter((para) => para.startsWith("The question that would change this:"));
+  assert.equal(flip.length, 1, text);
+  assert.ok(countWords(flip[0]) <= 25, `${countWords(flip[0])}: ${flip[0]}`);
+  const rest = paras.filter((para) => para !== flip[0]).join(" ");
+  assert.ok(countWords(rest) <= LAYER1_WORD_BUDGET, `${countWords(rest)}: ${rest}`);
+  assert.ok(countWords(text) <= LAYER1_WORD_BUDGET + 25, `${countWords(text)}: ${text}`);
+}
+
 describe("the note a person reads", () => {
   const rich = {
     verdict: "weak",
@@ -1358,10 +1368,48 @@ describe("the note a person reads", () => {
     ],
   };
 
+  it("puts one short flip question after the verdict, never before it", () => {
+    const subject = "We will raise prices 20% in Q4 because paid users cover the support cost.";
+    const brief = renderLayers(rich, { subject }).brief;
+    const paras = brief.split("\n\n");
+    const flipAt = brief.indexOf("The question that would change this:");
+    const verdictAt = brief.indexOf("**Shaky.**");
+    assert.equal((brief.match(/The question that would change this:/g) || []).length, 1);
+    assert.ok(verdictAt >= 0 && flipAt > verdictAt, brief);
+    assert.equal(paras[0].includes("The question that would change this:"), false);
+    assert.match(paras[0], /^\*\*Shaky\.\*\*/);
+    assert.match(paras[1], /^The question that would change this: whether "paid users cover the support cost" holds\.$/);
+    assert.ok(countWords(paras[1]) <= 25, `${countWords(paras[1])}: ${paras[1]}`);
+    assert.doesNotMatch(paras[1], /\?/);
+    assert.ok(brief.indexOf("The question that would change this:") < brief.indexOf("Missing:"), brief);
+    assert.equal(paras.at(-1), CLOSING_ASK);
+    const rest = paras.filter((para) => para !== paras[1]).join("\n\n");
+    assert.ok(countWords(rest) <= LAYER1_WORD_BUDGET, `${countWords(rest)}: ${rest}`);
+    assert.ok(countWords(brief) <= LAYER1_WORD_BUDGET + 25, `${countWords(brief)}: ${brief}`);
+
+    const thin = renderUserFacing(
+      {
+        needsFacts: true,
+        verdict: "weak",
+        verdictReason: "Shaky to drop it before you know what free users are worth",
+        factsNeeded: ["What share of free users pay within 90 days?"],
+      },
+      { subject: "drop the free tier?" },
+    );
+    const thinParas = thin.split("\n\n");
+    assert.match(thinParas[0], /^Quick take, on thin input:/);
+    assert.equal(thinParas[0].includes("The question that would change this:"), false);
+    assert.match(thinParas[1], /^The question that would change this:/);
+    assert.ok(thin.indexOf("Quick take, on thin input:") < thin.indexOf("The question that would change this:"));
+    assert.equal((thin.match(/\?/g) || []).length, 1);
+    assert.ok(countWords(thinParas[1]) <= 25, `${countWords(thinParas[1])}: ${thinParas[1]}`);
+    assert.match(thin, /"drop the free tier"/);
+  });
+
   it("keeps layer 1 under 50 words and leaves the steelman, the model and the score out", () => {
     const subject = "Drop the free tier? Paid users cover the support cost, and the free tier is half of signups.";
     const layers = renderLayers(rich, { subject });
-    assert.ok(countWords(layers.brief) <= LAYER1_WORD_BUDGET, countWords(layers.brief));
+    assertBriefBudget(layers.brief);
     assert.ok(countWords(layers.more) <= LAYER2_WORD_BUDGET, countWords(layers.more));
     assert.ok(countWords(layers.options) <= LAYER2_WORD_BUDGET, countWords(layers.options));
     assert.ok(countWords(layers.options) >= 60, countWords(layers.options));
@@ -1392,7 +1440,7 @@ describe("the note a person reads", () => {
     );
     assert.match(note, /^Quick take, on thin input:/);
     assert.equal((note.match(/\?/g) || []).length, 1);
-    assert.ok(countWords(note) <= LAYER1_WORD_BUDGET, countWords(note));
+    assertBriefBudget(note);
     assert.doesNotMatch(note, /Needs facts|What would settle it|^\d+\. /m);
     const layers = renderLayers(
       {
@@ -1420,7 +1468,7 @@ describe("the note a person reads", () => {
       },
       { subject: "drop the free tier?" },
     );
-    assert.ok(countWords(layers.brief) <= LAYER1_WORD_BUDGET, countWords(layers.brief));
+    assertBriefBudget(layers.brief);
     assert.ok(countWords(layers.more) >= 60 && countWords(layers.more) <= LAYER2_WORD_BUDGET, countWords(layers.more));
     assert.ok(countWords(layers.options) >= 60 && countWords(layers.options) <= LAYER2_WORD_BUDGET, countWords(layers.options));
     assert.doesNotMatch(`${layers.more}\n${layers.options}\n${layers.full}`, /steelman|gpt-5|grill-record/i);
@@ -1435,13 +1483,14 @@ describe("the note a person reads", () => {
       { needsFacts: true, verdict: "weak", verdictReason: reason, factsNeeded: [question] },
       { subject: "cap it?" },
     );
-    assert.ok(countWords(note) <= LAYER1_WORD_BUDGET, `${countWords(note)}: ${note}`);
+    assertBriefBudget(note);
     assert.doesNotMatch(note, /…|\.\.\./);
-    const [body, ask] = note.split("\n\n");
-    assert.equal(ask, CLOSING_ASK);
-    assert.match(body, /[.!?]$/);
-    assert.match(body, /appears\. What the \$20 overall and \$1 per-user caps are denominated in, over what window, and do they reset each month\?$/);
-    assert.doesNotMatch(body, /,\s*\?/);
+    const paras = note.split("\n\n");
+    assert.equal(paras.at(-1), CLOSING_ASK);
+    assert.match(paras[0], /appears\.$/);
+    assert.ok(paras[0].indexOf("The question that would change this:") === -1);
+    assert.match(paras[1], /^The question that would change this: What the \$20 overall and \$1 per-user caps are denominated in, over what window\?$/);
+    assert.doesNotMatch(note, /,\s*\?/);
 
     const fragment = renderUserFacing(
       {
@@ -1452,7 +1501,7 @@ describe("the note a person reads", () => {
       },
       { subject: "cap it?" },
     );
-    assert.ok(countWords(fragment) <= LAYER1_WORD_BUDGET, countWords(fragment));
+    assertBriefBudget(fragment);
     assert.doesNotMatch(fragment, /…|\.\.\.|,\s*\?/);
     assert.match(fragment, /What single fact would change this\?/);
 
@@ -1471,7 +1520,7 @@ describe("the note a person reads", () => {
       },
       { subject: "We will cap hosted spend at $20 overall and $1 per person each month, counted before the judge runs." },
     );
-    assert.ok(countWords(settled) <= LAYER1_WORD_BUDGET, `${countWords(settled)}: ${settled}`);
+    assertBriefBudget(settled);
     assert.doesNotMatch(settled, /…|\.\.\./);
     assert.match(settled, /[.!?]\n\nSay 'more', 'options', or your call\.$/);
   });
@@ -1506,7 +1555,7 @@ describe("the note a person reads", () => {
     whole("more", layers.more);
     whole("options", layers.options);
     whole("full", layers.full);
-    assert.ok(countWords(layers.brief) <= LAYER1_WORD_BUDGET, `${countWords(layers.brief)}: ${layers.brief}`);
+    assertBriefBudget(layers.brief);
     assert.ok(countWords(layers.more) <= LAYER2_WORD_BUDGET, `${countWords(layers.more)}: ${layers.more}`);
     assert.ok(countWords(layers.options) <= LAYER2_WORD_BUDGET, `${countWords(layers.options)}: ${layers.options}`);
     assert.match(layers.brief, /[.!?]\n\nSay 'more', 'options', or your call\.$/);
@@ -1596,7 +1645,7 @@ describe("cited sources the judge cannot open", () => {
     };
     const layers = renderLayers(result, { subject: cited });
     assert.match(layers.brief, /Not checked: the 5 sources this cites\. Open each and confirm it says this\.\n\nSay 'more'/);
-    assert.ok(countWords(layers.brief) <= LAYER1_WORD_BUDGET, `${countWords(layers.brief)}: ${layers.brief}`);
+    assertBriefBudget(layers.brief);
     assert.match(layers.full, /nobody here opened these sources/);
     const plain = renderLayers(result, { subject: "We cut SDR headcount by two and expect reply rates to hold at 4% over the quarter." });
     assert.doesNotMatch(plain.brief, /Not checked/);
@@ -1688,11 +1737,11 @@ describe("the optional deepen layer", () => {
     for (const layers of [plain, quick, flagged]) {
       assert.match(layers.brief, /Say 'more', 'options', or your call\./);
       assert.doesNotMatch(layers.brief, /deepen/);
-      assert.ok(countWords(layers.brief) <= LAYER1_WORD_BUDGET, layers.brief);
+      assertBriefBudget(layers.brief);
       assert.match(layers.brief, /^\*\*Shaky\.\*\*/);
     }
     assert.match(big.brief, /Say 'more', 'options', 'deepen', or your call\./);
-    assert.ok(countWords(big.brief) <= LAYER1_WORD_BUDGET, `${countWords(big.brief)}: ${big.brief}`);
+    assertBriefBudget(big.brief);
     assert.doesNotMatch(big.brief, /top professional|Rewritten plan|Raw material/);
     assert.equal(renderUserFacing(result, { subject, detail: "deepen", big: true, deepenTest: true }), "");
 
@@ -1702,7 +1751,7 @@ describe("the optional deepen layer", () => {
     );
     assert.match(thin.brief, /^Quick take, on thin input:/);
     assert.match(thin.brief, /deepen/);
-    assert.ok(countWords(thin.brief) <= LAYER1_WORD_BUDGET, thin.brief);
+    assertBriefBudget(thin.brief);
   });
 
   it("asks the four depth questions and rewrites the plan, and does not turn that into a verdict", () => {

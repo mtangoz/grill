@@ -288,7 +288,8 @@ describe("a grill end to end (fixture, no network)", () => {
     assert.match(brief, /Say 'more', 'options', 'deepen', or your call\./);
     assert.doesNotMatch(brief, /Rewritten plan|top professional/);
     const words = brief.trim().split(/\s+/).filter(Boolean).length;
-    assert.ok(words <= 50, `${words}: ${brief}`);
+    assert.ok(words <= 75, `${words}: ${brief}`);
+    assert.ok(brief.indexOf("**Shaky.**") < brief.indexOf("The question that would change this:"), brief);
     const deep = await big.request("tools/call", { name: "grill_result", arguments: { detail: "deepen" } });
     const note = textOf(deep);
     assert.equal(deep.result.isError, false, note);

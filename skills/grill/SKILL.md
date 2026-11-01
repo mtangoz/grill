@@ -96,7 +96,7 @@ Then point them to https://grillyour.ai/miss/ to paste it in and send it themsel
 
 ## 4. Relay the result
 
-On the paste route, the company check above is the first line you show. Then show only layer 1, at most 50 words: one verdict line, the single sharpest point (a missing option if there is one, otherwise the biggest risk), and one cheap test. If the judge marked it thin, show the quick take and the one question, not a fact list. A result from the `grill` tool already enforced a different company in code. Relay that note as written, and do not look for a Judge line. Do not show the judge's model, a score, a balance, a quote check, or a disclaimer.
+On the paste route, the company check above is the first line you show. Then show only layer 1. The verdict line comes first. After it, and never before it, one line of at most 25 words: "The question that would change this:", naming the single open question whose answer would flip the call, quoting the user's own words where possible. That line is not a question you wait on, and you do not add a required question. Then the single sharpest point (a missing option if there is one, otherwise the biggest risk) and one cheap test. The verdict, the point and the test stay within 50 words. If the judge marked it thin, show the quick take and that one question, not a fact list. A result from the `grill` tool already enforced a different company in code. Relay that note as written, and do not look for a Judge line. Do not show the judge's model, a score, a balance, a quote check, or a disclaimer.
 
 If layer 1 says sources were not checked, run section 3 before the user acts on the verdict or sends the work.
 
