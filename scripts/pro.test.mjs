@@ -465,6 +465,7 @@ describe("the endpoints", () => {
         { source: "/.well-known/openid-configuration", destination: "/api/hosted?__route=oidc" },
         { source: "/.well-known/openid-configuration/:extra*", destination: "/api/hosted?__route=oidc" },
         { source: "/decisions/calendar/:link", destination: "/api/hosted?__route=calendar&t=:link" },
+        { source: "/share/:token", destination: "/api/hosted?__route=share&t=:token" },
         { source: "/decisions", destination: "/api/hosted?__route=decisions" },
         { source: "/judge", destination: "/api/hosted?__route=judge" },
         { source: "/account", destination: "/api/hosted?__route=account" },
@@ -478,7 +479,7 @@ describe("the endpoints", () => {
           headers: { "Content-Type": "text/markdown; charset=utf-8", Vary: "Accept" },
         },
         {
-          src: "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|account/?$|redeem/?$|judge/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
+          src: "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account/?$|redeem/?$|judge/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
           has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
           dest: "/$1/index.md",
           check: true,
@@ -491,14 +492,14 @@ describe("the endpoints", () => {
           headers: { Vary: "Accept" },
         },
         {
-          src: "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|account/?$|redeem/?$|judge/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
+          src: "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account/?$|redeem/?$|judge/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
           dest: "/$1/index.html",
           check: true,
           headers: { Vary: "Accept" },
         },
         { handle: "error" },
         {
-          src: "^/(?!api(?:/|$)|mcp$|\\.well-known(?:/|$)|decisions(?:/|$)|account$|redeem$|judge$|welcome$|checkout$|pro(?:/|$)|notify(?:/|$)|miss/send$).*$",
+          src: "^/(?!api(?:/|$)|mcp$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account$|redeem$|judge$|welcome$|checkout$|pro(?:/|$)|notify(?:/|$)|miss/send$).*$",
           has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
           status: 404,
           dest: "/404.md",
