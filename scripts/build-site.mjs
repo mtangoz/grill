@@ -478,6 +478,13 @@ writePage("demo.html", {
   name: "Demo",
   blurb: "Four made-up decisions, and what Grill said about each.",
 });
+writePage("faq.html", {
+  description: "Plain answers: how Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and that no benchmarks are published.",
+  url: `${SITE_URL}faq/`,
+  outDir: "faq",
+  name: "FAQ",
+  blurb: "How Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and that no benchmarks are published.",
+});
 writePage("check-your-ai.html", {
   description: "Plain checks for an AI draft before you send it to your boss: the assumption, the facts, and one cheap test.",
   url: `${SITE_URL}check-your-ai/`,
@@ -518,6 +525,18 @@ writeFileSync(
 );
 // llmstxt.org: a short plain-text brief for agents. The page links are publicPages, same as the sitemap.
 // The "when" lines are sentences already on the homepage. index.md is a separate brief and stays as it is.
+function faqForAgents(html) {
+  const main = html.slice(html.indexOf("<h1>"), html.indexOf('class="footer"'));
+  const lines = ["## FAQ", ""];
+  for (const token of main.matchAll(/<h2>([\s\S]*?)<\/h2>|<p class="note">([\s\S]*?)<\/p>/g)) {
+    const raw = (token[1] ?? token[2] ?? "").replace(/<[^>]+>/g, "");
+    const text = decodeEntities(raw).replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    lines.push(token[1] != null ? `### ${text}` : text, "");
+  }
+  return lines.join("\n");
+}
+const FAQ_FOR_AGENTS = faqForAgents(readFileSync(join(ROOT, "site/faq.html"), "utf8"));
 const WHEN_TO_USE = [
   "Hear the strongest case against your plan, then decide for yourself.",
   "A model from another company gives a verdict and one cheap test.",
@@ -542,6 +561,7 @@ writeFileSync(
     ...publicPages.map((p) => `- [${p.name}](${p.url}): ${p.blurb}`),
     `- [GitHub](${GITHUB_URL}): An outside judge, a model from a different company.`,
     "",
+    FAQ_FOR_AGENTS,
   ].join("\n"),
 );
 // Every other public page: the same words as its HTML, minus the nav chrome and styles.
