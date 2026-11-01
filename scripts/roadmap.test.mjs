@@ -29,8 +29,13 @@ describe("later ideas and competitor notes", () => {
     assert.match(roadmap, /Consider when: 100 users, or team demand\./);
     assert.match(roadmap, /agent-to-agent harness/i);
     assert.match(roadmap, /Consider when: later, after shared sessions are in use, or if an agent platform asks for a harness\./);
+    assert.match(roadmap, /Higher spend cap for contributors \(\$10\/month vs \$5\)/);
+    assert.match(roadmap, /can be granted by hand at small scale/);
+    assert.match(roadmap, /Consider when: first contributor near the \$5 cap, or 5\+ active contributors\./);
+    assert.match(roadmap, /Contributor votes on the roadmap/);
+    assert.match(roadmap, /Consider when: 10\+ active contributors\./);
     const ideas = roadmap.split(/^## /m).slice(1);
-    assert.ok(ideas.length >= 3, "at least the three seeded ideas");
+    assert.ok(ideas.length >= 5, "the seeded ideas plus the two contributor ideas");
     for (const idea of ideas) assert.match(idea, /Consider when:/, idea.slice(0, 80));
   });
 

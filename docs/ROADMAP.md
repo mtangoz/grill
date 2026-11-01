@@ -21,3 +21,15 @@ Consider when: 100 users, or team demand.
 A way for one agent to ask Grill to judge another agent's plan, with a person as the decision owner. Later.
 
 Consider when: later, after shared sessions are in use, or if an agent platform asks for a harness.
+
+## Higher spend cap for contributors ($10/month vs $5)
+
+A contributor could have a higher monthly spend cap, $10 instead of $5. It can be granted by hand at small scale.
+
+Consider when: first contributor near the $5 cap, or 5+ active contributors.
+
+## Contributor votes on the roadmap
+
+People who contribute could vote on which roadmap idea comes next.
+
+Consider when: 10+ active contributors.
