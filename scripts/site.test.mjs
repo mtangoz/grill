@@ -321,7 +321,7 @@ describe("the site build", () => {
     assert.match(contribute, /How to improve Grill\./);
     assert.match(contribute, /--paper:/, "the contribute page borrows the site's styles");
     assert.match(contribute, /src="\/brand\/favicon-32\.png"/);
-    for (const [dir, title] of [["look-back", "Look back on a decision"], ["privacy", "Grill privacy"]]) {
+    for (const [dir, title] of [["look-back", "Look back on a decision | Grill"], ["privacy", "Grill privacy"]]) {
       const built = readFileSync(join(ROOT, `_site/${dir}/index.html`), "utf8");
       assert.match(built, new RegExp(`<title>${title}</title>`));
       assert.match(built, new RegExp(`<link rel="canonical" href="https://grillyour\\.ai/${dir}/">`));
@@ -354,6 +354,28 @@ describe("the site build", () => {
     for (const path of ["", "terms/", "contribute/", "look-back/", "privacy/", "demo/"]) {
       assert.ok(sitemap.includes(`<loc>https://grillyour.ai/${path}</loc>`), `sitemap lists /${path}`);
     }
+  });
+
+  // Search results and link previews show the <title>. Every public page names the
+  // product as a word, the way /check-your-ai/ already does ("… | Grill"). Lowercase
+  // "grill" in a sentence does not count.
+  it("names Grill in the title of every sitemap page", () => {
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+    const sitemap = readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8");
+    const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
+    assert.ok(locs.includes("https://grillyour.ai/demo/"));
+    assert.ok(locs.includes("https://grillyour.ai/look-back/"));
+    const missing = [];
+    for (const loc of locs) {
+      const pathname = new URL(loc).pathname;
+      const htmlPath = pathname === "/"
+        ? join(ROOT, "_site/index.html")
+        : join(ROOT, "_site", pathname.replace(/^\//, ""), "index.html");
+      const html = readFileSync(htmlPath, "utf8");
+      const title = html.match(/<title>([^<]*)<\/title>/)?.[1] ?? "";
+      if (!/\bGrill\b/.test(title)) missing.push(`${pathname} <title>${title}</title>`);
+    }
+    assert.deepEqual(missing, []);
   });
 
   // /llms.txt is the llmstxt.org file agents fetch. It has to name the same public pages as the
@@ -586,7 +608,7 @@ describe("the site build", () => {
     }
     assert.ok(titled >= 8, "home, the other public pages, and /miss/ each have a title");
     const demo = readFileSync(join(ROOT, "_site/demo/index.html"), "utf8");
-    assert.match(demo, /<meta property="og:title" content="See a grill before you set one up">/);
+    assert.match(demo, /<meta property="og:title" content="See a grill before you set one up \| Grill">/);
     const start = readFileSync(join(ROOT, "_site/start/index.html"), "utf8");
     assert.match(start, /<meta property="og:title" content="Start using Grill">/);
   });
@@ -882,7 +904,7 @@ describe("the /demo page", () => {
     const footer = (html) => html.match(/<div class="footer">[\s\S]*?<\/div>/)?.[0];
     assert.equal(nav(demo), nav(contribute));
     assert.equal(footer(demo), footer(contribute));
-    assert.match(demo, /^<title>See a grill before you set one up<\/title>/);
+    assert.match(demo, /^<title>See a grill before you set one up \| Grill<\/title>/);
     assert.equal((demo.match(/<h1>/g) ?? []).length, 1);
     assert.match(demo, /<h1>See a grill before you set one up\.<\/h1>/);
     assert.equal((demo.match(/class="lede"/g) ?? []).length, 1);
