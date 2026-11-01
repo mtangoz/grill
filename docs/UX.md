@@ -88,6 +88,12 @@ An optional `from` names the assistant that wrote the decision. It uses the same
 
 Enforced by: [api/_hosted.mjs](../api/_hosted.mjs) (`handleJudge`), test "shows a prefilled form and does not grill on GET", test "asks before the first send, then grills on the answer and not before", and test "excludes the company named by from, and carries that hint in the form" in [scripts/judgePage.test.mjs](../scripts/judgePage.test.mjs).
 
+## Changes you asked for
+
+On `/contribute`, shipped changes people asked for are listed from `data/contributors.json`. The page source runs no script. The list is written when the site is built. A name or handle is shown only when that entry's `consent` is exactly true. Otherwise the line says "suggested by a tester." Credit names the product feedback only, never a person's own decisions. The list starts empty. A name is added only after that person agrees.
+
+Enforced by: [scripts/contributorsCore.mjs](../scripts/contributorsCore.mjs), test "never renders a name when consent is not exactly true" in [scripts/contributors.test.mjs](../scripts/contributors.test.mjs).
+
 ## No script
 
 The decisions page, the account page, the judge page and the dead-end pages ship no `<script>`. The shared response headers are `WELCOME_HEADERS` in [api/_pro.mjs](../api/_pro.mjs): a strict content security policy, no third-party script, no analytics.

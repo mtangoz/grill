@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { billingMode, couponId, starterAllowanceUsd } from "../api/_pro.mjs";
 import { analyticsSnippet } from "./siteAnalytics.mjs";
+import { renderContributorEntries } from "./contributorsCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "_site");
@@ -412,8 +413,16 @@ addPublicPage({
 
 // Other pages are a <title> and a body; they borrow the main page's styles.
 const style = pageHead.slice(pageHead.indexOf("<style>"));
+function withContributorEntries(source) {
+  const marker = "<!-- CONTRIBUTORS -->";
+  if (source.split(marker).length !== 2) throw new Error("site/contribute.html must include <!-- CONTRIBUTORS --> once");
+  const entries = JSON.parse(readFileSync(join(ROOT, "data/contributors.json"), "utf8"));
+  return source.replace(marker, () => renderContributorEntries(entries));
+}
+
 function writePage(file, { description, url, outDir, name, blurb }) {
-  const source = readFileSync(join(ROOT, "site", file), "utf8");
+  let source = readFileSync(join(ROOT, "site", file), "utf8");
+  if (file === "contribute.html") source = withContributorEntries(source);
   const title = openingTitle(source, `site/${file}`);
   mkdirSync(join(OUT, outDir), { recursive: true });
   addPublicPage({ url, name, blurb });
