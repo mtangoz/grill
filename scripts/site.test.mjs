@@ -208,6 +208,10 @@ describe("the terms page", () => {
     assert.match(terms, /<h2>Grill inside your chat<\/h2>/);
     assert.match(terms, /Nothing is charged to you/);
     assert.match(terms, /Grill advises, you decide/);
+    assert.match(terms, /Grill is made by Hold Systems, a DBA, the trading name of a sole proprietor\./);
+    assert.match(terms, /Postal address: \[address coming soon\]\./);
+    assert.doesNotMatch(terms, /made by Hold(?! Systems)/);
+    assert.doesNotMatch(terms, />Hold<\/a>/);
     const privacySrc = readFileSync(join(ROOT, "site/privacy.html"), "utf8");
     assert.match(privacySrc, /No ads\. No selling your data\. No training on your decisions\. Grill is paid for by subscriptions only\./);
     assert.match(privacySrc, /passes through Grill’s server in memory for the length of the grill\. It is never logged or stored\./);
