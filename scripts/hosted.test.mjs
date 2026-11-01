@@ -619,7 +619,8 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.match(brief, /Say 'more', 'options', 'deepen', or your call\./);
       assert.doesNotMatch(brief, /Rewritten plan|top professional/);
       const layer = brief.replace(/^This goes to an outside judge[^\n]*\n\n/, "").split(/\n\nfollow:/)[0];
-      assert.ok(countWords(layer) <= 50, `${countWords(layer)}: ${layer}`);
+      assert.ok(countWords(layer) <= 75, `${countWords(layer)}: ${layer}`);
+      assert.ok(layer.indexOf("**Shaky.**") < layer.indexOf("The question that would change this:"), layer);
       const added = fake.seen.chat.slice(before);
       assert.equal(added.length, 2);
       for (const row of added) {

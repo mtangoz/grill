@@ -5,7 +5,7 @@
 **Setup guide:** [grillyour.ai](https://grillyour.ai)
 **See it first:** [four made-up decisions, grilled](https://grillyour.ai/demo/)
 
-Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, Gemini, Grok or Muse. It sends the decision as you said it. An outside judge, a model from a different company, comes back with a short note: one verdict line, the sharpest point, and one cheap test, in about 50 words. Say more, options, or your call when you want the rest. A thin line gets a quick take and one question, not a refusal. A record is written only after you answer, and a percent is optional. Grill does not store it on the installed tool.
+Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, Gemini, Grok or Muse. It sends the decision as you said it. An outside judge, a model from a different company, comes back with a short note: one verdict line, then one short line naming the question that would change the call, then the sharpest point and one cheap test. The verdict, the point and the test stay within about 50 words. The extra line is at most about 25 words, and it never comes before the verdict. Say more, options, or your call when you want the rest. A thin line gets a quick take and one question, not a refusal. A record is written only after you answer, and a percent is optional. Grill does not store it on the installed tool.
 
 > **Verdict: shaky.** The plan assumes customers stay at the new price, and nothing in it tests that.
 > **Falsifier:** show the new price to one in ten new signups for two weeks, and compare how many start paying.

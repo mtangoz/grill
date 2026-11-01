@@ -1,6 +1,6 @@
 # After the note
 
-Relay layer 1 as written. It is at most 50 words. Then exactly one line, if it is not already last:
+Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: "The question that would change this:". Never put that line before the verdict. Do not add a required question. Then exactly one line, if it is not already last:
 
 Say 'more', 'options', or your call.
 
