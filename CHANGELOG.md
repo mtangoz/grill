@@ -1,5 +1,9 @@
 # Changelog
 
+A change may add one optional line when someone has agreed to be named. Leave the line off without that consent. It credits the feedback, never a decision. Rules: [docs/CONTRIBUTOR-CREDIT.md](docs/CONTRIBUTOR-CREDIT.md).
+
+> Thanks to <name or handle>, for <the product feedback>.
+
 ## Unreleased
 
 - After the verdict, layer 1 adds one line, "The question that would change this:", naming the single open question whose answer would flip the call and quoting the person's own words where it can. The line comes after the verdict, never before it. It is not a question they have to answer. The rest of the first answer stays within 50 words. The new line is at most 25 words.
