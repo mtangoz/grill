@@ -1,5 +1,9 @@
 # Changelog
 
+A change may add one optional line when someone has agreed to be named. Leave the line off without that consent. It credits the feedback, never a decision. Rules: [docs/CONTRIBUTOR-CREDIT.md](docs/CONTRIBUTOR-CREDIT.md).
+
+> Thanks to <name or handle>, for <the product feedback>.
+
 ## Unreleased
 
 - The contribute page lists "Changes you asked for". Each line is a shipped change, a link to the pull request or the changelog, and a name or handle only when that person agreed. `data/contributors.json` starts empty. An entry without consent says "suggested by a tester." Credit names the product feedback only, never a person's own decisions. Grill's privacy promise covers your decisions. Credit is for product feedback and is opt-in only. Anyone can ask to be removed at any time by emailing support@grillyour.ai. The page runs no script.
