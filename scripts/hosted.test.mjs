@@ -2046,7 +2046,7 @@ describe("hosted mappings and ledger pins", () => {
     const hosted = readFileSync(join(ROOT, "api/_hosted.mjs"), "utf8");
     const urls = [...hosted.matchAll(/https?:\/\/[^\s"'`]+/g)].map((match) => match[0]);
     // The Google Calendar address is a subscribe link on the page for the person to click. The server never fetches it.
-    assert.deepEqual(urls, ["https://api.clerk.com", "https://auth.agentid.com/v0/userinfo", "https://calendar.google.com/calendar/r"]);
+    assert.deepEqual(urls, ["https://api.clerk.com", "https://auth.agentid.com/v0/userinfo", "https://calendar.google.com/calendar/r", "https://grillyour.ai/"]);
     assert.doesNotMatch(hosted, /fetch\([^)]*GOOGLE_CALENDAR_SUBSCRIBE/);
     const childEnv = hosted.slice(hosted.indexOf("function judgeChildEnv"), hosted.indexOf("function startJudge"));
     assert.doesNotMatch(childEnv, /JUDGE_MODEL/);

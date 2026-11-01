@@ -120,6 +120,8 @@ const AGENTID_USERINFO = "https://auth.agentid.com/v0/userinfo";
 const OWNER_CACHE_SECONDS = 10 * 60;
 // A link the person may click to subscribe in Google Calendar. Grill's server never fetches it.
 const GOOGLE_CALENDAR_SUBSCRIBE = "https://calendar.google.com/calendar/r";
+// The public verdict page links here. The server does not fetch it.
+const SHARE_HOME = "https://grillyour.ai/";
 const VERSION = "0.1.1";
 const jwksCache = new Map();
 const userCache = new Map();
@@ -300,6 +302,14 @@ function calendarFeedKey(hash) {
 /** The account's current calendar link hash, so off, reset and delete can find it. */
 function calendarOfKey(userId) {
   return `grill:hosted:calof:${userId}`;
+}
+/** Public snapshot for one opted-in record. The token is the key, and the value is only the two public lines. */
+function shareKey(token) {
+  return `grill:hosted:share:${token}`;
+}
+/** Which token belongs to this record, so the owner can show the link and stop sharing. Not the snapshot. */
+function shareOfKey(userId, recordId) {
+  return `grill:hosted:shareof:${userId}:${recordId}`;
 }
 /** Set once a UTC day when grill_decided showed the look-back line. */
 function remindedKey(userId, day) {
@@ -958,8 +968,97 @@ async function calendarAction(account, deps, value) {
   return "";
 }
 
+function shareTokenShape(token) {
+  return /^[A-Za-z0-9_-]{43}$/.test(String(token || ""));
+}
+
+function newShareToken() {
+  return randomBytes(32).toString("base64url");
+}
+
+function shareUrl(origin, token) {
+  return `${String(origin).replace(/\/$/, "")}/share/${token}`;
+}
+
+/**
+ * What a public link may hold. The first challenge line is the sharpest (they are stored
+ * most severe first). With no first line, the falsifier is that same check. Nothing else is copied.
+ */
+function shareSnapshot(row) {
+  const parsed = parseRecords(row?.block || "")[0] || {};
+  const listed = Array.isArray(row?.challenges) ? oneLine(row.challenges[0]) : "";
+  return {
+    verdict: oneLine(row?.verdict || parsed.verdict),
+    challenge: listed || oneLine(parsed.falsifier),
+  };
+}
+
+function parseShare(raw) {
+  let body = null;
+  try {
+    body = typeof raw === "string" ? JSON.parse(raw) : null;
+  } catch {
+    body = null;
+  }
+  if (!body || typeof body !== "object") return null;
+  const verdict = typeof body.verdict === "string" ? body.verdict : "";
+  const challenge = typeof body.challenge === "string" ? body.challenge : "";
+  if (!verdict && !challenge) return null;
+  return { verdict, challenge };
+}
+
+function sharePreview(snapshot) {
+  const verdict = snapshot.verdict ? `<p>${esc(snapshot.verdict)}</p>` : "";
+  const line = snapshot.challenge ? `<p>${esc(snapshot.challenge)}</p>` : "";
+  return `<div class="share-public">${verdict}${line}<p><a href="${SHARE_HOME}">grillyour.ai</a></p></div>`;
+}
+
+async function readShareToken(account, deps, recordId) {
+  const token = await redis(deps, ["GET", shareOfKey(account.id, recordId)]);
+  if (typeof token !== "string" || !shareTokenShape(token)) return "";
+  return parseShare(await redis(deps, ["GET", shareKey(token)])) ? token : "";
+}
+
+/** Copy the two public lines once. A later edit to the record is not written here. A second share keeps the first copy. */
+async function createShare(account, deps, recordId) {
+  const current = await readShareToken(account, deps, recordId);
+  if (current) return current;
+  const rows = await loadRecords(account, deps);
+  const row = rows.find((item) => item.id === recordId);
+  if (!row) return "";
+  const snapshot = shareSnapshot(row);
+  if (!snapshot.verdict && !snapshot.challenge) return "";
+  const token = newShareToken();
+  const body = JSON.stringify({ verdict: snapshot.verdict, challenge: snapshot.challenge });
+  await redis(deps, ["SET", shareKey(token), body]);
+  const claimed = await redis(deps, ["SET", shareOfKey(account.id, recordId), token, "NX"]);
+  if (claimed !== "OK") {
+    await redis(deps, ["DEL", shareKey(token)]);
+    return readShareToken(account, deps, recordId);
+  }
+  return token;
+}
+
+async function revokeShare(account, deps, recordId) {
+  const token = await redis(deps, ["GET", shareOfKey(account.id, recordId)]);
+  if (typeof token === "string" && token) await redis(deps, ["DEL", shareKey(token)]);
+  await redis(deps, ["DEL", shareOfKey(account.id, recordId)]);
+}
+
+async function loadSharePreview(account, deps, recordId) {
+  const token = await readShareToken(account, deps, recordId);
+  if (token) return parseShare(await redis(deps, ["GET", shareKey(token)]));
+  const rows = await loadRecords(account, deps);
+  const row = rows.find((item) => item.id === recordId);
+  if (!row) return null;
+  const snapshot = shareSnapshot(row);
+  if (!snapshot.verdict && !snapshot.challenge) return null;
+  return snapshot;
+}
+
 async function deleteRecordIds(account, deps, ids) {
   for (const id of ids) {
+    await revokeShare(account, deps, id);
     await redis(deps, ["DEL", recordRedisKey(account.id, id)]);
     await redis(deps, ["ZREM", recordIndex(account.id), id]);
   }
@@ -2231,12 +2330,19 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
     const chained = Boolean(row.replacesId || row.replacedByIds?.length);
     const id = encodeURIComponent(row.id);
     const chainLink = chained ? ` <a class="button" href="/decisions?confirm=delete-chain&amp;id=${esc(id)}">Delete this chain</a>` : "";
+    const shared = extra.shares?.get(row.id) || "";
+    const sharing = shared
+      ? `<p><input readonly style="width:100%;box-sizing:border-box" value="${esc(shared)}" aria-label="Share link"></p>
+      <form method="post" action="/decisions"><input type="hidden" name="action" value="unshare"><input type="hidden" name="id" value="${esc(row.id)}"><p class="row"><button type="submit">Stop sharing</button></p></form>`
+      : "";
+    const shareLink = shared ? "" : `<a class="button" href="/decisions?confirm=share&amp;id=${esc(id)}">Share verdict</a> `;
     return `<article class="banner">
       <p class="record-title">${esc(row.title || "Untitled")}</p>
       ${recordMeta(row)}
       ${chain ? `<p>${esc(chain)}</p>` : ""}
       ${look}
-      <p class="row"><a class="button" href="/decisions?confirm=delete&amp;id=${esc(id)}">Delete this record</a>${chainLink}</p>
+      ${sharing}
+      <p class="row">${shareLink}<a class="button" href="/decisions?confirm=delete&amp;id=${esc(id)}">Delete this record</a>${chainLink}</p>
     </article>`;
   });
   const keeping = account.records === "keep";
@@ -2263,6 +2369,27 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
     <p class="row"><a class="button" href="/decisions?export=text">Export as text</a> <a class="button" href="/decisions?export=json">Export as JSON</a> <a href="/account">Account</a></p>
     ${renderCalendar("/decisions", extra.calendar, extra.freshUrl || "")}`,
   );
+}
+
+/** The confirm page. The preview is the same HTML the public page will show. */
+function renderShareConfirm(recordId, snapshot) {
+  return page(
+    "Share this verdict? · Grill",
+    `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
+    <h1>Share this verdict?</h1>
+    <p>This is everything a public link will show.</p>
+    ${sharePreview(snapshot)}
+    <form method="post" action="/decisions">
+      <input type="hidden" name="action" value="share">
+      <input type="hidden" name="id" value="${esc(recordId)}">
+      <button type="submit" name="confirm" value="share">Share verdict</button>
+    </form>
+    <p><a href="/decisions">Don't share</a></p>`,
+  );
+}
+
+function renderPublicShare(snapshot) {
+  return page("A Grill verdict", sharePreview(snapshot));
 }
 
 /** Asks before one record, or a whole chain, is deleted. The confirm value is the button they press. */
@@ -2739,6 +2866,12 @@ export async function handleDecisions(request, deps) {
       const count = confirmOne === "delete-chain" ? chainIds(rows, target.id).length : 0;
       return html(200, renderDeleteOneConfirm(target, count));
     }
+    if (request.method === "GET" && confirmOne === "share") {
+      const recordId = url.searchParams.get("id") || "";
+      const snapshot = await loadSharePreview(session.account, deps, recordId);
+      if (!snapshot) return seeOther(`${publicOrigin(request)}/decisions`);
+      return html(200, renderShareConfirm(recordId, snapshot));
+    }
     if (request.method === "POST") {
       const form = new URLSearchParams(await request.text());
       const action = form.get("action") || "";
@@ -2756,6 +2889,10 @@ export async function handleDecisions(request, deps) {
       } else if (action === "delete-all" && form.get("confirm") === "delete") {
         const rows = await loadRecords(session.account, deps);
         await deleteRecordIds(session.account, deps, rows.map((row) => row.id));
+      } else if (action === "share" && form.get("confirm") === "share") {
+        await createShare(session.account, deps, form.get("id") || "");
+      } else if (action === "unshare") {
+        await revokeShare(session.account, deps, form.get("id") || "");
       } else if (action === "calendar") {
         fresh = await calendarAction(session.account, deps, form.get("value") || "");
       }
@@ -2769,7 +2906,13 @@ export async function handleDecisions(request, deps) {
     const now = typeof deps.now === "number" ? deps.now : Date.now();
     const habits = decisionHabits({ records: rows, waiting, now });
     const calendar = await calendarState(session.account, deps);
-    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed, env: deps.env }), { clearFlash: Boolean(flashed) });
+    const origin = publicOrigin(request);
+    const shares = new Map();
+    for (const row of rows) {
+      const token = await readShareToken(session.account, deps, row.id);
+      if (token) shares.set(row.id, shareUrl(origin, token));
+    }
+    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed, env: deps.env, shares }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
@@ -2867,6 +3010,36 @@ export async function handleCalendar(request, deps) {
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     logHosted(id, code || "calendar");
+    return fixedError(id, 500, code);
+  }
+}
+
+/**
+ * A public verdict page. No sign-in: the token in the path is the key. The body is the snapshot
+ * taken when the owner opted in, not the live record. Unknown, malformed or revoked tokens are the same 404.
+ * The token is not logged.
+ */
+export async function handleShare(request, deps) {
+  const id = requestId();
+  deps = { ...deps, requestId: id };
+  if (!hostedEnabled(deps.env)) return notFound();
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response("That request isn't supported.", {
+      status: 405,
+      headers: { Allow: "GET, HEAD", "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+  try {
+    const url = pageUrl(request);
+    const fromPath = url.pathname.match(/^\/share\/([^/]+)$/)?.[1] || "";
+    const token = String(url.searchParams.get("t") || fromPath);
+    if (!shareTokenShape(token)) return notFound();
+    const snapshot = parseShare(await redis(deps, ["GET", shareKey(token)]));
+    if (!snapshot) return notFound();
+    return html(200, renderPublicShare(snapshot));
+  } catch (error) {
+    const code = error instanceof Coded ? error.code : "";
+    logHosted(id, code || "share");
     return fixedError(id, 500, code);
   }
 }

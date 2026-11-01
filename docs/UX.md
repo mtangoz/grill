@@ -60,6 +60,12 @@ Delete all records, and delete this account, each open a confirm page. The confi
 
 Enforced by: test "asks on a page before deleting every record or the account" in [scripts/pages.test.mjs](../scripts/pages.test.mjs). One record and one chain staying one tap is prompt text + review.
 
+## Share a verdict
+
+`/decisions` offers Share verdict on each saved record. That opens a confirm page. The page shows the exact words the public page will show, and nothing else from the record. The button POSTs, and the decisions page then shows the link. Stop sharing is a POST. Deleting the record stops the link too. The public page, `/share/<token>`, needs no sign-in. It shows the verdict, one challenge, and a link to grillyour.ai. It is `noindex` and runs no script.
+
+Enforced by: [api/_hosted.mjs](../api/_hosted.mjs) (`handleShare`), tests in [scripts/shareVerdict.test.mjs](../scripts/shareVerdict.test.mjs).
+
 "Delete this chain" is only on a record that replaces another, or was replaced.
 
 Enforced by: test "offers delete this chain only on a record that is in a chain" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
