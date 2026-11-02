@@ -90,6 +90,10 @@ Enforced by: test "gives every dead-end page a way back" in [scripts/pages.test.
 
 Enforced by: test "asks on a confirm page before a code is used, with no script", test "points the invite-only page at the redeem page", and test "the success page's next step is a plain link to /start, with no script" in [scripts/inviteCode.test.mjs](../scripts/inviteCode.test.mjs), and test "tells a code user to sign in with the email they signed up with" in [scripts/site.test.mjs](../scripts/site.test.mjs).
 
+## A waitlist
+
+Someone without an invite code can join a waitlist from `/start` or the invite wall. The form asks for an email, and the `?ref=` source comes along. A second page asks them to confirm. Nothing is emailed, and joining does not let them in. The thank-you page says they are on the list, and that once they are let in they can use the free option right away in their own AI chat via the connector, with a link to the setup guide. Approving later mints a single-use invite code. They still redeem it at `/redeem`. The pages run no script. Sign-ups are a count the weekly metrics can read.
+
 ## A judge page, when the assistant cannot connect
 
 `/judge` is for a person whose assistant cannot add a connector. `/judge?q=` opens a signed-in page with that decision filled in. The page does not run a grill on GET. The button POSTs, and that runs the same hosted grill as the connector: the same judge, the same caps, and the same choice about records. The first time, the page asks whether to keep records and does not send the decision until they answer. A later grill uses that answer. The verdict is plain text to copy back. A decision over 4000 characters is refused and not sent. The page runs no script.

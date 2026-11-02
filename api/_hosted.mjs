@@ -16,6 +16,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, setMonthlyLimit, WELCOME_HEADERS } from "./_pro.mjs";
+import { refFromCookie } from "./_start.mjs";
+import { waitlistFormHtml } from "./_waitlist.mjs";
 import {
   DEEPEN_OFF,
   DEEPEN_ONLY_BIG,
@@ -2189,19 +2191,23 @@ async function pageUser(request, deps) {
   if (visitor.redirect || visitor.missing || visitor.html || !visitor.user) return visitor;
   const gate = await admit(visitor.user, deps, visitor.sub);
   if (!gate.email) return { html: terminal("Verified email needed · Grill", "<h1>Grill needs a verified email on this account.</h1><p>Add one with your sign-in company, then come back.</p>") };
-  if (!gate.allowed) return { html: inviteOnlyPage() };
+  if (!gate.allowed) return { html: inviteOnlyPage(request) };
   const personId = await resolvePerson(visitor.sub, gate.email, deps);
   const account = await ensureAccount(personId, gate.email, deps, gate.human);
   return { account, email: gate.email, sub: visitor.sub };
 }
 
-function inviteOnlyPage() {
+function inviteOnlyPage(request) {
+  const ref = refFromCookie(request?.headers?.get("cookie"));
   return terminal(
     "Invite only · Grill",
     `<h1>Grill in chat is invite-only for now.</h1>
     <p>You hit the invite wall. This email isn't on the list yet.</p>
     <p>If you have an invite code, <a href="/redeem">enter it here</a>.</p>
     <p>If you were invited, disconnect Grill, connect again, and sign in with the email your invite went to.</p>
+    <h2>No invite code?</h2>
+    <p>Join the waitlist. Nothing is emailed, and joining does not let you in. Once you are let in, the free option works in your own AI chat.</p>
+    ${waitlistFormHtml({ ref })}
     <p>To ask for an invite, write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p>`,
   );
 }

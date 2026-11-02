@@ -6,6 +6,7 @@
 import { handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleJudge, handleMcp, handleProtectedResource, handleRedeem, handleShare } from "./_hosted.mjs";
 import { handlePricing } from "./_pricing.mjs";
 import { handleStart } from "./_start.mjs";
+import { handleWaitlist } from "./_waitlist.mjs";
 
 export const maxDuration = 300;
 
@@ -35,6 +36,7 @@ function pick(request) {
   if (r === "pricing") return ["pricing", handlePricing];
   if (r === "account" || p === "/account") return ["account", handleAccount];
   if (r === "redeem" || p === "/redeem") return ["redeem", handleRedeem];
+  if (r === "waitlist") return ["waitlist", handleWaitlist];
   if (r === "calendar" || p.startsWith("/decisions/calendar/")) return ["calendar", handleCalendar];
   if (r === "share" || p.startsWith("/share/")) return ["share", handleShare];
   if (r === "decisions" || p === "/decisions") return ["decisions", handleDecisions];

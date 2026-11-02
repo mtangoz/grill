@@ -473,8 +473,13 @@ describe("the endpoints", () => {
         { source: "/redeem", destination: "/api/hosted?__route=redeem" },
         { source: "/start", has: [{ type: "query", key: "ref" }], destination: "/api/hosted?__route=start" },
         { source: "/start/", has: [{ type: "query", key: "ref" }], destination: "/api/hosted?__route=start" },
+        { source: "/waitlist", destination: "/api/hosted?__route=waitlist" },
       ],
       routes: [
+        {
+          src: "^/waitlist/?$",
+          dest: "/api/hosted?__route=waitlist",
+        },
         {
           src: "^/$",
           has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
