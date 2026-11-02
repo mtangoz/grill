@@ -1,5 +1,6 @@
-// grillyour.ai/pricing. Plain HTML. Paid plans stay off unless GRILL_PRO_BILLING=subscription.
+// /pricing. Plain HTML. Paid plans stay off unless GRILL_PRO_BILLING=subscription.
 // A view, and a Notify me click, are anonymous counts. Prices are the ones already on the site.
+// Served from the hosted function so it does not add a serverless function.
 import { recordPaidIntent } from "./_paidIntent.mjs";
 import { PLANS, billingMode, couponId, esc, page } from "./_pro.mjs";
 
@@ -39,15 +40,19 @@ ${next}
   );
 }
 
-export async function GET() {
-  if (billingMode(process.env) !== "subscription") await recordPaidIntent(process.env, globalThis.fetch, "pricing");
-  return html(200, pricingPage(process.env));
-}
-
-export async function POST(request) {
-  const form = new URLSearchParams(await request.text());
-  if (form.get("intent") === "notify" && billingMode(process.env) !== "subscription") {
-    await recordPaidIntent(process.env, globalThis.fetch, "notify");
+export async function handlePricing(request, deps = {}) {
+  const env = deps.env ?? process.env;
+  const fetchImpl = deps.fetch ?? globalThis.fetch;
+  if (request.method === "POST") {
+    const form = new URLSearchParams(await request.text());
+    if (form.get("intent") === "notify" && billingMode(env) !== "subscription") {
+      await recordPaidIntent(env, fetchImpl, "notify");
+    }
+    return html(303, "", { Location: "/notify" });
   }
-  return html(303, "", { Location: "/notify" });
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return html(405, page("Pricing · Grill", "<h1>That request isn't supported.</h1>"));
+  }
+  if (billingMode(env) !== "subscription") await recordPaidIntent(env, fetchImpl, "pricing");
+  return html(200, pricingPage(env));
 }

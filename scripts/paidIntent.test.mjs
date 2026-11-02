@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { signPayload } from "../api/_account.mjs";
 import { FREE_TO_PAID_KEY, PAID_INTENT_KEYS, noteFreeToPaid, recordPaidIntent } from "../api/_paidIntent.mjs";
+import { handlePricing } from "../api/_pricing.mjs";
 import { PLANS, checkoutClientReference, startCheckout } from "../api/_pro.mjs";
 
 const ENV = {
@@ -72,8 +73,7 @@ describe("paid intent", () => {
     delete process.env.GRILL_PRO_COUPON;
     globalThis.fetch = redis.fetchImpl;
     try {
-      const { GET, POST } = await import("../api/pricing.js");
-      const page = await GET(new Request("https://grillyour.ai/pricing"));
+      const page = await handlePricing(new Request("https://grillyour.ai/pricing"), { env: process.env, fetch: globalThis.fetch });
       const html = await page.text();
       assert.equal(page.status, 200);
       assert.match(html, /\$9 a month/);
@@ -84,7 +84,7 @@ describe("paid intent", () => {
       assert.equal(redis.store.get(PAID_INTENT_KEYS.pricing), "1");
       assert.equal(redis.calls.some((call) => call.url.includes("api.stripe.com")), false);
 
-      const click = await POST(new Request("https://grillyour.ai/pricing", { method: "POST", body: "intent=notify" }));
+      const click = await handlePricing(new Request("https://grillyour.ai/pricing", { method: "POST", body: "intent=notify" }), { env: process.env, fetch: globalThis.fetch });
       assert.equal(click.status, 303);
       assert.equal(click.headers.get("location"), "/notify");
       assert.equal(redis.store.get(PAID_INTENT_KEYS.notify), "1");

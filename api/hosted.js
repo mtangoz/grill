@@ -4,6 +4,7 @@
 // authorization-server metadata at /.well-known/oauth-authorization-server and
 // openid-configuration, including the /mcp path-inserted forms). 404 unless GRILL_HOSTED=on.
 import { handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleJudge, handleMcp, handleProtectedResource, handleRedeem, handleShare } from "./_hosted.mjs";
+import { handlePricing } from "./_pricing.mjs";
 import { handleStart } from "./_start.mjs";
 
 export const maxDuration = 300;
@@ -31,6 +32,7 @@ function pick(request) {
   const p = url.pathname;
   // /start?ref= is counted here so it does not add a twelfth-plus function. It runs even when hosted mode is off.
   if (r === "start") return ["start", handleStart];
+  if (r === "pricing") return ["pricing", handlePricing];
   if (r === "account" || p === "/account") return ["account", handleAccount];
   if (r === "redeem" || p === "/redeem") return ["redeem", handleRedeem];
   if (r === "calendar" || p.startsWith("/decisions/calendar/")) return ["calendar", handleCalendar];

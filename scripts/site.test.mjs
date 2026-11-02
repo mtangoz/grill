@@ -1365,7 +1365,7 @@ describe("markdown for agents", () => {
     assert.deepEqual(config.rewrites, [
       { source: "/welcome", destination: "/api/welcome" },
       { source: "/checkout", destination: "/api/checkout" },
-      { source: "/pricing", destination: "/api/pricing" },
+      { source: "/pricing", destination: "/api/hosted?__route=pricing" },
       { source: "/pro", destination: "/api/pro" },
       { source: "/pro/auth", destination: "/api/pro-auth" },
       { source: "/pro/try", destination: "/api/pro-try" },
