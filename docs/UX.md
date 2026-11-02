@@ -82,7 +82,7 @@ Enforced by: test "gives every dead-end page a way back" in [scripts/pages.test.
 
 ## An invite code
 
-`/redeem` is for a signed-in person who is not on the invite list. They enter a code, then a confirm page. The confirm value is the button on that page. After the code is used, the page says you're in and the next step is a plain link to `/start`. `/start` says to sign in with the same email you signed up with, every time, so a code works for someone who was never emailed an invite. The pages run no script. The invite-only message links here.
+`/redeem` is for a signed-in person who is not on the invite list. They enter a code, then a confirm page. The confirm value is the button on that page. A code can come from `GRILL_INVITE_CODES` or from a single-use code in the codes store, one per lead. After the code is used, the page says you're in and the next step is a plain link to `/start`. `/start` says to sign in with the same email you signed up with, every time, so a code works for someone who was never emailed an invite. A `?ref=` on `/start` is recorded as a count for that source and is not shown on the page. The pages run no script. The invite-only message links here. Open sign-up stays off.
 
 Enforced by: test "asks on a confirm page before a code is used, with no script", test "points the invite-only page at the redeem page", and test "the success page's next step is a plain link to /start, with no script" in [scripts/inviteCode.test.mjs](../scripts/inviteCode.test.mjs), and test "tells a code user to sign in with the email they signed up with" in [scripts/site.test.mjs](../scripts/site.test.mjs).
 

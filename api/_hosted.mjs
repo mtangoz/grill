@@ -66,6 +66,9 @@ import {
   inviteOnlyText,
   normalizeInviteCode,
   parseInviteCodes,
+  readStoredInviteMax,
+  storedInviteListed,
+  storedInvitesEnabled,
   authorForJudge,
   calendarFeed,
   calendarTokenHash,
@@ -626,15 +629,15 @@ async function cachedOwnerEmail(userId, deps) {
  * the email the starter cap is keyed to: the owner for an agent admitted that
  * way, otherwise their own email.
  */
-/** True when this email redeemed a code that is still on GRILL_INVITE_CODES. Off when that var is unset. */
+/** True when this email redeemed a code that is still on GRILL_INVITE_CODES or still in the codes store. */
 async function inviteGrantAllows(email, deps) {
-  const codes = parseInviteCodes(deps.env);
   const who = cleanEmail(email);
-  if (!codes.length || !who) return false;
+  if (!who) return false;
   const raw = await redis(deps, ["GET", inviteGrantKey(who)]);
   if (typeof raw !== "string" || !/^[a-f0-9]{64}$/.test(raw)) return false;
-  const known = new Set(codes.map((row) => inviteCodeHash(row.code)));
-  return known.has(raw);
+  const known = new Set(parseInviteCodes(deps.env).map((row) => inviteCodeHash(row.code)));
+  if (known.has(raw)) return true;
+  return storedInviteListed((args) => redis(deps, args), raw);
 }
 
 async function admit(user, deps, userId) {
@@ -2551,14 +2554,37 @@ const REDEEM_ERRORS = {
   used: "That code has been used up.",
 };
 
-function redeemSpec(code, env) {
+function redeemCommand(deps) {
+  return (args) => redis(deps, args);
+}
+
+/** Env codes and the codes store. Empty env plus an empty store is off, which is the same door as before. */
+async function invitesOpen(deps) {
+  if (inviteCodesEnabled(deps.env)) return true;
+  try {
+    return await storedInvitesEnabled(redeemCommand(deps));
+  } catch {
+    return false;
+  }
+}
+
+/** A code from GRILL_INVITE_CODES, or else a single-use (or capped) code in the store. */
+async function resolveInvite(code, deps) {
   const trimmed = String(code ?? "").trim();
   if (!trimmed) return { reason: "empty" };
   const normalized = normalizeInviteCode(trimmed);
   if (!normalized) return { reason: "bad" };
-  const spec = parseInviteCodes(env).find((row) => row.code === normalized);
-  if (!spec) return { reason: "bad" };
-  return { spec, normalized };
+  const spec = parseInviteCodes(deps.env).find((row) => row.code === normalized);
+  if (spec) return { spec, normalized };
+  const max = await readStoredInviteMax(redeemCommand(deps), normalized);
+  if (max == null) return { reason: "bad" };
+  return { spec: { code: normalized, max }, normalized };
+}
+
+async function grantStillListed(hash, deps) {
+  if (!/^[a-f0-9]{64}$/.test(String(hash || ""))) return false;
+  if (parseInviteCodes(deps.env).some((row) => inviteCodeHash(row.code) === hash)) return true;
+  return storedInviteListed(redeemCommand(deps), hash);
 }
 
 function renderRedeemed(env) {
@@ -2620,16 +2646,15 @@ function renderRedeemConfirm(code) {
  * Past the max, the count is put back and this email is not granted.
  */
 async function redeemInvite(email, code, deps) {
-  if (!inviteCodesEnabled(deps.env)) return { ok: false, reason: "off" };
-  const found = redeemSpec(code, deps.env);
+  if (!(await invitesOpen(deps))) return { ok: false, reason: "off" };
+  const found = await resolveInvite(code, deps);
   if (found.reason) return { ok: false, reason: found.reason };
   const { spec, normalized } = found;
   const who = cleanEmail(email);
   if (!who) return { ok: false, reason: "bad" };
   const grantKey = inviteGrantKey(who);
-  const known = new Set(parseInviteCodes(deps.env).map((row) => inviteCodeHash(row.code)));
   const existing = await redis(deps, ["GET", grantKey]);
-  if (typeof existing === "string" && known.has(existing)) return { ok: true, already: true };
+  if (typeof existing === "string" && (await grantStillListed(existing, deps))) return { ok: true, already: true };
   if (spec.max != null) {
     const current = Number(await redis(deps, ["GET", inviteUsesKey(normalized)])) || 0;
     if (current >= spec.max) return { ok: false, reason: "used" };
@@ -2653,9 +2678,9 @@ async function redeemInvite(email, code, deps) {
 }
 
 async function previewInvite(email, code, deps) {
-  if (!inviteCodesEnabled(deps.env)) return { ok: false, reason: "off" };
+  if (!(await invitesOpen(deps))) return { ok: false, reason: "off" };
   if (await inviteGrantAllows(email, deps)) return { ok: true, already: true };
-  const found = redeemSpec(code, deps.env);
+  const found = await resolveInvite(code, deps);
   if (found.reason) return { ok: false, reason: found.reason };
   if (found.spec.max != null) {
     const current = Number(await redis(deps, ["GET", inviteUsesKey(found.normalized)])) || 0;
@@ -2680,7 +2705,7 @@ export async function handleRedeem(request, deps) {
       if (request.method === "POST") return seeOther(`${publicOrigin(request)}/redeem?done=1`);
       return htmlPage(renderRedeemed(deps.env));
     }
-    if (!inviteCodesEnabled(deps.env)) return html(200, renderInviteOff());
+    if (!(await invitesOpen(deps))) return html(200, renderInviteOff());
     if (request.method === "POST") {
       const form = new URLSearchParams(await request.text());
       const typed = form.get("code") ?? "";

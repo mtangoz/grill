@@ -470,6 +470,8 @@ describe("the endpoints", () => {
         { source: "/judge", destination: "/api/hosted?__route=judge" },
         { source: "/account", destination: "/api/hosted?__route=account" },
         { source: "/redeem", destination: "/api/hosted?__route=redeem" },
+        { source: "/start", has: [{ type: "query", key: "ref" }], destination: "/api/start" },
+        { source: "/start/", has: [{ type: "query", key: "ref" }], destination: "/api/start" },
       ],
       routes: [
         {

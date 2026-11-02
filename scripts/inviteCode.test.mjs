@@ -1,7 +1,8 @@
 // Shareable invite codes for hosted Grill. A signed-in person who is not on the allowlist
 // redeems a code on a plain page (a form, then a confirm page, no script). A valid code grants
 // early-tester access: free, the existing $5 a month per person, and the $20 service cap stays.
-// Codes come from GRILL_INVITE_CODES. Unset, the feature is off. Made-up fixtures only.
+// Codes come from GRILL_INVITE_CODES or the codes store. Unset and empty, the feature is off.
+// Made-up fixtures only. Open sign-up stays off.
 import { createHash, createSign, generateKeyPairSync, randomBytes } from "node:crypto";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -17,7 +18,10 @@ import {
   inviteCodesEnabled,
   inviteOnlyText,
   monthlyCapUsd,
+  openSignup,
   parseInviteCodes,
+  saveStoredInviteCode,
+  storedInviteKey,
   userMonthlyCapUsd,
 } from "./hostedCore.mjs";
 
@@ -445,6 +449,56 @@ describe("invite codes", { concurrency: false }, () => {
       const text = (await mcpText(ctx, fake, "user_agent")).text;
       assert.equal(text.includes("invite-only"), false, text);
       assert.doesNotMatch(text, /isError|error code/i);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("redeems a single-use stored code for one lead, beside an env code, and leaves open sign-up off", async () => {
+    assert.equal(openSignup({}), false);
+    resetHostedCaches();
+    const ctx = world({ codes: "shared-code" });
+    assert.equal(openSignup(ctx.env), false);
+    assert.equal(ctx.env.GRILL_OPEN_SIGNUP, undefined);
+    const command = (args) => ctx.memory.command(args);
+    const saved = await saveStoredInviteCode(command, "Lead-North-1", { lead: "lead-north" });
+    assert.equal(saved.ok, true);
+    assert.equal(saved.max, 1);
+    assert.equal(await saveStoredInviteCode(command, "lead-north-2", { lead: "lead-north" }).then((row) => row.reason), "lead");
+    assert.equal(ctx.memory.command(["GET", storedInviteKey("lead-north-1")]), "1");
+    assert.equal(ctx.memory.command(["GET", "grill:hosted:invite:stored:lead-north-1"]), null);
+
+    const empty = world();
+    assert.equal(openSignup(empty.env), false);
+    const off = await page(empty, "user_friend");
+    assert.match(off.html, /Invite codes aren't on/);
+    await saveStoredInviteCode((args) => empty.memory.command(args), "lead-south-1", { max: 1, lead: "lead-south" });
+    const form = await page(empty, "user_second");
+    assert.match(form.html, /Enter an invite code/);
+    assert.equal(form.html.includes("<script"), false);
+
+    const first = await page(empty, "user_second", "code=lead-south-1&confirm=redeem");
+    assert.match(first.html, /You're in/);
+    assert.equal(empty.memory.command(["GET", grantKey("second@example.com")]), hash("lead-south-1"));
+    assert.doesNotMatch(String(empty.memory.command(["GET", grantKey("second@example.com")])), /lead-south/);
+    const again = await page(empty, "user_second", "code=lead-south-1&confirm=redeem");
+    assert.match(again.html, /You're in/);
+    assert.equal(empty.memory.command(["GET", usesKey("lead-south-1")]), "1");
+    const second = await page(empty, "user_third", "code=lead-south-1&confirm=redeem");
+    assert.match(second.html, /used up/);
+    assert.equal(empty.memory.command(["GET", grantKey("third@example.com")]), null);
+
+    const envCode = await page(ctx, "user_fourth", "code=shared-code&confirm=redeem");
+    assert.match(envCode.html, /You're in/);
+    const storedToo = await page(ctx, "user_friend", "code=lead-north-1&confirm=redeem");
+    assert.match(storedToo.html, /You're in/);
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const admitted = await mcpText(ctx, fake, "user_friend");
+      assert.equal(admitted.json.result.isError, false, admitted.text);
+      const blocked = await mcpText(empty, fake, "user_third");
+      assert.match(blocked.text, /invite-only/);
     } finally {
       await fake.close();
     }

@@ -24,7 +24,9 @@
     { "source": "/decisions", "destination": "/api/hosted?__route=decisions" },
     { "source": "/judge", "destination": "/api/hosted?__route=judge" },
     { "source": "/account", "destination": "/api/hosted?__route=account" },
-    { "source": "/redeem", "destination": "/api/hosted?__route=redeem" }
+    { "source": "/redeem", "destination": "/api/hosted?__route=redeem" },
+    { "source": "/start", "has": [{ "type": "query", "key": "ref" }], "destination": "/api/start" },
+    { "source": "/start/", "has": [{ "type": "query", "key": "ref" }], "destination": "/api/start" }
   ],
   "routes": [
     {
@@ -40,12 +42,12 @@
       "check": true,
       "headers": { "Content-Type": "text/markdown; charset=utf-8", "Vary": "Accept" }
     },
-    {
-      "src": "^/$",
-      "dest": "/index.html",
-      "check": true,
-      "headers": { "Vary": "Accept" }
-    },
+        {
+          "src": "^/$",
+          "dest": "/index.html",
+          "check": true,
+          "headers": { "Vary": "Accept" }
+        },
     {
       "src": "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account/?$|redeem/?$|judge/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
       "dest": "/$1/index.html",
