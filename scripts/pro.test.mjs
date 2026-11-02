@@ -450,6 +450,7 @@ describe("the endpoints", () => {
       rewrites: [
         { source: "/welcome", destination: "/api/welcome" },
         { source: "/checkout", destination: "/api/checkout" },
+        { source: "/pricing", destination: "/api/pricing" },
         { source: "/pro", destination: "/api/pro" },
         { source: "/pro/auth", destination: "/api/pro-auth" },
         { source: "/pro/try", destination: "/api/pro-try" },
@@ -481,7 +482,7 @@ describe("the endpoints", () => {
           headers: { "Content-Type": "text/markdown; charset=utf-8", Vary: "Accept" },
         },
         {
-          src: "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account/?$|redeem/?$|judge/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
+          src: "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account/?$|redeem/?$|judge/?$|welcome/?$|checkout/?$|pricing/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
           has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
           dest: "/$1/index.md",
           check: true,
@@ -494,14 +495,14 @@ describe("the endpoints", () => {
           headers: { Vary: "Accept" },
         },
         {
-          src: "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account/?$|redeem/?$|judge/?$|welcome/?$|checkout/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
+          src: "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account/?$|redeem/?$|judge/?$|welcome/?$|checkout/?$|pricing/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
           dest: "/$1/index.html",
           check: true,
           headers: { Vary: "Accept" },
         },
         { handle: "error" },
         {
-          src: "^/(?!api(?:/|$)|mcp$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account$|redeem$|judge$|welcome$|checkout$|pro(?:/|$)|notify(?:/|$)|miss/send$).*$",
+          src: "^/(?!api(?:/|$)|mcp$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account$|redeem$|judge$|welcome$|checkout$|pricing$|pro(?:/|$)|notify(?:/|$)|miss/send$).*$",
           has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
           status: 404,
           dest: "/404.md",

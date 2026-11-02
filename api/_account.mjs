@@ -219,6 +219,16 @@ export function signPayload(payload, secret) {
   return `${body}.${sig}`;
 }
 
+/** The Pro account id from the session cookie, or "" when the cookie is missing or stale. */
+export function sessionAccountId(request, env = {}, now = Date.now()) {
+  const secret = sessionSecret(env);
+  if (!secret) return "";
+  const token = cookieValue(request?.headers?.get?.("cookie"), SESSION_COOKIE);
+  const payload = readPayload(token, secret);
+  if (!payload || payload.t !== "s" || typeof payload.sub !== "string" || !(payload.exp > now / 1000)) return "";
+  return payload.sub;
+}
+
 export function readPayload(token, secret) {
   if (typeof token !== "string" || typeof secret !== "string" || !secret) return null;
   const i = token.lastIndexOf(".");

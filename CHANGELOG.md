@@ -6,6 +6,7 @@ A change may add one optional line when someone has agreed to be named. Leave th
 
 ## Unreleased
 
+- While paid plans are off, a view of `/pricing` or `/checkout` and a Notify me click are anonymous counts. A checkout session for a signed-in account carries that account id, and the webhook counts each such account once toward free-to-paid. Prices stay $9 a month and $90 a year. Nothing is charged while paid plans are off. The pricing page runs no script.
 - The /start page says Grill works in whatever AI chat you use, and is not tied to one model. The connector address is the same in every chat. Someone who hits the invite wall is sent to /redeem. The page still runs no script.
 - A single-use invite code can live in the existing store, one per lead, and is redeemed at `/redeem` the same way as a code from `GRILL_INVITE_CODES`. Open sign-up stays off. `/start?ref=` records that source as a count and a cookie. The page itself still runs no script.
 - The contribute page lists "Changes you asked for". Each line is a shipped change, a link to the pull request or the changelog, and a name or handle only when that person agreed. `data/contributors.json` starts empty. An entry without consent says "suggested by a tester." Credit names the product feedback only, never a person's own decisions. Grill's privacy promise covers your decisions. Credit is for product feedback and is opt-in only. Anyone can ask to be removed at any time by emailing support@grillyour.ai. The page runs no script.
