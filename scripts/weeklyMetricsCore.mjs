@@ -1,7 +1,8 @@
 /**
  * Weekly counts that are not users. Paid-intent is views and Notify me clicks while paid
  * plans are off. Free-to-paid is accounts that reached a paid checkout, once each.
- * Waitlist is sign-ups. The keys are the same strings the writers use. This file does not
+ * Waitlist is sign-ups. Founding members are how many of the 100 numbers are assigned.
+ * The keys are the same strings the writers use. This file does not
  * import those writers, so the report can ship on its own.
  */
 import { redisCommand } from "../api/_account.mjs";
@@ -13,6 +14,7 @@ export const PAID_INTENT_KEYS = Object.freeze({
 });
 export const FREE_TO_PAID_KEY = "grill:metric:free_to_paid";
 export const WAITLIST_SIGNUPS_KEY = "grill:metric:waitlist_signup";
+export const FOUNDING_COUNT_KEY = "grill:hosted:founding:count";
 
 export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) {
   const url = typeof env.UPSTASH_REDIS_REST_URL === "string" ? env.UPSTASH_REDIS_REST_URL.trim() : "";
@@ -32,7 +34,14 @@ export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) 
     paidIntentNotify: await n(PAID_INTENT_KEYS.notify),
     freeToPaid: await n(FREE_TO_PAID_KEY),
     waitlist: await n(WAITLIST_SIGNUPS_KEY),
+    founding: await n(FOUNDING_COUNT_KEY),
   };
+}
+
+function foundingShown(report) {
+  const n = Math.floor(Number(report.founding) || 0);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(100, n);
 }
 
 /** The lines a person reads. The JSON line is the same numbers, for metrics.jsonl. */
@@ -43,6 +52,7 @@ export function weeklyMetricLines(report) {
     `paid-intent notify: ${report.paidIntentNotify}`,
     `free-to-paid: ${report.freeToPaid}`,
     `waitlist: ${report.waitlist ?? 0}`,
+    `founding members: ${foundingShown(report)}/100`,
     JSON.stringify(report),
   ];
 }

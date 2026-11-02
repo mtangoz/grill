@@ -272,6 +272,7 @@ describe("invite codes", { concurrency: false }, () => {
     assert.match(shown.html, /<form method="post" action="\/redeem">/);
     assert.match(shown.html, /min-height:\s*44px/);
     assert.match(shown.html, /free, \$5 of use each month/i);
+    assert.match(shown.html, /First 100 users get Grill free for life, 100 spots left\./);
     assert.doesNotMatch(shown.html, /GRILL_|Clerk|CLERK_|Upstash/);
     assert.equal(mutations(ctx).length, before);
     assert.equal(ctx.memory.command(["GET", grantKey("friend@example.com")]), null);
@@ -317,6 +318,8 @@ describe("invite codes", { concurrency: false }, () => {
     assert.match(done.html, /You're in\./);
     assert.match(done.html, /Early-tester access is on for this email/);
     assert.match(done.html, /<p>Next: <a href="\/start">connect Grill to your AI<\/a>\.<\/p>/);
+    assert.match(done.html, /Founding member #1 of 100: Grill is free for you for life\./);
+    assert.match(done.html, /First 100 users get Grill free for life, 99 spots left\./);
     assert.equal(done.html.includes("<script"), false);
     assert.doesNotMatch(done.html, /javascript:|onclick=|addEventListener/i);
   });

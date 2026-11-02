@@ -7,6 +7,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { normalizeEmail, redisCommand } from "./_account.mjs";
 import { saveStoredInviteCode, inviteCodeHash } from "../scripts/hostedCore.mjs";
+import { assignFoundingMember } from "./_founding.mjs";
 import { normalizeRef, refFromCookie } from "./_start.mjs";
 import { esc, page } from "./_pro.mjs";
 
@@ -147,14 +148,18 @@ export async function approveWaitlist(command, email, now = new Date().toISOStri
   if (!who) return { ok: false, reason: "bad" };
   const row = await loadRow(command, who);
   if (!row) return { ok: false, reason: "missing" };
-  if (row.codeHash) return { ok: true, already: true };
+  if (row.codeHash) {
+    const founding = await assignFoundingMember(command, who);
+    return { ok: true, already: true, number: founding.number || null };
+  }
   const code = `lead-${randomBytes(6).toString("hex")}`;
   const saved = await saveStoredInviteCode(command, code, { max: 1, lead: `w${sha256(who).slice(0, 20)}` });
   if (!saved.ok) return saved;
   row.codeHash = inviteCodeHash(code);
   row.approvedAt = now;
   await command(["SET", waitlistKey(who), JSON.stringify(row)]);
-  return { ok: true, code };
+  const founding = await assignFoundingMember(command, who);
+  return { ok: true, code, number: founding.number || null };
 }
 
 export async function handleWaitlist(request, deps) {

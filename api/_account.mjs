@@ -43,6 +43,7 @@ import {
   starterAllowanceUsd,
 } from "./_pro.mjs";
 import { startFakeOpenRouter } from "../scripts/fixtures/fake-openrouter.mjs";
+import { foundingMemberLine, foundingSkipsPaywall, readFoundingNumber } from "./_founding.mjs";
 
 export const USAGE_EVENTS = Object.freeze([
   "account_created",
@@ -951,6 +952,15 @@ ${setupFields(account, { key })}
   );
 }
 
+async function foundingNumberFor(env, fetchImpl, email) {
+  if (!env?.UPSTASH_REDIS_REST_URL || !env?.UPSTASH_REDIS_REST_TOKEN || !email) return null;
+  try {
+    return await readFoundingNumber(redisCommand(env, fetchImpl), email);
+  } catch {
+    return null;
+  }
+}
+
 async function dashboard(account, deps) {
   const env = deps.env;
   const record = activeRecord(account);
@@ -972,9 +982,13 @@ async function dashboard(account, deps) {
   } else if (account.keys?.some((k) => k.disabled)) {
     usage = `<p>This key is switched off.</p>`;
   }
+  const founding = await foundingNumberFor(env, deps.fetch, account.email);
+  const freeForLife = foundingSkipsPaywall(founding);
   const billing = billingMode(env);
   const sub =
-    account.subscription === "active"
+    freeForLife
+      ? foundingMemberLine(founding)
+      : account.subscription === "active"
       ? "Pro is on."
       : account.plan === "starter"
         ? `Starter allowance is on. No card. It is ${dollars(starterAllowanceUsd(env))} of judge spend, and it does not refill.`
@@ -994,16 +1008,15 @@ async function dashboard(account, deps) {
 <p class="small">No card. ${esc(dollars(starterAllowanceUsd(env)))} of judge spend, once, for this email. Bring your own key if you want unlimited checks. That stays free, and it has no account.</p>`
       : "";
   const purchase =
-    billing === "subscription" && account.subscription !== "active"
+    !freeForLife && billing === "subscription" && account.subscription !== "active"
       ? testModeEnabled(env)
         ? `<form method="post" action="/pro"><input type="hidden" name="action" value="purchase"><button type="submit">Simulate purchase</button></form>`
         : `<p><a class="button" href="/checkout?plan=month">Subscribe</a></p><p class="small">Checkout uses Stripe. Until those price ids are set, this link explains that payment isn't ready.</p>`
       : "";
-  const upgrade =
-    account.subscription === "active"
-      ? ""
-      : `<form method="post" action="/pro"><input type="hidden" name="action" value="upgrade"><button type="submit">Upgrade</button></form>`;
-  const entitled = account.subscription === "active" || account.plan === "starter";
+  const upgrade = freeForLife || account.subscription === "active"
+    ? ""
+    : `<form method="post" action="/pro"><input type="hidden" name="action" value="upgrade"><button type="submit">Upgrade</button></form>`;
+  const entitled = freeForLife || account.subscription === "active" || account.plan === "starter";
   const manage = entitled
     ? `<div class="row">
 <form method="post" action="/pro"><input type="hidden" name="action" value="rotate"><button type="submit">Rotate key</button></form>
@@ -1323,6 +1336,9 @@ export async function handlePro(request, deps) {
       }
     }
     if (action === "upgrade") {
+      if (foundingSkipsPaywall(await foundingNumberFor(env, deps.fetch, account.email))) {
+        return html(200, await dashboard(account, bound));
+      }
       if (billingMode(env) === "subscription") {
         return new Response(null, { status: 303, headers: { Location: "/checkout?plan=month", "Cache-Control": "no-store" } });
       }
@@ -1330,6 +1346,9 @@ export async function handlePro(request, deps) {
       return html(200, page("Paid plans are off · Grill Pro", `${testBanner(env)}<h1>Paid plans aren't on.</h1><p>The starter allowance is the free key. No card. Bring your own key if you want unlimited checks. That stays free, and it has no account.</p><p><a href="/pro">Back</a></p>`));
     }
     if (action === "purchase") {
+      if (foundingSkipsPaywall(await foundingNumberFor(env, deps.fetch, account.email))) {
+        return html(200, await dashboard(account, bound));
+      }
       if (billingMode(env) !== "subscription") {
         return html(400, page("Paid plans are off · Grill Pro", `${testBanner(env)}<h1>Paid plans are off.</h1><p>Get a starter key instead. No card. <a href="/pro">Back</a></p>`));
       }

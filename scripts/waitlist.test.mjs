@@ -129,11 +129,14 @@ describe("waitlist", () => {
 
     const approved = await approveWaitlist((args) => ctx.memory.command(args), "friend@example.com");
     assert.equal(approved.ok, true);
+    assert.equal(approved.number, 1);
     assert.match(approved.code, /^lead-[a-f0-9]+$/);
     assert.equal(ctx.memory.command(["GET", `grill:hosted:invite:grant:${hash("friend@example.com")}`]), null);
     const second = await approveWaitlist((args) => ctx.memory.command(args), "friend@example.com");
     assert.equal(second.already, true);
+    assert.equal(second.number, 1);
     assert.equal(second.code, undefined);
+    assert.equal(ctx.memory.command(["GET", "grill:hosted:founding:count"]), "1");
 
     const stillOut = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx);
     assert.match(await stillOut.text(), /invite-only/);

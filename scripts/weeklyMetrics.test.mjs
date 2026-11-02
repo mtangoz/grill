@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FREE_TO_PAID_KEY, PAID_INTENT_KEYS, WAITLIST_SIGNUPS_KEY, readWeeklyMetrics, weeklyMetricLines } from "./weeklyMetricsCore.mjs";
+import { FOUNDING_COUNT_KEY, FREE_TO_PAID_KEY, PAID_INTENT_KEYS, WAITLIST_SIGNUPS_KEY, readWeeklyMetrics, weeklyMetricLines } from "./weeklyMetricsCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV = {
@@ -31,6 +31,7 @@ describe("weekly metrics", () => {
         [PAID_INTENT_KEYS.notify]: "7",
         [FREE_TO_PAID_KEY]: "1",
         [WAITLIST_SIGNUPS_KEY]: "3",
+        [FOUNDING_COUNT_KEY]: "7",
       }),
     );
     assert.equal(report.label, "Weekly metrics");
@@ -44,8 +45,10 @@ describe("weekly metrics", () => {
       "free-to-paid: 1",
     ]);
     assert.equal(lines[4], "waitlist: 3");
+    assert.equal(lines[5], "founding members: 7/100");
     assert.equal(JSON.parse(lines.at(-1)).freeToPaid, 1);
     assert.equal(JSON.parse(lines.at(-1)).waitlist, 3);
+    assert.equal(JSON.parse(lines.at(-1)).founding, 7);
     const missing = await readWeeklyMetrics(ENV, fetchFor({}));
     assert.equal(missing.paidIntentPricing, 0);
     assert.equal(missing.freeToPaid, 0);
