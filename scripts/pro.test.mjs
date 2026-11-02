@@ -471,6 +471,7 @@ describe("the endpoints", () => {
         { source: "/judge", destination: "/api/hosted?__route=judge" },
         { source: "/account", destination: "/api/hosted?__route=account" },
         { source: "/redeem", destination: "/api/hosted?__route=redeem" },
+        { source: "/redeem/", destination: "/api/hosted?__route=redeem" },
         { source: "/start", destination: "/api/hosted?__route=start" },
         { source: "/start/", destination: "/api/hosted?__route=start" },
         { source: "/waitlist", destination: "/api/hosted?__route=waitlist" },
@@ -479,6 +480,10 @@ describe("the endpoints", () => {
         {
           src: "^/waitlist/?$",
           dest: "/api/hosted?__route=waitlist",
+        },
+        {
+          src: "^/redeem/$",
+          dest: "/api/hosted?__route=redeem",
         },
         {
           src: "^/$",
@@ -512,7 +517,7 @@ describe("the endpoints", () => {
         },
         { handle: "error" },
         {
-          src: "^/(?!api(?:/|$)|mcp$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account$|redeem$|judge$|welcome$|checkout$|pricing$|pro(?:/|$)|notify(?:/|$)|miss/send$).*$",
+          src: "^/(?!api(?:/|$)|mcp$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account$|redeem/?$|judge$|welcome$|checkout$|pricing$|pro(?:/|$)|notify(?:/|$)|miss/send$).*$",
           has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
           status: 404,
           dest: "/404.md",
