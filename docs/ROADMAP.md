@@ -2,7 +2,7 @@
 
 Ideas for later. None of these is a promise to build. A consider-when line is the trigger that brings an idea back. Triggers are tied to a stage: 10 users, 100 users, feedback themes, or cost. A real user is a person who ran a grill, as [PRINCIPLES.md](PRINCIPLES.md) defines it.
 
-The daily growth work reviews docs/ROADMAP.md before it asks what to build. A weekly scan updates docs/ROADMAP.md and docs/COMPETITORS.md together. New ideas get a consider-when line. Competitor notes get a date and what changed.
+The daily growth work reviews docs/ROADMAP.md before it asks what to build. A weekly scan updates docs/ROADMAP.md and docs/COMPETITORS.md together. New ideas get a consider-when line. Competitor notes get a date and what changed. Who early outreach is for, and the rules it follows, are in [ICP.md](ICP.md).
 
 ## Google Docs add-on
 
