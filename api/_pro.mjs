@@ -50,6 +50,13 @@ const PRICE_RE = /^price_[A-Za-z0-9]{8,80}$/;
 const KEY_FIELD_PREFIX = "grill_key_"; // + the first 24 characters of the hash: Stripe keys max 40
 const LIVE_STATUSES = new Set(["active", "trialing", "past_due"]); // past_due keeps working while Stripe retries the card
 const SESSION_RE = /^cs_(live|test)_[A-Za-z0-9]{10,200}$/;
+const CLIENT_REFERENCE_RE = /^(?:acct_[a-f0-9]{8,64}|cus_[A-Za-z0-9]{6,64})$/;
+
+/** An account id safe to put on a Checkout Session. Anything else is dropped. */
+export function checkoutClientReference(raw) {
+  const id = typeof raw === "string" ? raw.trim() : "";
+  return CLIENT_REFERENCE_RE.test(id) ? id : "";
+}
 const CUSTOMER_RE = /^cus_[A-Za-z0-9]{6,64}$/;
 
 /** Something upstream (Stripe or the router) failed; the caller shows "try again", never a key. */
@@ -176,7 +183,7 @@ export function keyMetadataField(hash) {
  * so a mis-typed coupon can't advertise one price and charge another.
  * @returns {Promise<{state: "invalid"|"unconfigured"|"redirect", url?: string}>}
  */
-export async function startCheckout(plan, { env, fetch: fetchImpl }) {
+export async function startCheckout(plan, { env, fetch: fetchImpl, clientReferenceId = "" }) {
   if (!Object.hasOwn(PLANS, plan)) return { state: "invalid" };
   const price = priceId(plan, env);
   if (!price) return { state: "unconfigured" };
@@ -188,6 +195,8 @@ export async function startCheckout(plan, { env, fetch: fetchImpl }) {
     success_url: `${SITE_URL}/welcome?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${SITE_URL}/#pro`,
   };
+  const reference = checkoutClientReference(clientReferenceId);
+  if (reference) form.client_reference_id = reference;
   const coupon = couponId(env);
   if (coupon) {
     const c = await stripe.get(`/v1/coupons/${encodeURIComponent(coupon)}`);

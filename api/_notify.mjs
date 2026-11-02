@@ -10,6 +10,7 @@
  */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { normalizeEmail, redisCommand } from "./_account.mjs";
+import { recordPaidIntent } from "./_paidIntent.mjs";
 import { esc, page } from "./_pro.mjs";
 
 export const CONFIRM_TTL_MS = 48 * 60 * 60 * 1000;
@@ -342,6 +343,7 @@ export async function handleNotify(request, deps) {
     const set = await redis(env, fetchImpl, ["SET", coolKey, "1", "NX", "EX", String(COOLDOWN_SECONDS)]);
     if (set !== "OK") return checkInboxPage();
     reserved = true;
+    await recordPaidIntent(env, fetchImpl, "notify");
 
     const token = sealNotifyToken({ email, via, exp: now + CONFIRM_TTL_MS }, secret);
     const url = `${originOf(request, env)}/notify/confirm?t=${token}`;

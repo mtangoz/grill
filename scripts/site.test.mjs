@@ -1365,6 +1365,7 @@ describe("markdown for agents", () => {
     assert.deepEqual(config.rewrites, [
       { source: "/welcome", destination: "/api/welcome" },
       { source: "/checkout", destination: "/api/checkout" },
+      { source: "/pricing", destination: "/api/hosted?__route=pricing" },
       { source: "/pro", destination: "/api/pro" },
       { source: "/pro/auth", destination: "/api/pro-auth" },
       { source: "/pro/try", destination: "/api/pro-try" },
@@ -1512,6 +1513,7 @@ describe("markdown for agents", () => {
     assert.deepEqual(config.rewrites.map((rule) => rule.source), [
       "/welcome",
       "/checkout",
+      "/pricing",
       "/pro",
       "/pro/auth",
       "/pro/try",
@@ -1599,7 +1601,7 @@ describe("markdown for agents", () => {
         }
       }
     }
-    const kept = ["/mcp", "/decisions", "/judge", "/decisions/calendar/abc", "/share/abc", "/account", "/redeem", "/api/hosted", "/.well-known/oauth-protected-resource", "/pro", "/pro/auth", "/welcome", "/notify/confirm", "/miss/send", "/checkout"];
+    const kept = ["/mcp", "/decisions", "/judge", "/decisions/calendar/abc", "/share/abc", "/account", "/redeem", "/api/hosted", "/.well-known/oauth-protected-resource", "/pro", "/pro/auth", "/welcome", "/notify/confirm", "/miss/send", "/checkout", "/pricing"];
     for (const path of kept) {
       const stolen = before.filter((route) => answers(route, path, "text/markdown") && (route.dest ?? route.destination));
       assert.equal(stolen.length, 0, `${path} stays on its rewrite`);

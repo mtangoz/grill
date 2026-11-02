@@ -80,6 +80,10 @@ Each of those pages has a specific title, `lang="en"`, a viewport meta, and `noi
 
 Enforced by: test "gives every dead-end page a way back" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
 
+## Pricing, while paid plans are off
+
+`/pricing` states the same prices as the rest of the site: $9 a month or $90 a year. While paid plans are off, a view of that page, a view of `/checkout`, and a Notify me click are anonymous counts. The page runs no script. Nothing is charged. A signed-in checkout, once billing is on, puts the account id on the session so a later payment can be tied to that account. The prices do not change.
+
 ## An invite code
 
 `/redeem` is for a signed-in person who is not on the invite list. They enter a code, then a confirm page. The confirm value is the button on that page. A code can come from `GRILL_INVITE_CODES` or from a single-use code in the codes store, one per lead. After the code is used, the page says you're in and the next step is a plain link to `/start`. `/start` says to sign in with the same email you signed up with, every time, so a code works for someone who was never emailed an invite. A `?ref=` on `/start` is recorded as a count for that source and is not shown on the page. The pages run no script. The invite-only message links here. Open sign-up stays off.
