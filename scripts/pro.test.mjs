@@ -471,8 +471,8 @@ describe("the endpoints", () => {
         { source: "/judge", destination: "/api/hosted?__route=judge" },
         { source: "/account", destination: "/api/hosted?__route=account" },
         { source: "/redeem", destination: "/api/hosted?__route=redeem" },
-        { source: "/start", has: [{ type: "query", key: "ref" }], destination: "/api/hosted?__route=start" },
-        { source: "/start/", has: [{ type: "query", key: "ref" }], destination: "/api/hosted?__route=start" },
+        { source: "/start", destination: "/api/hosted?__route=start" },
+        { source: "/start/", destination: "/api/hosted?__route=start" },
         { source: "/waitlist", destination: "/api/hosted?__route=waitlist" },
       ],
       routes: [
@@ -492,6 +492,11 @@ describe("the endpoints", () => {
           dest: "/$1/index.md",
           check: true,
           headers: { "Content-Type": "text/markdown; charset=utf-8", Vary: "Accept" },
+        },
+        {
+          src: "^/start/?$",
+          dest: "/api/hosted?__route=start",
+          headers: { Vary: "Accept" },
         },
         {
           src: "^/$",
@@ -515,7 +520,7 @@ describe("the endpoints", () => {
         },
       ],
       functions: {
-        "api/hosted.js": { maxDuration: 300, includeFiles: "scripts/{apiKey,checkCore,judge,judgeCore,reflection,usageStats}.mjs" },
+        "api/hosted.js": { maxDuration: 300, includeFiles: "{scripts/{apiKey,checkCore,judge,judgeCore,reflection,usageStats}.mjs,site/start.html,site/page.html}" },
       },
     });
   });

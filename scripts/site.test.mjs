@@ -1386,8 +1386,8 @@ describe("markdown for agents", () => {
       { source: "/judge", destination: "/api/hosted?__route=judge" },
       { source: "/account", destination: "/api/hosted?__route=account" },
       { source: "/redeem", destination: "/api/hosted?__route=redeem" },
-      { source: "/start", has: [{ type: "query", key: "ref" }], destination: "/api/hosted?__route=start" },
-      { source: "/start/", has: [{ type: "query", key: "ref" }], destination: "/api/hosted?__route=start" },
+      { source: "/start", destination: "/api/hosted?__route=start" },
+      { source: "/start/", destination: "/api/hosted?__route=start" },
       { source: "/waitlist", destination: "/api/hosted?__route=waitlist" },
     ]);
     assert.ok(!config.rewrites.some((rule) => rule.source === "/" || rule.source === "/:path*" || rule.source === "/(.*)"));
@@ -1596,7 +1596,12 @@ describe("markdown for agents", () => {
           const htmlChosen = html.find((route) => (route.dest ?? route.destination) && !String(route.dest ?? route.destination).endsWith(".md"));
           assert.ok(htmlChosen, `${path} HTML still has a route when Accept is ${JSON.stringify(accept)}`);
           const htmlDest = destFor(htmlChosen, path);
-          const htmlExpected = pathname === "/" ? "/index.html" : `/${pathname.replace(/^\/|\/$/g, "")}/index.html`;
+          const barePath = pathname === "/" ? "/" : pathname.replace(/\/$/, "");
+          const htmlExpected = barePath === "/start"
+            ? "/api/hosted?__route=start"
+            : pathname === "/"
+              ? "/index.html"
+              : `/${pathname.replace(/^\/|\/$/g, "")}/index.html`;
           assert.equal(htmlDest, htmlExpected, `${path} HTML dest`);
           assert.match(header(htmlChosen, "vary"), /\bAccept\b/, `${path} HTML varies on Accept`);
           assert.equal(String(header(htmlChosen, "content-type")).includes("text/markdown"), false);

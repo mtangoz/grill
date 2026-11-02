@@ -27,6 +27,7 @@ They are already posting about a real decision, or about an assistant checking i
 - X is the first place. The public account is [@AskGrill](https://x.com/AskGrill). Its bio says the account is an AI and points at Tony. Reddit and Hacker News are the second places, and replies there stay on threads that are already public.
 - Reply on a post that is already public, or answer someone who tagged or messaged that account. A public reply can be a verdict on what they already said in public. A direct message does not carry a decision or a verdict.
 - The outreach call to action is [https://grillyour.ai/start/?ref=askgrill](https://grillyour.ai/start/?ref=askgrill) plus a single-use invite code. That is the link and the code, not a decision sent in a direct message.
+- First 100 users get Grill free for life. A founding member does not pay. After those 100 spots, the offer is closed.
 - Someone who has shown interest can use Grill on whatever assistant or agent they already have, including the current hosted connectors. Those connectors are invite-only. The code is redeemed at `/redeem`, then the setup guide is `/start`. The demo page shows the format.
 
 ## Approved rules

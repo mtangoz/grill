@@ -41,6 +41,7 @@
     <li><strong>What we count.</strong> We count the cost, time and model of each grill, plus a monthly spend number for the free allowance. We also keep an anonymous count of how many people use Grill each day, week and month. That count can't list who was counted, and none of it includes the words of a decision.</li>
     <li><strong>An invite code.</strong> If you enter one, we check it and don't store it as you typed it. We keep a one-way hash of your email, a one-way hash of the code, and how many times that code has been used. Deleting your account does not remove that, so the same email can sign in again without using the code a second time.</li>
     <li><strong>The waitlist.</strong> If you join it, we keep the email you typed and the source you came from, in the same store as the account. We don't email you. Joining does not let you in. If you are approved later, we keep a one-way hash of a single-use invite code, not the code itself.</li>
+    <li><strong>A founding member number.</strong> If you are one of the first 100 people let in, we keep a one-way hash of your email and the number it was given, plus a count of how many numbers have been given. We don't keep a list of the addresses. Deleting your account does not remove the number, so the same email keeps it.</li>
     <li><strong>Who else is involved.</strong> OpenRouter routes your decision to the judge, under zero data retention. Upstash stores the encrypted records. Vercel hosts the site.</li>
   </ul>
 

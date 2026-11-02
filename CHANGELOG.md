@@ -6,6 +6,7 @@ A change may add one optional line when someone has agreed to be named. Leave th
 
 ## Unreleased
 
+- The first 100 people let in are founding members. A redeemed code, an allowlist admission, or a waitlist approval takes the next number, once per email, and stops at 100. Open sign-up does not take a spot. `/start` and `/redeem` say how many spots are left. The welcome page and the account page say "Founding member #N of 100: Grill is free for you for life." Pricing and checkout say a founding member does not need to pay. The weekly metrics add "founding members: N/100". People already let in are numbered by first access, and Tony's own accounts are left out. The pages run no script.
 - While paid plans are off, a view of `/pricing` or `/checkout` and a Notify me click are anonymous counts. A checkout session for a signed-in account carries that account id, and the webhook counts each such account once toward free-to-paid. Prices stay $9 a month and $90 a year. Nothing is charged while paid plans are off. The pricing page runs no script.
 - The /start page says Grill works in whatever AI chat you use, and is not tied to one model. The connector address is the same in every chat. Someone who hits the invite wall is sent to /redeem. The page still runs no script.
 - The weekly metrics script prints paid-intent lines (pricing views, checkout views, Notify me clicks), a free-to-paid line, and a waitlist line. They are counts, not users. The outreach call to action in docs/ICP.md is `/start` plus an invite code. A direct message does not carry a decision.

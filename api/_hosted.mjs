@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, setMonthlyLimit, WELCOME_HEADERS } from "./_pro.mjs";
+import { assignFoundingMember, foundingMemberLine, foundingSpotsLine, readFoundingCount, readFoundingNumber } from "./_founding.mjs";
 import { refFromCookie } from "./_start.mjs";
 import { waitlistFormHtml } from "./_waitlist.mjs";
 import {
@@ -63,6 +64,7 @@ import {
   RUNNING_JOB_LIMIT,
   CAP_COUNTER_TTL_SECONDS,
   allowlistAllows,
+  openSignup,
   inviteCodeHash,
   inviteCodesEnabled,
   inviteOnlyText,
@@ -242,6 +244,30 @@ async function redis(deps, args) {
   if (!res.ok) throw new Coded("store");
   const body = await res.json().catch(() => null);
   return body?.result ?? null;
+}
+
+async function noteFounding(email, deps) {
+  try {
+    return await assignFoundingMember((args) => redis(deps, args), email);
+  } catch {
+    return { ok: false, reason: "store" };
+  }
+}
+
+async function foundingSpots(deps) {
+  try {
+    return foundingSpotsLine(await readFoundingCount((args) => redis(deps, args)));
+  } catch {
+    return foundingSpotsLine(0);
+  }
+}
+
+async function foundingNumber(email, deps) {
+  try {
+    return await readFoundingNumber((args) => redis(deps, args), email);
+  } catch {
+    return null;
+  }
 }
 
 function acctKey(id) {
@@ -645,14 +671,26 @@ async function inviteGrantAllows(email, deps) {
 async function admit(user, deps, userId) {
   const email = verifiedEmail(user);
   if (!email) return { email: "", human: "", allowed: false };
+  const listed = (who) => !openSignup(deps.env) && allowlistAllows(who, deps.env);
+  let human = email;
+  let allowed = false;
+  let founding = false;
   if (!agentIdSignIn(user) || allowlistAllows(email, deps.env)) {
-    const allowed = allowlistAllows(email, deps.env) || (await inviteGrantAllows(email, deps));
-    return { email, human: email, allowed };
+    const coded = await inviteGrantAllows(email, deps);
+    allowed = allowlistAllows(email, deps.env) || coded;
+    founding = listed(email) || coded;
+  } else if (await inviteGrantAllows(email, deps)) {
+    allowed = true;
+    founding = true;
+  } else {
+    const owner = await cachedOwnerEmail(user?.id || userId, deps);
+    const coded = Boolean(owner) && (await inviteGrantAllows(owner, deps));
+    allowed = Boolean(owner) && (allowlistAllows(owner, deps.env) || coded);
+    if (allowed) human = owner;
+    founding = Boolean(owner) && (listed(owner) || coded);
   }
-  if (await inviteGrantAllows(email, deps)) return { email, human: email, allowed: true };
-  const owner = await cachedOwnerEmail(user?.id || userId, deps);
-  const allowed = Boolean(owner) && (allowlistAllows(owner, deps.env) || (await inviteGrantAllows(owner, deps)));
-  return { email, human: allowed ? owner : email, allowed };
+  if (founding) await noteFounding(human, deps);
+  return { email, human, allowed };
 }
 
 async function loadAccount(id, deps) {
@@ -2444,6 +2482,7 @@ function renderAccount(account, credit, extra = {}) {
     "Your Grill account",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Your account</h1>
+    ${extra.founding ? `<p>${esc(foundingMemberLine(extra.founding))}</p>` : ""}
     <p>${esc(account.email)}</p>
     <p>Records: ${esc(keeping)}.</p>
     <p>${credit?.out ? esc(OUT_OF_CREDIT) : esc(allowanceLine(credit?.remaining, extra.env))}</p>
@@ -2594,12 +2633,16 @@ async function grantStillListed(hash, deps) {
   return storedInviteListed(redeemCommand(deps), hash);
 }
 
-function renderRedeemed(env) {
+function renderRedeemed(env, { number = null, spots = "" } = {}) {
+  const member = number ? `<p>${esc(foundingMemberLine(number))}</p>` : "";
+  const offer = spots ? `<p>${esc(spots)}</p>` : "";
   return page(
     "You're in · Grill",
     `${REDEEM_NARROW}
     <h1>You're in.</h1>
     <p>Early-tester access is on for this email.</p>
+    ${member}
+    ${offer}
     <p>Free for life: $${Number.isInteger(userMonthlyCapUsd(env)) ? String(userMonthlyCapUsd(env)) : userMonthlyCapUsd(env).toFixed(2)} of use each month, resets on the 1st.</p>
     <p>Next: <a href="/start">connect Grill to your AI</a>.</p>
     <p><a class="button" href="/decisions">Your decisions</a></p>
@@ -2615,12 +2658,14 @@ function renderInviteOff() {
   );
 }
 
-function renderRedeemForm(error) {
+function renderRedeemForm(error, spots = "") {
   const note = REDEEM_ERRORS[error] ? `<p><strong>${REDEEM_ERRORS[error]}</strong></p>` : "";
+  const offer = spots ? `<p>${esc(spots)}</p>` : "";
   return page(
     "Enter an invite code · Grill",
     `${REDEEM_NARROW}
     <h1>Enter an invite code</h1>
+    ${offer}
     <p>Grill in chat is invite-only. A code lets you in as an early tester: free, $5 of use each month, reset on the 1st.</p>
     ${note}
     <form method="post" action="/redeem">
@@ -2632,11 +2677,13 @@ function renderRedeemForm(error) {
   );
 }
 
-function renderRedeemConfirm(code) {
+function renderRedeemConfirm(code, spots = "") {
+  const offer = spots ? `<p>${esc(spots)}</p>` : "";
   return page(
     "Use this invite code? · Grill",
     `${REDEEM_NARROW}
     <h1>Use this invite code?</h1>
+    ${offer}
     <p>This gives you early-tester access: free, $5 of use each month, reset on the 1st.</p>
     <p class="banner">${esc(code)}</p>
     <form method="post" action="/redeem">
@@ -2708,9 +2755,11 @@ export async function handleRedeem(request, deps) {
     if (visitor.missing) return html(200, terminal("Account deleted · Grill", "<h1>This account has been deleted.</h1>"));
     if (visitor.html) return html(200, visitor.html);
     const gate = await admit(visitor.user, deps, visitor.sub);
+    const spots = await foundingSpots(deps);
     if (gate.allowed) {
       if (request.method === "POST") return seeOther(`${publicOrigin(request)}/redeem?done=1`);
-      return htmlPage(renderRedeemed(deps.env));
+      const number = await foundingNumber(gate.human || gate.email, deps);
+      return htmlPage(renderRedeemed(deps.env, { number, spots }));
     }
     if (!(await invitesOpen(deps))) return html(200, renderInviteOff());
     if (request.method === "POST") {
@@ -2720,15 +2769,15 @@ export async function handleRedeem(request, deps) {
         const result = await redeemInvite(visitor.email, typed, deps);
         if (result.ok) return seeOther(`${publicOrigin(request)}/redeem?done=1`);
         if (result.reason === "off") return html(200, renderInviteOff());
-        return html(200, renderRedeemForm(result.reason));
+        return html(200, renderRedeemForm(result.reason, spots));
       }
       const preview = await previewInvite(visitor.email, typed, deps);
       if (preview.already) return seeOther(`${publicOrigin(request)}/redeem?done=1`);
-      if (preview.confirm) return html(200, renderRedeemConfirm(preview.code));
+      if (preview.confirm) return html(200, renderRedeemConfirm(preview.code, spots));
       if (preview.reason === "off") return html(200, renderInviteOff());
-      return html(200, renderRedeemForm(preview.reason || "bad"));
+      return html(200, renderRedeemForm(preview.reason || "bad", spots));
     }
-    return htmlPage(renderRedeemForm(""));
+    return htmlPage(renderRedeemForm("", spots));
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
@@ -2988,7 +3037,8 @@ export async function handleAccount(request, deps) {
     const flashed = readFlashLink(request);
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
     const calendar = await calendarState(session.account, deps);
-    return htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env }), { clearFlash: Boolean(flashed) });
+    const founding = await foundingNumber(session.account.email, deps);
+    return htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);

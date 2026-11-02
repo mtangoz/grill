@@ -106,6 +106,23 @@ The new provider must return verified emails only. If it can return an unverifie
 
 Still Clerk-specific: Clerk issues the access tokens, and Clerk's API is used for the email and for account delete. Running Grill's own authorization server, with Clerk only as the upstream login, would make a provider change invisible to assistants. It is deferred until a switch is actually planned, or until a mass reconnect would cost real users.
 
+## Founding members
+
+The first 100 accounts that get access are founding members. Access means a redeemed invite code, a place on the allowlist, or an approval from the waitlist. Open sign-up does not take a spot. Each email gets one number. Asking again does not take another. The store keeps a count and a one-way hash of the email. It does not keep a list of addresses.
+
+A founding member does not have to pay. Checkout and pricing say "You don't need to pay." The free-for-life tier is still the early-tester allowance: $5 of use each month. That cap stays. A paid plan does not apply to them, and the account is not marked as a paid subscription.
+
+`/start` and `/redeem` say "First 100 users get Grill free for life, N spots left", or "All 100 founding spots are taken" when the count is 100. One spot left says "1 spot left". After a code works, and on the account page, the line is "Founding member #N of 100: Grill is free for you for life."
+
+People already let in are numbered by first access. First access is the earliest time on record: the account's `createdAt` (the first sign-in), or the waitlist row's `approvedAt` when they were approved before they had an account. Someone with no time sorts after those with one, then by email. The same email keeps the earliest time. Tony's own accounts are left out. The operator passes those addresses to the backfill. They are not stored in the repository. An allowlist email that has never signed in gets a number the next time they are admitted. An invite-code grant is only a hash, so it cannot be turned back into an email.
+
+```
+node scripts/founding-backfill.mjs --file people.json --exclude person@example.com
+node scripts/founding-backfill.mjs --file people.json --exclude person@example.com --apply
+```
+
+`people.json` is an array of `{ "email", "at" }`. Without `--apply` the script prints the order and writes nothing. `--apply` needs the existing Upstash env and assigns the numbers. Do not commit the file if it holds real addresses.
+
 ## Still to do before this is on
 
 The pull request lists these. Do them on the preview, then run [hosted-spike.md](hosted-spike.md). Do not point `grillyour.ai` or `mcp.grillyour.ai` at this until that spike passes.

@@ -31,7 +31,7 @@ function pick(request) {
   const url = new URL(request.url);
   const r = url.searchParams.get("__route");
   const p = url.pathname;
-  // /start?ref= is counted here so it does not add a twelfth-plus function. It runs even when hosted mode is off.
+  // /start is served here, including the founding-spot count, so it does not add a function. It runs even when hosted mode is off.
   if (r === "start") return ["start", handleStart];
   if (r === "pricing") return ["pricing", handlePricing];
   if (r === "account" || p === "/account") return ["account", handleAccount];

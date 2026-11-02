@@ -1,8 +1,11 @@
 /**
- * Record ?ref= on /start. A counter per source, plus a cookie the later form can read.
- * No script. An unknown or empty ref is not stored. A missing store still sends the person to the page.
+ * Serve /start. Record ?ref= as a counter and a cookie the later form can read.
+ * The page includes how many founding spots are left. No script.
+ * An unknown or empty ref is not stored. A missing store still shows the page.
  */
+import { readFileSync } from "node:fs";
 import { redisCommand } from "./_account.mjs";
+import { foundingSpotsLine, readFoundingCount } from "./_founding.mjs";
 
 export const REF_COOKIE = "grill_ref";
 const REF_MAX_AGE = 30 * 24 * 60 * 60;
@@ -37,15 +40,6 @@ function refCookie(ref, request) {
   return parts.join("; ");
 }
 
-function originOf(request) {
-  const url = new URL(request.url);
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const host = (forwardedHost ? forwardedHost.split(",")[0].trim() : url.host) || url.host;
-  const forwardedProto = request.headers.get("x-forwarded-proto");
-  const proto = (forwardedProto ? forwardedProto.split(",")[0].trim() : url.protocol.replace(":", "")) || "https";
-  return `${proto}://${host}`;
-}
-
 async function commandOf(deps) {
   if (typeof deps.redis === "function") return deps.redis;
   const env = deps.env ?? {};
@@ -64,9 +58,45 @@ export async function recordStartRef(deps, ref) {
   return true;
 }
 
+function esc(text) {
+  return String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+
+let cachedStyle = "";
+function siteStyle() {
+  if (cachedStyle) return cachedStyle;
+  const page = readFileSync(new URL("../site/page.html", import.meta.url), "utf8");
+  const start = page.indexOf("<style>");
+  const end = page.indexOf("</style>");
+  cachedStyle = start >= 0 && end > start ? page.slice(start, end + "</style>".length) : "";
+  return cachedStyle;
+}
+
+/** The start page, with the live spots sentence in place of the source paragraph. */
+export function renderStartPage(spots) {
+  const source = readFileSync(new URL("../site/start.html", import.meta.url), "utf8");
+  const title = source.match(/<title>([^<]*)<\/title>/)?.[1] || "Start using Grill";
+  const line = `<p id="founding-spots" class="note">${esc(spots)}</p>`;
+  let body = source.replace(/<title>[^<]*<\/title>\s*/, "");
+  body = body.includes('id="founding-spots"')
+    ? body.replace(/<p id="founding-spots"[^>]*>[\s\S]*?<\/p>/, line)
+    : body.replace("</h1>", `</h1>\n  ${line}`);
+  return `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${esc(title)}</title>\n${siteStyle()}\n</head>\n<body>\n${body}\n</body>\n</html>\n`;
+}
+
+async function spotsFor(deps) {
+  try {
+    const command = await commandOf(deps);
+    if (!command) return foundingSpotsLine(0);
+    return foundingSpotsLine(await readFoundingCount(command));
+  } catch {
+    return foundingSpotsLine(0);
+  }
+}
+
 /**
- * Accept ?ref=, record it, and send the person to the static /start page.
- * The cookie carries the source for a later form. The redirect URL does not.
+ * Accept ?ref=, record it, and show /start with the founding spots that are left.
+ * The cookie carries the source for a later form. The page runs no script.
  */
 export async function handleStart(request, deps) {
   const ref = normalizeRef(new URL(request.url).searchParams.get("ref"));
@@ -78,10 +108,12 @@ export async function handleStart(request, deps) {
     }
   }
   const headers = {
-    Location: `${originOf(request)}/start/`,
+    "Content-Type": "text/html; charset=utf-8",
     "Cache-Control": "no-store",
     "Referrer-Policy": "no-referrer",
+    Vary: "Accept",
+    "X-Content-Type-Options": "nosniff",
   };
   if (ref) headers["Set-Cookie"] = refCookie(ref, request);
-  return new Response(null, { status: 303, headers });
+  return new Response(renderStartPage(await spotsFor(deps)), { status: 200, headers });
 }

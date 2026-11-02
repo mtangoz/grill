@@ -94,6 +94,10 @@ Enforced by: test "asks on a confirm page before a code is used, with no script"
 
 Someone without an invite code can join a waitlist from `/start` or the invite wall. The form asks for an email, and the `?ref=` source comes along. A second page asks them to confirm. Nothing is emailed, and joining does not let them in. The thank-you page says they are on the list, and that once they are let in they can use the free option right away in their own AI chat via the connector, with a link to the setup guide. Approving later mints a single-use invite code. They still redeem it at `/redeem`. The pages run no script. Sign-ups are a count the weekly metrics can read.
 
+## Founding members
+
+The first 100 people let in are founding members. `/start` and `/redeem` say "First 100 users get Grill free for life, N spots left", or "All 100 founding spots are taken" once those spots are gone. One spot left says "1 spot left". After a code is used, and on the account page, the line is "Founding member #N of 100: Grill is free for you for life." Pricing and checkout tell a founding member "You don't need to pay." A paid plan does not apply to them. The pages run no script.
+
 ## A judge page, when the assistant cannot connect
 
 `/judge` is for a person whose assistant cannot add a connector. `/judge?q=` opens a signed-in page with that decision filled in. The page does not run a grill on GET. The button POSTs, and that runs the same hosted grill as the connector: the same judge, the same caps, and the same choice about records. The first time, the page asks whether to keep records and does not send the decision until they answer. A later grill uses that answer. The verdict is plain text to copy back. A decision over 4000 characters is refused and not sent. The page runs no script.
