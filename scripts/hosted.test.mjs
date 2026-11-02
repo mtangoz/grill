@@ -2042,8 +2042,7 @@ describe("hosted mappings and ledger pins", () => {
       }
     }
     const apiFns = readdirSync(join(ROOT, "api")).filter((name) => name.endsWith(".js") && !name.startsWith("_"));
-    // start.js records ?ref= on the existing store. It does not add a network host.
-    assert.ok(apiFns.length <= 13, apiFns.join(", "));
+    assert.ok(apiFns.length <= 12, apiFns.join(", "));
     const hosted = readFileSync(join(ROOT, "api/_hosted.mjs"), "utf8");
     const urls = [...hosted.matchAll(/https?:\/\/[^\s"'`]+/g)].map((match) => match[0]);
     // The Google Calendar address is a subscribe link on the page for the person to click. The server never fetches it.

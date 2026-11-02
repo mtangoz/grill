@@ -64,7 +64,7 @@ describe("start attribution", () => {
     assert.equal(called, false);
 
     const config = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
-    const rewrites = config.rewrites.filter((row) => row.destination === "/api/start");
+    const rewrites = config.rewrites.filter((row) => row.destination === "/api/hosted?__route=start");
     assert.deepEqual(rewrites.map((row) => row.source), ["/start", "/start/"]);
     for (const row of rewrites) assert.equal(row.has[0].key, "ref");
     const start = readFileSync(join(ROOT, "site/start.html"), "utf8");
