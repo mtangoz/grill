@@ -1367,6 +1367,8 @@ describe("markdown for agents", () => {
       { source: "/judge", destination: "/api/hosted?__route=judge" },
       { source: "/account", destination: "/api/hosted?__route=account" },
       { source: "/redeem", destination: "/api/hosted?__route=redeem" },
+      { source: "/start", has: [{ type: "query", key: "ref" }], destination: "/api/hosted?__route=start" },
+      { source: "/start/", has: [{ type: "query", key: "ref" }], destination: "/api/hosted?__route=start" },
     ]);
     assert.ok(!config.rewrites.some((rule) => rule.source === "/" || rule.source === "/:path*" || rule.source === "/(.*)"));
 
@@ -1512,6 +1514,8 @@ describe("markdown for agents", () => {
       "/judge",
       "/account",
       "/redeem",
+      "/start",
+      "/start/",
     ]);
     const routes = config.routes;
     const errorAt = routes.findIndex((route) => route.handle === "error");

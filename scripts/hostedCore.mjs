@@ -302,6 +302,87 @@ export function inviteCodesEnabled(env = {}) {
   return parseInviteCodes(env).length > 0;
 }
 
+/** How many stored codes exist. Redeem stays off when this is 0 and GRILL_INVITE_CODES is empty. */
+export const STORED_INVITE_COUNT_KEY = "grill:hosted:invite:stored:count";
+
+/** A lead label an operator makes up. Not an email. One stored code per label. */
+export function normalizeLead(raw) {
+  const text = String(raw ?? "").trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(text)) return "";
+  return text;
+}
+
+export function storedInviteHashKey(hash) {
+  if (!/^[a-f0-9]{64}$/.test(String(hash || ""))) return "";
+  return `grill:hosted:invite:stored:${hash}`;
+}
+
+/** The store key for a code. The value is the max uses. The code itself is not the key. */
+export function storedInviteKey(code) {
+  return storedInviteHashKey(inviteCodeHash(code));
+}
+
+export function storedInviteLeadKey(lead) {
+  const normalized = normalizeLead(lead);
+  if (!normalized) return "";
+  return `grill:hosted:invite:lead:${createHash("sha256").update(normalized).digest("hex")}`;
+}
+
+/**
+ * Save one code in the existing store. `max` defaults to 1, so a lead's code is single-use.
+ * A lead label can have only one code. The plaintext code is not written.
+ * `command` is a Redis command function. This does not change open sign-up or the allowlist.
+ */
+export async function saveStoredInviteCode(command, code, { max = 1, lead = "" } = {}) {
+  const normalized = normalizeInviteCode(code);
+  if (!normalized) return { ok: false, reason: "bad" };
+  if (!Number.isInteger(max) || max < 1 || max > INVITE_MAX_USES) return { ok: false, reason: "bad" };
+  const leadKey = lead ? storedInviteLeadKey(lead) : "";
+  if (lead && !leadKey) return { ok: false, reason: "lead" };
+  if (leadKey && (await command(["GET", leadKey]))) return { ok: false, reason: "lead" };
+  const key = storedInviteKey(normalized);
+  if (!key) return { ok: false, reason: "bad" };
+  const claimed = await command(["SET", key, String(max), "NX"]);
+  if (!claimed) return { ok: false, reason: "exists" };
+  try {
+    if (leadKey) {
+      const linked = await command(["SET", leadKey, inviteCodeHash(normalized), "NX"]);
+      if (!linked) {
+        await command(["DEL", key]);
+        return { ok: false, reason: "lead" };
+      }
+    }
+    await command(["INCR", STORED_INVITE_COUNT_KEY]);
+  } catch (error) {
+    await command(["DEL", key]);
+    if (leadKey) await command(["DEL", leadKey]);
+    throw error;
+  }
+  return { ok: true, max };
+}
+
+/** Max uses for a stored code, or null when this code is not in the store. */
+export async function readStoredInviteMax(command, code) {
+  const key = storedInviteKey(code);
+  if (!key) return null;
+  const raw = await command(["GET", key]);
+  if (raw == null) return null;
+  const max = Number(raw);
+  if (!Number.isInteger(max) || max < 0 || max > INVITE_MAX_USES) return null;
+  return max;
+}
+
+/** True when a redeemed hash still belongs to a stored code. */
+export async function storedInviteListed(command, codeHash) {
+  const key = storedInviteHashKey(codeHash);
+  if (!key) return false;
+  return (await command(["GET", key])) != null;
+}
+
+export async function storedInvitesEnabled(command) {
+  return (Number(await command(["GET", STORED_INVITE_COUNT_KEY])) || 0) > 0;
+}
+
 export function inviteCodeHash(code) {
   const normalized = normalizeInviteCode(code);
   if (!normalized) return "";
