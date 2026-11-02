@@ -561,6 +561,8 @@ writeFileSync(
     "",
     "Invited testers connect Grill to the AI they use at https://grillyour.ai/mcp. Grill in chat is invite-only for now.",
     "",
+    "People without an invite can join the waitlist at https://grillyour.ai/start/#waitlist; people with a code redeem it at https://grillyour.ai/redeem.",
+    "",
     "## When to use Grill",
     "",
     ...WHEN_TO_USE.map((line) => `- ${line}`),
@@ -579,7 +581,13 @@ writeFileSync(
 for (const p of publicPages) {
   if (p.url === SITE_URL) continue;
   const rel = p.url.slice(SITE_URL.length);
-  writeFileSync(join(OUT, rel, "index.md"), htmlToMarkdown(readFileSync(join(OUT, rel, "index.html"), "utf8")));
+  let md = htmlToMarkdown(readFileSync(join(OUT, rel, "index.html"), "utf8"));
+  // /start HTML replaces this sentence with the live count. The twin is built once,
+  // so a number here would disagree with the page. Keep the sentence, drop the count.
+  if (rel === "start/") {
+    md = md.replace(/First 100 users get Grill free for life, \d+ spots? left\./g, "First 100 users get Grill free for life.");
+  }
+  writeFileSync(join(OUT, rel, "index.md"), md);
 }
 // Same words as the homepage, for an agent that sends Accept: text/markdown. vercel.json
 // routes / to this file only for that header. Nothing here is a new claim.
@@ -622,7 +630,7 @@ writeFileSync(
     "",
     "## Get started: pick the AI you use",
     "",
-    "Invited to Grill in chat? [Connect it](https://grillyour.ai/start/). Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email your invite went to, every time.",
+    "Invited to Grill in chat? [Connect it](https://grillyour.ai/start/). No invite code? [Join the waitlist](https://grillyour.ai/start/#waitlist). Have a code? Enter it at [/redeem](https://grillyour.ai/redeem). Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email your invite went to, every time.",
     "",
     "**Any AI (easiest)** ChatGPT, Copilot, Gemini, Grok, Muse · free",
     "",

@@ -1288,6 +1288,86 @@ describe("the about and contact pages", () => {
   });
 });
 
+// Someone who lands on the homepage or in /llms.txt and has no invite still needs a next step.
+// The waitlist and the redeem page already exist. These only point at them.
+describe("visitors without an invite", () => {
+  const build = () => {
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+  };
+
+  it("points the homepage Get started line at the waitlist", () => {
+    const invited = /Invited to Grill in chat\? <a href="\/start\/">Connect it<\/a>\. No invite code\? <a href="\/start\/#waitlist">Join the waitlist<\/a>\. Have a code\? Enter it at <a href="\/redeem">\/redeem<\/a>\./;
+    assert.match(page, invited);
+    const setup = page.slice(page.indexOf('id="setup"'), page.indexOf('id="pro"'));
+    assert.match(setup, invited);
+    build();
+    const html = readFileSync(join(ROOT, "_site/index.html"), "utf8");
+    assert.match(html, invited);
+    const md = readFileSync(join(ROOT, "_site/index.md"), "utf8");
+    assert.match(
+      md,
+      /Invited to Grill in chat\? \[Connect it\]\(https:\/\/grillyour\.ai\/start\/\)\. No invite code\? \[Join the waitlist\]\(https:\/\/grillyour\.ai\/start\/#waitlist\)\. Have a code\? Enter it at \[\/redeem\]\(https:\/\/grillyour\.ai\/redeem\)\./,
+    );
+  });
+
+  it("points llms.txt at the waitlist and /redeem", () => {
+    build();
+    const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
+    const invite = "Grill in chat is invite-only for now.";
+    const at = llms.indexOf(invite);
+    assert.ok(at > 0, "the invite-only sentence stays");
+    const between = llms.slice(at + invite.length, llms.indexOf("## When to use Grill"));
+    assert.match(
+      between,
+      /^\n\nPeople without an invite can join the waitlist at https:\/\/grillyour\.ai\/start\/#waitlist; people with a code redeem it at https:\/\/grillyour\.ai\/redeem\.\n\n$/,
+    );
+    assert.equal(llms.split(invite).length - 1, 1);
+  });
+
+  it("routes /redeem/ the same way as /redeem", () => {
+    const config = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
+    const redeem = config.rewrites.find((rule) => rule.source === "/redeem");
+    const slashed = config.rewrites.find((rule) => rule.source === "/redeem/");
+    assert.ok(redeem, "/redeem rewrite");
+    assert.deepEqual(slashed, { source: "/redeem/", destination: redeem.destination });
+    assert.equal(redeem.destination, "/api/hosted?__route=redeem");
+    const sources = config.rewrites.map((rule) => rule.source);
+    assert.deepEqual(
+      sources.filter((source) => source === "/redeem" || source === "/redeem/"),
+      ["/redeem", "/redeem/"],
+    );
+    assert.equal(sources.filter((source) => source === "/start" || source === "/start/").length, 2);
+    assert.equal(config.rewrites.filter((rule) => rule.destination === "/api/hosted?__route=waitlist").length, 1);
+    assert.equal(config.rewrites.filter((rule) => rule.source === "/waitlist/").length, 0);
+    const route = config.routes.find((row) => row.src === "^/redeem/$");
+    assert.ok(route, "a route answers /redeem/");
+    assert.equal(route.dest, redeem.destination);
+    assert.equal(route.has, undefined);
+    const pattern = new RegExp(route.src);
+    assert.equal(pattern.test("/redeem/"), true);
+    assert.equal(pattern.test("/redeem"), false);
+    assert.equal(pattern.test("/redeem/extra"), false);
+    assert.equal(pattern.test("/start/"), false);
+    const notFound = config.routes.find((row) => row.dest === "/404.md");
+    assert.equal(new RegExp(notFound.src).test("/redeem/"), false, "/redeem/ is not a markdown 404");
+    assert.equal(new RegExp(notFound.src).test("/redeem"), false, "/redeem stays off the markdown 404");
+  });
+
+  it("does not let the /start markdown twin contradict the live spots count", async () => {
+    build();
+    const md = readFileSync(join(ROOT, "_site/start/index.md"), "utf8");
+    const { foundingSpotsLine } = await import("../api/_founding.mjs");
+    const { renderStartPage } = await import("../api/_start.mjs");
+    const live = renderStartPage(foundingSpotsLine(2));
+    assert.match(live, /First 100 users get Grill free for life, 98 spots left\./);
+    assert.match(md, /First 100 users get Grill free for life\./);
+    assert.equal(md.match(/First 100 users get Grill free for life, \d+ spots? left/), null);
+    assert.equal(md.includes("100 spots left"), false);
+    assert.equal(md.includes("98 spots left"), false);
+    assert.doesNotMatch(md, /All 100 founding spots are taken/);
+  });
+});
+
 // Agents that send Accept: text/markdown need a markdown body. Vercel checks the filesystem
 // before `rewrites`, so a rewrite of `/` never runs: index.html is already the answer, and a
 // rewrite cannot keep a 404 status. `routes` are checked first, and an `error` route can
@@ -1321,6 +1401,9 @@ describe("markdown for agents", () => {
       "The verdict never becomes the decision. The free tool keeps nothing; Grill in chat keeps only what you choose, encrypted, and you can delete it.",
       "Get started: pick the AI you use",
       "Invited to Grill in chat?",
+      "No invite code?",
+      "Join the waitlist",
+      "Have a code? Enter it at",
       "Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email your invite went to, every time.",
       "Any AI (easiest)",
       "ChatGPT, Copilot, Gemini, Grok, Muse",
@@ -1386,6 +1469,7 @@ describe("markdown for agents", () => {
       { source: "/judge", destination: "/api/hosted?__route=judge" },
       { source: "/account", destination: "/api/hosted?__route=account" },
       { source: "/redeem", destination: "/api/hosted?__route=redeem" },
+      { source: "/redeem/", destination: "/api/hosted?__route=redeem" },
       { source: "/start", destination: "/api/hosted?__route=start" },
       { source: "/start/", destination: "/api/hosted?__route=start" },
       { source: "/waitlist", destination: "/api/hosted?__route=waitlist" },
@@ -1535,6 +1619,7 @@ describe("markdown for agents", () => {
       "/judge",
       "/account",
       "/redeem",
+      "/redeem/",
       "/start",
       "/start/",
       "/waitlist",
