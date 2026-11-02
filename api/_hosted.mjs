@@ -2199,8 +2199,9 @@ function inviteOnlyPage() {
   return terminal(
     "Invite only · Grill",
     `<h1>Grill in chat is invite-only for now.</h1>
-    <p>This email isn't on the list yet. If you were invited, disconnect Grill, connect again, and sign in with the email your invite went to.</p>
+    <p>You hit the invite wall. This email isn't on the list yet.</p>
     <p>If you have an invite code, <a href="/redeem">enter it here</a>.</p>
+    <p>If you were invited, disconnect Grill, connect again, and sign in with the email your invite went to.</p>
     <p>To ask for an invite, write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p>`,
   );
 }
