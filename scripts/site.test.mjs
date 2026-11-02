@@ -727,6 +727,24 @@ describe("the /start page", () => {
     assert.doesNotMatch(start, /data-copy|<button/i);
   });
 
+  it("says Grill works in whatever AI chat you use, and is not tied to one model", () => {
+    const start = readFileSync(startPath, "utf8");
+    const lead = start.slice(0, start.indexOf('<h2 id="claude">'));
+    assert.match(lead, /whatever AI chat you use/);
+    assert.match(lead, /not tied to one model/);
+    assert.match(lead, /The address is the same in every chat/);
+    assert.match(lead, /https:\/\/grillyour\.ai\/mcp/);
+    assert.doesNotMatch(start, /<script/i);
+  });
+
+  it("points someone who hit the invite wall at /redeem", () => {
+    const start = readFileSync(startPath, "utf8");
+    assert.match(start, /You hit the invite wall/);
+    assert.match(start, /invite-only for now/);
+    assert.match(start, /href="\/redeem"/);
+    assert.doesNotMatch(start, /<script/i);
+  });
+
   it("tells a code user to sign in with the email they signed up with", () => {
     const start = readFileSync(startPath, "utf8");
     const signedUp = /sign in with the same email you signed up with, every time/i;

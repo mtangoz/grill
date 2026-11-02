@@ -398,6 +398,7 @@ describe("invite codes", { concurrency: false }, () => {
     const invite = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: cookie() } }), ctx);
     const html = await invite.text();
     assert.match(html, /invite-only/);
+    assert.match(html, /You hit the invite wall/);
     assert.match(html, /href="\/redeem"/);
     assert.match(html, /href="\/">Back to Grill/);
     assert.equal(html.includes("<script"), false);
