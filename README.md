@@ -84,7 +84,7 @@ Claude Code's advisor (`/advisor`) has a stronger Claude look over the work. Tha
 
 ### Grill in chat
 
-Invite-only. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). Use the same email each time, the email your invite went to, every time.
+Invite-only. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). No invite code? [Join the waitlist](https://grillyour.ai/start/#waitlist). Have a code? Enter it at [/redeem](https://grillyour.ai/redeem). Use the same email each time, the email your invite went to, every time.
 
 - **Claude.ai**, verified working. On the web, on a Free, Pro or Max plan: Customize → Connectors → Add custom connector. URL `https://grillyour.ai/mcp`, name it Grill, then sign in.
 - **ChatGPT**, verified working. On the web, with a paid plan: Plugins, the plus button, Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Click I understand and want to continue, then Create. Install it, then sign in.
@@ -103,7 +103,7 @@ Coming later: an optional Pro plan with saved decision history and look-back rem
 ## Privacy
 
 - Your notes stay in your tools. Only the write-up you approve is sent. The reflection you write stays in your chat or your own notes.
-- The free tool has no account. Grill's makers never see your decisions on that tool. Anonymous usage stats are off unless you turn them on. An in-chat account is invite-only and not live yet; what it stores is in [docs/DATA-LEDGER.md](docs/DATA-LEDGER.md).
+- The free tool has no account. Grill's makers never see your decisions on that tool. Anonymous usage stats are off unless you turn them on. An in-chat account is invite-only for now; what it stores is in [docs/DATA-LEDGER.md](docs/DATA-LEDGER.md).
 - A key or token in the write-up stops the run. Email addresses, phone numbers and card numbers are masked.
 - The quality check (Jev) is on by default and also sees the masked write-up. Say "skip the check" to skip it for one grill, or switch it off in Grill's settings. The website counts visits without cookies.
 - Grill news line: after a finished grill, at most once a session, and only within 7 days of a release or on the first 3 days of a month, a line with a link to hear when an optional Pro plan is ready. Showing the line sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own.

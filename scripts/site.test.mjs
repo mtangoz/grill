@@ -1288,8 +1288,8 @@ describe("the about and contact pages", () => {
   });
 });
 
-// Someone who lands on the homepage or in /llms.txt and has no invite still needs a next step.
-// The waitlist and the redeem page already exist. These only point at them.
+// Someone who lands on the homepage, /llms.txt, the README, About, FAQ or Demo and has no
+// invite still needs a next step. The waitlist and the redeem page already exist. These only point at them.
 describe("visitors without an invite", () => {
   const build = () => {
     execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
@@ -1322,6 +1322,43 @@ describe("visitors without an invite", () => {
       /^\n\nPeople without an invite can join the waitlist at https:\/\/grillyour\.ai\/start\/#waitlist; people with a code redeem it at https:\/\/grillyour\.ai\/redeem\.\n\n$/,
     );
     assert.equal(llms.split(invite).length - 1, 1);
+  });
+
+  // The homepage sentence, written the way each surface already links.
+  // README uses full URLs. The site pages use the same words with relative links.
+  const HTML_WAITLIST =
+    'No invite code? <a href="/start/#waitlist">Join the waitlist</a>. Have a code? Enter it at <a href="/redeem">/redeem</a>.';
+  const README_WAITLIST =
+    "No invite code? [Join the waitlist](https://grillyour.ai/start/#waitlist). Have a code? Enter it at [/redeem](https://grillyour.ai/redeem).";
+
+  it("points the README, about, FAQ and demo at the waitlist", () => {
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    const about = readFileSync(join(ROOT, "site/about.html"), "utf8");
+    const faq = readFileSync(join(ROOT, "site/faq.html"), "utf8");
+    const demo = readFileSync(join(ROOT, "site/demo.html"), "utf8");
+    const chat = readme.slice(readme.indexOf("### Grill in chat"), readme.indexOf("\n## ", readme.indexOf("### Grill in chat")));
+    assert.ok(chat.includes(README_WAITLIST), "the Grill in chat section names the waitlist and /redeem");
+    assert.ok(about.includes(HTML_WAITLIST), "about links the waitlist and /redeem");
+    assert.ok(faq.includes(HTML_WAITLIST), "the FAQ links the waitlist and /redeem");
+    assert.ok(demo.includes(HTML_WAITLIST), "the demo links the waitlist and /redeem");
+    assert.match(readme, /https:\/\/grillyour\.ai\/start\/#waitlist/);
+    assert.match(about, /href="\/start\/#waitlist"/);
+    assert.match(faq, /href="\/start\/#waitlist"/);
+    assert.match(demo, /href="\/start\/#waitlist"/);
+    assert.doesNotMatch(readme, /not live yet/);
+    assert.match(
+      readme,
+      /An in-chat account is invite-only for now; what it stores is in \[docs\/DATA-LEDGER\.md\]\(docs\/DATA-LEDGER\.md\)\./,
+    );
+    build();
+    for (const file of ["_site/about/index.md", "_site/faq/index.md", "_site/demo/index.md"]) {
+      const md = readFileSync(join(ROOT, file), "utf8");
+      assert.ok(md.includes(README_WAITLIST), `${file} should carry the waitlist sentence`);
+    }
+    const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
+    const faqSection = llms.slice(llms.indexOf("## FAQ\n"));
+    assert.ok(faqSection.includes("No invite code? Join the waitlist."), "llms.txt FAQ should keep the waitlist sentence");
+    assert.ok(faqSection.includes("Have a code? Enter it at /redeem."), "llms.txt FAQ should keep the redeem sentence");
   });
 
   it("routes /redeem/ the same way as /redeem", () => {
