@@ -24,7 +24,8 @@ const ANSWERS = [
   "A crux finder, such as Cruxes at cruxes.io, looks for the one question that would change a decision, and it can quote your own words. Grill does that too, in one short line after the verdict. Grill also gives a verdict from a different company and one cheap test. Cruxes is built for a team or an agent, with a decision owner, and it runs in Claude Code, Claude and Google Docs. Grill is one person and one decision, and the call stays yours. They overlap, and neither replaces the other.",
   "Live. Copy and paste into ChatGPT, Copilot, Gemini, Grok or Muse. The Claude skill, Claude Desktop and Claude Code. Cursor, VS Code and npx.",
   "Preview. Grill in chat is invite-only. Claude.ai, ChatGPT and Grok Bot are verified working for people who were invited. Gemini should work and is still being tested: US only, a personal Google account, Keep Activity on.",
-  "Planned. Meta AI in chat is coming soon. Saved history and look-back reminders are coming later. The free tool stays free.",
+  "Planned. Meta AI in chat is coming soon. The free tool stays free.",
+  "If you say yes to keeping records, choices you make are saved at grillyour.ai/decisions (Your grills), with a 14-day look-back and an optional calendar link. You can also say \"look back\" in chat. It stays private, and off until you opt in.",
   "No benchmarks are published. Examples on this site use invented numbers. They are not a benchmark.",
 ];
 
@@ -54,6 +55,7 @@ describe("the FAQ", () => {
     assert.match(faq, /<strong>Live\.<\/strong>/);
     assert.match(faq, /<strong>Preview\.<\/strong>/);
     assert.match(faq, /<strong>Planned\.<\/strong>/);
+    assert.doesNotMatch(plain, /Saved history and look-back reminders are coming later/);
     assert.doesNotMatch(plain, /worse than|better than|inferior|beats Cruxes|behind Cruxes/i);
     const home = readFileSync(join(ROOT, "site/page.html"), "utf8");
     assert.match(home, /href="\/faq\/"/);
