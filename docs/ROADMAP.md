@@ -38,7 +38,7 @@ Consider when: 10+ active contributors.
 
 Get listed in OpenAI's ChatGPT plugin directory and Anthropic's Claude Connectors Directory so people who already have those apps open can find Grill.
 
-Consider when: now. Do not submit until Tony approves. Blockers: a reviewer demo account past the invite wall, the Hold Systems address on terms (PR #38), OpenAI identity verification, and a paid Claude plan for Anthropic's portal.
+Consider when: now. Do not submit until Tony approves. Blockers: a reviewer demo account past the invite wall, OpenAI identity verification, and a paid Claude plan for Anthropic's portal. The operator name and postal address are on the terms.
 
 ## Shareable verdict link (no decision text)
 

@@ -6,6 +6,7 @@ A change may add one optional line when someone has agreed to be named. Leave th
 
 ## Unreleased
 
+- Plain-language terms for all of Grill at /terms/ (the free tool, Grill inside your chat, fair use, and the existing Pro terms). The terms name the operator, Hold Systems, a sole proprietorship, and its postal address. The privacy notes now say the in-chat connector is on and invite-only, and list Clerk and Upstash for it.
 - The README, About, FAQ and Demo point someone without an invite to the waitlist at /start/#waitlist, and someone with a code to /redeem. The README says an in-chat account is invite-only for now.
 - The homepage Get started line, and /llms.txt, point someone without an invite to the waitlist at /start/#waitlist, and someone with a code to /redeem. /redeem/ answers the same way as /redeem. The /start page for agents keeps "First 100 users get Grill free for life." and does not name how many spots are left, because that count is on the HTML page.
 - The first 100 people let in are founding members. A redeemed code, an allowlist admission, or a waitlist approval takes the next number, once per email, and stops at 100. Open sign-up does not take a spot. `/start` and `/redeem` say how many spots are left. The welcome page and the account page say "Founding member #N of 100: Grill is free for you for life." Pricing and checkout say a founding member does not need to pay. The weekly metrics add "founding members: N/100". People already let in are numbered by first access, and Tony's own accounts are left out. The pages run no script.

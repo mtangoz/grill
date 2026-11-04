@@ -432,11 +432,11 @@ function writePage(file, { description, url, outDir, name, blurb }) {
   );
 }
 writePage("terms.html", {
-  description: "Grill Pro terms, in plain words.",
+  description: "Grill terms, in plain words.",
   url: `${SITE_URL}terms/`,
   outDir: "terms",
   name: "Terms",
-  blurb: "Grill Pro terms. Short and plain.",
+  blurb: "Grill terms. Short and plain.",
 });
 writePage("contribute.html", {
   description: "How to improve Grill.",

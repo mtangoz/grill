@@ -271,9 +271,28 @@ describe("the terms page", () => {
     assert.doesNotMatch(readFileSync(join(ROOT, "SECURITY.md"), "utf8"), /hello@/);
     assert.doesNotMatch(readFileSync(join(ROOT, "docs/PRIVACY.md"), "utf8"), /hello@/);
     assert.ok(!terms.includes("—"), "no em dashes");
+    assert.match(terms, /<h2>Grill inside your chat<\/h2>/);
+    assert.match(terms, /Nothing is charged to you/);
+    assert.match(terms, /Grill advises, you decide/);
+    assert.doesNotMatch(terms, /made by Hold(?! Systems)/);
+    const privacySrc = readFileSync(join(ROOT, "site/privacy.html"), "utf8");
+    assert.ok(privacySrc.includes("This website counts visits anonymously, with no cookies and nothing that identifies you."));
+    assert.ok(!privacySrc.includes("—"), "no em dashes");
     assert.ok(!page.includes("—"), "no em dashes");
     assert.ok(!lookBack.includes("—"), "no em dashes");
     assert.ok(!privacyPage.includes("—"), "no em dashes");
+  });
+
+  it("names the operator and the postal address, with no placeholder left", () => {
+    assert.match(terms, /Grill is made by Hold Systems, a DBA, the trading name of a sole proprietor\./);
+    assert.match(terms, /418 Broadway # 12493, Albany, NY 12207, USA/);
+    assert.match(terms, /mailto:support@grillyour\.ai/);
+    assert.doesNotMatch(terms, /\[address coming soon\]/i);
+    assert.doesNotMatch(terms, /\[ADDRESS\]/);
+    assert.doesNotMatch(terms, /\bTODO\b/);
+    assert.doesNotMatch(terms, /\bTBD\b/);
+    assert.doesNotMatch(terms, /\b(?:LLC|Inc)\b/);
+    assert.doesNotMatch(terms, /limited liability/i);
   });
 });
 
@@ -338,7 +357,7 @@ describe("the site build", () => {
     assert.match(head, /--paper:/);
     assert.match(rest, /<body>[\s\S]*id="setup"/);
     const terms = readFileSync(join(ROOT, "_site/terms/index.html"), "utf8");
-    assert.match(terms, /<title>Grill Pro terms<\/title>/);
+    assert.match(terms, /<title>Grill terms<\/title>/);
     assert.match(terms, /<link rel="canonical" href="https:\/\/grillyour\.ai\/terms\/">/);
     assert.match(terms, /--paper:/, "the terms page borrows the site's styles");
     const contribute = readFileSync(join(ROOT, "_site/contribute/index.html"), "utf8");
