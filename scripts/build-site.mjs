@@ -480,6 +480,13 @@ writePage("contact.html", {
   name: "Contact",
   blurb: "Write to support@grillyour.ai for your account, sign-in, privacy, or deleting your data.",
 });
+writePage("support.html", {
+  description: "Write to support@grillyour.ai. How to delete your data, and links to the FAQ, terms and privacy.",
+  url: `${SITE_URL}support/`,
+  outDir: "support",
+  name: "Support",
+  blurb: "Write to support@grillyour.ai. How to delete your data.",
+});
 writePage("demo.html", {
   description: "Four made-up decisions, and what Grill said about each.",
   url: `${SITE_URL}demo/`,
