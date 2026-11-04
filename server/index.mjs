@@ -316,7 +316,7 @@ export function buildGrillTools({ checkOn }) {
         required: ["subject"],
         additionalProperties: false,
       },
-      annotations: { title: "Grill a decision", readOnlyHint: true, openWorldHint: true },
+      annotations: { title: "Grill a decision", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     {
       name: "grill_result",
@@ -336,7 +336,7 @@ export function buildGrillTools({ checkOn }) {
         },
         additionalProperties: false,
       },
-      annotations: { title: "Collect a grill", readOnlyHint: true, openWorldHint: false },
+      annotations: { title: "Collect a grill", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     {
       name: "grill_look_back",
@@ -365,7 +365,7 @@ export function buildGrillTools({ checkOn }) {
         required: ["records"],
         additionalProperties: false,
       },
-      annotations: { title: "Look back", readOnlyHint: true, openWorldHint: false },
+      annotations: { title: "Look back", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
   ];
 }

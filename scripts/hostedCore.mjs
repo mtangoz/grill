@@ -785,7 +785,7 @@ export function hostedTools() {
         required: ["decided"],
         additionalProperties: false,
       },
-      annotations: { title: "Add what you decided", readOnlyHint: false, openWorldHint: false },
+      annotations: { title: "Add what you decided", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
   ];
 }
