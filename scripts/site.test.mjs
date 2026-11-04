@@ -1816,6 +1816,7 @@ describe("where saved grills are", () => {
     "site/miss.html",
     "site/privacy.html",
     "site/start.html",
+    "site/support.html",
   ];
   const nav = (html) => html.match(/<nav aria-label="Sections">[\s\S]*?<\/nav>/)?.[0] || "";
 
