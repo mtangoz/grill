@@ -305,7 +305,7 @@ describe("invite codes", { concurrency: false }, () => {
     resetHostedCaches();
     const decisions = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: cookie() } }), ctx);
     const html = await decisions.text();
-    assert.match(html, /Your decisions/);
+    assert.match(html, /<h1>Your grills<\/h1>/);
     assert.match(html, /Free for life: \$5 of use each month/);
     assert.equal(ctx.router.creates[0].limit, 5);
     assert.ok(ctx.router.patches.some((row) => row.limit_reset === "monthly"));
@@ -318,6 +318,7 @@ describe("invite codes", { concurrency: false }, () => {
     assert.match(done.html, /You're in\./);
     assert.match(done.html, /Early-tester access is on for this email/);
     assert.match(done.html, /<p>Next: <a href="\/start">connect Grill to your AI<\/a>\.<\/p>/);
+    assert.match(done.html, /<a class="button" href="\/decisions">Your grills<\/a>/);
     assert.match(done.html, /Founding member #1 of 100: Grill is free for you for life\./);
     assert.match(done.html, /First 100 users get Grill free for life, 99 spots left\./);
     assert.equal(done.html.includes("<script"), false);
@@ -378,7 +379,7 @@ describe("invite codes", { concurrency: false }, () => {
     await page(ctx, "user_friend", "code=friend-code&confirm=redeem");
     resetHostedCaches();
     const open = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: cookie() } }), ctx);
-    assert.match(await open.text(), /Your decisions/);
+    assert.match(await open.text(), /<h1>Your grills<\/h1>/);
 
     ctx.env.GRILL_INVITE_CODES = "other-code";
     resetHostedCaches();

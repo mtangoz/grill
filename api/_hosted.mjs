@@ -2399,9 +2399,10 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
     <p><a class="button" href="/decisions?confirm=delete-all">Delete all records</a></p>`
     : EMPTY_DECISIONS;
   return page(
-    "Your decisions · Grill",
+    "Your grills",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
-    <h1>Your decisions</h1>
+    <h1>Your grills</h1>
+    <p>Saved decisions from Grill in chat.</p>
     ${renderDue(rows, extra.now)}
     ${renderHabits(habits)}
     ${renderChanges(rows)}
@@ -2492,7 +2493,7 @@ function renderAccount(account, credit, extra = {}) {
       <button type="submit" name="value" value="keep">Keep my decision records</button>
       <button type="submit" name="value" value="off">Don't keep records</button>
     </form>
-    <p><a href="/decisions">Your decisions</a></p>
+    <p><a href="/decisions">Your grills</a></p>
     ${renderCalendar("/account", extra.calendar, extra.freshUrl || "")}
     <p><a class="button" href="/account?confirm=delete">Delete this account</a></p>
     <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
@@ -2645,7 +2646,7 @@ function renderRedeemed(env, { number = null, spots = "" } = {}) {
     ${offer}
     <p>Free for life: $${Number.isInteger(userMonthlyCapUsd(env)) ? String(userMonthlyCapUsd(env)) : userMonthlyCapUsd(env).toFixed(2)} of use each month, resets on the 1st.</p>
     <p>Next: <a href="/start">connect Grill to your AI</a>.</p>
-    <p><a class="button" href="/decisions">Your decisions</a></p>
+    <p><a class="button" href="/decisions">Your grills</a></p>
     <p><a href="/">Back to Grill</a></p>`,
   );
 }
@@ -2864,7 +2865,7 @@ function renderJudge({ packet, tooLong, askRecords, verdict, note, hint }) {
       <textarea id="q" name="q">${esc(packet || "")}</textarea>
       ${buttons}
     </form>
-    <p class="small"><a href="/decisions">Your decisions</a></p>`,
+    <p class="small"><a href="/decisions">Your grills</a></p>`,
   );
 }
 

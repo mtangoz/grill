@@ -110,6 +110,7 @@ describe("the /judge page", { concurrency: false }, () => {
       assert.equal(html.includes('id="verdict"'), false);
       assert.equal(html.includes("Judge: not from"), false);
       assert.equal(html.includes("<script"), false);
+      assert.match(html, /<a href="\/decisions">Your grills<\/a>/);
       assert.equal(fake.seen.chat.length, 0);
       assert.equal(fake.seen.decisions.length, 0);
     } finally {
