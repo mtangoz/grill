@@ -3,6 +3,7 @@
 **Hear the strongest case against your plan, then decide for yourself.**
 
 **Setup guide:** [grillyour.ai](https://grillyour.ai)
+**No key needed:** Anyone can sign up and connect Grill to the AI they use at https://grillyour.ai/mcp.
 **See it first:** [four made-up decisions, grilled](https://grillyour.ai/demo/)
 
 Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, Gemini, Grok or Muse. It sends the decision as you said it. An outside judge, a model from a different company, comes back with a short note: one verdict line, then one short line naming the question that would change the call, then the sharpest point and one cheap test. The verdict, the point and the test stay within about 50 words. The extra line is at most about 25 words, and it never comes before the verdict. Say more, options, or your call when you want the rest. A thin line gets a quick take and one question, not a refusal. A record is written only after you answer, and a percent is optional. Grill does not store it on the installed tool.
@@ -22,6 +23,18 @@ Every promise, and the code and test that enforce it: [docs/PRINCIPLES.md](docs/
 ## Set up
 
 Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes check it and warn you. Who to paste into is in the table below.
+
+### Grill in chat
+
+Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). Use the same email each time, the email you signed up with, every time.
+
+- **Claude.ai**, verified working. On the web, on a Free, Pro or Max plan: Settings → Connectors → Add custom connector. URL `https://grillyour.ai/mcp`, name it Grill, then sign in. Asking Claude in a chat to connect it does not work.
+- **ChatGPT**, verified working. On the web, with a paid plan: Plugins, the plus button, Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Click I understand and want to continue, then Create. Install it, then sign in.
+- **Grok Bot**, verified working. Tell the bot `Add this MCP server: https://grillyour.ai/mcp`, then sign in when asked.
+- **Gemini**: Should work, testing now. US only, a personal Google account, Keep Activity on. On gemini.google.com: Settings, Connected Apps, Add a custom app, paste `https://grillyour.ai/mcp`, Next, then sign in.
+- **Meta AI**, coming soon.
+
+Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
 
 ### Claude Desktop (Mac or Windows): the one-click judge, about 2 minutes with a key, about 10 if you need one
 
@@ -81,18 +94,6 @@ It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTE
 When Claude Code shows you a plan to approve, Grill adds one line, once a session: want an outside judge on this plan first? Keep planning and say "grill this plan". Claude Code hands the hook the plan, and the hook ignores it: it sends nothing and keeps nothing of the plan. To ask once, it keeps an empty marker file per session in the plugin's data folder, and removes markers older than two days the next time it runs. Turn it off with `GRILL_PLAN_OFFER=off`.
 
 Claude Code's advisor (`/advisor`) has a stronger Claude look over the work. That is a second opinion from the same company. Grill's judge is from a different one. Use both.
-
-### Grill in chat
-
-Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). Use the same email each time, the email you signed up with, every time.
-
-- **Claude.ai**, verified working. On the web, on a Free, Pro or Max plan: Settings → Connectors → Add custom connector. URL `https://grillyour.ai/mcp`, name it Grill, then sign in. Asking Claude in a chat to connect it does not work.
-- **ChatGPT**, verified working. On the web, with a paid plan: Plugins, the plus button, Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Click I understand and want to continue, then Create. Install it, then sign in.
-- **Grok Bot**, verified working. Tell the bot `Add this MCP server: https://grillyour.ai/mcp`, then sign in when asked.
-- **Gemini**: Should work, testing now. US only, a personal Google account, Keep Activity on. On gemini.google.com: Settings, Connected Apps, Add a custom app, paste `https://grillyour.ai/mcp`, Next, then sign in.
-- **Meta AI**, coming soon.
-
-Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
 
 ## What it costs
 

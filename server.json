@@ -57,5 +57,11 @@
         }
       ]
     }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://grillyour.ai/mcp"
+    }
   ]
 }
