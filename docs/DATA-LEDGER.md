@@ -2,7 +2,7 @@
 
 Update this file in the same pull request whenever the hosted data flow changes. The installed tool is not this table. Its privacy stance is unchanged and is the comparison column on the right.
 
-Hosted mode is off unless `GRILL_HOSTED=on`. When it is on, it is invite-only.
+Hosted mode is off unless `GRILL_HOSTED=on`. When it is on, anyone with a verified email can sign up if `GRILL_OPEN_SIGNUP=on`. Otherwise it is invite-only.
 
 The decision, as you stated it, passes through Grill's server in memory. It is never logged or stored.
 

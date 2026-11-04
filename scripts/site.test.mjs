@@ -38,7 +38,7 @@ describe("site/page.html", () => {
     assert.match(page, /data-copy="muse-url"/);
     assert.match(page, /data-copy="muse-client"/);
     assert.match(page, /Same for everyone\. No secret\./);
-    assert.match(page, /Tap Add, then sign in with the email your invite went to, every time\. We email you a code; check spam/);
+    assert.match(page, /Tap Add, then sign in with the same email you signed up with, every time\. We email you a code; check spam/);
     assert.match(page, /button\[data-copy\]/);
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     assert.match(readme, /### Meta AI \(Muse\)/);
@@ -440,7 +440,10 @@ describe("the site build", () => {
         /^> Grill your AI before you send it to your boss\. An outside judge, a model from a different company, gives the strongest case against a decision\.\n/m,
       );
       assert.match(llms, /https:\/\/grillyour\.ai\/mcp/);
-      assert.match(llms, /Grill in chat is invite-only for now/);
+      assert.match(llms, /Anyone can sign up and connect Grill to the AI they use at https:\/\/grillyour\.ai\/mcp\./);
+      assert.match(llms, /Asking Claude in a chat to connect it does not work\./);
+      assert.doesNotMatch(llms, /invite-only/);
+      assert.doesNotMatch(llms, /Join the waitlist/);
       assert.match(llms, /\[GitHub\]\(https:\/\/github\.com\/mtangoz\/grill\): \S/);
       const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
       for (const path of ["", "start/", "privacy/", "terms/", "look-back/", "contribute/", "demo/"]) {
@@ -527,7 +530,7 @@ describe("the site build", () => {
   // Agents that fetch /llms.txt need to know when Grill is the right tool. The bullets
   // have to be sentences already on the homepage, /demo, or /start.
   it("says when to use Grill before the page list", () => {
-    const invite = "Invited testers connect Grill to the AI they use at https://grillyour.ai/mcp. Grill in chat is invite-only for now.";
+    const invite = "Anyone can sign up and connect Grill to the AI they use at https://grillyour.ai/mcp.";
     const build = (extra = {}) => {
       execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env: { ...process.env, ...extra } });
       return readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
@@ -537,7 +540,7 @@ describe("the site build", () => {
       assert.equal(llms.split("## When to use Grill").length - 1, 1);
       const whenAt = llms.indexOf("## When to use Grill\n");
       const pagesAt = llms.indexOf("## Pages\n");
-      assert.ok(whenAt > llms.indexOf(invite), "the invite-only line stays above the new section");
+      assert.ok(whenAt > llms.indexOf(invite), "the sign-up line stays above the new section");
       assert.ok(pagesAt > whenAt, "## When to use Grill comes before ## Pages");
       const section = llms.slice(whenAt, pagesAt).trimEnd();
       const bullets = section.split("\n").filter((line) => line.startsWith("- "));
@@ -722,7 +725,6 @@ describe("the site build", () => {
 describe("the /start page", () => {
   const startPath = join(ROOT, "site/start.html");
   const SAME_EMAIL = /the same email each time/i;
-  const INVITE_EMAIL = /the email your invite went to, every time/i;
   const SIGNED_UP = /sign in with the same email you signed up with, every time/i;
   const GEMINI_CLI_SNIPPET = `{
   "mcpServers": {
@@ -756,11 +758,13 @@ describe("the /start page", () => {
     assert.doesNotMatch(start, /<script/i);
   });
 
-  it("points someone who hit the invite wall at /redeem", () => {
+  it("says anyone can sign up, and does not troubleshoot an invite wall", () => {
     const start = readFileSync(startPath, "utf8");
-    assert.match(start, /You hit the invite wall/);
-    assert.match(start, /invite-only for now/);
-    assert.match(start, /href="\/redeem"/);
+    assert.match(start, /Anyone can sign up/);
+    assert.doesNotMatch(start, /invite-only/i);
+    assert.doesNotMatch(start, /You hit the invite wall/);
+    assert.doesNotMatch(start, /waitlist/i);
+    assert.doesNotMatch(start, /No invite code/);
     assert.doesNotMatch(start, /<script/i);
   });
 
@@ -779,7 +783,9 @@ describe("the /start page", () => {
     const start = readFileSync(startPath, "utf8");
     const claude = section(start, "claude");
     assert.match(claude, /<h2 id="claude">Claude\.ai<\/h2>/);
-    assert.match(claude, /Customize → Connectors → Add custom connector/);
+    assert.match(claude, /Settings → Connectors → Add custom connector/);
+    assert.match(claude, /Asking Claude in a chat to connect it does not work/);
+    assert.doesNotMatch(claude, /Customize → Connectors/);
     assert.match(claude, /<input id="connector-url" type="text" readonly value="https:\/\/grillyour\.ai\/mcp"/);
     assert.match(claude, /<code>https:\/\/grillyour\.ai\/mcp<\/code>/);
     assert.match(claude, SIGNED_UP);
@@ -888,7 +894,12 @@ describe("the /start page", () => {
     assert.match(setup, /Keep Activity on/);
     assert.match(setup, /coming soon/i);
     assert.match(setup, SAME_EMAIL);
-    assert.match(setup, INVITE_EMAIL);
+    assert.match(setup, /Anyone can sign up/);
+    assert.match(setup, /Settings → Connectors → Add custom connector/);
+    assert.match(setup, /Asking Claude in a chat to connect it does not work/);
+    assert.match(setup, /the email you signed up with, every time/);
+    assert.doesNotMatch(setup, /invite-only/i);
+    assert.doesNotMatch(setup, /waitlist/i);
     assert.doesNotMatch(setup, /in two minutes/);
 
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
@@ -907,7 +918,12 @@ describe("the /start page", () => {
     assert.match(chat, /Meta AI/);
     assert.match(chat, /coming soon/i);
     assert.match(chat, SAME_EMAIL);
-    assert.match(chat, INVITE_EMAIL);
+    assert.match(chat, /Anyone can sign up/);
+    assert.match(chat, /Settings → Connectors → Add custom connector/);
+    assert.match(chat, /Asking Claude in a chat to connect it does not work/);
+    assert.match(chat, /the email you signed up with, every time/);
+    assert.doesNotMatch(chat, /invite-only/i);
+    assert.doesNotMatch(chat, /waitlist/i);
     assert.doesNotMatch(readme, /### Inside Claude\.ai/);
     assert.doesNotMatch(readme, /not live yet\. When Grill turns it on/);
 
@@ -916,7 +932,11 @@ describe("the /start page", () => {
     assert.match(hosted, /GET \/\.well-known\/oauth-protected-resource\/mcp`? serves the same metadata as the root path/);
     const person = hosted.slice(hosted.indexOf("## What a person does"), hosted.indexOf("## ", hosted.indexOf("## What a person does") + 3));
     assert.match(person, SAME_EMAIL);
-    assert.match(person, INVITE_EMAIL);
+    assert.match(person, /Anyone can sign up/);
+    assert.match(person, /Settings → Connectors → Add custom connector/);
+    assert.match(person, /Asking Claude in a chat to connect it does not work/);
+    assert.match(person, /the same email you signed up with, every time/);
+    assert.doesNotMatch(hosted, /^Not live yet/m);
     assert.match(person, /ChatGPT/);
     assert.match(person, /Grok Bot/);
     assert.match(person, /coming soon/i);
@@ -1022,7 +1042,7 @@ describe("the /demo page", () => {
     const foot = demo.indexOf('class="footer"');
     assert.ok(lastDetails < cta && cta < foot, "the call to action follows the examples");
     assert.match(demo, /<a class="button" href="\/#setup">Get started<\/a>/);
-    assert.match(demo, /<a href="\/start\/">[^<]*invited testers[^<]*<\/a>/i);
+    assert.match(demo, /<a href="\/start\/">Anyone can sign up<\/a>/);
   });
 
   it("builds to /demo/ and lands in the sitemap and llms.txt", () => {
@@ -1261,7 +1281,11 @@ describe("the about and contact pages", () => {
     const aboutMd = readFileSync(join(ROOT, "_site/about/index.md"), "utf8");
     assert.ok(aboutMd.includes(CHAT_KEEPS_CHOSEN), "about markdown twin should say what Grill in chat keeps");
     assert.doesNotMatch(aboutMd, GRILL_KEEPS_NOTHING);
-    assert.match(text, /Grill in chat is invite-only for now\./);
+    assert.match(text, /Anyone can sign up and connect Grill to the AI they use at/);
+    assert.match(text, /Settings → Connectors → Add custom connector/);
+    assert.match(text, /Asking Claude in a chat to connect it does not work/);
+    assert.doesNotMatch(text, /invite-only/);
+    assert.doesNotMatch(text, /waitlist/i);
     assert.match(text, /Your decisions are never public\./);
     assert.match(text, /We never publish a decision, and we never tie one to your name in public\./);
     assert.match(source, /href="\/terms\/"/);
@@ -1307,77 +1331,90 @@ describe("the about and contact pages", () => {
   });
 });
 
-// Someone who lands on the homepage, /llms.txt, the README, About, FAQ or Demo and has no
-// invite still needs a next step. The waitlist and the redeem page already exist. These only point at them.
-describe("visitors without an invite", () => {
+// Open sign-up is on. The public pages say anyone can sign up, and they do not
+// send someone to a waitlist or an invite wall to get in.
+describe("anyone can sign up", () => {
+  const SIGN_UP = "Anyone can sign up";
+  const CLAUDE = "Settings → Connectors → Add custom connector";
+  const CHAT_DOES_NOT = "Asking Claude in a chat to connect it does not work.";
   const build = () => {
     execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
   };
 
-  it("points the homepage Get started line at the waitlist", () => {
-    const invited = /Invited to Grill in chat\? <a href="\/start\/">Connect it<\/a>\. No invite code\? <a href="\/start\/#waitlist">Join the waitlist<\/a>\. Have a code\? Enter it at <a href="\/redeem">\/redeem<\/a>\./;
-    assert.match(page, invited);
+  it("points the homepage Get started line at sign-up", () => {
+    const line = /Anyone can sign up and connect Grill to the AI they use at <a href="https:\/\/grillyour\.ai\/mcp">https:\/\/grillyour\.ai\/mcp<\/a>\. <a href="\/start\/">Connect Grill<\/a>\. In Claude, open Settings → Connectors → Add custom connector and paste https:\/\/grillyour\.ai\/mcp\. Asking Claude in a chat to connect it does not work\./;
+    assert.match(page, line);
     const setup = page.slice(page.indexOf('id="setup"'), page.indexOf('id="pro"'));
-    assert.match(setup, invited);
+    assert.match(setup, line);
     build();
     const html = readFileSync(join(ROOT, "_site/index.html"), "utf8");
-    assert.match(html, invited);
+    assert.match(html, line);
     const md = readFileSync(join(ROOT, "_site/index.md"), "utf8");
     assert.match(
       md,
-      /Invited to Grill in chat\? \[Connect it\]\(https:\/\/grillyour\.ai\/start\/\)\. No invite code\? \[Join the waitlist\]\(https:\/\/grillyour\.ai\/start\/#waitlist\)\. Have a code\? Enter it at \[\/redeem\]\(https:\/\/grillyour\.ai\/redeem\)\./,
+      /Anyone can sign up and connect Grill to the AI they use at \[https:\/\/grillyour\.ai\/mcp\]\(https:\/\/grillyour\.ai\/mcp\)\. \[Connect Grill\]\(https:\/\/grillyour\.ai\/start\/\)\. In Claude, open Settings → Connectors → Add custom connector and paste https:\/\/grillyour\.ai\/mcp\. Asking Claude in a chat to connect it does not work\./,
     );
   });
 
-  it("points llms.txt at the waitlist and /redeem", () => {
+  it("points llms.txt at sign-up, not a waitlist", () => {
     build();
     const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
-    const invite = "Grill in chat is invite-only for now.";
+    const invite = "Anyone can sign up and connect Grill to the AI they use at https://grillyour.ai/mcp.";
     const at = llms.indexOf(invite);
-    assert.ok(at > 0, "the invite-only sentence stays");
+    assert.ok(at > 0, "the sign-up sentence stays");
     const between = llms.slice(at + invite.length, llms.indexOf("## When to use Grill"));
     assert.match(
       between,
-      /^\n\nPeople without an invite can join the waitlist at https:\/\/grillyour\.ai\/start\/#waitlist; people with a code redeem it at https:\/\/grillyour\.ai\/redeem\.\n\n$/,
+      /^\n\nIn Claude, open Settings → Connectors → Add custom connector and paste https:\/\/grillyour\.ai\/mcp\. Asking Claude in a chat to connect it does not work\.\n\n$/,
     );
     assert.equal(llms.split(invite).length - 1, 1);
+    assert.doesNotMatch(llms, /invite-only/);
+    assert.doesNotMatch(llms, /Join the waitlist/);
   });
 
-  // The homepage sentence, written the way each surface already links.
-  // README uses full URLs. The site pages use the same words with relative links.
-  const HTML_WAITLIST =
-    'No invite code? <a href="/start/#waitlist">Join the waitlist</a>. Have a code? Enter it at <a href="/redeem">/redeem</a>.';
-  const README_WAITLIST =
-    "No invite code? [Join the waitlist](https://grillyour.ai/start/#waitlist). Have a code? Enter it at [/redeem](https://grillyour.ai/redeem).";
-
-  it("points the README, about, FAQ and demo at the waitlist", () => {
+  it("points the README, about, FAQ and demo at sign-up", () => {
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     const about = readFileSync(join(ROOT, "site/about.html"), "utf8");
     const faq = readFileSync(join(ROOT, "site/faq.html"), "utf8");
     const demo = readFileSync(join(ROOT, "site/demo.html"), "utf8");
+    const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
+    const privacy = readFileSync(join(ROOT, "site/privacy.html"), "utf8");
     const chat = readme.slice(readme.indexOf("### Grill in chat"), readme.indexOf("\n## ", readme.indexOf("### Grill in chat")));
-    assert.ok(chat.includes(README_WAITLIST), "the Grill in chat section names the waitlist and /redeem");
-    assert.ok(about.includes(HTML_WAITLIST), "about links the waitlist and /redeem");
-    assert.ok(faq.includes(HTML_WAITLIST), "the FAQ links the waitlist and /redeem");
-    assert.ok(demo.includes(HTML_WAITLIST), "the demo links the waitlist and /redeem");
-    assert.match(readme, /https:\/\/grillyour\.ai\/start\/#waitlist/);
-    assert.match(about, /href="\/start\/#waitlist"/);
-    assert.match(faq, /href="\/start\/#waitlist"/);
-    assert.match(demo, /href="\/start\/#waitlist"/);
+    for (const [name, text] of [
+      ["readme chat", chat],
+      ["about", about],
+      ["faq", faq],
+      ["demo", demo],
+      ["terms", terms],
+      ["privacy", privacy],
+    ]) {
+      assert.ok(text.includes(SIGN_UP), `${name} should say anyone can sign up`);
+      assert.equal(/invite-only/i.test(text), false, `${name} still says invite-only`);
+      assert.equal(/Join the waitlist|No invite code|You hit the invite wall|Invited testers|For invited/.test(text), false, `${name} still sends people to a waitlist or an invite`);
+    }
+    assert.ok(chat.includes(CLAUDE), "the Grill in chat section names the Claude connector path");
+    assert.ok(chat.includes(CHAT_DOES_NOT), "the Grill in chat section says a chat request does not connect Grill");
+    assert.ok(about.includes(CLAUDE));
+    assert.ok(about.includes(CHAT_DOES_NOT));
+    assert.ok(faq.includes(CLAUDE));
+    assert.ok(faq.includes(CHAT_DOES_NOT));
     assert.doesNotMatch(readme, /not live yet/);
     assert.match(
       readme,
-      /An in-chat account is invite-only for now; what it stores is in \[docs\/DATA-LEDGER\.md\]\(docs\/DATA-LEDGER\.md\)\./,
+      /An in-chat account is open to anyone who signs up; what it stores is in \[docs\/DATA-LEDGER\.md\]\(docs\/DATA-LEDGER\.md\)\./,
     );
     build();
     for (const file of ["_site/about/index.md", "_site/faq/index.md", "_site/demo/index.md"]) {
       const md = readFileSync(join(ROOT, file), "utf8");
-      assert.ok(md.includes(README_WAITLIST), `${file} should carry the waitlist sentence`);
+      assert.ok(md.includes(SIGN_UP), `${file} should say anyone can sign up`);
+      assert.doesNotMatch(md, /invite-only/);
+      assert.doesNotMatch(md, /Join the waitlist/);
     }
     const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
     const faqSection = llms.slice(llms.indexOf("## FAQ\n"));
-    assert.ok(faqSection.includes("No invite code? Join the waitlist."), "llms.txt FAQ should keep the waitlist sentence");
-    assert.ok(faqSection.includes("Have a code? Enter it at /redeem."), "llms.txt FAQ should keep the redeem sentence");
+    assert.ok(faqSection.includes("Anyone can sign up for Grill in chat."), "llms.txt FAQ should say anyone can sign up");
+    assert.ok(faqSection.includes(CHAT_DOES_NOT), "llms.txt FAQ should say a chat request does not connect Grill");
+    assert.doesNotMatch(faqSection, /Join the waitlist/);
   });
 
   it("routes /redeem/ the same way as /redeem", () => {
@@ -1456,11 +1493,10 @@ describe("markdown for agents", () => {
       "The question that would change this",
       "The verdict never becomes the decision. The free tool keeps nothing; Grill in chat keeps only what you choose, encrypted, and you can delete it.",
       "Get started: pick the AI you use",
-      "Invited to Grill in chat?",
-      "No invite code?",
-      "Join the waitlist",
-      "Have a code? Enter it at",
-      "Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email your invite went to, every time.",
+      "Anyone can sign up and connect Grill to the AI they use at",
+      "Connect Grill",
+      "In Claude, open Settings → Connectors → Add custom connector and paste https://grillyour.ai/mcp. Asking Claude in a chat to connect it does not work.",
+      "Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email you signed up with, every time.",
       "Any AI (easiest)",
       "ChatGPT, Copilot, Gemini, Grok, Muse",
       "See four more examples",
@@ -1486,7 +1522,7 @@ describe("markdown for agents", () => {
     ]) {
       assert.ok(md.includes(url), `markdown homepage should link ${url}`);
     }
-    assert.match(md, /\[Connect it\]\(https:\/\/grillyour\.ai\/start\/\)/);
+    assert.match(md, /\[Connect Grill\]\(https:\/\/grillyour\.ai\/start\/\)/);
   });
 
   it("writes a markdown 404 that says the page is missing and links the agent files", () => {
@@ -1618,7 +1654,11 @@ describe("markdown for agents", () => {
         assert.doesNotMatch(md, /<style/i, `${pathname} markdown has a style`);
       }
       const start = readFileSync(twinPath("https://grillyour.ai/start/"), "utf8");
-      assert.ok(start.includes("Grill in chat is invite-only for now."));
+      assert.ok(start.includes("Anyone can sign up"));
+      assert.ok(start.includes("Settings → Connectors → Add custom connector"));
+      assert.ok(start.includes("Asking Claude in a chat to connect it does not work."));
+      assert.equal(start.includes("invite-only"), false);
+      assert.equal(start.includes("You hit the invite wall"), false);
       assert.ok(start.includes("sign in with the same email you signed up with, every time"));
       assert.ok(start.includes("https://grillyour.ai/mcp"));
       assert.ok(start.includes("[Privacy](https://grillyour.ai/privacy/)"));

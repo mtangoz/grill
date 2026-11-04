@@ -408,8 +408,9 @@ describe("invite codes", { concurrency: false }, () => {
     assert.equal(html.includes("<script"), false);
     assert.doesNotMatch(html, /GRILL_|Clerk|CLERK_/);
     const start = readFileSync(join(ROOT, "site/start.html"), "utf8");
-    assert.match(start, /invite-only for now/);
-    assert.match(start, /href="\/redeem"/);
+    assert.match(start, /Anyone can sign up/);
+    assert.doesNotMatch(start, /invite-only/);
+    assert.doesNotMatch(start, /You hit the invite wall/);
   });
 
   it("keeps the $5 and $20 caps for someone who redeemed a code", async () => {

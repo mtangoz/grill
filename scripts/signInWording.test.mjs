@@ -1,6 +1,6 @@
-// Sign-in for Grill in chat is an emailed code, and an invitee must use the email the invite went
-// to every time. Every place a person reads sign-in steps says so, says to check spam for the
-// code, and does not offer Google (it is off in production).
+// Sign-in for Grill in chat is an emailed code. Anyone can sign up, and they use the same email
+// they signed up with every time. Every place a person reads sign-in steps says so, says to check
+// spam for the code, and does not offer Google (it is off in production).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -10,10 +10,10 @@ import { INVITE_ONLY } from "./hostedCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(ROOT, p), "utf8");
-const SAME_EMAIL = /the email your invite went to, every time/i;
+const SAME_EMAIL = /the same email you signed up with, every time/i;
 
 describe("sign-in wording", () => {
-  it("the Meta AI steps on the home page and README name the invite email and spam", () => {
+  it("the Meta AI steps on the home page and README name the sign-up email and spam", () => {
     for (const file of ["site/page.html", "README.md"]) {
       const text = read(file);
       const muse = text.slice(text.indexOf("Meta AI (Muse)"));
@@ -23,7 +23,7 @@ describe("sign-in wording", () => {
     }
   });
 
-  it("the hosted guide says email code only, the invite email, and spam, and never offers Google", () => {
+  it("the hosted guide says email code only, the sign-up email, and spam, and never offers Google", () => {
     const hosted = read("docs/HOSTED.md");
     const person = hosted.slice(hosted.indexOf("## What a person does"), hosted.indexOf("## ", hosted.indexOf("## What a person does") + 3));
     assert.match(person, /emailed code/i);
