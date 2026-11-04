@@ -1,0 +1,11 @@
+{
+  "id": "must-have-broken-tutoring-lock",
+  "kind": "flawed",
+  "subject": "Birch Lane Tutoring uses one classroom at the community center and is deciding when to rehearse the spring recital. Earlier in the chat, the coordinator stated a must-have: \"The session ends at 4:30. The community center locks the classroom at 4:30, and no child stays past the lock.\" The assistant then proposed a plan for the recital. The plan recommends moving the rehearsal to 4:00 and keeping the children until 5:15, so the rehearsal no longer overlaps the chess club next door. Reasoning: the hall calendar shows the room as free until 5:30 on that Thursday, the chess club is loud, and last year's overlap drew two parent complaints. The plan calls this a quieter slot and does not say the children would still be inside after the lock. Prediction, offered at 60% confidence: the later rehearsal cuts those parent complaints to none. Goal: rehearse without the chess club next door. The strongest case against: the chess club may run long and stay noisy past 4:00 anyway.",
+  "question": "Should Birch Lane Tutoring move the spring recital rehearsal to 4:00 and keep the children until 5:15?",
+  "expect": {
+    "must_target": ["locks the classroom at 4:30", "no child stays past the lock", "keeping the children until 5:15"],
+    "verdict_not": ["holds"]
+  },
+  "why": "Earlier in the chat the coordinator stated that the community center locks the classroom at 4:30 and no child stays past the lock. The recital plan then keeps the children until 5:15 and does not say it is dropping that must-have."
+}

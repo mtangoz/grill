@@ -309,13 +309,37 @@ describe("renderSummary — never subject text beyond the case id", () => {
 describe("every committed case under evals/cases/ parses and has the fields its kind requires", () => {
   const files = readdirSync(CASES_DIR).filter((f) => f.endsWith(".json")).sort();
 
-  it("finds the full committed set: 9 flawed, 5 sound, 4 loaded", () => {
+  it("finds the full committed set: 13 flawed, 5 sound, 4 loaded", () => {
     const byKind = { flawed: 0, sound: 0, loaded: 0 };
     for (const f of files) {
       const c = JSON.parse(readFileSync(join(CASES_DIR, f), "utf8"));
       byKind[c.kind] = (byKind[c.kind] ?? 0) + 1;
     }
-    assert.deepEqual(byKind, { flawed: 9, sound: 5, loaded: 4 });
+    assert.deepEqual(byKind, { flawed: 13, sound: 5, loaded: 4 });
+  });
+
+  // An earlier turn names a hard limit. The later plan does the thing that limit rules out,
+  // and does not say it is dropping the limit. The clash is a consistency check, so the
+  // judge should file it under Checked for you. The phrase-match gate still scores the catch.
+  const MUST_HAVE_BROKEN = [
+    "must-have-broken-lemonade-sunday",
+    "must-have-broken-bookstore-textbooks",
+    "must-have-broken-tutoring-lock",
+    "must-have-broken-kiln-insurance",
+  ];
+
+  it("the must-have-broken cases state an earlier limit the plan then drops", () => {
+    for (const id of MUST_HAVE_BROKEN) {
+      const c = JSON.parse(readFileSync(join(CASES_DIR, `${id}.json`), "utf8"));
+      assert.equal(c.id, id);
+      assert.equal(c.kind, "flawed");
+      assert.match(c.subject, /Earlier in the chat/);
+      assert.match(c.subject, /must-have/);
+      assert.match(c.why, /does not say it is dropping that must-have/);
+      assert.ok(c.expect.verdict_not.includes("holds"));
+      assert.ok(c.expect.must_target.length >= 2);
+      assert.deepEqual(caseProblems(c, `${id}.json`), []);
+    }
   });
 
   for (const f of files) {
