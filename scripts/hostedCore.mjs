@@ -529,10 +529,14 @@ export function formatDay(iso) {
   return `${Number(match[3])} ${month}`;
 }
 
-/** About five words. No confidence nag, and no credit line. */
+/** Public site for links a person can open. There is no separate host setting; this is the default. */
+export const PUBLIC_SITE_ORIGIN = "https://grillyour.ai";
+
+/** Saved line in chat. Points at Your grills. No confidence nag and no credit line. */
 export function savedConfirmation(review) {
   const day = formatDay(review);
-  return day ? `Saved. Look-back ${day}.` : "Saved.";
+  const where = `Your grills: ${PUBLIC_SITE_ORIGIN}/decisions`;
+  return day ? `Saved. Look-back ${day}. ${where}` : `Saved. ${where}`;
 }
 
 export function footerLine({ saved, review = "", remainingUsd = 0 } = {}) {
@@ -800,7 +804,7 @@ export const HOSTED_INSTRUCTIONS = [
   "Do not show a record, the judge's model, a Jev score, a credit balance, a quote check, format rules, or a disclaimer.",
   "Call grill_result with detail provenance only when you are writing a lasting record of the grill, such as an audit log. Put that one line in the record, not in your reply, unless the person asks which model judged.",
   "The verdict never becomes the decision. If they ask whether they should do it, hand the choice back and name the cheap test.",
-  "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation as written: about five words, and sometimes one more line saying earlier calls are due for a look-back. If they never answer, do not call it, and there is no record and no look-back.",
+  "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation as written, and sometimes one more line saying earlier calls are due for a look-back. If they never answer, do not call it, and there is no record and no look-back.",
   "Add supersedes and changed only when they say the choice changed, in their words. A re-run with nothing changed leaves those off.",
   "When they say look back, call grill_look_back and relay its one line. With a Grill account it can read saved records, so they do not have to paste.",
   "When they ask what Grill has done for them, call grill_look_back with view changes and relay it as written.",

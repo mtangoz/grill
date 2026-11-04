@@ -30,6 +30,7 @@ import {
   encryptString,
   footerLine,
   linkChains,
+  savedConfirmation,
   ONCE_DISCLOSURE,
   HOSTED_JUDGE_ATTEMPT_MS,
   HOSTED_JUDGE_DEADLINE_MS,
@@ -984,8 +985,9 @@ describe("hosted Grill", { concurrency: false }, () => {
       );
       const confirm = textOf(saved.json).trim();
       assert.equal(saved.json.result.isError, false, confirm);
-      assert.equal(confirm, "Saved. Look-back 25 Oct.");
-      assert.ok(countWords(confirm) <= 6, countWords(confirm));
+      assert.equal(confirm, "Saved. Look-back 25 Oct. Your grills: https://grillyour.ai/decisions");
+      assert.match(confirm, /grills/);
+      assert.match(confirm, /https:\/\/grillyour\.ai\/decisions/);
       assert.doesNotMatch(confirm, /confidence|%|grill-record|how sure/i);
       const session = signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 });
       const exported = await handleDecisions(
@@ -2027,6 +2029,11 @@ describe("hosted mappings and ledger pins", () => {
     assert.deepEqual(chainIds(rows, "b").sort(), ["a", "b"]);
     assert.match(footerLine({ saved: true, review: "2026-10-17", remainingUsd: 1 }), /Saved to your decisions · look-back on 17 Oct · about 33 grills of credit left/);
     assert.match(footerLine({ saved: false, remainingUsd: 0 }), /Not saved · about 0 grills of credit left/);
+    assert.equal(savedConfirmation("2026-10-25"), "Saved. Look-back 25 Oct. Your grills: https://grillyour.ai/decisions");
+    assert.equal(savedConfirmation(""), "Saved. Your grills: https://grillyour.ai/decisions");
+    assert.equal(savedConfirmation("not-a-day"), "Saved. Your grills: https://grillyour.ai/decisions");
+    assert.match(savedConfirmation("2026-10-25"), /grills/);
+    assert.match(savedConfirmation("2026-10-25"), /https:\/\/grillyour\.ai\/decisions/);
     const key = randomBytes(32);
     const cipher = encryptString("plain decision text", key);
     assert.equal(cipher.includes("plain decision text"), false);
@@ -2289,13 +2296,13 @@ describe("look-back reminders", { concurrency: false }, () => {
       const ctx = world();
       const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
       const first = await decide(ctx, fake, token, "Hire contractor", JAN);
-      assert.equal(first, "Saved. Look-back 15 Jan.");
+      assert.equal(first, "Saved. Look-back 15 Jan. Your grills: https://grillyour.ai/decisions");
 
       // A month later the first call is overdue. The next choice says so once, as a count with no title.
       const second = await decide(ctx, fake, token, "Move office", FEB);
-      assert.equal(second, 'Saved. Look-back 15 Feb.\n1 earlier call is due for a look-back. Say "look back" when you\'re ready.');
+      assert.equal(second, 'Saved. Look-back 15 Feb. Your grills: https://grillyour.ai/decisions\n1 earlier call is due for a look-back. Say "look back" when you\'re ready.');
       const third = await decide(ctx, fake, token, "Cut prices", FEB);
-      assert.equal(third, "Saved. Look-back 15 Feb.");
+      assert.equal(third, "Saved. Look-back 15 Feb. Your grills: https://grillyour.ai/decisions");
 
       // The due list names only what waits for a look-back.
       let html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
@@ -2484,6 +2491,7 @@ describe("look-back reminders", { concurrency: false }, () => {
       const account = await page(ctx, handleAccount, "/account", { now: FEB });
       assert.equal(account.includes('type="hidden" name="confirm"'), false);
       assert.match(account, /href="\/account\?confirm=delete"/);
+      assert.match(account, /<a href="\/decisions">Your grills<\/a>/);
       const askAccount = await handleAccount(
         new Request("https://grillyour.ai/account?confirm=delete", { headers: { cookie: `__session=${session()}` } }),
         { ...ctx, now: FEB },
@@ -2598,7 +2606,10 @@ describe("page sign-in through Clerk's handshake", { concurrency: false }, () =>
     // Later, Clerk's token has lapsed, and only Grill's page cookie is left: still signed in, and forms work.
     const later = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__Host-grill_page=${pageCookie}` } }), ctx);
     assert.equal(later.status, 200);
-    assert.match(await later.text(), /Your decisions/);
+    const laterHtml = await later.text();
+    assert.match(laterHtml, /<title>Your grills<\/title>/);
+    assert.match(laterHtml, /<h1>Your grills<\/h1>/);
+    assert.match(laterHtml, /Saved decisions from Grill in chat\./);
     const form = await handleAccount(
       new Request("https://grillyour.ai/account", {
         method: "POST",

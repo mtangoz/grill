@@ -152,7 +152,7 @@ describe("waitlist", () => {
     assert.equal(redeem.status, 303);
     const inNow = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx);
     const inHtml = await inNow.text();
-    assert.match(inHtml, /Your decisions/);
+    assert.match(inHtml, /<h1>Your grills<\/h1>/);
     assert.equal(inHtml.includes("invite-only"), false);
   });
 
