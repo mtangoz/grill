@@ -78,7 +78,7 @@ Consider when: a partner asks for a revenue share or a tracked link after at lea
 
 ## Publish the hosted address on the MCP Registry
 
-The live registry entry, checked 2026-11-04, is still `io.github.mtangoz/grill` at v0.1.0, with only the stdio `.mcpb` package and no `remotes` entry for `https://grillyour.ai/mcp`. Downstream directories read that entry, so they only see the local bring-your-own-key package. This repo's `server.json` already lists that remote and is at 0.1.1. Publishing it (`mcp-publisher publish`, as mtangoz) is separate work. This note does not change `server.json`. PulseMCP submissions are still paused (page last updated 2026-09-03). They say they will ingest the official registry when they reopen. mcp.so was not re-checked.
+The live registry entry, checked 2026-11-04, is still `io.github.mtangoz/grill` at v0.1.0, with only the stdio `.mcpb` package and no `remotes` entry for `https://grillyour.ai/mcp`. Downstream directories read that entry, so they only see the local bring-your-own-key package. This repo's `server.json` already lists that remote and is at 0.1.1. `.github/workflows/publish-mcp.yml` publishes that file with `mcp-publisher login github-oidc` when a release is published, or by hand from `main` (Actions → publish-mcp → Run workflow). The live entry stays v0.1.0 until that workflow runs. This note does not change `server.json`. PulseMCP submissions are still paused (page last updated 2026-09-03). They say they will ingest the official registry when they reopen. mcp.so was not re-checked.
 
 Consider when: now. Channel hygiene. It does not wait on a real-user count, on feedback, or on cost. It is cheap, and it fixes stale data.
 

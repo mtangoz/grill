@@ -47,7 +47,7 @@ Low-risk pull requests merge themselves once checks are green. Medium and high r
 
 ## Release
 
-Bump the version in `package.json`, `manifest.json` and `.claude-plugin/plugin.json` (a test keeps them equal), then run the release workflow. It tags that version and publishes the extension, `grill-smithery.mcpb` (the same bundle with tool input schemas for the Smithery registry), and the skill zips. With the `NPM_TOKEN` repository secret set (an npm automation token for the `grillyour` package), it also publishes `npx -y grillyour` with provenance. `server.json` points at a published `.mcpb` and its checksum. Update that file when the release asset changes.
+Bump the version in `package.json`, `manifest.json` and `.claude-plugin/plugin.json` (a test keeps them equal), then run the release workflow. It tags that version and publishes the extension, `grill-smithery.mcpb` (the same bundle with tool input schemas for the Smithery registry), and the skill zips. With the `NPM_TOKEN` repository secret set (an npm automation token for the `grillyour` package), it also publishes `npx -y grillyour` with provenance. `server.json` points at a published `.mcpb` and its checksum. Update that file when the release asset changes. Publishing that GitHub release also runs `.github/workflows/publish-mcp.yml`, which publishes `server.json` to the official MCP Registry as `io.github.mtangoz/grill` (GitHub OIDC, no registry token). The current listing is not on the registry yet: run that workflow by hand once, from `main` (Actions → publish-mcp → Run workflow).
 
 ## If something's off
 
