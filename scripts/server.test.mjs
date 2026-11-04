@@ -127,6 +127,19 @@ describe("the MCP handshake", () => {
     const res = await c.request("tools/list", {});
     const names = res.result.tools.map((t) => t.name);
     assert.deepEqual(names, ["grill", "grill_result", "grill_look_back"]);
+    const annotations = {
+      grill: { title: "Grill a decision", readOnlyHint: true, destructiveHint: false },
+      grill_result: { title: "Collect a grill", readOnlyHint: true, destructiveHint: false },
+      grill_look_back: { title: "Look back", readOnlyHint: true, destructiveHint: false },
+    };
+    for (const tool of res.result.tools) {
+      const want = annotations[tool.name];
+      assert.equal(typeof tool.title, "string");
+      assert.ok(tool.title.length > 0, tool.name);
+      assert.equal(tool.annotations.title, want.title, tool.name);
+      assert.equal(tool.annotations.readOnlyHint, want.readOnlyHint, tool.name);
+      assert.equal(tool.annotations.destructiveHint, want.destructiveHint, tool.name);
+    }
     const grill = res.result.tools[0];
     assert.deepEqual(grill.inputSchema.required, ["subject"]);
     assert.match(grill.description, /different company than the assistant that wrote it \(Claude, unless set otherwise\)/);

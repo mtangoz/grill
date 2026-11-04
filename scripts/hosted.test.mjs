@@ -527,10 +527,23 @@ describe("hosted Grill", { concurrency: false }, () => {
     const listed = await postMcp(ctx, { jsonrpc: "2.0", id: 2, method: "tools/list" }, { token });
     const tools = listed.json.result.tools;
     assert.deepEqual(tools.map((tool) => tool.name), ["grill", "grill_result", "grill_look_back", "grill_decided"]);
+    // OpenAI's scan reads title, readOnlyHint and destructiveHint on every tool.
+    // destructiveHint follows the MCP spec: true when the tool may overwrite or remove
+    // something, false when it only reads or only adds. The default is true, so a read
+    // tool has to say false. grill_decided writes a record, and can replace one, so it is true.
+    const annotations = {
+      grill: { title: "Grill a decision", readOnlyHint: true, destructiveHint: false },
+      grill_result: { title: "Collect a grill", readOnlyHint: true, destructiveHint: false },
+      grill_look_back: { title: "Look back", readOnlyHint: true, destructiveHint: false },
+      grill_decided: { title: "Add what you decided", readOnlyHint: false, destructiveHint: true },
+    };
     for (const tool of tools) {
+      const want = annotations[tool.name];
       assert.equal(typeof tool.title, "string");
-      assert.equal(typeof tool.annotations.title, "string");
-      assert.equal(typeof tool.annotations.readOnlyHint, "boolean");
+      assert.ok(tool.title.length > 0, tool.name);
+      assert.equal(tool.annotations.title, want.title, tool.name);
+      assert.equal(tool.annotations.readOnlyHint, want.readOnlyHint, tool.name);
+      assert.equal(tool.annotations.destructiveHint, want.destructiveHint, tool.name);
     }
     const grill = tools[0];
     assert.match(grill.description, /Send the decision as the user stated it/);
