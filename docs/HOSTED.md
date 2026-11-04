@@ -1,6 +1,6 @@
 # Grill inside your chat
 
-Not live yet. The code is off unless `GRILL_HOSTED=on`. When it is on, it is invite-only: set `GRILL_HOSTED_ALLOWLIST` to the emails that may grill. Anyone else gets a short message and no grill, with a link to `/redeem`. A code from `GRILL_INVITE_CODES`, or a single-use code in the codes store, lets a signed-in person in. Open sign-up is a separate switch, `GRILL_OPEN_SIGNUP=on`, and is off by default. With `GRILL_INVITE_CODES` unset and no code in the store, redeem does nothing.
+Live at grillyour.ai. The connector is served when `GRILL_HOSTED=on`. Open sign-up is on in production (`GRILL_OPEN_SIGNUP=on`, since 2026-11-03): anyone with a verified email can sign up. The switch is off by default in the code. When it is off, set `GRILL_HOSTED_ALLOWLIST` to the emails that may grill. Anyone else gets a short message and no grill, with a link to `/redeem`. A code from `GRILL_INVITE_CODES`, or a single-use code in the codes store, lets a signed-in person in. With `GRILL_INVITE_CODES` unset and no code in the store, redeem does nothing.
 
 Grill pays for the starter credit, so two hard monthly caps sit in front of every grill: one for the whole service and one per person. When either is reached, the grill does not run and the person gets one plain sentence saying the free grills for the month are used up and nothing was charged to them. Each person's router key is also hard-capped by the router itself.
 
@@ -11,7 +11,7 @@ The judge is always OpenRouter's Auto Router (`openrouter/auto`). Grill excludes
 ## What a person does
 
 1. Follow the steps for the AI at `https://grillyour.ai/start/` (on a preview, use that preview's origin instead of grillyour.ai). Claude.ai, ChatGPT and Grok Bot are verified working. Gemini should work and is still being tested. Meta AI is coming soon. The connector URL is `https://<host>/mcp`. On a preview that host is the preview origin. `https://mcp.grillyour.ai/mcp` comes later, when the owner adds that domain.
-2. Connect. A sign-in opens. Sign in with an emailed code: use the same email each time, the email your invite went to, every time, and check spam if the code isn't there in a minute. No key to paste, no password, and no card. If you have an invite code instead, sign in, open `/redeem`, enter the code, and confirm. That gives early-tester access: free, $5 of use each month, on the same $20 service cap.
+2. Connect. A sign-in opens. Anyone can sign up. Sign in with an emailed code: use the same email each time, the same email you signed up with, every time, and check spam if the code isn't there in a minute. No key to paste, no password, and no card. In Claude, open Settings → Connectors → Add custom connector and paste `https://<host>/mcp`. Asking Claude in a chat to connect it does not work. A code at `/redeem` still grants early-tester access: free, $5 of use each month, on the same $20 service cap.
 3. The first grill asks, once, whether to keep decision records. Answer once. The outside-judge disclosure is shown once per account, then not again.
 4. Say the decision as you mean it. The assistant sends that. It does not show a template or wait for an OK. The note comes back in the chat. If three grills are already running, the assistant waits and retries on its own.
 
@@ -81,11 +81,11 @@ An explicit `author` argument wins. A client name is only a hint when the OAuth 
 claude mcp add --transport http grill https://<preview-host>/mcp
 ```
 
-Then `/mcp`, choose grill, Authenticate, and sign in with an allowlisted email.
+Then `/mcp`, choose grill, Authenticate, and sign in with the email you signed up with.
 
 ## Grok
 
-Grok Bot is verified working. The person tells the bot `Add this MCP server: https://<host>/mcp`, then signs in with the same email each time, the email your invite went to, every time. Grill treats a redirect on `grok.com` or `grok.x.ai` as Grok and excludes x-ai from the judge. If Grok's redirect host is different, the client is unknown and nothing is excluded until the call names an author. Do not pin Grok's own model to save time. The spike's pass rule is still the Claude web runs in [hosted-spike.md](hosted-spike.md).
+Grok Bot is verified working. The person tells the bot `Add this MCP server: https://<host>/mcp`, then signs in with the same email each time, the email you signed up with, every time. Grill treats a redirect on `grok.com` or `grok.x.ai` as Grok and excludes x-ai from the judge. If Grok's redirect host is different, the client is unknown and nothing is excluded until the call names an author. Do not pin Grok's own model to save time. The spike's pass rule is still the Claude web runs in [hosted-spike.md](hosted-spike.md).
 
 ## Grill IDs, and leaving Clerk
 

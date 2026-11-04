@@ -156,10 +156,11 @@ describe("waitlist", () => {
     assert.equal(inHtml.includes("invite-only"), false);
   });
 
-  it("the start page offers the form with no script, and a missing store saves nothing", async () => {
+  it("the start page does not send people to the waitlist, and a missing store saves nothing", async () => {
     const start = readFileSync(join(ROOT, "site/start.html"), "utf8");
-    assert.match(start, /action="\/waitlist"/);
-    assert.match(start, /No invite code\?/);
+    assert.doesNotMatch(start, /action="\/waitlist"/);
+    assert.doesNotMatch(start, /No invite code\?/);
+    assert.match(start, /Anyone can sign up/);
     assert.equal(start.includes("<script"), false);
     assert.equal(/<button/i.test(start), false);
     const closed = await handleWaitlist(new Request("https://grillyour.ai/waitlist", { method: "POST", body: "email=friend@example.com&confirm=join" }), {

@@ -17,14 +17,14 @@ Three inputs:
 | Calibration ("when you say 70%, you're right 45% of the time") needs dozens of resolved calls per person. Most people will never get there. | Holds | "Where your calls changed" already refuses to compare rates under 10 calls on each side. A 70% band needs roughly 30 resolved calls before it means much. At a few grills a month, that takes a year or more. |
 | OpenRouter's Auto Router does not guarantee a different-company judge. | Refuted, with a gap | [scripts/judge.mjs](../scripts/judge.mjs) excludes the author's company, retries when that company answers, and returns an error rather than that verdict. The gap: on a non-Claude host, `GRILL_AUTHOR` unset and no `author` on the call means Anthropic is excluded instead of the right company. The paste route can only warn. |
 | Every route Grill grows through belongs to another company. Any of them can ship its own second opinion or close the door to connectors. | Holds | Claude, ChatGPT, Meta AI, Cursor and VS Code are all rented reach. The decisions page, the look-back reminder and the calendar link are the only surfaces Grill owns. |
-| The retention measure can't carry a decision if it rests on an opt-in ping and features most people don't have. | Partly holds | In-chat Grill already counts active people per day, week and month without identity. It is invite-only, so the numbers are small. The local free tool is mostly invisible, by design. |
+| The retention measure can't carry a decision if it rests on an opt-in ping and features most people don't have. | Partly holds | In-chat Grill already counts active people per day, week and month without identity. Open sign-up is on. The local free tool is mostly invisible, by design. |
 
 ## Where Grill stands today
 
 - **Product:** the free tool works in Claude Desktop, Claude Code, claude.ai (skill), any MCP app (`npx -y grillyour`), Meta AI, and by copy and paste in ChatGPT, Copilot, Gemini and Grok.
 - **North Star:** 100 real users ([PRINCIPLES.md](PRINCIPLES.md#north-star)). The current count is not recorded in this repository.
 - **Retention features:** look-back reminders, "Your habits", and "Where your calls changed" are built for in-chat Grill.
-- **Money:** Pro is built and priced at $9 a month or $90 a year. It is parked (`GRILL_PRO_BILLING` off). In-chat Grill is invite-only.
+- **Money:** Pro is built and priced at $9 a month or $90 a year. It is parked (`GRILL_PRO_BILLING` off). In-chat Grill is open: anyone can sign up.
 - **Independence:** enforced in code on the Desktop, Claude Code and MCP routes. It depends on configuration on non-Claude hosts, and only warns on the paste route.
 
 ## Guiding principles

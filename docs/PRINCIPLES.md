@@ -58,7 +58,7 @@ Any telemetry is opt-in. It is off by default. It is disclosed in [docs/PRIVACY.
 
 Enforced by: [scripts/usageStats.mjs](../scripts/usageStats.mjs), test "defaults to off in every install config" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs). The disclosure is [docs/PRIVACY.md](PRIVACY.md).
 
-A Grill account is opt-in, and invite-only until Grill turns it on. It can keep your decision records if you choose, encrypted, with export and delete. It stores your sign-in, your credit, and the cost, time and model of each grill. It never stores the write-up, and it never keeps the short note for more than 15 minutes. You never see the model-router key; Grill holds it for you. The account is off until Grill turns it on. Details: [docs/PRIVACY.md](PRIVACY.md) and [docs/DATA-LEDGER.md](DATA-LEDGER.md).
+A Grill account is opt-in. Anyone can sign up. It can keep your decision records if you choose, encrypted, with export and delete. It stores your sign-in, your credit, and the cost, time and model of each grill. It never stores the write-up, and it never keeps the short note for more than 15 minutes. You never see the model-router key; Grill holds it for you. Details: [docs/PRIVACY.md](PRIVACY.md) and [docs/DATA-LEDGER.md](DATA-LEDGER.md).
 
 Grill Pro is accounts and stored history. It is not live. It will be disclosed in [docs/PRIVACY.md](PRIVACY.md) and on the site before launch. It will be opt-in.
 

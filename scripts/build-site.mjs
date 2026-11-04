@@ -453,11 +453,11 @@ writePage("look-back.html", {
   blurb: "For the copy-and-paste route. Turn the judge's answer into a decision record, then come back and say what happened. Nothing is sent and nothing is stored.",
 });
 writePage("start.html", {
-  description: "Connect Grill to your AI. Claude.ai, ChatGPT and Grok Bot for people invited to Grill in chat. Gemini is still being tested. Meta AI is coming soon.",
+  description: "Connect Grill to your AI. Anyone can sign up. Claude.ai, ChatGPT and Grok Bot are verified working. Gemini is still being tested. Meta AI is coming soon.",
   url: `${SITE_URL}start/`,
   outDir: "start",
   name: "Start",
-  blurb: "Connect Grill to your AI. For people invited to Grill in chat.",
+  blurb: "Connect Grill to your AI. Anyone can sign up.",
 });
 writePage("privacy.html", {
   description: "What Grill sends, what it counts, and what it never keeps.",
@@ -559,9 +559,9 @@ writeFileSync(
     "",
     "> Grill your AI before you send it to your boss. An outside judge, a model from a different company, gives the strongest case against a decision.",
     "",
-    "Invited testers connect Grill to the AI they use at https://grillyour.ai/mcp. Grill in chat is invite-only for now.",
+    "Anyone can sign up and connect Grill to the AI they use at https://grillyour.ai/mcp.",
     "",
-    "People without an invite can join the waitlist at https://grillyour.ai/start/#waitlist; people with a code redeem it at https://grillyour.ai/redeem.",
+    "In Claude, open Settings → Connectors → Add custom connector and paste https://grillyour.ai/mcp. Asking Claude in a chat to connect it does not work.",
     "",
     "## When to use Grill",
     "",
@@ -630,7 +630,7 @@ writeFileSync(
     "",
     "## Get started: pick the AI you use",
     "",
-    "Invited to Grill in chat? [Connect it](https://grillyour.ai/start/). No invite code? [Join the waitlist](https://grillyour.ai/start/#waitlist). Have a code? Enter it at [/redeem](https://grillyour.ai/redeem). Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email your invite went to, every time.",
+    "Anyone can sign up and connect Grill to the AI they use at [https://grillyour.ai/mcp](https://grillyour.ai/mcp). [Connect Grill](https://grillyour.ai/start/). In Claude, open Settings → Connectors → Add custom connector and paste https://grillyour.ai/mcp. Asking Claude in a chat to connect it does not work. Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email you signed up with, every time.",
     "",
     "**Any AI (easiest)** ChatGPT, Copilot, Gemini, Grok, Muse · free",
     "",

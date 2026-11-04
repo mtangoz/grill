@@ -28,7 +28,7 @@ That URL is what you paste below. It will not be `https://mcp.grillyour.ai/mcp` 
 ## Claude.ai on the web
 
 1. Open [claude.ai](https://claude.ai) in a desktop browser, signed in as an allowlisted email.
-2. Go to **Customize → Connectors → Add custom connector**.
+2. Go to **Settings → Connectors → Add custom connector**. Asking Claude in a chat to connect it does not work.
 3. Paste the preview URL ending in `/mcp`. Add it.
 4. Click **Connect**. A Grill sign-in popup opens. Continue with Google, or use an email code. Do not paste a key. There is no card.
 5. The first time you grill, Grill asks, before anything is sent: keep a record of your decisions, yes or no. Answer once.
@@ -41,7 +41,7 @@ Repeat from step 6 five times, in five chats (the same connector). Count a run a
 ## Claude.ai on a phone
 
 1. Install or open the Claude app, same account.
-2. Add the same custom connector: **Customize → Connectors → Add custom connector**, paste the same `/mcp` URL, then **Connect** and sign in.
+2. Add the same custom connector: **Settings → Connectors → Add custom connector**, paste the same `/mcp` URL, then **Connect** and sign in. Asking Claude in a chat to connect it does not work.
 3. If the phone already connected on the web, it may already be signed in. If the popup breaks, note that and stop. That is a fail for the phone, not a reason to switch the server on for everyone.
 4. Run one grill the same way: `grill this`, approve the write-up with `go`, then wait with the phone unlocked. Do not type anything else.
 

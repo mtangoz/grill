@@ -28,7 +28,7 @@ They are already posting about a real decision, or about an assistant checking i
 - Reply on a post that is already public, or answer someone who tagged or messaged that account. A public reply can be a verdict on what they already said in public. A direct message does not carry a decision or a verdict.
 - The outreach call to action is [https://grillyour.ai/start/?ref=askgrill](https://grillyour.ai/start/?ref=askgrill) plus a single-use invite code. That is the link and the code, not a decision sent in a direct message.
 - First 100 users get Grill free for life. A founding member does not pay. After those 100 spots, the offer is closed.
-- Someone who has shown interest can use Grill on whatever assistant or agent they already have, including the current hosted connectors. Those connectors are invite-only. The code is redeemed at `/redeem`, then the setup guide is `/start`. The demo page shows the format.
+- Someone who has shown interest can use Grill on whatever assistant or agent they already have, including the current hosted connectors. Anyone can sign up. A code, if they have one, is redeemed at `/redeem`, then the setup guide is `/start`. The demo page shows the format.
 
 ## Approved rules
 
@@ -36,7 +36,7 @@ These were approved with the ICP on 1 November 2026.
 
 **First value on a public post is a verdict.** A public reply can open with a verdict on something they already said in public, plus one cheap test. A direct message does not. The call to action in outreach is `/start?ref=askgrill` plus a single-use invite code. A later message can also point at the paste path and the demo page. The demo shows format only. What each path keeps is in [PRIVACY.md](PRIVACY.md). This file adds no promise.
 
-**An invite only after interest, and Tony names each invitee.** The hosted connector stays invite-only. Ask for an invite after the person has replied with interest. Tony names each person. The thing they receive is the `/start` link and one invite code, not a decision in a direct message. Tony also sets the daily maximum for public verdicts and invite decisions. Past that maximum, the reply still points at the paste path and the demo. A sequence to the same person can run for about 14 days. The invite code is the last step, and only after that reply.
+**Open sign-up is on.** The thing they receive is the `/start` link, not a decision in a direct message. A code is optional. Tony sets the daily maximum for public verdicts. Past that maximum, the reply still points at the paste path and the demo. A sequence to the same person can run for about 14 days.
 
 **Stop after 100 distinct leads** when any of these is true: replies are under 5% of those leads, complaints are over 1% of those leads, or anyone blocks the account. One distinct lead is one person who received at least one outbound direct message. Later messages to the same person stay one lead. Rewrite the outreach before sending more.
 

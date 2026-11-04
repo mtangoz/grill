@@ -6,6 +6,7 @@ A change may add one optional line when someone has agreed to be named. Leave th
 
 ## Unreleased
 
+- Open sign-up is on. The public pages say anyone can sign up. They no longer send people to a waitlist or an invite wall. In Claude, add Grill under Settings → Connectors → Add custom connector, at https://grillyour.ai/mcp. Asking Claude in a chat to connect it does not work.
 - Plain-language terms for all of Grill at /terms/ (the free tool, Grill inside your chat, fair use, and the existing Pro terms). The terms name the operator, Hold Systems, a sole proprietorship, and its postal address. The privacy notes now say the in-chat connector is on and invite-only, and list Clerk and Upstash for it.
 - The README, About, FAQ and Demo point someone without an invite to the waitlist at /start/#waitlist, and someone with a code to /redeem. The README says an in-chat account is invite-only for now.
 - The homepage Get started line, and /llms.txt, point someone without an invite to the waitlist at /start/#waitlist, and someone with a code to /redeem. /redeem/ answers the same way as /redeem. The /start page for agents keeps "First 100 users get Grill free for life." and does not name how many spots are left, because that count is on the HTML page.
