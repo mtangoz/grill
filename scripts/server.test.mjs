@@ -22,6 +22,7 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = join(HERE, "..", "server", "index.mjs");
 const USABLE = join(HERE, "fixtures", "usable-response.json");
+const DEEPEN = join(HERE, "fixtures", "deepen-response.json");
 const KEY = "sk-or-v1-test-key-never-echoed";
 
 /** A minimal MCP client: send lines, collect replies by id and notifications in order. */
@@ -34,6 +35,7 @@ function connect(env) {
   const notifications = [];
   let buffer = "";
   let transcript = "";
+  child.stderr.on("data", () => {});
   child.stdout.on("data", (chunk) => {
     transcript += chunk;
     buffer += chunk;
@@ -52,27 +54,53 @@ function connect(env) {
   });
   let nextId = 1;
   const request = (method, params) =>
-    new Promise((resolve) => {
+    new Promise((resolve, reject) => {
       const id = nextId++;
-      waiting.set(id, resolve);
+      const timer = setTimeout(() => {
+        waiting.delete(id);
+        reject(new Error(`timed out waiting for ${method}`));
+      }, 4_000);
+      waiting.set(id, (msg) => {
+        clearTimeout(timer);
+        resolve(msg);
+      });
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     });
   const raw = (line) =>
-    new Promise((resolve) => {
-      waiting.set(null, resolve);
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("timed out waiting for a raw line")), 4_000);
+      waiting.set(null, (msg) => {
+        clearTimeout(timer);
+        resolve(msg);
+      });
       child.stdin.write(`${line}\n`);
     });
   const close = () =>
     new Promise((resolve) => {
-      child.on("close", resolve);
-      child.stdin.end();
+      let settled = false;
+      let killTimer;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(killTimer);
+        child.stdin.destroy();
+        child.stdout.destroy();
+        child.stderr.destroy();
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        child.unref();
+        resolve();
+      };
+      killTimer = setTimeout(finish, 500);
+      child.once("close", finish);
+      if (child.exitCode !== null || child.signalCode !== null) finish();
+      else child.stdin.end();
     });
   return { request, raw, close, notifications, transcript: () => transcript };
 }
 
-async function initialized(env) {
+async function initialized(env, clientInfo = { name: "test", version: "0" }) {
   const client = connect(env);
-  await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } });
+  await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo });
   client.raw.bind(null); // keep the helper shape obvious
   return client;
 }
@@ -113,7 +141,8 @@ describe("the MCP handshake", () => {
     assert.match(grill.description, /Do not wait for an OK/);
     assert.match(grill.description, /at most one short question/);
     assert.match(grill.description, /do not add your own case against/i);
-    assert.deepEqual(Object.keys(grill.inputSchema.properties).sort(), ["author", "quality_check", "question", "subject"]);
+    assert.match(grill.description, /quick or bulk/);
+    assert.deepEqual(Object.keys(grill.inputSchema.properties).sort(), ["author", "big", "quality_check", "question", "subject"]);
     assert.match(grill.inputSchema.properties.question.description, /Leave it empty/);
     assert.match(grill.description, /no code changes, no PRs, no product questions/);
     assert.match(grill.description, /https:\/\/grillyour\.ai\/#privacy/);
@@ -168,30 +197,108 @@ describe("a grill end to end (fixture, no network)", () => {
       name: "grill",
       arguments: { subject: "We will raise prices 20% in Q4.", question: "Which way, and on what grounds?" },
     });
-    assert.equal(res.result.isError, false);
-    const report = textOf(res);
-    assert.match(report, /\*\*Shaky\.\*\*/);
-    assert.match(report, /Pull the signup curve from the last comparable launch/);
-    assert.match(report, /Say 'more', 'options', or your call\./);
-    assert.doesNotMatch(report, /grill-record|## Steelman|## Quality check|gpt-/);
-    assert.ok(report.indexOf("**Shaky.**") < report.indexOf("Say 'more'"));
-    await c.close();
+    try {
+      assert.equal(res.result.isError, false);
+      const report = textOf(res);
+      assert.match(report, /\*\*Shaky\.\*\*/);
+      assert.doesNotMatch(report, /\*\*Shaky\. \*\*/);
+      assert.match(report, /Pull the signup curve from the last comparable launch/);
+      assert.match(report, /Say 'more', 'options', or your call\./);
+      assert.doesNotMatch(report, /grill-record|## Steelman|## Quality check|gpt-/);
+      assert.ok(report.indexOf("**Shaky.**") < report.indexOf("Say 'more'"));
+    } finally {
+      await c.close();
+    }
     assert.ok(!c.transcript().includes(KEY), "the key must never be echoed");
   });
 
-  it("hands back a job id when the judge outlasts the wait, and grill_result collects it", async () => {
-    const c = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_WAIT_MS: "1" });
-    const first = await c.request("tools/call", { name: "grill", arguments: { subject: "s" } });
-    const match = textOf(first).match(/job_id "([0-9a-f]{8})"/);
-    assert.ok(match, textOf(first));
-    let report = "";
-    for (let i = 0; i < 40 && !/Quick take|\*\*Shaky\.\*\*/.test(report); i++) {
-      report = textOf(await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1] } }));
+  it("hands back a job id when the judge outlasts the wait, and grill_result collects it", { timeout: 5_000 }, async () => {
+    // The clock jumps past the wait on the second read, so the fixture cannot finish first.
+    const c = await initialized({
+      GRILL_API_KEY: KEY,
+      JUDGE_FIXTURE: USABLE,
+      GRILL_WAIT_MS: "1000",
+      GRILL_CLOCK_MS: "0",
+      GRILL_CLOCK_STEP_MS: "10000",
+    });
+    try {
+      const first = await c.request("tools/call", { name: "grill", arguments: { subject: "s" } });
+      const match = textOf(first).match(/job_id "([0-9a-f]{8})"/);
+      assert.ok(match, textOf(first));
+      let report = "";
+      for (let i = 0; i < 5 && !/Quick take|\*\*Shaky\.\*\*/.test(report); i++) {
+        report = textOf(await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1] } }));
+      }
+      assert.match(report, /Quick take|Shaky/);
+      const again = await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1], detail: "more" } });
+      assert.equal(again.result.isError, false, textOf(again));
+    } finally {
+      await c.close();
     }
-    assert.match(report, /Quick take|Shaky/);
-    const again = await c.request("tools/call", { name: "grill_result", arguments: { job_id: match[1], detail: "more" } });
-    assert.equal(again.result.isError, false, textOf(again));
-    await c.close();
+  });
+
+  it("runs deepen only after the verdict, only for a big decision, and only when the test is on", { timeout: 15_000 }, async () => {
+    const subject = "We will raise prices 20% in Q4 because paid users cover the support cost.";
+    const listed = await initialized({});
+    const tools = (await listed.request("tools/list", {})).result.tools;
+    const grill = tools.find((t) => t.name === "grill");
+    const resultTool = tools.find((t) => t.name === "grill_result");
+    assert.match(grill.description, /only when the person asks to deepen or go bigger/);
+    assert.match(grill.description, /Never ask whether it is big/);
+    assert.match(grill.description, /Never add a required question before the verdict/);
+    assert.match(resultTool.description, /Call detail deepen only when the person asks to deepen or go bigger/);
+    assert.ok(resultTool.inputSchema.properties.detail.enum.includes("deepen"));
+    assert.match((await listed.request("initialize", { protocolVersion: "2025-06-18", capabilities: {} })).result.instructions, /only when the person asks to deepen or go bigger/);
+    await listed.close();
+
+    const off = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false", GRILL_NEWS: "off" });
+    const offRes = await off.request("tools/call", { name: "grill", arguments: { subject, big: true } });
+    assert.match(textOf(offRes), /Say 'more', 'options', or your call\./);
+    assert.doesNotMatch(textOf(offRes), /deepen/);
+    const offDeep = await off.request("tools/call", { name: "grill_result", arguments: { detail: "deepen" } });
+    assert.match(textOf(offDeep), /Deepen is a test and is off/);
+    await off.close();
+
+    const small = await initialized({
+      GRILL_API_KEY: KEY,
+      JUDGE_FIXTURE: USABLE,
+      JUDGE_DEEPEN_FIXTURE: DEEPEN,
+      GRILL_DEEPEN_TEST: "1",
+      GRILL_CHECK: "false",
+      GRILL_NEWS: "off",
+    });
+    const smallRes = await small.request("tools/call", { name: "grill", arguments: { subject } });
+    assert.match(textOf(smallRes), /Say 'more', 'options', or your call\./);
+    assert.doesNotMatch(textOf(smallRes), /deepen|Rewritten plan/);
+    const smallDeep = await small.request("tools/call", { name: "grill_result", arguments: { detail: "deepen" } });
+    assert.match(textOf(smallDeep), /only for a decision marked as big/);
+    await small.close();
+
+    const big = await initialized({
+      GRILL_API_KEY: KEY,
+      JUDGE_FIXTURE: USABLE,
+      JUDGE_DEEPEN_FIXTURE: DEEPEN,
+      GRILL_DEEPEN_TEST: "1",
+      GRILL_CHECK: "false",
+      GRILL_NEWS: "off",
+    });
+    const bigRes = await big.request("tools/call", { name: "grill", arguments: { subject, big: true } });
+    const brief = textOf(bigRes);
+    assert.match(brief, /^\*\*Shaky\.\*\*/);
+    assert.match(brief, /Say 'more', 'options', 'deepen', or your call\./);
+    assert.doesNotMatch(brief, /Rewritten plan|top professional/);
+    const words = brief.trim().split(/\s+/).filter(Boolean).length;
+    assert.ok(words <= 75, `${words}: ${brief}`);
+    assert.ok(brief.indexOf("**Shaky.**") < brief.indexOf("The question that would change this:"), brief);
+    const deep = await big.request("tools/call", { name: "grill_result", arguments: { detail: "deepen" } });
+    const note = textOf(deep);
+    assert.equal(deep.result.isError, false, note);
+    assert.match(note, /Deeper, not bigger\./);
+    assert.match(note, /1\. A top professional would:/);
+    assert.match(note, /Rewritten plan:/);
+    assert.match(note, /The rewrite is not the decision\./);
+    assert.doesNotMatch(note, /gpt-|openrouter\/auto/);
+    await big.close();
   });
 });
 
@@ -210,8 +317,17 @@ describe("against a loopback OpenRouter", () => {
       );
     });
     await new Promise((r) => fake.listen(0, "127.0.0.1", r));
-    const url = `http://127.0.0.1:${fake.address().port}/api/v1/chat/completions`;
-    const c = await initialized({ GRILL_API_KEY: KEY, OPENROUTER_API_KEY: "ignored-env-key", JUDGE_OPENROUTER_URL: url, GRILL_PROGRESS_MS: "100" });
+    const base = `http://127.0.0.1:${fake.address().port}`;
+    // The Jev check is on by default. With no decisions override the judge POSTs to
+    // the real OpenRouter host and will wait out a stalled DNS or connect for up to
+    // a minute, which is longer than this client's 4s wait.
+    const c = await initialized({
+      GRILL_API_KEY: KEY,
+      OPENROUTER_API_KEY: "ignored-env-key",
+      JUDGE_OPENROUTER_URL: `${base}/api/v1/chat/completions`,
+      JUDGE_DECISIONS_URL: `${base}/api/alpha/decisions`,
+      GRILL_PROGRESS_MS: "100",
+    });
     const res = await c.request("tools/call", { name: "grill", arguments: { subject: "s" }, _meta: { progressToken: "tok-1" } });
     assert.equal(res.result.isError, false, textOf(res));
     assert.equal(seenAuth, `Bearer ${KEY}`);
@@ -447,11 +563,21 @@ describe("the Grill news line", () => {
     assert.doesNotMatch(textOf(missing), /Grill news/);
     await setup.close();
 
-    const slow = await initialized({ GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_WAIT_MS: "1", GRILL_CHECK: "false" });
-    const pending = await slow.request("tools/call", { name: "grill", arguments: { subject } });
-    assert.match(textOf(pending), /Still grilling/);
-    assert.doesNotMatch(textOf(pending), /Grill news/);
-    await slow.close();
+    const slow = await initialized({
+      GRILL_API_KEY: KEY,
+      JUDGE_FIXTURE: USABLE,
+      GRILL_CHECK: "false",
+      GRILL_WAIT_MS: "1000",
+      GRILL_CLOCK_MS: "0",
+      GRILL_CLOCK_STEP_MS: "10000",
+    });
+    try {
+      const pending = await slow.request("tools/call", { name: "grill", arguments: { subject } });
+      assert.match(textOf(pending), /Still grilling/);
+      assert.doesNotMatch(textOf(pending), /Grill news/);
+    } finally {
+      await slow.close();
+    }
   });
 
   it("stays on for an unset value or an unfilled placeholder, and off only when switched off", async () => {
@@ -581,6 +707,82 @@ describe("GRILL_AUTHOR: a host that is not Claude", () => {
       await c.close();
     }
     await fake.close();
+  });
+});
+
+describe("MCP initialize: the company behind the client", () => {
+  const subject = { subject: "We will raise prices 20% in Q4." };
+  const outside = () => {
+    const payload = JSON.parse(readFileSync(USABLE, "utf8"));
+    return (body) => {
+      const excluded = body?.plugins?.[0]?.excluded_models || [];
+      payload.model = excluded.some((item) => String(item).startsWith("openai"))
+        ? "google/gemini-2.5-pro"
+        : excluded.some((item) => String(item).startsWith("google"))
+          ? "deepseek/deepseek-chat"
+          : "openai/gpt-5.6-sol";
+      return { text: JSON.stringify(payload) };
+    };
+  };
+
+  it("excludes google/* for a Gemini client and keeps the non-Google default router", async () => {
+    const fake = await startFakeOpenRouter({ chat: outside() });
+    try {
+      for (const name of ["gemini", "GEMINI-CLI", "Antigravity", "Google-Discovery-Engine"]) {
+        const client = await initialized({ GRILL_API_KEY: KEY, GRILL_CHECK: "false", ...fake.env }, { name, version: "0" });
+        const res = await client.request("tools/call", { name: "grill", arguments: subject });
+        assert.equal(res.result.isError, false, `${name}: ${textOf(res)}`);
+        const body = fake.seen.chat.at(-1).body;
+        assert.equal(body.model, "openrouter/auto", name);
+        assert.deepEqual(body.plugins[0].excluded_models, ["google/*"], name);
+        await client.close();
+      }
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("uses the same client list as Claude and ChatGPT, and an explicit author or GRILL_AUTHOR still wins", async () => {
+    const fake = await startFakeOpenRouter({ chat: outside() });
+    try {
+      const claude = await initialized({ GRILL_API_KEY: KEY, GRILL_CHECK: "false", ...fake.env }, { name: "Claude", version: "0" });
+      const claudeRes = await claude.request("tools/call", { name: "grill", arguments: subject });
+      assert.equal(claudeRes.result.isError, false, textOf(claudeRes));
+      assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
+      await claude.close();
+
+      const chatgpt = await initialized({ GRILL_API_KEY: KEY, GRILL_CHECK: "false", ...fake.env }, { name: "ChatGPT", version: "0" });
+      const chatRes = await chatgpt.request("tools/call", { name: "grill", arguments: subject });
+      assert.equal(chatRes.result.isError, false, textOf(chatRes));
+      assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
+      assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["openai/*"]);
+      await chatgpt.close();
+
+      const told = await initialized({ GRILL_API_KEY: KEY, GRILL_CHECK: "false", ...fake.env }, { name: "gemini-cli", version: "0" });
+      const toldRes = await told.request("tools/call", { name: "grill", arguments: { ...subject, author: "xai" } });
+      assert.equal(toldRes.result.isError, false, textOf(toldRes));
+      const toldExcluded = fake.seen.chat.at(-1).body.plugins[0].excluded_models;
+      assert.ok(toldExcluded.includes("x-ai/*") || toldExcluded.includes("xai/*"), toldExcluded.join(","));
+      assert.ok(!toldExcluded.includes("google/*"));
+      await told.close();
+
+      const configured = await initialized(
+        { GRILL_API_KEY: KEY, GRILL_AUTHOR: "openai", GRILL_CHECK: "false", ...fake.env },
+        { name: "gemini-cli", version: "0" },
+      );
+      const configuredRes = await configured.request("tools/call", { name: "grill", arguments: subject });
+      assert.equal(configuredRes.result.isError, false, textOf(configuredRes));
+      assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["openai/*"]);
+      await configured.close();
+
+      const cursor = await initialized({ GRILL_API_KEY: KEY, GRILL_CHECK: "false", ...fake.env }, { name: "Cursor", version: "0" });
+      const cursorRes = await cursor.request("tools/call", { name: "grill", arguments: subject });
+      assert.equal(cursorRes.result.isError, false, textOf(cursorRes));
+      assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
+      await cursor.close();
+    } finally {
+      await fake.close();
+    }
   });
 });
 

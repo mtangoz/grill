@@ -1,61 +1,351 @@
 #!/usr/bin/env node
 /**
- * Build the public onboarding site from its one source, site/page.html.
+ * Build the public onboarding site. The home page's one source is site/page.html; the other pages
+ * (terms, contribute, look-back, start, privacy, about, contact, demo, check-your-ai) borrow its styles.
  *
  * site/page.html is a page body (title, styles, markup, script) with no document skeleton, so the
  * same file publishes as a Claude artifact unchanged. This wraps it into a full document with the
  * link-preview tags a shared URL needs, and writes _site/index.html, which Vercel serves.
  *
- *   node scripts/build-site.mjs        # writes _site/index.html
+ *   node scripts/build-site.mjs        # writes _site/index.html, a Markdown twin for every public page, and 404.md
  */
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { billingMode, couponId, starterAllowanceUsd } from "../api/_pro.mjs";
+import { analyticsSnippet } from "./siteAnalytics.mjs";
+import { renderContributorEntries } from "./contributorsCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "_site");
 // The page's own address. Vercel also serves it at grill-by-hold.vercel.app; this says which is canonical.
 const SITE_URL = "https://grillyour.ai/";
+const GITHUB_URL = "https://github.com/mtangoz/grill";
+const TAGLINE = "Grill your AI before you send it to your boss.";
+const HOME_TITLE = "Grill: grill your AI before you send it to your boss";
 const DESCRIPTION =
-  "Get a second opinion before you decide. A different AI finds the weak spots in your plan, with a quick way to check each one. Works with ChatGPT, Claude, Gemini and more.";
+  `${TAGLINE} A model from another company finds the weak spots in your plan and one cheap way to test them. Works with ChatGPT, Claude, Gemini and more.`;
+// One schema.org block on the homepage. The description is the meta description above.
+// ProductivityApplication is the closer category: Grill challenges a plan before you act.
+// Nothing here is an offer, a rating, a review, or a claim the homepage does not already make.
+const SOFTWARE_APPLICATION = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Grill",
+  url: SITE_URL,
+  description: DESCRIPTION,
+  applicationCategory: "ProductivityApplication",
+  operatingSystem: "Any",
+  sameAs: [GITHUB_URL],
+};
+const jsonLdScript = (data) => {
+  const json = JSON.stringify(data, null, 2).replace(/</g, "\\u003c");
+  return `<script type="application/ld+json">\n${json}\n</script>`;
+};
 // The pitchfork mark. Sizes are generated from the owner's logo into site/brand/ and copied to _site/brand/.
+// Google's favicon service, which Claude's connector list uses for a custom connector's icon, only
+// takes an icon whose size is a multiple of 48px, so the 192px one is declared too.
 const ICONS = [
   '<link rel="icon" href="/favicon.ico" sizes="any">',
   '<link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png">',
+  '<link rel="icon" type="image/png" sizes="192x192" href="/brand/icon-192.png">',
   '<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">',
 ];
 const OG_IMAGE = `${SITE_URL}brand/og-image.png`;
+// Attribute values, same escapes as the miss page's option labels.
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-// Cookieless page counts for the website only. Not added to site/page.html itself: that file is also
-// published as a Claude artifact, and the Grill tool never loads this script.
-const ANALYTICS = `<script>
-window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
-</script>
-<script defer src="/_vercel/insights/script.js"></script>`;
+// The public page, as Markdown, for an agent that sends Accept: text/markdown.
+// Headings, paragraphs, lists and links stay. Nav chrome and styles go. Nothing new is written.
+const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
+const INLINE_TAGS = new Set(["a", "strong", "b", "em", "i", "code", "span", "small", "br", "abbr", "sub", "sup", "img", "input", "button", "wbr"]);
+
+function decodeEntities(value) {
+  return String(value)
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)));
+}
+
+function parseAttrs(raw) {
+  const attrs = {};
+  for (const match of raw.matchAll(/([^\s=\/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+)))?/g)) {
+    attrs[match[1].toLowerCase()] = decodeEntities(match[2] ?? match[3] ?? match[4] ?? "");
+  }
+  return attrs;
+}
+
+function parseHtml(html) {
+  let i = 0;
+  function parseNodes(stopTag) {
+    const nodes = [];
+    while (i < html.length) {
+      if (html.startsWith("<!--", i)) {
+        const end = html.indexOf("-->", i);
+        i = end === -1 ? html.length : end + 3;
+        continue;
+      }
+      if (html[i] !== "<") {
+        const next = html.indexOf("<", i);
+        const text = html.slice(i, next === -1 ? html.length : next);
+        if (text) nodes.push({ type: "text", text });
+        i = next === -1 ? html.length : next;
+        continue;
+      }
+      if (html.startsWith("</", i)) {
+        const gt = html.indexOf(">", i);
+        const tag = html.slice(i + 2, gt === -1 ? html.length : gt).trim().toLowerCase().split(/[^a-z0-9:-]/)[0];
+        i = gt === -1 ? html.length : gt + 1;
+        if (!stopTag || tag === stopTag) return nodes;
+        continue;
+      }
+      const gt = html.indexOf(">", i);
+      if (gt === -1) break;
+      const raw = html.slice(i + 1, gt);
+      i = gt + 1;
+      const tag = (raw.match(/^[a-zA-Z0-9:-]+/) || [""])[0].toLowerCase();
+      const attrs = parseAttrs(raw.slice(tag.length).replace(/\/\s*$/, ""));
+      const children = /\/\s*$/.test(raw) || VOID_TAGS.has(tag) ? [] : parseNodes(tag);
+      nodes.push({ type: "el", tag, attrs, children });
+    }
+    return nodes;
+  }
+  return parseNodes(null);
+}
+
+function classList(el) {
+  return (el.attrs.class || "").split(/\s+/).filter(Boolean);
+}
+
+function skipped(el) {
+  if (["script", "style", "nav", "noscript"].includes(el.tag)) return true;
+  if (classList(el).includes("top")) return true;
+  return Object.hasOwn(el.attrs, "hidden");
+}
+
+function absoluteUrl(href) {
+  if (!href) return "";
+  if (/^(https?:|mailto:)/i.test(href)) return href;
+  if (href.startsWith("/")) return `https://grillyour.ai${href}`;
+  if (href.startsWith("#")) return `https://grillyour.ai/${href}`;
+  return href;
+}
+
+function inline(nodes) {
+  let out = "";
+  for (const node of nodes) {
+    const piece = node.type === "text" ? decodeEntities(node.text) : inlineEl(node);
+    if (!piece) continue;
+    if (out && !/\s$/.test(out) && node.type === "el" && /^[[(*A-Za-z0-9]/.test(piece)) out += " ";
+    out += piece;
+  }
+  return out.replace(/[ \t]*\n[ \t]*/g, "\n").replace(/[ \t]{2,}/g, " ").trim();
+}
+
+function inlineEl(node) {
+  if (node.type !== "el" || skipped(node)) return "";
+  if (node.tag === "br") return "\n";
+  if (node.tag === "a") {
+    const text = inline(node.children);
+    const href = absoluteUrl(node.attrs.href || "");
+    if (!text) return "";
+    return href ? `[${text}](${href})` : text;
+  }
+  if (node.tag === "strong" || node.tag === "b") {
+    const text = inline(node.children);
+    return text ? `**${text}**` : "";
+  }
+  if (node.tag === "em" || node.tag === "i") {
+    const text = inline(node.children);
+    return text ? `*${text}*` : "";
+  }
+  if (node.tag === "code") {
+    const text = inline(node.children);
+    if (!text) return "";
+    const fence = text.includes("`") ? "``" : "`";
+    return `${fence}${text}${fence}`;
+  }
+  if (node.tag === "img") return node.attrs.alt?.trim() || "";
+  if (node.tag === "input") return node.attrs.value?.trim() || "";
+  if (classList(node).includes("who") || classList(node).includes("k")) {
+    const text = inline(node.children);
+    return text ? `${text}\n` : "";
+  }
+  return inline(node.children);
+}
+
+function rawText(nodes) {
+  let out = "";
+  for (const node of nodes) {
+    if (node.type === "text") out += decodeEntities(node.text);
+    else if (!skipped(node)) out += rawText(node.children);
+  }
+  return out;
+}
+
+function renderList(el, ordered) {
+  const items = [];
+  for (const child of el.children) {
+    if (child.type !== "el" || child.tag !== "li" || skipped(child)) continue;
+    const body = renderItem(child).replace(/\n/g, "\n  ");
+    items.push(`${ordered ? `${items.length + 1}. ` : "- "}${body}`);
+  }
+  return items.join("\n");
+}
+
+function renderItem(li) {
+  const parts = [];
+  let inlineBuf = [];
+  const flush = () => {
+    const text = inline(inlineBuf);
+    inlineBuf = [];
+    if (text) parts.push(text);
+  };
+  for (const child of li.children) {
+    if (child.type === "text" || (child.type === "el" && INLINE_TAGS.has(child.tag))) inlineBuf.push(child);
+    else {
+      flush();
+      const block = renderBlock(child).trim();
+      if (block) parts.push(block);
+    }
+  }
+  flush();
+  return parts.filter(Boolean).join("\n\n");
+}
+
+function fence(text) {
+  const tick = text.includes("```") ? "````" : "```";
+  return `${tick}\n${text.replace(/\n$/, "")}\n${tick}`;
+}
+
+function renderBlock(node) {
+  if (node.type === "text") {
+    const text = decodeEntities(node.text).replace(/\s+/g, " ").trim();
+    return text ? `\n\n${text}` : "";
+  }
+  if (skipped(node)) return "";
+  const tag = node.tag;
+  if (/^h[1-6]$/.test(tag)) return `\n\n${"#".repeat(Number(tag[1]))} ${inline(node.children)}`;
+  if (tag === "p" || tag === "label" || tag === "summary") {
+    const text = inline(node.children);
+    return text ? `\n\n${text}` : "";
+  }
+  if (tag === "ul" || tag === "ol") return `\n\n${renderList(node, tag === "ol")}`;
+  if (tag === "pre") return `\n\n${fence(rawText(node.children).replace(/\n$/, ""))}`;
+  if (tag === "blockquote") {
+    const inner = renderBlocks(node.children).trim();
+    return inner ? `\n\n${inner.split("\n").map((line) => `> ${line}`).join("\n")}` : "";
+  }
+  if (tag === "textarea") {
+    const text = rawText(node.children).trim();
+    const hint = node.attrs.placeholder?.trim() || "";
+    const parts = [text, hint && hint !== text ? hint : ""].filter(Boolean);
+    return parts.length ? `\n\n${parts.join("\n\n")}` : "";
+  }
+  if (tag === "select") {
+    const options = [];
+    const walk = (nodes) => {
+      for (const child of nodes) {
+        if (child.type !== "el" || skipped(child)) continue;
+        if (child.tag === "option") {
+          const text = inline(child.children);
+          if (text) options.push(text);
+        } else walk(child.children);
+      }
+    };
+    walk(node.children);
+    return options.length ? `\n\n${options.map((option) => `- ${option}`).join("\n")}` : "";
+  }
+  if (tag === "li") return "";
+  if (tag === "br") return "\n";
+  if (tag === "hr") return "\n\n---";
+  if (tag === "input") {
+    const value = node.attrs.value?.trim();
+    return value ? `\n\n${value}` : "";
+  }
+  if (tag === "button") {
+    const text = inline(node.children);
+    return text ? `\n\n${text}` : "";
+  }
+  if (tag === "img") {
+    const alt = node.attrs.alt?.trim();
+    return alt ? `\n\n${alt}` : "";
+  }
+  if (INLINE_TAGS.has(tag) || tag === "span" || tag === "small") {
+    const text = inline([node]);
+    return text ? `\n\n${text}` : "";
+  }
+  return renderBlocks(node.children);
+}
+
+function renderBlocks(nodes) {
+  return nodes.map(renderBlock).join("");
+}
+
+function htmlToMarkdown(html) {
+  const stripped = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+  const body = stripped.match(/<body[^>]*>([\s\S]*)<\/body>/i)?.[1] ?? stripped;
+  return `${renderBlocks(parseHtml(body)).replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+// Cookieless page counts for the website only, plus PostHog when GRILL_POSTHOG_KEY is set (see
+// scripts/siteAnalytics.mjs). Not added to site/page.html itself: that file is also published as a
+// Claude artifact, and the Grill tool never loads this script.
+const ANALYTICS = analyticsSnippet(process.env);
+
+// The commit this deploy was built from. Vercel builds the site and the server functions from one
+// commit, so this is also the code a Grill account in chat runs. Every footer names it, linked to
+// the public source. A local build, or anything that isn't a full commit hash, shows nothing.
+const LIVE_COMMIT = /^[0-9a-f]{40}$/.test(process.env.VERCEL_GIT_COMMIT_SHA ?? "") ? process.env.VERCEL_GIT_COMMIT_SHA : "";
+const MADE_AT = '<span>Made at <a href="https://hold.quest">Hold</a>';
+const withLiveCommit = (body) =>
+  LIVE_COMMIT
+    ? body.replace(
+        MADE_AT,
+        `<span>Live commit <a href="https://github.com/mtangoz/grill/commit/${LIVE_COMMIT}">${LIVE_COMMIT.slice(0, 7)}</a> · Made at <a href="https://hold.quest">Hold</a>`,
+      )
+    : body;
 
 const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
-const headFor = ({ description, url }) => [
-  '<meta charset="utf-8">',
-  '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
-  '<meta name="color-scheme" content="light dark">',
-  '<meta name="theme-color" content="#f7f4ef" media="(prefers-color-scheme: light)">',
-  '<meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">',
-  ...ICONS,
-  `<meta name="description" content="${description}">`,
-  `<link rel="canonical" href="${url}">`,
-  `<meta property="og:url" content="${url}">`,
-  '<meta property="og:title" content="Grill">',
-  `<meta property="og:description" content="${description}">`,
-  '<meta property="og:type" content="website">',
-  `<meta property="og:image" content="${OG_IMAGE}">`,
-  '<meta property="og:image:width" content="1200">',
-  '<meta property="og:image:height" content="630">',
-  '<meta property="og:image:alt" content="Grill: a pitchfork mark and the words A second opinion before you decide.">',
-  '<meta name="twitter:card" content="summary_large_image">',
-  `<meta name="twitter:image" content="${OG_IMAGE}">`,
-  "<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>",
-].join("\n");
+const headFor = ({ description, url, title = "Grill" }) => {
+  const safeTitle = esc(title);
+  return [
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
+    '<meta name="color-scheme" content="light dark">',
+    '<meta name="theme-color" content="#f7f4ef" media="(prefers-color-scheme: light)">',
+    '<meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">',
+    ...ICONS,
+    `<meta name="description" content="${description}">`,
+    `<link rel="canonical" href="${url}">`,
+    `<meta property="og:url" content="${url}">`,
+    `<meta property="og:title" content="${safeTitle}">`,
+    `<meta property="og:description" content="${description}">`,
+    '<meta property="og:type" content="website">',
+    `<meta property="og:image" content="${OG_IMAGE}">`,
+    '<meta property="og:image:width" content="1200">',
+    '<meta property="og:image:height" content="630">',
+    '<meta property="og:image:alt" content="Grill: a pitchfork mark and the words Grill your AI before you send it to your boss. A second opinion before you decide. grillyour.ai">',
+    '<meta name="twitter:card" content="summary_large_image">',
+    `<meta name="twitter:title" content="${safeTitle}">`,
+    `<meta name="twitter:image" content="${OG_IMAGE}">`,
+    "<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>",
+  ].join("\n");
+};
+
+// Pages other than home open with <title>…</title>. The preview title is that text.
+function openingTitle(source, label) {
+  const tag = source.match(/^<title>[^<]*<\/title>/)?.[0];
+  if (!tag) throw new Error(`${label} must open with its <title>`);
+  return { tag, text: tag.slice("<title>".length, -"</title>".length) };
+}
 
 // The page opens with its <title>, font links and <style>; those belong in <head>, where link
 // previews and search engines read them. Everything after the first </style> is the body.
@@ -64,7 +354,7 @@ if (cut === -1) throw new Error("site/page.html must open with its <title>, link
 const pageHead = page.slice(0, cut + "</style>".length);
 const pageBody = page.slice(cut + "</style>".length);
 const doc = (head, title, body) =>
-  `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${body}\n${ANALYTICS}\n</body>\n</html>\n`;
+  `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${withLiveCommit(body)}\n${ANALYTICS}\n</body>\n</html>\n`;
 
 // The offer, the paywall and the launch-list form are build-time switches.
 // GRILL_PRO_COUPON set means 50% off is on the page. GRILL_PRO_BILLING=subscription shows
@@ -102,22 +392,266 @@ if (notifyOn(process.env)) {
 mkdirSync(OUT, { recursive: true });
 cpSync(join(ROOT, "site/brand"), join(OUT, "brand"), { recursive: true });
 cpSync(join(ROOT, "site/brand/favicon.ico"), join(OUT, "favicon.ico"));
-writeFileSync(join(OUT, "index.html"), doc(headFor({ description: DESCRIPTION, url: SITE_URL }), pageHead, homeBody));
+writeFileSync(
+  join(OUT, "index.html"),
+  doc(headFor({ description: DESCRIPTION, url: SITE_URL, title: HOME_TITLE }), `${pageHead}\n${jsonLdScript(SOFTWARE_APPLICATION)}`, homeBody),
+);
+// Every public page. The sitemap and /llms.txt both read this list, so a new page lands in both.
+// Google has to crawl the home page before its favicon service knows the icon; until then Claude
+// shows a letter in place of the logo.
+const publicPages = [];
+function addPublicPage({ url, name, blurb }) {
+  if (!url || !name || !blurb) throw new Error("a public page needs a url, a name and a one-line blurb");
+  if (/[\r\n]/.test(blurb)) throw new Error(`blurb for ${url} must be one line`);
+  publicPages.push({ url, name, blurb });
+}
+addPublicPage({
+  url: SITE_URL,
+  name: "Home",
+  blurb: "Hear the strongest case against your plan, then decide for yourself.",
+});
 
-// Other pages (site/terms.html, site/privacy.html) are a <title> and a body; they borrow the main page's styles.
+// Other pages are a <title> and a body; they borrow the main page's styles.
 const style = pageHead.slice(pageHead.indexOf("<style>"));
-const PAGES = [
-  { file: "terms", description: "Grill terms, in plain words." },
-  { file: "privacy", description: "What happens to your decision with Grill, in plain words." },
-];
-for (const { file, description } of PAGES) {
-  const source = readFileSync(join(ROOT, `site/${file}.html`), "utf8");
-  const title = source.match(/^<title>[^<]*<\/title>/)?.[0];
-  if (!title) throw new Error(`site/${file}.html must open with its <title>`);
-  mkdirSync(join(OUT, file), { recursive: true });
+function withContributorEntries(source) {
+  const marker = "<!-- CONTRIBUTORS -->";
+  if (source.split(marker).length !== 2) throw new Error("site/contribute.html must include <!-- CONTRIBUTORS --> once");
+  const entries = JSON.parse(readFileSync(join(ROOT, "data/contributors.json"), "utf8"));
+  return source.replace(marker, () => renderContributorEntries(entries));
+}
+
+function writePage(file, { description, url, outDir, name, blurb }) {
+  let source = readFileSync(join(ROOT, "site", file), "utf8");
+  if (file === "contribute.html") source = withContributorEntries(source);
+  const title = openingTitle(source, `site/${file}`);
+  mkdirSync(join(OUT, outDir), { recursive: true });
+  addPublicPage({ url, name, blurb });
   writeFileSync(
-    join(OUT, file, "index.html"),
-    doc(headFor({ description, url: `${SITE_URL}${file}/` }), `${title}\n${style}`, source.slice(title.length)),
+    join(OUT, outDir, "index.html"),
+    doc(headFor({ description, url, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length)),
   );
 }
-console.log(`built _site/index.html and ${PAGES.map(({ file }) => `_site/${file}/index.html`).join(", ")}`);
+writePage("terms.html", {
+  description: "Grill terms, in plain words.",
+  url: `${SITE_URL}terms/`,
+  outDir: "terms",
+  name: "Terms",
+  blurb: "Grill terms. Short and plain.",
+});
+writePage("contribute.html", {
+  description: "How to improve Grill.",
+  url: `${SITE_URL}contribute/`,
+  outDir: "contribute",
+  name: "Contribute",
+  blurb: "Grill is open source. If you'd like a change, you can make it.",
+});
+writePage("look-back.html", {
+  description: "Turn a judge's answer into a decision record, and look back on how it turned out. Nothing is stored.",
+  url: `${SITE_URL}look-back/`,
+  outDir: "look-back",
+  name: "Look back",
+  blurb: "For the copy-and-paste route. Turn the judge's answer into a decision record, then come back and say what happened. Nothing is sent and nothing is stored.",
+});
+writePage("start.html", {
+  description: "Connect Grill to your AI. Claude.ai, ChatGPT and Grok Bot for people invited to Grill in chat. Gemini is still being tested. Meta AI is coming soon.",
+  url: `${SITE_URL}start/`,
+  outDir: "start",
+  name: "Start",
+  blurb: "Connect Grill to your AI. For people invited to Grill in chat.",
+});
+writePage("privacy.html", {
+  description: "What Grill sends, what it counts, and what it never keeps.",
+  url: `${SITE_URL}privacy/`,
+  outDir: "privacy",
+  name: "Privacy",
+  blurb: "The free tool has no account and keeps nothing. Grill in chat keeps only what you choose, encrypted, and you can delete it.",
+});
+writePage("about.html", {
+  description: "Hear the strongest case against your plan, then decide for yourself. Grill is made by Hold.",
+  url: `${SITE_URL}about/`,
+  outDir: "about",
+  name: "About",
+  blurb: "Hear the strongest case against your plan, then decide for yourself. Grill is made by Hold.",
+});
+writePage("contact.html", {
+  description: "Write to support@grillyour.ai for your account, sign-in, privacy, or deleting your data.",
+  url: `${SITE_URL}contact/`,
+  outDir: "contact",
+  name: "Contact",
+  blurb: "Write to support@grillyour.ai for your account, sign-in, privacy, or deleting your data.",
+});
+writePage("demo.html", {
+  description: "Four made-up decisions, and what Grill said about each.",
+  url: `${SITE_URL}demo/`,
+  outDir: "demo",
+  name: "Demo",
+  blurb: "Four made-up decisions, and what Grill said about each.",
+});
+writePage("faq.html", {
+  description: "Plain answers: how Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and that no benchmarks are published.",
+  url: `${SITE_URL}faq/`,
+  outDir: "faq",
+  name: "FAQ",
+  blurb: "How Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and that no benchmarks are published.",
+});
+writePage("check-your-ai.html", {
+  description: "Plain checks for an AI draft before you send it to your boss: the assumption, the facts, and one cheap test.",
+  url: `${SITE_URL}check-your-ai/`,
+  outDir: "check-your-ai",
+  name: "Check your AI's work",
+  blurb: "Four quick checks before you send an AI draft to your boss.",
+});
+// The miss page is built only when GRILL_MISS=1, the same switch that opens /miss/send. Its fields
+// and its in-browser check come from scripts/missCore.mjs, the module the server checks with.
+if (process.env.GRILL_MISS === "1") {
+  const core = await import("./missCore.mjs");
+  const fields = Object.entries(core.MISS_CHOICES)
+    .map(([key, values]) => {
+      const options = values.map((v) => `      <option value="${v}">${esc(core.MISS_LABELS[key][v])}</option>`).join("\n");
+      return `    <label for="miss-${key}">${esc(core.MISS_QUESTIONS[key])}</label>\n    <select id="miss-${key}" name="${key}" required>\n      <option value="">Choose one</option>\n${options}\n    </select>`;
+    })
+    .join("\n");
+  const inlined = readFileSync(join(ROOT, "scripts/missCore.mjs"), "utf8").replace(/^export /gm, "");
+  const source = readFileSync(join(ROOT, "site/miss.html"), "utf8")
+    .replace("<!-- MISS_FIELDS -->", fields)
+    .replace("/* MISS_CORE */", () => inlined);
+  const title = openingTitle(source, "site/miss.html");
+  mkdirSync(join(OUT, "miss"), { recursive: true });
+  addPublicPage({
+    url: `${SITE_URL}miss/`,
+    name: "Share a miss",
+    blurb: "Share a miss, not your decision. When AI got a decision wrong, tell Grill how it went wrong.",
+  });
+  writeFileSync(
+    join(OUT, "miss", "index.html"),
+    doc(headFor({ description: "Share how AI got a decision wrong, without the decision.", url: `${SITE_URL}miss/`, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length)),
+  );
+}
+writeFileSync(join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}sitemap.xml\n`);
+writeFileSync(
+  join(OUT, "sitemap.xml"),
+  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${publicPages.map((p) => `  <url><loc>${p.url}</loc></url>`).join("\n")}\n</urlset>\n`,
+);
+// llmstxt.org: a short plain-text brief for agents. The page links are publicPages, same as the sitemap.
+// The "when" lines are sentences already on the homepage. index.md is a separate brief and stays as it is.
+function faqForAgents(html) {
+  const main = html.slice(html.indexOf("<h1>"), html.indexOf('class="footer"'));
+  const lines = ["## FAQ", ""];
+  for (const token of main.matchAll(/<h2>([\s\S]*?)<\/h2>|<p class="note">([\s\S]*?)<\/p>/g)) {
+    const raw = (token[1] ?? token[2] ?? "").replace(/<[^>]+>/g, "");
+    const text = decodeEntities(raw).replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    lines.push(token[1] != null ? `### ${text}` : text, "");
+  }
+  return lines.join("\n");
+}
+const FAQ_FOR_AGENTS = faqForAgents(readFileSync(join(ROOT, "site/faq.html"), "utf8"));
+const WHEN_TO_USE = [
+  "Hear the strongest case against your plan, then decide for yourself.",
+  "A model from another company gives a verdict and one cheap test.",
+  "The judge never comes from the company behind your AI, so it won\u2019t share its blind spots.",
+  "To keep a record and look back later, use the look-back page.",
+];
+writeFileSync(
+  join(OUT, "llms.txt"),
+  [
+    "# Grill",
+    "",
+    "> Grill your AI before you send it to your boss. An outside judge, a model from a different company, gives the strongest case against a decision.",
+    "",
+    "Invited testers connect Grill to the AI they use at https://grillyour.ai/mcp. Grill in chat is invite-only for now.",
+    "",
+    "People without an invite can join the waitlist at https://grillyour.ai/start/#waitlist; people with a code redeem it at https://grillyour.ai/redeem.",
+    "",
+    "## When to use Grill",
+    "",
+    ...WHEN_TO_USE.map((line) => `- ${line}`),
+    "",
+    "## Pages",
+    "",
+    ...publicPages.map((p) => `- [${p.name}](${p.url}): ${p.blurb}`),
+    `- [GitHub](${GITHUB_URL}): An outside judge, a model from a different company.`,
+    "",
+    FAQ_FOR_AGENTS,
+  ].join("\n"),
+);
+// Every other public page: the same words as its HTML, minus the nav chrome and styles.
+// A new page added to publicPages is covered here without a hand-written twin. The homepage
+// brief below stays as it is: that is the Markdown agents already fetch for /.
+for (const p of publicPages) {
+  if (p.url === SITE_URL) continue;
+  const rel = p.url.slice(SITE_URL.length);
+  let md = htmlToMarkdown(readFileSync(join(OUT, rel, "index.html"), "utf8"));
+  // /start HTML replaces this sentence with the live count. The twin is built once,
+  // so a number here would disagree with the page. Keep the sentence, drop the count.
+  if (rel === "start/") {
+    md = md.replace(/First 100 users get Grill free for life, \d+ spots? left\./g, "First 100 users get Grill free for life.");
+  }
+  writeFileSync(join(OUT, rel, "index.md"), md);
+}
+// Same words as the homepage, for an agent that sends Accept: text/markdown. vercel.json
+// routes / to this file only for that header. Nothing here is a new claim.
+writeFileSync(
+  join(OUT, "index.md"),
+  [
+    "# Grill your AI before you send it to your boss.",
+    "",
+    "Hear the strongest case against your plan, then decide for yourself.",
+    "",
+    "Free, with the AI you already use.",
+    "",
+    "## How it works",
+    "",
+    "1. **Say “grill this”** Tell the AI you already use what you’re deciding.",
+    "2. **A different AI pushes back** A model from another company gives a verdict and one cheap test.",
+    "3. **You make the call** The verdict never becomes the decision. The free tool keeps nothing; Grill in chat keeps only what you choose, encrypted, and you can delete it.",
+    "",
+    "## Worked examples",
+    "",
+    "Illustrative example, invented numbers, not a benchmark",
+    "",
+    "Decision: Raise the Saturday workshop from $40 to $55. Last month 62 of 80 seats sold.",
+    "",
+    "Verdict: Shaky. The 62 of 80 sold at $40, and nothing shows they would still buy at $55.",
+    "",
+    "Challenge: A $15 rise on 62 seats is $930 if everyone stays, and $0 if the extra $15 empties the room.",
+    "",
+    "The question that would change this: whether “62 of 80 seats” would still sell at $55.",
+    "",
+    "Illustrative example, invented numbers, not a benchmark",
+    "",
+    "Decision: Hire a second baker. Saturday orders hit 140, and one person finishes 90.",
+    "",
+    "Verdict: Solid, if… It holds only if the 140 are all new work for Saturday.",
+    "",
+    "Challenge: 40 of the 140 are standing orders already finished on Friday, so the new load is 100, not 140.",
+    "",
+    "The question that would change this: whether the 140 Saturday orders are all new work, or 40 are already done.",
+    "",
+    "## Get started: pick the AI you use",
+    "",
+    "Invited to Grill in chat? [Connect it](https://grillyour.ai/start/). No invite code? [Join the waitlist](https://grillyour.ai/start/#waitlist). Have a code? Enter it at [/redeem](https://grillyour.ai/redeem). Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email your invite went to, every time.",
+    "",
+    "**Any AI (easiest)** ChatGPT, Copilot, Gemini, Grok, Muse · free",
+    "",
+    "[See four more examples](https://grillyour.ai/demo/)",
+    "",
+    "Every detail of what is sent and counted is in [Privacy](https://grillyour.ai/privacy/).",
+    "",
+    "[llms.txt](https://grillyour.ai/llms.txt)",
+    "",
+  ].join("\n"),
+);
+writeFileSync(
+  join(OUT, "404.md"),
+  [
+    "# This page doesn’t exist",
+    "",
+    "This page doesn’t exist.",
+    "",
+    "- [llms.txt](https://grillyour.ai/llms.txt)",
+    "- [sitemap.xml](https://grillyour.ai/sitemap.xml)",
+    "",
+  ].join("\n"),
+);
+console.log(`built _site/index.html and the terms, contribute, look-back, start, privacy and demo pages, plus about, contact and check-your-ai${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);

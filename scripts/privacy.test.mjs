@@ -566,7 +566,7 @@ describe("anonymous usage stats", () => {
 
 describe("a look-back surprise stays on the page", () => {
   it("never puts the surprise text in a track() or analytics payload", () => {
-    const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
+    const page = readFileSync(join(ROOT, "site/look-back.html"), "utf8");
     const script = page.match(/<script>\s*([\s\S]*?)<\/script>\s*$/)[1];
     const surprise = "SURPRISE_SENTINEL_office_closed_9f3a";
     const happened = "HAPPENED_SENTINEL_flat_signups_1c2b";
@@ -608,8 +608,8 @@ describe("a look-back surprise stays on the page", () => {
     };
     const window = {
       addEventListener() {},
-      va(kind, payload) {
-        events.push({ kind, payload });
+      grillTrack(name, data) {
+        events.push({ kind: "event", payload: { name, data } });
       },
     };
     runInNewContext(

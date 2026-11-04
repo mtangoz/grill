@@ -10,6 +10,7 @@
  */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { normalizeEmail, redisCommand } from "./_account.mjs";
+import { recordPaidIntent } from "./_paidIntent.mjs";
 import { esc, page } from "./_pro.mjs";
 
 export const CONFIRM_TTL_MS = 48 * 60 * 60 * 1000;
@@ -244,7 +245,7 @@ function tryAgainPage() {
 function formCopy() {
   return `<h1>Coming later: saved history and look-back reminders</h1>
 <p>An optional Pro plan will keep your decision records across the assistants you use (Claude, ChatGPT, Gemini, Grok), remind you when a look-back is due, and send a monthly look-back report. The free tool stays free, with no account.</p>
-<p>Want to hear when it's ready? Leave your email.</p>`;
+<p>Email me when Pro ships:</p>`;
 }
 
 function formPage({ via, email = "", issued = "", message = "", error = "" }) {
@@ -342,6 +343,7 @@ export async function handleNotify(request, deps) {
     const set = await redis(env, fetchImpl, ["SET", coolKey, "1", "NX", "EX", String(COOLDOWN_SECONDS)]);
     if (set !== "OK") return checkInboxPage();
     reserved = true;
+    await recordPaidIntent(env, fetchImpl, "notify");
 
     const token = sealNotifyToken({ email, via, exp: now + CONFIRM_TTL_MS }, secret);
     const url = `${originOf(request, env)}/notify/confirm?t=${token}`;

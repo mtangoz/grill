@@ -27,10 +27,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Pull requests may skip when there is no key (a fork gets no secrets). The weekly and
+      # manual runs must measure: with no key they fail with exit 2, "not measured".
       - name: Run the judge self-eval
+        id: eval
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: node scripts/eval.mjs
+          EVENT: ${{ github.event_name }}
+        run: |
+          set +e
+          if [ "$EVENT" = "pull_request" ]; then node scripts/eval.mjs; else node scripts/eval.mjs --require-key; fi
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit $code
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
@@ -42,14 +51,22 @@ jobs:
         if: failure() && github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
+          CODE: ${{ steps.eval.outputs.code }}
         run: |
           set -e
+          if [ "$CODE" = "2" ]; then
+            TITLE="Judge self-eval is not measuring"
+            BODY="The weekly judge self-eval ran on $(date -u +%F) with no OPENROUTER_API_KEY secret, so no case reached a judge. Nothing was measured. Add the secret (a capped key), then run the eval workflow by hand.
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          else
           TITLE="Judge quality below threshold"
           BODY="The weekly judge self-eval (evals/) failed its quality thresholds on $(date -u +%F).
 
           Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
           See the run's job summary or the uploaded eval-results artifact for the metrics table and which cases failed."
+          fi
           EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --search "$TITLE in:title" --state open --json number --jq '.[0].number')
           if [ -n "$EXISTING" ]; then
             gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body "$BODY"

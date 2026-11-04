@@ -454,6 +454,26 @@ describe("--dry-run", () => {
     assert.match(stdout, /\(stdin\)/);
   });
 
+  it("on --deepen still asks only the auto router, excludes one company, and does not pin", async () => {
+    const dry = await runCli(["--text", "We will raise prices 20% in Q4.", "--author", "openai", "--deepen", "--check", "--dry-run"], envFor({}));
+    assert.equal(dry.code, 0);
+    assert.match(dry.stdout, /chain: openrouter\/auto · default/);
+    assert.match(dry.stdout, /excluding openai\/\*/);
+    assert.match(dry.stdout, /"model": "openrouter\/auto"/);
+    assert.match(dry.stdout, /report_depth/);
+    assert.match(dry.stdout, /rawest material they would start from/);
+    assert.match(dry.stdout, /"zdr":\s*true/);
+    assert.match(dry.stdout, /quality check: off/);
+    assert.doesNotMatch(dry.stdout, /report_challenge|anthropic\/claude|google\//);
+    assert.doesNotMatch(dry.stdout, /"models":\s*\[/);
+    const run = await runCli(["--text", "We will raise prices 20% in Q4.", "--deepen", "--json"], envFor({ JUDGE_FIXTURE: join(FIXTURES, "deepen-response.json") }));
+    assert.equal(run.code, 0, run.stderr);
+    const parsed = JSON.parse(run.stdout);
+    assert.equal(parsed.verdict, undefined);
+    assert.match(parsed.depth.rewritten, /survival model/);
+    assert.equal(parsed.decorrelated, true);
+  });
+
   it("includes --context material without treating it as the subject", async () => {
     const ctxPath = tmpFile("judge-context-", "ctx.md", "Background: a cost model the subject should be consistent with.");
     const { code, stdout } = await runCli(["--text", "the plan", "--context", ctxPath, "--dry-run"], envFor({}));

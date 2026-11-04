@@ -1,0 +1,23 @@
+{
+  "id": "gen-fixture-deepen",
+  "model": "openai/gpt-5.6-sol",
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "message": {
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "id": "call_depth",
+            "type": "function",
+            "function": {
+              "name": "report_depth",
+              "arguments": "{\"professional\":\"A pricing lead would start from the raw signup events, not the slide that summarises them.\",\"raw_material\":\"The event log of signups and later payments, not the quarterly summary.\",\"methods\":\"A survival model, fit on one window and checked on a later week it was not shown.\",\"outside_check\":\"That later week, counted by someone who did not write the plan.\",\"rewritten_plan\":\"Rebuild the price call from the raw signup log. Fit a survival model. Show that it predicts a week it has not seen, then decide.\"}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "usage": { "cost": 0.01, "include": true }
+}

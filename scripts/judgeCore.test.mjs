@@ -22,6 +22,8 @@ import {
   budgetText,
   challengeScore,
   checkGrounding,
+  findCitedSources,
+  sourcesLine,
   CHALLENGE_KINDS,
   CONFIDENCES,
   CONTEXT_BUDGET,
@@ -35,9 +37,21 @@ import {
   MAX_CHALLENGES,
   MAX_LINK_TIMEOUT_MS,
   MIN_LINK_TIMEOUT_MS,
+  buildDeepenMessages,
   buildJudgeMessages,
+  closingAsk,
+  deepenTestEnabled,
+  readDepth,
+  renderDeepen,
   nextAttempt,
   reconcileVerdict,
+  CLOSING_ASK,
+  CLOSING_ASK_DEEPEN,
+  DEEPEN_OFF,
+  DEEPEN_ONLY_BIG,
+  DEEPEN_TEST_OPTION,
+  DEEPEN_TOOL,
+  DEPTH_QUESTIONS,
   LAYER1_WORD_BUDGET,
   LAYER2_WORD_BUDGET,
   SCOPE_GUARD,
@@ -129,6 +143,21 @@ describe("budgetText", () => {
 
 // ---------------------------------------------------------------------------
 describe("validateChallenges — drop, do not coerce", () => {
+  it("drops an invalid call value instead of rejecting the challenge", () => {
+    const { challenges, rejected } = validateChallenges([
+      wellFormed({ call: "maybe" }),
+      wellFormed({ call: "Checked" }),
+      wellFormed({ call: "" }),
+      wellFormed({ call: "yours" }),
+    ]);
+    assert.deepEqual(rejected, []);
+    assert.equal(challenges.length, 4);
+    assert.equal(Object.hasOwn(challenges[0], "call"), false);
+    assert.equal(challenges[1].call, "checked");
+    assert.equal(Object.hasOwn(challenges[2], "call"), false);
+    assert.equal(challenges[3].call, "yours");
+  });
+
   it("keeps a well-formed challenge and strips the internal index", () => {
     const { challenges, rejected, capped } = validateChallenges([wellFormed()]);
     assert.equal(challenges.length, 1);
@@ -468,6 +497,23 @@ describe("buildJudgeMessages", () => {
     }
   });
 
+  it("states the checked and yours split in the system prompt and in JUDGE_TOOL", () => {
+    const sentence =
+      'Mark each challenge as checked (you can settle it from facts, figures, logic or consistency, with no appeal to the user\'s values) or yours (it turns on the user\'s values, priorities or unwritten rules); the report lists them apart as "Checked for you" and "Your call" so the user can go straight to the calls only they can make.';
+    const [system] = buildJudgeMessages({ subject: "x" });
+    const at = (needle) => system.content.indexOf(needle);
+    assert.ok(at("5. Make every challenge settleable") > -1);
+    assert.ok(at("5. Make every challenge settleable") < at(sentence));
+    assert.ok(at(sentence) < at("6. Judge the whole"));
+    const call = JUDGE_TOOL.parameters.properties.challenges.items.properties.call;
+    assert.deepEqual(call.enum, ["checked", "yours"]);
+    assert.equal(
+      call.description,
+      '"checked" = the judge can settle it without the user\'s values: a bug, a fact, a figure or calculation, an internal inconsistency, a quote that doesn\'t match its source. "yours" = it hinges on the user\'s own values, priorities, risk appetite or unwritten rules of thumb; the judge can name the trade-off but not decide it. When unsure, use "yours".',
+    );
+    assert.equal(JUDGE_TOOL.parameters.properties.challenges.items.required.includes("call"), false);
+  });
+
   it("steelmans the other side before attacking, and audits the question before answering it", () => {
     const [system, user] = buildJudgeMessages({ subject: "x", question: "is one example enough?" });
     const at = (needle) => system.content.indexOf(needle);
@@ -593,6 +639,54 @@ describe("renderJudgeReport", () => {
       counterSteelman: "none — the subject argues no direction",
     });
     assert.ok(!none.includes("Counter-steelman"));
+  });
+
+  it("renders Checked for you before Your call, and a missing call counts as yours", () => {
+    const { challenges } = validateChallenges([
+      wellFormed({
+        severity: "minor",
+        confidence: "low",
+        call: "checked",
+        target: "the figure is 12",
+        challenge: "the figure has no date",
+      }),
+      wellFormed({
+        severity: "serious",
+        confidence: "high",
+        call: "yours",
+        target: "we accept the risk",
+        challenge: "whether to accept that risk is your call",
+      }),
+      wellFormed({
+        severity: "moderate",
+        confidence: "medium",
+        target: "ship on Friday",
+        challenge: "the missing tag is still a call",
+      }),
+    ]);
+    const md = renderJudgeReport({ verdict: "weak", challenges });
+    const checkedAt = md.indexOf("### Checked for you");
+    const yoursAt = md.indexOf("### Your call");
+    assert.ok(md.indexOf("## Challenges (3)") < checkedAt);
+    assert.ok(checkedAt < yoursAt);
+    assert.ok(checkedAt < md.indexOf("the figure has no date") && md.indexOf("the figure has no date") < yoursAt);
+    assert.ok(yoursAt < md.indexOf("whether to accept that risk is your call"));
+    assert.ok(md.indexOf("whether to accept that risk is your call") < md.indexOf("the missing tag is still a call"));
+    assert.ok(md.indexOf("### 3. MINOR") > checkedAt && md.indexOf("### 3. MINOR") < yoursAt);
+    assert.ok(md.indexOf("### 1. SERIOUS") > yoursAt);
+    assert.ok(md.indexOf("### 1. SERIOUS") < md.indexOf("### 2. MODERATE"));
+
+    const onlyChecked = renderJudgeReport({
+      verdict: "weak",
+      challenges: validateChallenges([wellFormed({ call: "checked" })]).challenges,
+    });
+    assert.match(onlyChecked, /### Checked for you/);
+    assert.doesNotMatch(onlyChecked, /### Your call/);
+
+    const empty = renderJudgeReport({ verdict: "holds", challenges: [] });
+    assert.doesNotMatch(empty, /### Checked for you/);
+    assert.doesNotMatch(empty, /### Your call/);
+    assert.match(empty, /tried to break it and could not/);
   });
 
   it("labels a loaded-framing challenge by name, not by slug", () => {
@@ -1230,6 +1324,16 @@ describe("renderJudgeReport — the grounding footer and the Jev section", () =>
   });
 });
 
+function assertBriefBudget(text) {
+  const paras = String(text).split("\n\n").filter(Boolean);
+  const flip = paras.filter((para) => para.startsWith("The question that would change this:"));
+  assert.equal(flip.length, 1, text);
+  assert.ok(countWords(flip[0]) <= 25, `${countWords(flip[0])}: ${flip[0]}`);
+  const rest = paras.filter((para) => para !== flip[0]).join(" ");
+  assert.ok(countWords(rest) <= LAYER1_WORD_BUDGET, `${countWords(rest)}: ${rest}`);
+  assert.ok(countWords(text) <= LAYER1_WORD_BUDGET + 25, `${countWords(text)}: ${text}`);
+}
+
 describe("the note a person reads", () => {
   const rich = {
     verdict: "weak",
@@ -1264,14 +1368,53 @@ describe("the note a person reads", () => {
     ],
   };
 
+  it("puts one short flip question after the verdict, never before it", () => {
+    const subject = "We will raise prices 20% in Q4 because paid users cover the support cost.";
+    const brief = renderLayers(rich, { subject }).brief;
+    const paras = brief.split("\n\n");
+    const flipAt = brief.indexOf("The question that would change this:");
+    const verdictAt = brief.indexOf("**Shaky.**");
+    assert.equal((brief.match(/The question that would change this:/g) || []).length, 1);
+    assert.ok(verdictAt >= 0 && flipAt > verdictAt, brief);
+    assert.equal(paras[0].includes("The question that would change this:"), false);
+    assert.match(paras[0], /^\*\*Shaky\.\*\*/);
+    assert.match(paras[1], /^The question that would change this: whether "paid users cover the support cost" holds\.$/);
+    assert.ok(countWords(paras[1]) <= 25, `${countWords(paras[1])}: ${paras[1]}`);
+    assert.doesNotMatch(paras[1], /\?/);
+    assert.ok(brief.indexOf("The question that would change this:") < brief.indexOf("Missing:"), brief);
+    assert.equal(paras.at(-1), CLOSING_ASK);
+    const rest = paras.filter((para) => para !== paras[1]).join("\n\n");
+    assert.ok(countWords(rest) <= LAYER1_WORD_BUDGET, `${countWords(rest)}: ${rest}`);
+    assert.ok(countWords(brief) <= LAYER1_WORD_BUDGET + 25, `${countWords(brief)}: ${brief}`);
+
+    const thin = renderUserFacing(
+      {
+        needsFacts: true,
+        verdict: "weak",
+        verdictReason: "Shaky to drop it before you know what free users are worth",
+        factsNeeded: ["What share of free users pay within 90 days?"],
+      },
+      { subject: "drop the free tier?" },
+    );
+    const thinParas = thin.split("\n\n");
+    assert.match(thinParas[0], /^Quick take, on thin input:/);
+    assert.equal(thinParas[0].includes("The question that would change this:"), false);
+    assert.match(thinParas[1], /^The question that would change this:/);
+    assert.ok(thin.indexOf("Quick take, on thin input:") < thin.indexOf("The question that would change this:"));
+    assert.equal((thin.match(/\?/g) || []).length, 1);
+    assert.ok(countWords(thinParas[1]) <= 25, `${countWords(thinParas[1])}: ${thinParas[1]}`);
+    assert.match(thin, /"drop the free tier"/);
+  });
+
   it("keeps layer 1 under 50 words and leaves the steelman, the model and the score out", () => {
     const subject = "Drop the free tier? Paid users cover the support cost, and the free tier is half of signups.";
     const layers = renderLayers(rich, { subject });
-    assert.ok(countWords(layers.brief) <= LAYER1_WORD_BUDGET, countWords(layers.brief));
+    assertBriefBudget(layers.brief);
     assert.ok(countWords(layers.more) <= LAYER2_WORD_BUDGET, countWords(layers.more));
     assert.ok(countWords(layers.options) <= LAYER2_WORD_BUDGET, countWords(layers.options));
     assert.ok(countWords(layers.options) >= 60, countWords(layers.options));
     assert.match(layers.brief, /^\*\*Shaky\.\*\*/);
+    assert.doesNotMatch(layers.brief, /\*\*Shaky\. \*\*/);
     assert.match(layers.brief, /Missing:/);
     assert.match(layers.brief, /Cheap test:/);
     assert.match(layers.brief, /Say 'more', 'options', or your call\./);
@@ -1297,7 +1440,7 @@ describe("the note a person reads", () => {
     );
     assert.match(note, /^Quick take, on thin input:/);
     assert.equal((note.match(/\?/g) || []).length, 1);
-    assert.ok(countWords(note) <= LAYER1_WORD_BUDGET, countWords(note));
+    assertBriefBudget(note);
     assert.doesNotMatch(note, /Needs facts|What would settle it|^\d+\. /m);
     const layers = renderLayers(
       {
@@ -1325,14 +1468,341 @@ describe("the note a person reads", () => {
       },
       { subject: "drop the free tier?" },
     );
-    assert.ok(countWords(layers.brief) <= LAYER1_WORD_BUDGET, countWords(layers.brief));
+    assertBriefBudget(layers.brief);
     assert.ok(countWords(layers.more) >= 60 && countWords(layers.more) <= LAYER2_WORD_BUDGET, countWords(layers.more));
     assert.ok(countWords(layers.options) >= 60 && countWords(layers.options) <= LAYER2_WORD_BUDGET, countWords(layers.options));
     assert.doesNotMatch(`${layers.more}\n${layers.options}\n${layers.full}`, /steelman|gpt-5|grill-record/i);
   });
 
+  it("ends layer 1 on a full sentence and keeps the question grammatical", () => {
+    const reason =
+      "The evidence-first sequencing is sound and no fatal flaw appears, but the $20 overall cap is in direct tension with the $1 per-user cap when both can bind in the same month.";
+    const question =
+      "What the $20 overall and $1 per-user caps are denominated in, over what window, and do they reset each month?";
+    const note = renderUserFacing(
+      { needsFacts: true, verdict: "weak", verdictReason: reason, factsNeeded: [question] },
+      { subject: "cap it?" },
+    );
+    assertBriefBudget(note);
+    assert.doesNotMatch(note, /…|\.\.\./);
+    const paras = note.split("\n\n");
+    assert.equal(paras.at(-1), CLOSING_ASK);
+    assert.match(paras[0], /appears\.$/);
+    assert.ok(paras[0].indexOf("The question that would change this:") === -1);
+    assert.match(paras[1], /^The question that would change this: What the \$20 overall and \$1 per-user caps are denominated in, over what window\?$/);
+    assert.doesNotMatch(note, /,\s*\?/);
+
+    const fragment = renderUserFacing(
+      {
+        needsFacts: true,
+        verdict: "weak",
+        verdictReason: reason,
+        factsNeeded: ["What the $20 overall and $1 per-user caps are denominated in, over what window, and whether unused credit rolls"],
+      },
+      { subject: "cap it?" },
+    );
+    assertBriefBudget(fragment);
+    assert.doesNotMatch(fragment, /…|\.\.\.|,\s*\?/);
+    assert.match(fragment, /What single fact would change this\?/);
+
+    const settled = renderUserFacing(
+      {
+        verdict: "weak",
+        verdictReason:
+          "The evidence-first sequencing is sound and no fatal flaw appears, but the twenty dollar overall cap is in direct tension with the one dollar cap when both can bind in the same month and nobody has said what the numbers mean.",
+        missingOption: "Keep a capped free tier instead of a hard monthly ceiling.",
+        challenges: [
+          {
+            challenge: "The cap is named without saying whether it is dollars, calls, or something else.",
+            falsifier: "Write down the unit and the window before treating the cap as a limit.",
+          },
+        ],
+      },
+      { subject: "We will cap hosted spend at $20 overall and $1 per person each month, counted before the judge runs." },
+    );
+    assertBriefBudget(settled);
+    assert.doesNotMatch(settled, /…|\.\.\./);
+    assert.match(settled, /[.!?]\n\nSay 'more', 'options', or your call\.$/);
+  });
+
+  it("ends every layer on a full sentence and never hard-truncates with an ellipsis", () => {
+    const runOn = Array.from({ length: 90 }, (_, i) => `w${i + 1}`).join(" ");
+    const clause =
+      "The evidence-first sequencing is sound and no fatal flaw appears, but the twenty dollar overall cap is in direct tension with the one dollar per-user cap when both can bind in the same month and nobody has said which unit they use or when the window resets.";
+    const question =
+      "What the twenty dollar overall and one dollar per-user caps are denominated in, over what window, and do they reset each month?";
+    const result = {
+      verdict: "weak",
+      verdictReason: clause,
+      counterSteelman: runOn,
+      missingOption: runOn,
+      strongestObjection: runOn,
+      factsNeeded: [question, runOn],
+      challenges: [
+        { challenge: runOn, falsifier: runOn, what_would_have_to_be_true: runOn },
+        { challenge: clause, falsifier: clause, what_would_have_to_be_true: "Free accounts cost more to support than they ever pay." },
+      ],
+    };
+    const subject = "We will cap hosted spend at twenty dollars overall and one dollar per person each month, counted before the judge runs.";
+    const layers = renderLayers(result, { subject });
+    const whole = (name, text) => {
+      assert.doesNotMatch(text, /…|\.\.\./, name);
+      const paras = String(text).split(/\n+/).map((para) => para.trim()).filter(Boolean);
+      assert.ok(paras.length > 0, name);
+      for (const para of paras) assert.match(para, /[.!?]["']?$/, `${name}: ${para}`);
+    };
+    whole("brief", layers.brief);
+    whole("more", layers.more);
+    whole("options", layers.options);
+    whole("full", layers.full);
+    assertBriefBudget(layers.brief);
+    assert.ok(countWords(layers.more) <= LAYER2_WORD_BUDGET, `${countWords(layers.more)}: ${layers.more}`);
+    assert.ok(countWords(layers.options) <= LAYER2_WORD_BUDGET, `${countWords(layers.options)}: ${layers.options}`);
+    assert.match(layers.brief, /[.!?]\n\nSay 'more', 'options', or your call\.$/);
+    assert.match(layers.more, /appears\./);
+    assert.doesNotMatch(layers.more, /in direct/);
+    assert.match(layers.options, /\?/);
+    assert.doesNotMatch(layers.options, /,\s*\?/);
+    assert.match(layers.full, /when the window resets\./);
+    for (const [name, text] of Object.entries(layers)) {
+      assert.doesNotMatch(text, /\bw90\b/, `${name} kept a clipped run-on: ${text}`);
+    }
+  });
+
+  it("does not leave a dangling dash when a dropped clause ends the line", () => {
+    const live = "**Solid if.** A beats a priced-out B, an unsolicited C and a forfeiting D, and the subject names its own assumptions —.";
+    const repaired = live.replace(/ —\.$/, ".");
+    const result = {
+      verdict: "holds-with-conditions",
+      verdictReason:
+        "A beats a priced-out B, an unsolicited C and a forfeiting D, and the subject names its own assumptions — but the priced comparison never got a number, the forfeited option was not costed, and the unsolicited one was never asked for by anyone who would pay.",
+      challenges: [{ challenge: "One check is enough.", falsifier: "Price B once." }],
+    };
+    const subject = "Choose A over a priced-out B and a forfeiting D this quarter.";
+    const layers = renderLayers(result, { subject });
+    assert.equal(layers.brief.includes(live), false, layers.brief);
+    assert.equal(layers.full.includes(live), false, layers.full);
+    assert.ok(layers.brief.includes(repaired), layers.brief);
+    assert.ok(layers.full.includes(repaired), layers.full);
+    assert.doesNotMatch(layers.brief, /[—–,:;]\s*\./);
+    assert.doesNotMatch(layers.full, /[—–,:;]\s*\./);
+    for (const tail of [",", ":", ";", " –", " —"]) {
+      const closed = renderLayers(
+        {
+          verdict: "holds-with-conditions",
+          verdictReason: `The subject names its own assumptions${tail}`,
+          challenges: [{ challenge: "One check is enough.", falsifier: "Price B once." }],
+        },
+        { subject },
+      );
+      assert.match(closed.full, /The subject names its own assumptions\./, tail);
+      assert.doesNotMatch(closed.full, /assumptions\s*[—–,:;]\s*\./, tail);
+    }
+    const prior = renderLayers(
+      {
+        verdict: "holds-with-conditions",
+        verdictReason: "The comparison is already priced. The subject names its own assumptions —",
+        challenges: [{ challenge: "One check is enough.", falsifier: "Price B once." }],
+      },
+      { subject },
+    );
+    assert.match(prior.full, /\*\*Solid if\.\*\* The comparison is already priced\./);
+    assert.doesNotMatch(prior.full, /assumptions/);
+  });
+
   it("the scope guard is the shared sentence", () => {
     assert.match(SCOPE_GUARD, /no code changes, no PRs, no product questions/);
     assert.match(SCOPE_GUARD, /Grill's job ends at the verdict and the record/);
+  });
+});
+
+// A grill once passed a write-up whose citation did not exist: the judge cannot open sources, and
+// checkGrounding only checks the judge's quotes. These pin the other side: what the write-up cites.
+describe("cited sources the judge cannot open", () => {
+  const cited =
+    "We cut SDR headcount. Per the Q3 Pipeline Review deck, reply rates rose 18%. According to Gong, meetings held were flat. See https://example.com/x [1]. The Bridge Group benchmark says ramp is 3 months.";
+
+  it("finds links, 'per the', 'according to', footnotes and named reports, once each", () => {
+    const found = findCitedSources(cited);
+    for (const s of ["https://example.com/x", "Gong", "footnote [1]", "The Bridge Group benchmark"]) {
+      assert.ok(found.includes(s), `${s} not in ${JSON.stringify(found)}`);
+    }
+    assert.equal(found.filter((s) => /Q3 Pipeline Review deck/.test(s)).length, 1, JSON.stringify(found));
+  });
+
+  it("does not read rates and units as sources", () => {
+    assert.deepEqual(findCitedSources("Raise the price 20% per month in Q4; the vendor charges $3.10 per check."), []);
+    assert.deepEqual(findCitedSources(""), []);
+    assert.equal(sourcesLine([]), "");
+  });
+
+  it("layer 1 says the sources were not checked and stays within budget", () => {
+    const result = {
+      verdict: "weak",
+      verdictReason: "The lift is not tied to the change, because reply rates moved before the cut and nothing in the write-up separates the two.",
+      missingOption: "Keep headcount and change the sequence instead, then compare reply rates over the same window.",
+      challenges: [{ challenge: "The deck may not show this figure for this period.", falsifier: "Open the deck and find the line that says reply rates rose 18%." }],
+    };
+    const layers = renderLayers(result, { subject: cited });
+    assert.match(layers.brief, /Not checked: the 5 sources this cites\. Open each and confirm it says this\.\n\nSay 'more'/);
+    assertBriefBudget(layers.brief);
+    assert.match(layers.full, /nobody here opened these sources/);
+    const plain = renderLayers(result, { subject: "We cut SDR headcount by two and expect reply rates to hold at 4% over the quarter." });
+    assert.doesNotMatch(plain.brief, /Not checked/);
+    assert.doesNotMatch(plain.full, /Not checked/);
+  });
+
+  it("one source reads in the singular", () => {
+    assert.equal(sourcesLine(["Gong"]), "Not checked: the source this cites. Open it and confirm it says this.");
+  });
+
+  it("the full report footer lists them", () => {
+    const report = renderJudgeReport({ verdict: "weak", challenges: [], citedSources: ["Gong", "Q3 deck"] });
+    assert.match(report, /not opened by the judge or by Grill: 2 \(`Gong`, `Q3 deck`\)/);
+    assert.doesNotMatch(renderJudgeReport({ verdict: "weak", challenges: [] }), /not opened by the judge/);
+  });
+
+  it("tells the judge a named source is not evidence it has seen, on every route", () => {
+    const sentence = "A source the subject names but does not show (a report, a dashboard, a call, a link) is not evidence you have seen";
+    assert.ok(KIND_DESCRIPTIONS["unsupported-claim"].includes(sentence));
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    for (const file of ["skills/grill/paste-prompt.md", "prompts/grill.md"]) {
+      assert.ok(readFileSync(join(root, file), "utf8").includes(sentence), `${file} is missing the cited-source rule`);
+    }
+  });
+
+  it("the skill and the any-assistant prompt check sources on the version that goes out", () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const skill = readFileSync(join(root, "skills/grill/SKILL.md"), "utf8");
+    assert.match(skill, /## 3\. Check the sources/);
+    assert.match(skill, /Run it on the version that goes out, not the draft you grilled/);
+    assert.match(skill, /\*\*answers this question\*\*/);
+    assert.match(skill, /Do not send the sources to the judge/);
+    const prompt = readFileSync(join(root, "prompts/grill.md"), "utf8");
+    assert.match(prompt, /5\. \*\*Check the sources before the work goes out\.\*\*/);
+    assert.match(prompt, /Check the version that goes out, not the draft that was grilled/);
+  });
+
+  // From a real miss: a memo was labelled "re-derived with /grill" after a same-model self-check,
+  // and its count comparisons, a 10-reply A/B call and a reply window cut at the send date all shipped.
+  it("checks the numbers, and never calls work grilled unless a judge answered", () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const skill = readFileSync(join(root, "skills/grill/SKILL.md"), "utf8");
+    for (const rule of [/\*\*Rate beside count\.\*\*/, /fewer than 20 events/, /A name is not its content/, /Don't end the outcome window on the day the action window ends/, /Never from memory/, /n read of N/, /Summaries keep the caveats/, /Answer what was asked/]) {
+      assert.match(skill, rule);
+    }
+    assert.match(skill, /\*\*Don't call it grilled unless it was\.\*\*/);
+    assert.match(skill, /A check you ran yourself is a same-model check/);
+    const prompt = readFileSync(join(root, "prompts/grill.md"), "utf8");
+    assert.match(prompt, /Never call work grilled unless a judge's answer with a Judge line came back/);
+    const sentence = "A number is evidence only as a rate on a comparable base, from enough events, over a window long enough for the outcome to arrive.";
+    for (const file of ["skills/grill/paste-prompt.md", "prompts/grill.md"]) {
+      assert.ok(readFileSync(join(root, file), "utf8").includes(sentence), `${file} is missing the numbers rule`);
+    }
+    assert.match(KIND_DESCRIPTIONS["evidence-mismatch"], /a count compared across periods or groups of different size with no rate/);
+  });
+});
+
+describe("the optional deepen layer", () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const result = {
+    verdict: "weak",
+    verdictReason: "The headline number is asserted rather than supported.",
+    missingOption: "Cap the free tier instead of dropping it.",
+    challenges: [
+      {
+        challenge: "No baseline is cited for the multiplier.",
+        falsifier: "Pull the signup curve from the last comparable launch.",
+      },
+    ],
+  };
+  const subject = "We will raise prices 20% in Q4 because paid users cover the support cost.";
+
+  it("keeps deepen off the default closing line, and names it only for a big decision when the test is on", () => {
+    assert.equal(DEEPEN_TEST_OPTION, "GRILL_DEEPEN_TEST");
+    assert.equal(deepenTestEnabled({}), false);
+    assert.equal(deepenTestEnabled({ GRILL_DEEPEN_TEST: "${user_config.deepen}" }), false);
+    assert.equal(deepenTestEnabled({ GRILL_DEEPEN_TEST: "no" }), false);
+    assert.equal(deepenTestEnabled({ GRILL_DEEPEN_TEST: "1" }), true);
+    assert.equal(closingAsk({}), CLOSING_ASK);
+    assert.equal(closingAsk({ big: true, deepenTest: false }), CLOSING_ASK);
+    assert.equal(closingAsk({ big: false, deepenTest: true }), CLOSING_ASK);
+    assert.equal(closingAsk({ big: true, deepenTest: true }), CLOSING_ASK_DEEPEN);
+    assert.doesNotMatch(CLOSING_ASK, /deepen/);
+
+    const plain = renderLayers(result, { subject });
+    const quick = renderLayers(result, { subject, big: false, deepenTest: true });
+    const flagged = renderLayers(result, { subject, big: true, deepenTest: false });
+    const big = renderLayers(result, { subject, big: true, deepenTest: true });
+    for (const layers of [plain, quick, flagged]) {
+      assert.match(layers.brief, /Say 'more', 'options', or your call\./);
+      assert.doesNotMatch(layers.brief, /deepen/);
+      assertBriefBudget(layers.brief);
+      assert.match(layers.brief, /^\*\*Shaky\.\*\*/);
+    }
+    assert.match(big.brief, /Say 'more', 'options', 'deepen', or your call\./);
+    assertBriefBudget(big.brief);
+    assert.doesNotMatch(big.brief, /top professional|Rewritten plan|Raw material/);
+    assert.equal(renderUserFacing(result, { subject, detail: "deepen", big: true, deepenTest: true }), "");
+
+    const thin = renderLayers(
+      { needsFacts: true, verdict: "weak", verdictReason: "Not enough to drop it yet.", factsNeeded: ["What share of free users pay within 90 days?"] },
+      { subject: "drop it?", big: true, deepenTest: true },
+    );
+    assert.match(thin.brief, /^Quick take, on thin input:/);
+    assert.match(thin.brief, /deepen/);
+    assertBriefBudget(thin.brief);
+  });
+
+  it("asks the four depth questions and rewrites the plan, and does not turn that into a verdict", () => {
+    const [system, user] = buildDeepenMessages({ subject, question: "Which way?" });
+    for (const q of DEPTH_QUESTIONS) assert.ok(system.content.includes(q), q);
+    assert.match(user.content, /BEGIN SUBJECT/);
+    assert.match(user.content, /raise prices 20%/);
+    assert.doesNotMatch(`${system.content}\n${user.content}`, /try to BREAK|report_challenge|openrouter\//);
+    assert.equal(DEEPEN_TOOL.name, "report_depth");
+    assert.equal(DEEPEN_TOOL.parameters.additionalProperties, false);
+    assert.deepEqual(buildJudgeMessages({ subject })[0].content.includes("rawest material"), false);
+
+    const raw = {
+      professional: "A pricing lead would start from the raw signup events, not the slide.",
+      raw_material: "The event log of signups and later payments, not the quarterly summary.",
+      methods: "A survival model, fit on one window and checked on a later week.",
+      outside_check: "That later week, counted by someone who did not write the plan.",
+      rewritten_plan: "Rebuild the price call from the raw signup log. Fit a survival model. Show that it predicts a week it has not seen.",
+    };
+    const depth = readDepth(raw);
+    assert.equal(depth.rawMaterial.includes("event log"), true);
+    assert.equal(readDepth({ ...raw, methods: "  " }), null);
+    const note = renderDeepen(raw);
+    assert.match(note, /Deeper, not bigger\./);
+    assert.match(note, /1\. A top professional would:/);
+    assert.match(note, /2\. Raw material:/);
+    assert.match(note, /3\. Methods and tools:/);
+    assert.match(note, /4\. What would show it is right:/);
+    assert.match(note, /Rewritten plan:/);
+    assert.match(note, /The rewrite is not the decision\./);
+    assert.doesNotMatch(note, /solid|shaky|verdict|gpt-/i);
+    assert.equal(renderDeepen(null), "");
+    assert.match(DEEPEN_OFF, /test and is off/);
+    assert.match(DEEPEN_ONLY_BIG, /marked as big/);
+  });
+
+  it("the skill and the docs name Grill as the essay's outside judge, and keep the four questions with the judge", () => {
+    const skill = readFileSync(join(root, "skills/grill/SKILL.md"), "utf8");
+    const why = readFileSync(join(root, "docs/WHY.md"), "utf8");
+    for (const text of [skill, why]) {
+      assert.match(text, /outside judge/);
+      assert.match(text, /felixrieseberg\.com\/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/);
+    }
+    assert.match(skill, /only when the person asks to deepen or go bigger/);
+    assert.match(skill, /detail` `deepen`/);
+    assert.match(skill, /Never add a question or a step before the verdict/);
+    assert.match(skill, /Never ask whether it is big/);
+    for (const file of ["skills/grill/paste-prompt.md", "prompts/grill.md"]) {
+      const text = readFileSync(join(root, file), "utf8");
+      for (const q of DEPTH_QUESTIONS) assert.ok(text.includes(q), `${file} is missing ${q}`);
+      assert.match(text, /Never add a question or a step before the verdict|Never add a required question before the verdict/);
+    }
   });
 });

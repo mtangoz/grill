@@ -441,7 +441,7 @@ describe("the endpoints", () => {
     }
   });
 
-  it("/welcome, /checkout and /notify are routed to their functions, and the site build is what Vercel runs", () => {
+  it("/welcome, /checkout, /notify and /miss/send are routed to their functions, and the site build is what Vercel runs", () => {
     const config = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
     assert.deepEqual(config, {
       fluid: true,
@@ -450,20 +450,82 @@ describe("the endpoints", () => {
       rewrites: [
         { source: "/welcome", destination: "/api/welcome" },
         { source: "/checkout", destination: "/api/checkout" },
+        { source: "/pricing", destination: "/api/hosted?__route=pricing" },
         { source: "/pro", destination: "/api/pro" },
         { source: "/pro/auth", destination: "/api/pro-auth" },
         { source: "/pro/try", destination: "/api/pro-try" },
         { source: "/pro/reports", destination: "/api/pro-reports" },
         { source: "/notify", destination: "/api/notify" },
         { source: "/notify/confirm", destination: "/api/notify-confirm" },
+        { source: "/miss/send", destination: "/api/miss" },
         { source: "/mcp", destination: "/api/hosted?__route=mcp" },
         { source: "/.well-known/oauth-protected-resource", destination: "/api/hosted?__route=prm" },
         { source: "/.well-known/oauth-protected-resource/:extra*", destination: "/api/hosted?__route=prm" },
+        { source: "/.well-known/oauth-authorization-server", destination: "/api/hosted?__route=oauth" },
+        { source: "/.well-known/oauth-authorization-server/:extra*", destination: "/api/hosted?__route=oauth" },
+        { source: "/.well-known/openid-configuration", destination: "/api/hosted?__route=oidc" },
+        { source: "/.well-known/openid-configuration/:extra*", destination: "/api/hosted?__route=oidc" },
+        { source: "/decisions/calendar/:link", destination: "/api/hosted?__route=calendar&t=:link" },
+        { source: "/share/:token", destination: "/api/hosted?__route=share&t=:token" },
         { source: "/decisions", destination: "/api/hosted?__route=decisions" },
+        { source: "/judge", destination: "/api/hosted?__route=judge" },
         { source: "/account", destination: "/api/hosted?__route=account" },
+        { source: "/redeem", destination: "/api/hosted?__route=redeem" },
+        { source: "/redeem/", destination: "/api/hosted?__route=redeem" },
+        { source: "/start", destination: "/api/hosted?__route=start" },
+        { source: "/start/", destination: "/api/hosted?__route=start" },
+        { source: "/waitlist", destination: "/api/hosted?__route=waitlist" },
+      ],
+      routes: [
+        {
+          src: "^/waitlist/?$",
+          dest: "/api/hosted?__route=waitlist",
+        },
+        {
+          src: "^/redeem/$",
+          dest: "/api/hosted?__route=redeem",
+        },
+        {
+          src: "^/$",
+          has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
+          dest: "/index.md",
+          headers: { "Content-Type": "text/markdown; charset=utf-8", Vary: "Accept" },
+        },
+        {
+          src: "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account/?$|redeem/?$|judge/?$|welcome/?$|checkout/?$|pricing/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
+          has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
+          dest: "/$1/index.md",
+          check: true,
+          headers: { "Content-Type": "text/markdown; charset=utf-8", Vary: "Accept" },
+        },
+        {
+          src: "^/start/?$",
+          dest: "/api/hosted?__route=start",
+          headers: { Vary: "Accept" },
+        },
+        {
+          src: "^/$",
+          dest: "/index.html",
+          check: true,
+          headers: { Vary: "Accept" },
+        },
+        {
+          src: "^/(?!api(?:/|$)|mcp/?$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account/?$|redeem/?$|judge/?$|welcome/?$|checkout/?$|pricing/?$|pro(?:/|$)|notify(?:/|$)|miss/send/?$)(?![^/]*\\.)([^/]+)/?$",
+          dest: "/$1/index.html",
+          check: true,
+          headers: { Vary: "Accept" },
+        },
+        { handle: "error" },
+        {
+          src: "^/(?!api(?:/|$)|mcp$|\\.well-known(?:/|$)|decisions(?:/|$)|share(?:/|$)|account$|redeem/?$|judge$|welcome$|checkout$|pricing$|pro(?:/|$)|notify(?:/|$)|miss/send$).*$",
+          has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
+          status: 404,
+          dest: "/404.md",
+          headers: { "Content-Type": "text/markdown; charset=utf-8", Vary: "Accept" },
+        },
       ],
       functions: {
-        "api/hosted.js": { maxDuration: 300, includeFiles: "scripts/{apiKey,checkCore,judge,judgeCore,reflection,usageStats}.mjs" },
+        "api/hosted.js": { maxDuration: 300, includeFiles: "{scripts/{apiKey,checkCore,judge,judgeCore,reflection,usageStats}.mjs,site/start.html,site/page.html}" },
       },
     });
   });

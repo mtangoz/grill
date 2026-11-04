@@ -5,7 +5,7 @@ description: Grill a decision, plan or forecast. An outside AI judge, a model fr
 
 # Grill a decision
 
-The user has been thinking with you, so your critique is correlated with theirs. Grilling sends the decision to a judge from a **different model family**. The judge writes:
+The user has been thinking with you, so your critique is correlated with theirs. Grilling sends the decision to a judge from a **different model family**. Grill is the outside judge step Felix Rieseberg recommends in [How to be more ambitious](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/): do not ask the model to judge itself. The judge writes:
 - a steelman of the decision, and a counter-steelman;
 - challenges, each with a **falsifier**: the cheapest test that would settle it;
 - a verdict, in the same words as the website: solid, solid if, shaky, or doesn't hold up. The tool's own result uses `holds`, `holds-with-conditions`, `weak` or `refuted` for those four.
@@ -22,7 +22,7 @@ If they set up the one-click route with their own model-router key (not Grill Pr
 
 Send what the user already said, plus context already in the chat. Do not rewrite it into a template. Do not fill in blanks. Do not write your own case against into the subject.
 
-Ask at most one short question, and only if the decision is truly unclear, such as "What's the goal?" Then send it. Do not wait for an OK.
+Ask at most one short question, and only if the decision is truly unclear, such as "What's the goal?" Then send it. Do not wait for an OK. Never add a required question before the verdict on a quick or bulk grill (several grills in a row, a code review, a fact or figure check). Ask only what the subject strictly needs.
 
 The first time with this person, say once, as one line, and not again: This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/#privacy
 
@@ -33,7 +33,7 @@ Leave out names of people who aren't needed, and anything personal, health- or H
 ## 2. Send it
 
 **If you have the `grill` tool** (from the Grill extension in Claude Desktop, or the plugin in Claude Code):
-1. Call it with `subject` and `question`. If the subject came from another assistant, add `author`, for example `openai`, so that family is excluded too.
+1. Call it with `subject` and `question`. If the subject came from another assistant, add `author`, for example `openai`, so that family is excluded too. Pass `big: true` only when the person already marked the decision as big. Never ask whether it is big. Leave it off on a quick or bulk grill.
 2. If it returns a job id, call `grill_result` with it until the note arrives, before you reply. Do not ask the user for a job id, and do not tell them how long it takes.
 3. If it says Grill isn't set up, relay its steps. Never ask the user to paste their key into the chat. A Grill Pro key goes in the same settings field as their own key. If Grill's settings name a judge model, the tool already uses it. That judge has to be a different company from the assistant they think with. If they name one from the same company, say so and don't treat it as the outside judge.
 
@@ -54,9 +54,51 @@ When they paste the judge's answer back, compare companies before you relay the 
 - If the companies match, the first line you show is `Warning: this verdict is NOT independent. The judge is the same company as your assistant. Paste the judge prompt into ChatGPT, Gemini or Grok instead.`
 - If the Judge line is missing, the first line you show is `Warning: this verdict is unverified. The answer has no Judge line, so this is not a confirmed outside judge. Paste the judge prompt into ChatGPT, Gemini or Grok instead.`
 
+## 3. Check the sources and the numbers
+
+The judge sees only the write-up. It cannot open a report, a dashboard, a call or a link, so it cannot tell you a cited source exists or says what the write-up claims. Grill checks the judge's quotes against the write-up, never the write-up's sources. You can open them, so you do this part.
+
+Run it when the subject cites a source, when the user says check the sources, and every time a grilled piece of work goes to someone else (a founder, a board, a customer). Run it on the version that goes out, not the draft you grilled: a citation added after the grill was never checked.
+
+1. List each claim the conclusion leans on that points at a source, with the source as written.
+2. Open each source with your own tools. Quote the exact line or figure. If you cannot open it, it is **not found**, not true.
+3. Mark each one on three checks: **exists** (you opened it); **says it** (the same number, metric, period and population as the claim); **answers this question** (it is about the change and the outcome being asked about, not a neighbouring one).
+4. If you can start a fresh agent, give it only the list and the question, and have it do steps 2 and 3. You wrote the claims, so your check shares their blind spots.
+5. Show a short table: claim, source, quoted line, exists, says it, answers this question. Any row that fails is cut from the work or marked unverified in it. Never replace a failed source with one you did not open.
+
+Do not send the sources to the judge. Only the approved write-up leaves the machine.
+
+**Then check the numbers.** Most wrong claims in an analysis are not missing sources. They are numbers that don't mean what the sentence says. Before the work goes out, check each claim against these, and fix or soften any that fails:
+- **Rate beside count.** A count compared across periods or groups of different size needs its rate beside it (per contact, per send).
+- **Enough events.** With fewer than 20 events on either side, say the numbers are too few to compare. Don't call a winner.
+- **Read the thing itself.** Before you claim what a campaign, page or message said, open one real instance of it. A name is not its content.
+- **Time for the outcome.** Replies, sign-ups and renewals lag the action. Don't end the outcome window on the day the action window ends.
+- **The metric measures the claim.** "The copy did better" needs counts of the copy actually delivered, not requests or sends around it.
+- **Recompute totals.** Work out a group's figure from the raw rows. One member's figure is not the group's.
+- **Quote, with a date.** Quote a tool's or report's verdict word for word, with the date it ran. Anything no longer in view, fetch again or say unknown. Never from memory.
+- **Say the coverage.** n read of N, and any known gap in the method.
+- **Summaries keep the caveats.** A short version keeps the long version's doubts and adds no cause the long version didn't claim.
+- **Answer what was asked.** Map each question the person asked to an answer, or say it was not answered.
+
+**Don't call it grilled unless it was.** Say Grill reviewed something, or label it grilled, only when the `grill` tool returned a note in this chat, or on the paste route the judge's answer came back with a Judge line. A check you ran yourself is a same-model check, and you say so. Say which version was grilled, and what changed after it.
+
+
+## Share a miss
+
+When AI got a decision wrong (the user says "that was wrong", a grilled piece of work went out wrong, or a look-back missed), offer once, after the fix, never during it: "Want to share how it went wrong, not what? It helps the judge catch it next time." One "no" ends it for the conversation.
+
+If they say yes, draft a miss card in the chat:
+- the choices: what went wrong, where it got in, who caught it, who it was for, the kind of decision, what it cost, and whether it was really grilled;
+- one sentence: what would have caught it;
+- a made-up example with the same mistake. Use invented names, companies and numbers. Never a real name, a real number, a phrase from their material, an email or a link.
+
+Then point them to https://grillyour.ai/miss/ to paste it in and send it themselves. Tell them the page can check the card against their real text in their browser, and that text is never sent. You never send it for them. The card is also theirs to keep: its one sentence is a check for their own next time.
+
 ## 4. Relay the result
 
-On the paste route, the company check above is the first line you show. Then show only layer 1, at most 50 words: one verdict line, the single sharpest point (a missing option if there is one, otherwise the biggest risk), and one cheap test. If the judge marked it thin, show the quick take and the one question, not a fact list. A result from the `grill` tool already enforced a different company in code. Relay that note as written, and do not look for a Judge line. Do not show the judge's model, a score, a balance, a quote check, or a disclaimer.
+On the paste route, the company check above is the first line you show. Then show only layer 1. The verdict line comes first. After it, and never before it, one line of at most 25 words: "The question that would change this:", naming the single open question whose answer would flip the call, quoting the user's own words where possible. That line is not a question you wait on, and you do not add a required question. Then the single sharpest point (a missing option if there is one, otherwise the biggest risk) and one cheap test. The verdict, the point and the test stay within 50 words. If the judge marked it thin, show the quick take and that one question, not a fact list. A result from the `grill` tool already enforced a different company in code. Relay that note as written, and do not look for a Judge line. Do not show the judge's model, a score, a balance, a quote check, or a disclaimer.
+
+If layer 1 says sources were not checked, run section 3 before the user acts on the verdict or sends the work.
 
 Layer 1 already ends with this line. If it does not, add it once. Do not add a confidence question:
 
@@ -64,11 +106,15 @@ Say 'more', 'options', or your call.
 
 When they say more, why, or what else, show the next challenge, its cheap test, and the one or two facts that would flip the call. About 60 to 80 words. On the tool, call `grill_result` with `detail` `more` and relay that. Do not write it yourself. When they say options, help me decide, or they are stuck, call `grill_result` with `detail` `options`, or on the paste route show the judge's options lines. About 60 to 80 words. A full report only when they say full report (`detail` `full`). On the paste route, use only the judge's lines for each layer.
 
+Call `grill_result` with `detail` `deepen` only when the person asks to deepen or go bigger, and relay that layer. Do not call it otherwise, and do not write it yourself. It runs only for a decision they already marked as big, and only when that test is on. On a quick or bulk grill, do not mention deepen. The closing line may name deepen only for a big decision. Never add a question or a step before the verdict. On the paste route, same rule: only after the verdict, give them the second block in `paste-prompt.md` for the same outside judge. Do not answer it yourself.
+
 - **Plain words, the same ones the website uses.** Say solid, solid if…, shaky or doesn't hold up. "Solid if" always comes with its conditions; never shorten it to "solid". Quote the judge; don't soften it: no "overall, the judge agrees with you".
+- **Checked for you, then Your call.** When the note lists challenges, show "Checked for you" first (bugs, facts, figures, consistency) and "Your call" second (values and unwritten rules). Never move a challenge between groups.
 - **Thin input.** If the note starts with "Quick take, on thin input:", show that and its one question. Do not turn it into a long fact list, and do not refuse.
 - **The verdict never becomes the decision.** If the user asks "so should I do it?", or asks you to choose, hand the choice back and name the deciding test. Do not answer yes or no.
 - **Pushback:** if the user disputes a challenge, don't settle it for them, and don't flip the verdict unless they bring new evidence.
 - **Grilling again:** if the same decision is grilled again in this chat, ask one question: "What changed?" Show the earlier verdict beside the new one. If nothing changed, it is a re-run: no `supersedes` line and no `changed` line. If they say the choice changed, add `supersedes` as the earlier record's date and title, and `changed` as one of `evidence`, `goals`, `context` or `reweighed`, then their few words. Never invent them. Never send the earlier verdict to the judge.
+- **A forecast is optional.** If the user marked the decision as big, offer it in one line after the verdict. On a quick or bulk grill, don't walk through it.
 - **A record only after they answer, including after a quick take.** Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask. Pre-fill the prediction from what they already said. If the `grill_decided` tool is available, call it with their words and relay its confirmation, about five words. Do not show the record. Follow `reflection.md` on the paste route, where the block is the only copy. If they never answer, write no record and set no look-back. Do not show a record before they answer, and do not explain the format.
 - **Stop when the grill is done.** After a grill, don't start doing the decision (no code changes, no PRs, no product questions) unless the person separately asks. Grill's job ends at the verdict and the record.
 - **Your own view:** only if asked, labelled "same-model critique".
@@ -77,6 +123,8 @@ When they say more, why, or what else, show the next challenge, its cheap test, 
 ## 6. Look back
 
 When they paste one or more decision record blocks and say "look back" or "grill look back", follow `reflection.md`. If the `grill_look_back` tool is available, call it and relay its one line: "You predicted X at 70%. What happened?" It needs no key and stores nothing. Without the tool, show the same one line and score the answer in the chat. When the record has a `decided` line, read it back in their words, and when the call is scored say whether that choice came true. When it has `supersedes`, say which earlier call it replaced. If that earlier record is not in the paste, say once: "If this replaced an earlier record, paste that too to see both." When `changed` says `reweighed`, say: "Nothing new came in; you weighed it differently." Do not write a `superseded-by` line. Work out which call replaced which only when both records are pasted. Do not add a checklist. Do not tell them they need an account, a decision log, or a connected inbox for this. The monthly Count is only the weekly review, and only when that log has enough calls.
+
+When they ask what Grill has done for them, or where their calls changed, call `grill_look_back` with `view: changes` and relay it as written. On the paste route, follow "What changed" in `reflection.md`.
 
 ## 5. Offer to share a signal (opt-in, every time)
 

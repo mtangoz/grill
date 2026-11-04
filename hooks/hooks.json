@@ -1,0 +1,17 @@
+{
+  "description": "Grill: before you approve a plan, offer an outside judge once per session. Sends nothing. Off with GRILL_PLAN_OFFER=off.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/planOffer.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+name: Bug report
+description: Something didn't work. Don't include a real decision.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Issues here are public. Describe what you did, not the decision you were grilling. Don't paste a key.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where?
+      options:
+        - Claude Desktop
+        - Claude Code
+        - Cursor or another app
+        - The paste prompt
+        - The website
+        - Somewhere else
+    validations:
+      required: true

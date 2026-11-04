@@ -5,12 +5,13 @@
 // (spawning judge.mjs, timing it, reading the case files, writing the output) and calls into
 // this module for the scoring and rendering a test can pin without a live model.
 //
-// THE PRIVACY RULE THAT SHAPES THIS FILE: every case this scores is synthetic, committed to
-// the repo under evals/cases/. This module never sees, and must never be given, a real user's
-// decision — that is enforced by what calls it (eval.mjs only ever reads evals/cases/*.json),
-// not by anything in here, but it is why renderSummary is careful never to echo case content
-// beyond a case's id: a report meant to be posted to a public GitHub issue must stay safe to
-// post even if it were one day pointed at something less synthetic than these cases.
+// THE PRIVACY RULE THAT SHAPES THIS FILE: every case this scores is synthetic. The public set is
+// committed under evals/cases/; a held-out set of fictional cases (`heldOut: true`) lives outside
+// this repository so models and tuning can't learn it. This module never sees, and must never be
+// given, a real user's decision — that is enforced by what calls it, not by anything in here, but
+// it is why renderSummary is careful never to echo case content beyond a case's id, and echoes no
+// case detail at all for a held-out run: a report meant to be posted to a public GitHub issue must
+// stay safe to post.
 //
 // Zero dependencies. Node >= 20. ESM throughout.
 
@@ -75,6 +76,54 @@ function qualityOf(r) {
  * without ever re-printing a case's content, and what makes eval.mjs's output file and the
  * CI markdown it produces safe to read (and post) without paging back through the subjects.
  */
+/**
+ * What is wrong with a case file, as a list of plain sentences; empty when it is well formed.
+ * One home for the case format: the committed-case test and eval.mjs (for any set, including a
+ * held-out one CI never sees) both call this.
+ */
+export function caseProblems(c, fileName) {
+  if (!c || typeof c !== "object" || Array.isArray(c)) return ["the case is not a JSON object"];
+  const problems = [];
+  if (typeof c.id !== "string" || c.id.length === 0) problems.push("id must be a non-empty string");
+  else if (fileName !== undefined && fileName !== `${c.id}.json`) problems.push(`the filename must be ${c.id}.json`);
+  if (!["flawed", "sound", "loaded"].includes(c.kind)) problems.push(`unknown kind: ${c.kind}`);
+  if (typeof c.subject !== "string") problems.push("subject must be a string");
+  else {
+    const words = c.subject.trim().split(/\s+/).length;
+    if (words < 120 || words > 300) problems.push(`subject word count ${words} out of [120, 300]`);
+  }
+  if (typeof c.question !== "string" || c.question.length === 0 || c.question.length >= 300) {
+    problems.push("question must be a string of 1 to 299 characters");
+  }
+  if (typeof c.why !== "string" || c.why.length === 0) problems.push("why must be a non-empty string");
+  if (c.heldOut !== undefined && typeof c.heldOut !== "boolean") problems.push("heldOut, when present, must be true or false");
+  const expect = c.expect;
+  if (!expect || typeof expect !== "object") return [...problems, "expect must be an object"];
+  const mustTarget = Array.isArray(expect.must_target) ? expect.must_target : null;
+  // The planted flaw must be quotable: every must_target phrase is a literal, case-insensitive
+  // substring of the text it was drawn from (the subject for a flawed case, the question for a loaded one).
+  const quotable = (field) => {
+    if (!mustTarget || mustTarget.length === 0) {
+      problems.push("expect.must_target needs at least one phrase");
+      return;
+    }
+    const hay = typeof c[field] === "string" ? c[field].toLowerCase() : "";
+    for (const phrase of mustTarget) {
+      if (typeof phrase !== "string" || !hay.includes(phrase.toLowerCase())) problems.push(`"${phrase}" not found in ${field}`);
+    }
+  };
+  if (c.kind === "flawed") {
+    quotable("subject");
+    if (!Array.isArray(expect.verdict_not) || !expect.verdict_not.includes("holds")) problems.push('expect.verdict_not must include "holds"');
+  } else if (c.kind === "sound") {
+    if (!Array.isArray(expect.verdict_in) || expect.verdict_in.length === 0) problems.push("expect.verdict_in needs at least one verdict");
+    if (typeof expect.max_severity !== "string") problems.push("expect.max_severity must be a string");
+  } else if (c.kind === "loaded") {
+    quotable("question");
+  }
+  return problems;
+}
+
 export function scoreCase(caseDef, result) {
   const kind = caseDef?.kind ?? null;
   const r = result && typeof result === "object" ? result : {};
@@ -323,13 +372,17 @@ const METRIC_LABEL = Object.freeze({
  * results (verdict, challenge kind/severity). This is what a scheduled run can safely paste
  * into a GitHub issue body without spending the one resource — attention — this loop exists
  * to protect, and without ever needing to re-read a real decision to explain a miss.
+ *
+ * A HELD-OUT RUN (`heldOut: true`) SHOWS NO CASE AT ALL: no id, no expect phrase, no per-case
+ * result. Only the rates and a count of failures, so its score can be published beside the
+ * public set's without teaching anyone the test. The full scores stay in the private results file.
  */
-export function renderSummary(summary, scores) {
+export function renderSummary(summary, scores, { heldOut = false } = {}) {
   const { metrics = {}, regressions = [], checks = [], informational = [] } = summary ?? {};
   const list = Array.isArray(scores) ? scores : [];
   const out = [];
 
-  out.push("# Grill self-eval results", "");
+  out.push(heldOut ? "# Grill self-eval results (held-out set)" : "# Grill self-eval results", "");
   out.push(
     `n = ${metrics.n ?? list.length} · total cost $${(metrics.totalCostUsd ?? 0).toFixed(4)} · mean latency ${Math.round(
       metrics.meanLatencyMs ?? 0,
@@ -360,7 +413,14 @@ export function renderSummary(summary, scores) {
     s.kind === "flawed" || s.kind === "loaded" ? s.caught === false : s.kind === "sound" ? s.falseAlarm === true : false,
   );
 
-  if (failedCases.length > 0) {
+  if (heldOut) {
+    out.push(
+      failedCases.length > 0
+        ? `_${failedCases.length} of ${list.length} cases failed. A held-out set's cases stay private; the full scores are in the results file._`
+        : "_No case failures._",
+      "",
+    );
+  } else if (failedCases.length > 0) {
     out.push("## Failed cases", "");
     for (const s of failedCases) {
       const expected =

@@ -1,0 +1,19 @@
+name: Idea / feature request
+description: Suggest an improvement you'd like to see. Don't include a real decision.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Issues here are public. Don't paste a real decision, a key, or anything private. Say what you'd like Grill to do.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Grill to do?
+      description: The change, and who it helps.
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: Is there a workaround today?
+      description: Optional. A doc, a setting, or none.

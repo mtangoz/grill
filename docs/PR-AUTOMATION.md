@@ -44,6 +44,7 @@ These block even when a safe pattern would also match. Matching ignores case. `s
 - `package.json` and lockfiles (`package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`), in any directory
 - `.github/workflows/**` and `.github/automerge.json`
 - `SECURITY.md` and `docs/PRIVACY.md`
+- `LICENSE` and `TRADEMARKS.md`, so a license change always waits for a person
 - Terms and privacy pages: a file whose name is `terms` or `privacy`, or a folder with that name, including `site/terms.html`
 
 Changes to these workflows and to the classifier are outside the safe list, so a pull request cannot loosen these rules and then merge itself.
@@ -76,6 +77,7 @@ High-risk paths, matched case-insensitively:
 - `manifest.json`, `server.json`, and `.claude-plugin/**`
 - `.github/workflows/**`
 - `SECURITY.md`, `docs/PRIVACY.md`, and terms or privacy pages
+- `LICENSE` and `TRADEMARKS.md`
 - A path containing `stripe`, `auth`, `key`, `secret`, or `payment`. `docs/author-guide.md` is high because it contains `auth`. `docs/payments.md` is high because it contains `payment`, and it does not auto-merge even though `docs/**` is otherwise safe.
 
 A diff over 4,000 changed lines, or a diff body over 500,000 characters, is still high or medium, and Grill CI skips the judge. The caps live in `.github/automerge.json` (`highChangedLines`, `grillSkipChangedLines`, `grillSkipDiffChars`, `diffCharBudget`).

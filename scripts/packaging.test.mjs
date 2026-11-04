@@ -38,6 +38,34 @@ describe("the manifests agree", () => {
     assert.match(readFileSync(join(ROOT, "LICENSE"), "utf8"), /^MIT License\n\nCopyright \(c\) \d{4} /);
   });
 
+  it("the code that handles a decision is here, under MIT, with no other license in it", () => {
+    // PRINCIPLES.md promises these stay open source under MIT for good. Moving one out of this
+    // repository, or giving one its own license, fails here.
+    const decisionPaths = [
+      "server/index.mjs",
+      "scripts/judge.mjs",
+      "scripts/judgeCore.mjs",
+      "scripts/checkCore.mjs",
+      "scripts/apiKey.mjs",
+      "scripts/missCore.mjs",
+      "prompts/grill.md",
+      "skills/grill/SKILL.md",
+      "api/hosted.js",
+      "api/_hosted.mjs",
+      "api/_miss.mjs",
+    ];
+    for (const p of decisionPaths) {
+      assert.ok(existsSync(join(ROOT, p)), `${p} is missing`);
+      const text = readFileSync(join(ROOT, p), "utf8");
+      for (const m of text.matchAll(/SPDX-License-Identifier:\s*([^\s*]+)/g)) assert.equal(m[1], "MIT", `${p} declares ${m[1]}`);
+      assert.doesNotMatch(text, /all rights reserved|proprietary and confidential|business source license|polyform|elastic license|commons clause/i, p);
+    }
+    const principles = readFileSync(join(ROOT, "docs/PRINCIPLES.md"), "utf8");
+    assert.match(principles, /stays open source under the MIT license, for good/);
+    assert.match(readFileSync(join(ROOT, "README.md"), "utf8"), /\[TRADEMARKS\.md\]\(TRADEMARKS\.md\)/);
+    assert.match(readFileSync(join(ROOT, "TRADEMARKS.md"), "utf8"), /The code is MIT\. The name is not part of that license\./);
+  });
+
   it("the key setting has the same name in the plugin, its MCP config and the extension, and is always sensitive", () => {
     const ref = "${user_config.openrouter_api_key}";
     assert.equal(plugin.userConfig.openrouter_api_key.sensitive, true);
