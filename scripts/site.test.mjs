@@ -1762,3 +1762,45 @@ describe("markdown for agents", () => {
     assert.equal(ghost.length, 0, "a missing page is not served as a markdown 200");
   });
 });
+
+describe("where saved grills are", () => {
+  const NAV_PAGES = [
+    "site/page.html",
+    "site/about.html",
+    "site/faq.html",
+    "site/contact.html",
+    "site/check-your-ai.html",
+    "site/contribute.html",
+    "site/demo.html",
+    "site/look-back.html",
+    "site/miss.html",
+    "site/privacy.html",
+    "site/start.html",
+  ];
+  const nav = (html) => html.match(/<nav aria-label="Sections">[\s\S]*?<\/nav>/)?.[0] || "";
+
+  it("links Your grills from the shared nav", () => {
+    for (const file of NAV_PAGES) {
+      const html = readFileSync(join(ROOT, file), "utf8");
+      assert.match(nav(html), /<a href="\/decisions">Your grills<\/a>/, file);
+    }
+  });
+
+  it("tells someone already using Grill where their saved choices are", () => {
+    const start = readFileSync(join(ROOT, "site/start.html"), "utf8");
+    assert.match(start, /Already using Grill in chat\? Your saved choices are at <a href="\/decisions">Your grills<\/a>\./);
+  });
+
+  it("points Grill in chat at /decisions and keeps the look-back page for paste", () => {
+    const about = readFileSync(join(ROOT, "site/about.html"), "utf8");
+    assert.match(about, /<a href="\/decisions">Your grills<\/a>/);
+    assert.match(about, /The <a href="\/look-back\/">look-back page<\/a> is the paste option when you are not using Grill in chat\./);
+    const faq = readFileSync(join(ROOT, "site/faq.html"), "utf8");
+    assert.doesNotMatch(faq, /Saved history and look-back reminders are coming later/);
+    assert.match(faq, /grillyour\.ai\/decisions/);
+    assert.match(faq, /Your grills/);
+    assert.match(faq, /14-day look-back/);
+    assert.match(faq, /look back/);
+    assert.match(faq, /off until you opt in/);
+  });
+});

@@ -2,10 +2,14 @@
 import { createSign, generateKeyPairSync, randomBytes } from "node:crypto";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { handleAccount, handleCalendar, handleDecisions, handleMcp, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import { CLAUDE_WEB_REDIRECT, createMemoryRedis } from "./hostedCore.mjs";
 
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RESOURCE = "https://mcp.example/mcp";
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const jwk = publicKey.export({ format: "jwk" });
@@ -429,5 +433,21 @@ describe("the decisions page layout", () => {
     } finally {
       await fake.close();
     }
+  });
+});
+
+describe("the public pages name where saved grills are", () => {
+  it("the FAQ tells the truth, and the shared nav links to Your grills", () => {
+    const faq = readFileSync(join(ROOT, "site/faq.html"), "utf8");
+    const about = readFileSync(join(ROOT, "site/about.html"), "utf8");
+    assert.doesNotMatch(faq, /Saved history and look-back reminders are coming later/);
+    assert.match(faq, /saved at <a href="\/decisions">grillyour\.ai\/decisions<\/a> \(Your grills\)/);
+    assert.match(faq, /14-day look-back/);
+    assert.match(faq, /optional calendar link/);
+    assert.match(faq, /say "look back" in chat/);
+    assert.match(faq, /off until you opt in/);
+    const nav = (html) => html.match(/<nav aria-label="Sections">[\s\S]*?<\/nav>/)?.[0] || "";
+    assert.equal(nav(faq), nav(about));
+    assert.match(nav(faq), /<a href="\/decisions">Your grills<\/a>/);
   });
 });
