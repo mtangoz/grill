@@ -1,0 +1,11 @@
+{
+  "id": "must-have-broken-kiln-insurance",
+  "kind": "flawed",
+  "subject": "Moss & Marble is a pottery studio deciding how to clear student work before the May sale. Earlier in the chat, the teacher stated a must-have: \"Student pieces fire only in the Tuesday community kiln. We do not book the private kiln, because the insurance rider covers the Tuesday kiln only.\" The assistant then proposed a plan for the backlog. The plan recommends booking three extra firings on the private kiln on Thursday nights and moving the student mugs onto those firings, so every mug is glazed before the sale weekend. Reasoning: the Tuesday kiln is full through April, about forty mugs are still unfired, and the private kiln is empty on Thursdays. The plan calls this clearing the shelf and does not say the Thursday firings leave the insured kiln. Prediction, offered at 75% confidence: the three Thursday firings finish the backlog before the May sale. Goal: have every student mug fired before the sale weekend. The strongest case against: the teacher is already tired on Thursday nights and may rush a firing.",
+  "question": "Should Moss & Marble book the private kiln on three Thursday nights so the student mugs are fired before the May sale?",
+  "expect": {
+    "must_target": ["insurance rider covers the Tuesday kiln only", "do not book the private kiln", "booking three extra firings on the private kiln"],
+    "verdict_not": ["holds"]
+  },
+  "why": "Earlier in the chat the teacher stated that student pieces fire only in the Tuesday community kiln and the insurance rider covers the Tuesday kiln only. The backlog plan then books the private kiln for those mugs and does not say it is dropping that must-have."
+}

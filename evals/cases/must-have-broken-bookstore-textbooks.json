@@ -1,0 +1,11 @@
+{
+  "id": "must-have-broken-bookstore-textbooks",
+  "kind": "flawed",
+  "subject": "Lark & Spine is a one-room bookstore beside a high school, deciding how to stock the August course rush. Earlier in the chat, the owner stated a must-have: \"Used course books stay out. The school contract says the shop sells new course books only, and secondhand copies are not allowed on the floor.\" The assistant then proposed a plan for August. The plan recommends buying graduates' used textbooks and setting them on a front table called the course corner, priced at half the new copy, so students comparing prices still leave with a book from this shop. Reasoning: last August the shop watched about thirty students walk next door after seeing new-only prices, and a half-price table would keep that visit in the room. The plan calls the table a seasonal display and does not say it sets aside the school contract. Prediction, offered at 70% confidence: the course corner keeps at least twenty of those walk-outs as sales in August. Goal: hold the August course-rush visits inside the shop. The strongest case against: the back room is already full, so a second stack of books may not fit before term starts.",
+  "question": "Should Lark & Spine put graduates' used textbooks on a front table for the August course rush?",
+  "expect": {
+    "must_target": ["sells new course books only", "secondhand copies are not allowed on the floor", "buying graduates' used textbooks"],
+    "verdict_not": ["holds"]
+  },
+  "why": "Earlier in the chat the owner stated that the school contract says the shop sells new course books only and secondhand copies are not allowed on the floor. The August plan then buys graduates' used textbooks for a front table and does not say it is dropping that must-have."
+}

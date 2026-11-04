@@ -1,13 +1,13 @@
 # Evals
 
-A self-improvement measurement loop for the judge, built on synthetic material only: 18 fictional
+A self-improvement measurement loop for the judge, built on synthetic material only: 22 fictional
 founder/operator decisions under `cases/`, never a real user's decision. `node scripts/eval.mjs`
 runs each one through the real judge CLI and scores the result against `thresholds.json`.
 
-**These thresholds are sanity floors, not precise scores.** Eighteen cases is not a statistically
+**These thresholds are sanity floors, not precise scores.** Twenty-two cases is not a statistically
 powered benchmark, and the judge is a stochastic third-party model reached through OpenRouter's
 Auto Router — the same case can score differently run to run. The numbers are loose on purpose:
-`catchRate`/`loadedCatchRate` only require catching 7 of 9 / 3 of 4 cases, and `decorrelatedRate`
+`catchRate`/`loadedCatchRate` only require catching 9 of 13 / 3 of 4 cases, and `decorrelatedRate`
 (at least 1.0: every run judged outside Claude's family) and `schemaViolationRate` (at most 0.1) are strict. The goal is to
 catch a *regression* — the judge going quiet, or the output contract breaking — not to grade its
 reasoning precisely. Treat a red run as "go look," not a graded score.
@@ -23,6 +23,16 @@ as a false alarm.
 guardrail and then chooses a plan that crosses it. `sound-goal-tradeoff-support-hours` names a
 slower reply time and accepts it in order to reach a goal, so a judge that treats that accepted
 trade-off as a defect shows up as a false alarm.
+
+**Four cases cover a must-have stated earlier in the chat.** The person names a hard limit in an
+earlier turn. The later plan does a thing that limit rules out, and does not say it is dropping
+the limit. `must-have-broken-lemonade-sunday` opens a lemonade stand on a Sunday the town permit
+does not cover. `must-have-broken-bookstore-textbooks` puts used course books on the floor of a
+shop whose school contract allows new copies only. `must-have-broken-tutoring-lock` keeps children
+past the time the classroom locks. `must-have-broken-kiln-insurance` fires student work in a kiln
+the insurance rider does not cover. The clash is a consistency check, so the judge should file it
+under Checked for you. The phrase-match gate scores whether a challenge quotes the limit or the
+step that breaks it. It does not read the Checked-for-you label.
 
 **The eval gates only run with a key.** CI has no OpenRouter key, so there the eval prints a notice and
 skips. A change to the judge prompt or the severity scale needs a live run on a machine with a key

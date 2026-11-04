@@ -1,0 +1,11 @@
+{
+  "id": "must-have-broken-lemonade-sunday",
+  "kind": "flawed",
+  "subject": "Lemon Lane Stand is deciding how to staff the July farmers' market. Earlier in the chat, the owner stated a must-have: \"Sunday sales are off the table. The town permit covers Monday through Saturday only, and the stand does not open on Sunday.\" The assistant then proposed a plan for the market month. The plan recommends opening every morning in July, including Sunday from 8 to 11, and staffing that morning with the owner's cousin so the stand matches the market's posted hours. Reasoning: the market draws its biggest crowd on Sunday, a nearby stall counted about 40 extra cups on Sundays last July, and the cousin has said he can cover those mornings. The plan calls this an hours extension and does not say the Sunday opening drops the permit limit. Prediction, offered at 65% confidence: Sunday mornings add about 40 cups a week through July without any other change to the weekday stand. Goal: cover the market's full posted schedule. The strongest case against: the cousin missed two Saturday shifts in June, so a Sunday crew of one may not show up.",
+  "question": "Should Lemon Lane Stand open every morning in July, including Sunday, to match the farmers' market?",
+  "expect": {
+    "must_target": ["the stand does not open on Sunday", "including Sunday from 8 to 11", "permit covers Monday through Saturday only"],
+    "verdict_not": ["holds"]
+  },
+  "why": "Earlier in the chat the owner stated that the town permit covers Monday through Saturday only and the stand does not open on Sunday. The July plan then opens Sunday from 8 to 11 and does not say it is dropping that must-have."
+}
