@@ -70,6 +70,8 @@ import {
   validateChallenges,
   VERDICTS,
   RUN_PRIVACY_LINE,
+  emptyMasked,
+  runPrivacyLine,
   formatRunTime,
   renderRunDisclosure,
   runModels,
@@ -1832,6 +1834,16 @@ describe("renderRunDisclosure — the run note before every brief", () => {
     assert.equal(formatRunTime(200), "took 1s");
     assert.equal(formatRunTime(Number.NaN), "time not recorded");
     assert.equal(formatRunTime(-5), "time not recorded");
+  });
+
+  it("names what was masked on this run, still as one sentence", () => {
+    assert.equal(runPrivacyLine(emptyMasked()), RUN_PRIVACY_LINE);
+    assert.equal(runPrivacyLine(undefined), RUN_PRIVACY_LINE);
+    assert.equal(
+      runPrivacyLine({ ...emptyMasked(), email: 2, address: 1 }),
+      "Private: sent only to zero-data-retention endpoints, with keys blocked and personal details masked first (2 email addresses, 1 street address).",
+    );
+    assert.match(renderRunDisclosure({ servedModel: "x/y", masked: { ...emptyMasked(), bank: 1 } }, 5000), /\(1 bank account\)\.$/);
   });
 
   it("keeps the privacy reminder to one short sentence", () => {

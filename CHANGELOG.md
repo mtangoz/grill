@@ -6,6 +6,8 @@ A change may add one optional line when someone has agreed to be named. Leave th
 
 ## Unreleased
 
+- More personal details are masked before a write-up is sent: bank accounts (IBAN, UK sort code and account), US social security and UK National Insurance numbers, labelled dates of birth, street addresses, UK postcodes and US ZIP codes, and IP addresses, on top of email, phone and card numbers. A password in a link or a `password=` pair now stops the run, like a key. The run note's privacy line says what was masked on that run. A labelled test set checks each kind in CI and checks that ordinary decision text is left alone. Names are still not masked, and PRIVACY.md says so.
+- GrillBot's pull request comment opens with the same run note as a grill in chat. Public @AskGrill verdicts use the same format.
 - Every grill now opens with a two-line run note, on the free tool, a Pro key and Grill inside your chat. The first line names the models that answered (the judge that served the answer, plus Jev when its quality check ran) and how long the run took. The second is one sentence on how the write-up was kept private. The first-use outside-judge line is unchanged and still shows once.
 - A plain /support page names support@grillyour.ai, links the FAQ, terms and privacy pages, and says how to delete your data. Records are deleted at Your grills. Deleting the account at /account removes the records, the key and the sign-in. The page runs no script.
 - Every hosted tool names a title, readOnlyHint and destructiveHint. grill, grill_result and grill_look_back are read-only, so destructiveHint is false. grill_decided writes a record and can replace one, so destructiveHint is true.

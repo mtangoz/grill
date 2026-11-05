@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describeMasked, redactSensitive } from "./judgeCore.mjs";
+import { describeMasked, emptyMasked, redactSensitive } from "./judgeCore.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import { PING_URL, sendUsagePing, usageStatsEnabled } from "./usageStats.mjs";
 
@@ -39,7 +39,7 @@ describe("secrets never leave", () => {
     const r = redactSensitive(prose);
     assert.deepEqual(r.secrets, []);
     assert.equal(r.text, prose);
-    assert.deepEqual(r.masked, { email: 0, phone: 0, card: 0 });
+    assert.deepEqual(r.masked, emptyMasked());
   });
 });
 
@@ -52,7 +52,7 @@ describe("contact details are masked", () => {
       r.text,
       "Ask [email] or call [phone], [phone] or [phone]. Card [card number].",
     );
-    assert.deepEqual(r.masked, { email: 1, phone: 3, card: 1 });
+    assert.deepEqual(r.masked, { ...emptyMasked(), email: 1, phone: 3, card: 1 });
   });
 
   it("does not mask a number that fails the card checksum", () => {
