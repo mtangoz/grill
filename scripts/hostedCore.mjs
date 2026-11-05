@@ -697,9 +697,9 @@ export function hostedStillRunningText(jobId) {
 export function hostedTools() {
   const [grill, result, look] = buildGrillTools({ checkOn: true });
   const localDisclosure =
-    /The first time you use Grill with this person, say once\b.*?Do not mention the judge's model, a score, a balance, or a quote check\. /;
+    /The first time you use Grill with this person, say once\b.*?Do not mention a score, a balance, or a quote check\. /;
   const hostedDisclosure =
-    "Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Do not mention the judge's model, a Jev score, a credit balance, or a quote check. ";
+    "Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Every result then has a two-line run note (models and time, then privacy). Show it as written, before the note, every time. Do not mention a Jev score, a credit balance, or a quote check. ";
   return [
     {
       ...grill,
@@ -796,12 +796,12 @@ export const HOSTED_INSTRUCTIONS = [
   "Do not rewrite the decision, do not add your own case against, and do not wait for an OK.",
   "Ask at most one short question, and only if the decision is truly unclear, such as what the goal is.",
   "The first time, grill asks whether to keep decision records before anything is sent. Relay that one question and call again with keep_records true or false only after they answer.",
-  "If the result starts with the outside-judge sentence, show that one line once. Do not add a disclosure of your own, and do not repeat it later.",
+  "If the result starts with the outside-judge sentence, show that one line once. Do not add a disclosure of your own, and do not repeat it later. Every result has a two-line run note (models and time, then privacy). Show it as written, before the note.",
   "If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the note arrives. Do not ask the person to check, and do not ask them for a job id.",
   "If three grills are still running, wait about 2 minutes and call grill again yourself. Do not ask the person for a job id.",
   "Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question, a fact list, a confidence question, or a line of your own. It already ends with the next-step line.",
   "When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Pass job_id if you have one. A follow: line is a job id for you. Never show it. Do not write a layer yourself.",
-  "Do not show a record, the judge's model, a Jev score, a credit balance, a quote check, format rules, or a disclaimer.",
+  "Do not add a model name of your own, and do not show a record, a Jev score, a credit balance, a quote check, format rules, or a disclaimer.",
   "Call grill_result with detail provenance only when you are writing a lasting record of the grill, such as an audit log. Put that one line in the record, not in your reply, unless the person asks which model judged.",
   "The verdict never becomes the decision. If they ask whether they should do it, hand the choice back and name the cheap test.",
   "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation as written, and sometimes one more line saying earlier calls are due for a look-back. If they never answer, do not call it, and there is no record and no look-back.",

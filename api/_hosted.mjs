@@ -27,6 +27,7 @@ import {
   normalizeDetail,
   renderDeepen,
   renderLayers,
+  renderRunDisclosure,
 } from "../scripts/judgeCore.mjs";
 import {
   REVIEW_DAYS,
@@ -1137,7 +1138,7 @@ function startJudge({ subject, question, author, check, apiKey, deps, deepen = f
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
   });
-  const job = { done: false };
+  const job = { done: false, startedAt: Date.now() };
   // Stop the judge before the function's own limit does, so a slow run still stores a
   // "took too long" result instead of vanishing and reading as expired.
   const deadlineMs = Number.isInteger(deps.judgeDeadlineMs) ? deps.judgeDeadlineMs : HOSTED_JUDGE_DEADLINE_MS;
@@ -1166,7 +1167,7 @@ function startJudge({ subject, question, author, check, apiKey, deps, deepen = f
         parsed = null;
       }
       job.done = true;
-      job.outcome = { code: code ?? 1, report, stderr, parsed };
+      job.outcome = { code: code ?? 1, report, stderr, parsed, ms: Date.now() - job.startedAt };
       resolve(job.outcome);
     };
     child.on("close", (code) => finish(code));
@@ -1365,7 +1366,7 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
   await redis(deps, ["RPUSH", spendLogKey(account.id), JSON.stringify({ at: new Date().toISOString(), costUsd: cost, model })]);
   await redis(deps, ["LTRIM", spendLogKey(account.id), String(-SPEND_LOG_MAX), "-1"]);
   await countSpend(account, deps, cost);
-  let text = layers.brief.trim();
+  let text = `${renderRunDisclosure(parsed || {}, Number(outcome.ms))}\n\n${layers.brief.trim()}`;
   if (await firstDisclosure(account, deps)) text = `${ONCE_DISCLOSURE}\n\n${text}`;
   creditCache.delete(account.id);
   return { text: `${text.trim()}\n`, layers, isError: false };

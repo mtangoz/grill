@@ -33,7 +33,7 @@ What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md]
 ## What Grill enforces in code
 
 Each of these is pinned by a test, so it can't quietly stop being true.
-- **The decision is sent as you stated it.** Grill does not wait for a separate approval of a rewritten write-up. The first time, you are told in one line that it goes to an outside judge from a different company, and that the router does not keep it, with a link to this page. Later grills do not repeat that line.
+- **The decision is sent as you stated it.** Grill does not wait for a separate approval of a rewritten write-up. The first time, you are told in one line that it goes to an outside judge from a different company, and that the router does not keep it, with a link to this page. Later grills do not repeat that line. Every grill, including the first, also opens with a run note naming the models that answered and how long it took, then one sentence on how the write-up was kept private.
 - **Keys and tokens never leave.** If the write-up, question or context contains anything shaped like an API key, token or private key, the run stops before any network call and says so. It never echoes the value.
 - **Contact details are masked.** Email addresses, phone numbers and card numbers are replaced with `[email]`, `[phone]` and `[card number]` before sending. The report says how many, never what.
 - **Your key stays on your computer.** If you save it with `npx -y grillyour --set-key`, it goes in `~/.config/grill/key`, readable only by you (mode 600). Grill reads it there and sends it only to the model router, as the request's credential. Status lines show its last four characters, never the key.

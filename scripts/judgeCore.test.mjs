@@ -69,6 +69,10 @@ import {
   toolCallArgumentsOf,
   validateChallenges,
   VERDICTS,
+  RUN_PRIVACY_LINE,
+  formatRunTime,
+  renderRunDisclosure,
+  runModels,
 } from "./judgeCore.mjs";
 
 /** A challenge that satisfies every mandatory refusal point, so a test can break exactly one. */
@@ -1804,5 +1808,35 @@ describe("the optional deepen layer", () => {
       for (const q of DEPTH_QUESTIONS) assert.ok(text.includes(q), `${file} is missing ${q}`);
       assert.match(text, /Never add a question or a step before the verdict|Never add a required question before the verdict/);
     }
+  });
+});
+
+describe("renderRunDisclosure — the run note before every brief", () => {
+  it("names the judge that answered, Jev when its check was usable, and the time", () => {
+    const note = renderRunDisclosure({ servedModel: "google/gemini-3-pro", quality: { flags: [] } }, 102_400);
+    assert.equal(
+      note,
+      `Models: google/gemini-3-pro (judge), typesafe/jev-1.13 (quality check) · took 1m 42s\n${RUN_PRIVACY_LINE}`,
+    );
+  });
+
+  it("leaves Jev out when the check was off or unavailable, and never invents a judge", () => {
+    assert.deepEqual(runModels({ servedModel: "openai/gpt-5.6", quality: null }), ["openai/gpt-5.6 (judge)"]);
+    assert.deepEqual(runModels({ servedModel: "openai/gpt-5.6", quality: { unavailable: "not run" } }), ["openai/gpt-5.6 (judge)"]);
+    assert.deepEqual(runModels({}), ["judge model not reported"]);
+  });
+
+  it("formats time plainly and refuses to make one up", () => {
+    assert.equal(formatRunTime(48_200), "took 48s");
+    assert.equal(formatRunTime(60_000), "took 1m 00s");
+    assert.equal(formatRunTime(200), "took 1s");
+    assert.equal(formatRunTime(Number.NaN), "time not recorded");
+    assert.equal(formatRunTime(-5), "time not recorded");
+  });
+
+  it("keeps the privacy reminder to one short sentence", () => {
+    assert.equal(RUN_PRIVACY_LINE.includes("\n"), false);
+    assert.equal(RUN_PRIVACY_LINE.split(/[.!?](\s|$)/).filter((x) => x && x.trim()).length, 1);
+    assert.ok(RUN_PRIVACY_LINE.split(/\s+/).length <= 20);
   });
 });

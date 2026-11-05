@@ -217,7 +217,13 @@ describe("a grill end to end (fixture, no network)", () => {
       assert.doesNotMatch(report, /\*\*Shaky\. \*\*/);
       assert.match(report, /Pull the signup curve from the last comparable launch/);
       assert.match(report, /Say 'more', 'options', or your call\./);
-      assert.doesNotMatch(report, /grill-record|## Steelman|## Quality check|gpt-/);
+      // The run note names the model that answered and the time, then the privacy line. The
+      // model appears there and nowhere else in the note.
+      assert.match(report, /^Models: [^\n]* · (took \d+(m \d{2})?s|time not recorded)\nPrivate: sent only to zero-data-retention endpoints[^\n]*\n\n/);
+      assert.match(report, /^Models: openai\/gpt-5\.6-sol \(judge\) · /);
+      const body = report.replace(/^Models: [^\n]* · (took \d+(m \d{2})?s|time not recorded)\nPrivate: sent only to zero-data-retention endpoints[^\n]*\n\n/, "");
+      assert.doesNotMatch(body, /grill-record|## Steelman|## Quality check|gpt-/);
+      assert.ok(report.indexOf("Private:") < report.indexOf("**Shaky.**"));
       assert.ok(report.indexOf("**Shaky.**") < report.indexOf("Say 'more'"));
     } finally {
       await c.close();
@@ -296,7 +302,7 @@ describe("a grill end to end (fixture, no network)", () => {
       GRILL_NEWS: "off",
     });
     const bigRes = await big.request("tools/call", { name: "grill", arguments: { subject, big: true } });
-    const brief = textOf(bigRes);
+    const brief = textOf(bigRes).replace(/^Models: [^\n]* · (took \d+(m \d{2})?s|time not recorded)\nPrivate: sent only to zero-data-retention endpoints[^\n]*\n\n/, "");
     assert.match(brief, /^\*\*Shaky\.\*\*/);
     assert.match(brief, /Say 'more', 'options', 'deepen', or your call\./);
     assert.doesNotMatch(brief, /Rewritten plan|top professional/);
