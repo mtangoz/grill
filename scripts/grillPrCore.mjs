@@ -3,7 +3,7 @@
 // out the base commit and passes in text it fetched from the API.
 
 import { authorFamily } from "./automergeCore.mjs";
-import { budgetText, NO_AUTHOR_FAMILY, stripSecrets, VERDICT_BADGE } from "./judgeCore.mjs";
+import { budgetText, NO_AUTHOR_FAMILY, renderRunDisclosure, stripSecrets, VERDICT_BADGE } from "./judgeCore.mjs";
 
 export const GRILL_MARKER = "<!-- grill-ci -->";
 export const GRILL_QUESTION =
@@ -31,6 +31,11 @@ export function alreadyGrilled(comments, sha, botLogin = "github-actions[bot]") 
     if (found && found[1] === want && !comment.body.includes(NOT_DECORRELATED)) return true;
   }
   return false;
+}
+
+/** The same two-line run note every grill opens with: models and time, then privacy. */
+function runNote(state) {
+  return renderRunDisclosure({ servedModel: flatten(state.servedModel) }, Number(state.ms));
 }
 
 /** Vendor of an OpenRouter slug (`vendor/model` → `vendor`), or "". */
@@ -303,10 +308,11 @@ export function formatGrillComment(state = {}) {
       GRILL_MARKER,
       stamp,
       `**Grill CI · ${tier} risk · no review**`,
+      runNote(state),
       "The judge run was degraded, so this is not a review and no label was changed.",
       notes.length ? notes.map((line) => `- ${line}`).join("\n") : "",
       state.companyLine || "",
-      `Judge model: ${flatten(state.servedModel) || "unavailable"}. Cost: ${formatCost(state.costUsd)}.`,
+      `Cost: ${formatCost(state.costUsd)}.`,
     ]);
   }
   if (state.kind === "not-decorrelated") {
@@ -314,13 +320,14 @@ export function formatGrillComment(state = {}) {
       GRILL_MARKER,
       stamp,
       `**Grill CI · ${tier} risk · ${NOT_DECORRELATED}**`,
+      runNote(state),
       state.companyLine || `Author model vendor: unknown, judge: unknown (${NOT_DECORRELATED})`,
       "The model that answered is not from a different company than the model that wrote this pull request. This is not an independent review. The job fails, and `needs-review` is added.",
       reasonBlock(state.reasons),
       state.verdictReason ? flatten(state.verdictReason) : "",
       "**What could break, and the cheapest check**",
       challengeBlock(state.challenges),
-      `Judge model: ${flatten(state.servedModel) || "unavailable"}. Cost: ${formatCost(state.costUsd)}.`,
+      `Cost: ${formatCost(state.costUsd)}.`,
     ]);
   }
 
@@ -329,12 +336,13 @@ export function formatGrillComment(state = {}) {
     GRILL_MARKER,
     stamp,
     `**Grill CI · ${tier} risk · ${badge}**`,
+    runNote(state),
     state.companyLine || "",
     reasonBlock(state.reasons),
     state.verdictReason ? flatten(state.verdictReason) : "",
     "**What could break, and the cheapest check**",
     challengeBlock(state.challenges),
-    `Judge model: ${flatten(state.servedModel) || "unavailable"}. Cost: ${formatCost(state.costUsd)}.`,
+    `Cost: ${formatCost(state.costUsd)}.`,
     "The verdict is advisory. The job fails when the served model is from an excluded company. `needs-review` blocks auto-merge. `grill-solid` does not make a pull request low risk. A solid verdict clears `needs-review`. Use `do-not-merge` when a later solid grill should still not merge.",
   ]);
 }

@@ -314,9 +314,13 @@ function main() {
   const dir = mkdtempSync(join(tmpdir(), "grill-ci-"));
   const subjectPath = join(dir, "subject.md");
   let child;
+  let judgeStarted = 0;
+  let judgeMs = Number.NaN;
   try {
     writeFileSync(subjectPath, writeUp.text, { mode: 0o600 });
+    judgeStarted = Date.now();
     child = runJudge(subjectPath, plan);
+    judgeMs = Date.now() - judgeStarted;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -361,6 +365,7 @@ function main() {
     reasons,
     servedModel: judged.servedModel,
     costUsd: judged.costUsd,
+    ms: judgeMs,
     companyLine: check.line,
     verdictReason: judged.verdictReason,
     challenges: judged.challenges,
