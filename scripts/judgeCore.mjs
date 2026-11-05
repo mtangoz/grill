@@ -2170,7 +2170,7 @@ function renderFull(result, subject) {
 
 /** The privacy half of the run note: one sentence, true on every route (local, Pro key, in-chat). */
 export const RUN_PRIVACY_LINE =
-  "Private: sent only to zero-data-retention endpoints, with keys blocked and personally identifiable information masked first.";
+  "Private: sent only to zero-data-retention endpoints, with keys blocked and common personally identifiable information masked first.";
 
 /** 48s, 1m 42s. Unknown or negative time reads "time not recorded", never a made-up number. */
 export function formatRunTime(ms) {

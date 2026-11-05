@@ -91,7 +91,22 @@ export function branchFamily(headRef) {
  * That does not fall back to excluding Anthropic, and x-ai is not excluded on its own.
  */
 export function judgePlan({ author = "", body = "", headRef = "", config }) {
-  const loginVendor = authorFamily(author, config) || branchFamily(headRef);
+  const byLogin = authorFamily(author, config);
+  const byBranch = branchFamily(headRef);
+  // The judge can exclude one company. When the login and the branch name two, no single
+  // exclusion makes the review independent of both, so refuse rather than pick one.
+  if (byLogin && byBranch && byLogin !== byBranch) {
+    return {
+      ok: false,
+      authorVendor: `${byLogin} or ${byBranch}`,
+      declared: "",
+      judgeModel: GRILL_CI_JUDGE_MODEL,
+      excludedVendors: [byLogin, byBranch],
+      authorArgs: [],
+      reason: `The login names ${byLogin} and the branch names ${byBranch}. The judge can exclude only one company, so this is not an independent review.`,
+    };
+  }
+  const loginVendor = byLogin || byBranch;
   const declared = loginVendor ? null : writtenByModel(body);
   const authorVendor = loginVendor || declared?.vendor || "unknown";
   const excludedVendors = authorVendor === "unknown" ? [] : [authorVendor];

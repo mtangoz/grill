@@ -181,6 +181,10 @@ describe("the post-run company check", () => {
     assert.equal(branchBeatsBody.authorVendor, "anthropic", "a body line cannot clear a claude/ branch");
     assert.equal(judgePlan({ author: "mtangoz", body: "", headRef: "codex/y", config }).authorVendor, "openai");
     assert.equal(judgePlan({ author: "mtangoz", body: "", headRef: "feature/claude/z", config }).authorVendor, "unknown");
+    const clash = judgePlan({ author: "chatgpt-codex-connector[bot]", body: "", headRef: "claude/x", config });
+    assert.equal(clash.ok, false, "two companies cannot both be excluded, so the plan refuses");
+    assert.match(clash.reason, /openai.*anthropic/);
+    assert.equal(judgePlan({ author: "claude[bot]", body: "", headRef: "claude/x", config }).ok, true, "agreeing signals are fine");
     const unknown = judgePlan({ author: "mtangoz", body: "", config });
     for (const servedModel of ["google/gemini-2.5-pro", "openai/gpt-5.6-sol", "anthropic/claude-opus-4", "x-ai/grok-4"]) {
       const check = companyCheck({
