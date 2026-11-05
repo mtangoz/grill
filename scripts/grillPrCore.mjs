@@ -66,15 +66,32 @@ export function writtenByModel(body) {
 export const GRILL_CI_JUDGE_MODEL = "openrouter/auto";
 
 /**
+ * Head-branch prefixes that name the company of the agent that opened the pull request. Claude
+ * Code opens its pull requests from `claude/…` branches, often through the owner's own login,
+ * which names no company. Without this, nothing is excluded and the judge could be Anthropic.
+ */
+export const BRANCH_FAMILIES = Object.freeze([
+  ["claude/", "anthropic"],
+  ["codex/", "openai"],
+]);
+
+/** The company a head branch names, or "". */
+export function branchFamily(headRef) {
+  const ref = typeof headRef === "string" ? headRef : "";
+  const hit = BRANCH_FAMILIES.find(([prefix]) => ref.startsWith(prefix));
+  return hit ? hit[1] : "";
+}
+
+/**
  * Who wrote the pull request, and which one company the Auto Router must not use.
  * A known login vendor wins over the body, so a pull request description cannot
- * clear Claude or Codex. Every other author, including mtangoz, cursor[bot], and
+ * clear Claude or Codex. A known head-branch prefix (BRANCH_FAMILIES) counts the same way. Every other author, including mtangoz, cursor[bot], and
  * cursoragent, is excluded only when the body has a Written-by-model line.
  * With no company to exclude, `--author none` tells the judge to exclude nothing.
  * That does not fall back to excluding Anthropic, and x-ai is not excluded on its own.
  */
-export function judgePlan({ author = "", body = "", config }) {
-  const loginVendor = authorFamily(author, config);
+export function judgePlan({ author = "", body = "", headRef = "", config }) {
+  const loginVendor = authorFamily(author, config) || branchFamily(headRef);
   const declared = loginVendor ? null : writtenByModel(body);
   const authorVendor = loginVendor || declared?.vendor || "unknown";
   const excludedVendors = authorVendor === "unknown" ? [] : [authorVendor];

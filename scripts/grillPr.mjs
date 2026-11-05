@@ -187,7 +187,7 @@ function main() {
     "GET",
     `repos/${repo}/pulls/${prNumber}`,
     "--jq",
-    "{draft, title, body, base: .base.ref, headRepo: .head.repo.full_name, author: .user.login, labels: [.labels[].name]}",
+    "{draft, title, body, base: .base.ref, headRef: .head.ref, headRepo: .head.repo.full_name, author: .user.login, labels: [.labels[].name]}",
   ]);
   if (pr.base !== "main") {
     console.log(`Base branch is ${pr.base}. Nothing to do.`);
@@ -279,7 +279,7 @@ function main() {
     return;
   }
 
-  const plan = judgePlan({ author: pr.author ?? "", body: pr.body ?? "", config });
+  const plan = judgePlan({ author: pr.author ?? "", body: pr.body ?? "", headRef: pr.headRef ?? "", config });
   if (!plan.ok) {
     upsert(repo, prNumber, comments, formatGrillComment({
       kind: "not-decorrelated",

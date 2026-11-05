@@ -2170,13 +2170,7 @@ function renderFull(result, subject) {
 
 /** The privacy half of the run note: one sentence, true on every route (local, Pro key, in-chat). */
 export const RUN_PRIVACY_LINE =
-  "Private: sent only to zero-data-retention endpoints, with keys blocked and personal details masked first.";
-
-/** The privacy line for one run: the fixed sentence, naming what was masked when anything was. */
-export function runPrivacyLine(masked) {
-  const what = describeMasked(masked);
-  return what ? `${RUN_PRIVACY_LINE.slice(0, -1)} (${what}).` : RUN_PRIVACY_LINE;
-}
+  "Private: sent only to zero-data-retention endpoints, with keys blocked and personally identifiable information masked first.";
 
 /** 48s, 1m 42s. Unknown or negative time reads "time not recorded", never a made-up number. */
 export function formatRunTime(ms) {
@@ -2203,7 +2197,7 @@ export function runModels(result) {
  * took, and one sentence on how the write-up was kept private. Two lines, no blank between.
  */
 export function renderRunDisclosure(result, ms) {
-  return `Models: ${runModels(result).join(", ")} · ${formatRunTime(ms)}\n${runPrivacyLine(result?.masked)}`;
+  return `Models: ${runModels(result).join(", ")} · ${formatRunTime(ms)}\n${RUN_PRIVACY_LINE}`;
 }
 
 /**

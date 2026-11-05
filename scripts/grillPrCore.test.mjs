@@ -173,6 +173,14 @@ describe("the post-run company check", () => {
   });
 
   it("does not fail an unknown author, and accepts a Grok judge of a Codex pull request", () => {
+    const viaBranch = judgePlan({ author: "mtangoz", body: "", headRef: "claude/grill-response-disclosure-lmaa19", config });
+    assert.equal(viaBranch.authorVendor, "anthropic");
+    assert.deepEqual(viaBranch.excludedVendors, ["anthropic"]);
+    assert.deepEqual(viaBranch.authorArgs, ["--author", "anthropic"]);
+    const branchBeatsBody = judgePlan({ author: "mtangoz", body: "Written-by-model: google/gemini-2.5-pro", headRef: "claude/x", config });
+    assert.equal(branchBeatsBody.authorVendor, "anthropic", "a body line cannot clear a claude/ branch");
+    assert.equal(judgePlan({ author: "mtangoz", body: "", headRef: "codex/y", config }).authorVendor, "openai");
+    assert.equal(judgePlan({ author: "mtangoz", body: "", headRef: "feature/claude/z", config }).authorVendor, "unknown");
     const unknown = judgePlan({ author: "mtangoz", body: "", config });
     for (const servedModel of ["google/gemini-2.5-pro", "openai/gpt-5.6-sol", "anthropic/claude-opus-4", "x-ai/grok-4"]) {
       const check = companyCheck({
