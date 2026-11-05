@@ -34,7 +34,7 @@
 
 // The one import: the optional quality check's section is rendered into the report below.
 // checkCore imports nothing, so this cannot become a cycle.
-import { renderCheck } from "./checkCore.mjs";
+import { JEV_MODEL, renderCheck } from "./checkCore.mjs";
 
 /** Confidence levels a challenge can be filed at. Also used as the tool schema's enum. */
 export const CONFIDENCES = Object.freeze(["high", "medium", "low"]);
@@ -2106,6 +2106,38 @@ function renderFull(result, subject) {
     );
   }
   return lines.join("\n\n");
+}
+
+/** The privacy half of the run note: one sentence, true on every route (local, Pro key, in-chat). */
+export const RUN_PRIVACY_LINE =
+  "Private: sent only to zero-data-retention endpoints, with keys blocked and contact details masked first.";
+
+/** 48s, 1m 42s. Unknown or negative time reads "time not recorded", never a made-up number. */
+export function formatRunTime(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return "time not recorded";
+  const secs = Math.max(1, Math.round(ms / 1000));
+  if (secs < 60) return `took ${secs}s`;
+  return `took ${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
+}
+
+/**
+ * The models that answered this run. Only the judge that actually served the answer (never a
+ * requested slug it walked past), plus Jev when its check came back usable.
+ */
+export function runModels(result) {
+  const served = typeof result?.servedModel === "string" && result.servedModel.trim() ? result.servedModel.trim() : "";
+  const models = [served ? `${served} (judge)` : "judge model not reported"];
+  const q = result?.quality;
+  if (q && typeof q === "object" && !q.unavailable) models.push(`${JEV_MODEL} (quality check)`);
+  return models;
+}
+
+/**
+ * The run note shown before every grill's brief, on every route: which models ran, how long it
+ * took, and one sentence on how the write-up was kept private. Two lines, no blank between.
+ */
+export function renderRunDisclosure(result, ms) {
+  return `Models: ${runModels(result).join(", ")} · ${formatRunTime(ms)}\n${RUN_PRIVACY_LINE}`;
 }
 
 /**
