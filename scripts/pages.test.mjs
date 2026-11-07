@@ -1,6 +1,6 @@
 // Contract for the pages a person sees. No browser: these assert on the HTML the handlers return.
-import { createSign, generateKeyPairSync, randomBytes } from "node:crypto";
-import { describe, it } from "node:test";
+import { createSign, randomBytes } from "node:crypto";
+import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -8,14 +8,15 @@ import { fileURLToPath } from "node:url";
 import { handleAccount, handleCalendar, handleDecisions, handleMcp, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import { CLAUDE_WEB_REDIRECT, createMemoryRedis } from "./hostedCore.mjs";
+import { testSigningKey } from "./testSigningKey.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RESOURCE = "https://mcp.example/mcp";
-const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const jwk = publicKey.export({ format: "jwk" });
-jwk.kid = "test-key";
-jwk.alg = "RS256";
-jwk.use = "sig";
+let privateKey;
+let jwk;
+before(async () => {
+  ({ privateKey, jwk } = await testSigningKey());
+});
 
 function signJwt(payload) {
   const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: "test-key", typ: "JWT" })).toString("base64url");

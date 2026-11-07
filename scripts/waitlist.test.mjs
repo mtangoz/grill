@@ -1,8 +1,8 @@
 // Waitlist for someone without an invite code. Email and ?ref= only, confirmed by a second
 // POST, stored in the existing Redis. No email is sent. Approval mints a single-use code
 // and does not let them in until they redeem it. Made-up addresses only.
-import { createHash, createSign, generateKeyPairSync, randomBytes } from "node:crypto";
-import { describe, it } from "node:test";
+import { createHash, createSign, randomBytes } from "node:crypto";
+import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -10,10 +10,14 @@ import { fileURLToPath } from "node:url";
 import { handleDecisions, handleRedeem, resetHostedCaches } from "../api/_hosted.mjs";
 import { WAITLIST_SIGNUPS, approveWaitlist, handleWaitlist, readWaitlist } from "../api/_waitlist.mjs";
 import { createMemoryRedis, openSignup } from "./hostedCore.mjs";
+import { testSigningKey } from "./testSigningKey.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const jwk = { ...publicKey.export({ format: "jwk" }), kid: "test-key", alg: "RS256", use: "sig" };
+let privateKey;
+let jwk;
+before(async () => {
+  ({ privateKey, jwk } = await testSigningKey());
+});
 
 function signJwt(payload) {
   const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: "test-key", typ: "JWT" })).toString("base64url");

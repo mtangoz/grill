@@ -1,22 +1,23 @@
 // /judge: a signed-in page that prefills a decision and runs a hosted grill only on POST.
 // node --test scripts/judgePage.test.mjs
-import { createSign, generateKeyPairSync, randomBytes } from "node:crypto";
+import { createSign, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { esc } from "../api/_pro.mjs";
 import { handleJudge, resetHostedCaches } from "../api/_hosted.mjs";
 import { JUDGE_PACKET_MAX, USER_CAP_TEXT, createMemoryRedis, isoMonth } from "./hostedCore.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
+import { testSigningKey } from "./testSigningKey.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const jwk = publicKey.export({ format: "jwk" });
-jwk.kid = "test-key";
-jwk.alg = "RS256";
-jwk.use = "sig";
+let privateKey;
+let jwk;
+before(async () => {
+  ({ privateKey, jwk } = await testSigningKey());
+});
 
 const FEB = Date.parse("2026-02-01T15:00:00Z");
 const PACKET = "Decision: Keep the maple stand on Pine Street.\nI'm 60% sure. The other option is to close it in November.";

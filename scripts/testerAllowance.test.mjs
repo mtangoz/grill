@@ -1,8 +1,8 @@
 // Early testers in chat are free for life: $5 of use each month, reset on the 1st (UTC), on the
 // router key and on the per-person monthly counter. The whole-service cap stays $20 a month.
 // Made-up fixtures only.
-import { createSign, generateKeyPairSync, randomBytes } from "node:crypto";
-import { describe, it } from "node:test";
+import { createSign, randomBytes } from "node:crypto";
+import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -10,12 +10,16 @@ import { fileURLToPath } from "node:url";
 import { handleAccount, handleDecisions, handleMcp, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import { CLAUDE_WEB_REDIRECT, TESTER_MONTHLY_USD, createMemoryRedis, monthlyCapUsd, userMonthlyCapUsd } from "./hostedCore.mjs";
+import { testSigningKey } from "./testSigningKey.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RESOURCE = "https://mcp.example/mcp";
 const ALLOWANCE_LINE = "Free for life: $5 of use each month, resets on the 1st.";
-const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const jwk = { ...publicKey.export({ format: "jwk" }), kid: "test-key", alg: "RS256", use: "sig" };
+let privateKey;
+let jwk;
+before(async () => {
+  ({ privateKey, jwk } = await testSigningKey());
+});
 
 function signJwt(payload) {
   const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: "test-key", typ: "JWT" })).toString("base64url");

@@ -1,21 +1,22 @@
 // Opt-in public verdict link. The fixture is an invented workshop price, not a real decision.
-import { createHash, createSign, generateKeyPairSync, randomBytes } from "node:crypto";
+import { createHash, createSign, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeEach, describe, it } from "node:test";
+import { before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { handleDecisions, handleShare, resetHostedCaches } from "../api/_hosted.mjs";
 import { createMemoryRedis, decryptString, encryptString, keyFromEnv } from "./hostedCore.mjs";
 import { recordBlock } from "./reflection.mjs";
+import { testSigningKey } from "./testSigningKey.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EMAIL = "invitee@example.com";
-const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const jwk = publicKey.export({ format: "jwk" });
-jwk.kid = "test-key";
-jwk.alg = "RS256";
-jwk.use = "sig";
+let privateKey;
+let jwk;
+before(async () => {
+  ({ privateKey, jwk } = await testSigningKey());
+});
 
 const WORKSHOP = {
   title: "Saturday kiln workshop price",
