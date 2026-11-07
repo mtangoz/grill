@@ -130,6 +130,7 @@ import {
   budgetText,
   NO_AUTHOR_FAMILY,
   redactSensitive,
+  emptyMasked,
   CONTEXT_BUDGET,
   AUTO_ROUTER_MAX_RETRIES,
   DEFAULT_CHAIN,
@@ -375,8 +376,8 @@ if (subjectParts.length === 0) {
 const degraded = [];
 
 // Privacy, before anything else is built: a secret anywhere in what would be sent stops the run
-// with no network call; contact details are masked. See redactSensitive in judgeCore.mjs.
-const masked = { email: 0, phone: 0, card: 0 };
+// with no network call; personal details are masked. See redactSensitive in judgeCore.mjs.
+const masked = emptyMasked();
 function outgoing(text, what) {
   const r = redactSensitive(text);
   if (r.secrets.length > 0) {
@@ -412,7 +413,7 @@ if (checkEnv !== "" && checkEnv !== "0" && checkEnv !== "1") {
 const checkWanted = !opts.deepen && (opts.check || checkEnv === "1");
 
 // The planted-flaw question is text that will be SENT, so it goes through the same gate as the
-// subject: a secret stops the run here, before any request; contact details are masked.
+// subject: a secret stops the run here, before any request; personal details are masked.
 let checkExtra = null;
 if (opts.checkFlaw !== null) {
   if (!checkWanted) fail("--check-flaw adds a question to the quality check, so it needs --check (or JUDGE_CHECK=1)");

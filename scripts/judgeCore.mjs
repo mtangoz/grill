@@ -587,8 +587,10 @@ function str(v) {
 //   - SECRETS BLOCK. Anything shaped like a key, token or private key stops the run before any
 //     network call. Masking a secret would still send most of it; refusing is the only safe
 //     direction, and the user fixes it in one edit.
-//   - CONTACT DETAILS ARE MASKED. Email addresses, phone numbers and card numbers never matter to
-//     whether a decision holds, so they are replaced with [email], [phone] and [card number].
+//   - PERSONAL DETAILS ARE MASKED. Email addresses, phone numbers, card numbers, bank accounts,
+//     national ID numbers, labelled dates of birth, street addresses, postcodes and IP addresses
+//     never matter to whether a decision holds, so each is replaced with a placeholder (MASK_KINDS).
+//     Names are not: see docs/PRIVACY.md for exactly what is and is not masked.
 //     The report says how many were masked, never what they were.
 // High precision over high recall: a pattern that fires on ordinary prose would teach users to
 // ignore it. Anything these miss is what the "show the subject first" rule is for.
@@ -601,6 +603,8 @@ const SECRET_PATTERNS = Object.freeze([
   ["a Google API key", /\bAIza[0-9A-Za-z_-]{35}\b/],
   ["a JSON web token", /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
   ["a private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
+  ["a password in a link", /\b[a-z][a-z0-9+.-]{1,20}:\/\/[^\s:/@]+:[^\s/@]+@/i],
+  ["a password", /\b(?:password|passwd|pwd)\s*[:=]\s*["']?(?=[^\s"']*\d)[^\s"']{6,}/i],
 ]);
 
 const EMAIL_RX = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
@@ -609,6 +613,40 @@ const PHONE_RXS = [
   /(?<![\w+])\+\d{1,3}(?:[\s.-]?\d){7,12}(?!\w)/g, // +44 20 7946 0958
   /(?<![\w+])(?:\(\d{3}\)\s?|\d{3}[\s.-])\d{3}[\s.-]\d{4}(?!\w)/g, // (212) 555-0100, 212-555-0100
 ];
+// Personal details beyond contact details. Same rule: each pattern needs a shape, a checksum or
+// a label that ordinary prose does not have, so "masked" stays rare enough to be read.
+const IBAN_RX = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,30}\b/g; // kept only if mod-97 holds
+const SORT_ACCOUNT_RX = /\b\d{2}-\d{2}-\d{2}[\s,;/]+(?:(?:a\/c|acc(?:ount)?)(?:\s*(?:no\.?|number))?\s*:?\s*)?\d{8}\b/gi;
+const SSN_RX = /\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b/g;
+const NINO_RX = /\b(?!BG|GB|NK|KN|TN|NT|ZZ)[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z] ?\d{2} ?\d{2} ?\d{2} ?[A-D]\b/g;
+const DOB_RX =
+  /\b(DOB|D\.O\.B\.?|date of birth|born(?: on)?)(\s*[:-]?\s*)(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}(?:st|nd|rd|th)? [A-Z][a-z]+,? \d{4}|[A-Z][a-z]+ \d{1,2}(?:st|nd|rd|th)?,? \d{4})/gi;
+const STREET_RX =
+  /\b\d{1,5}[A-Za-z]? (?:[A-Z][a-z]+ ){1,3}(?:Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Drive|Dr|Boulevard|Blvd|Court|Ct|Way|Place|Pl|Terrace|Close|Crescent|Square|Gardens|Grove|Mews)\b\.?/g;
+const UK_POSTCODE_RX = /\b(?:[A-PR-UWYZ][A-HK-Y]?\d[A-Z\d]?) ?\d[ABD-HJLNP-UW-Z]{2}\b/g;
+const US_STATES =
+  "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC";
+const US_ZIP_RX = new RegExp(`\\b(${US_STATES.split(" ").join("|")}) (\\d{5})(?:-\\d{4})?\\b`, "g");
+const IPV4_RX = /(?<![\w.])(?<![vV])(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}(?![\w.]*\d)/g;
+const IPV6_RX = /(?<![\w:])(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,6}:(?:[0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})(?![\w:])/g;
+
+/** Every kind redactSensitive masks, in the order the report lists them, with its placeholder. */
+export const MASK_KINDS = Object.freeze([
+  ["email", "[email]", "email address", "email addresses"],
+  ["phone", "[phone]", "phone number", "phone numbers"],
+  ["card", "[card number]", "card number", "card numbers"],
+  ["bank", "[bank account]", "bank account", "bank accounts"],
+  ["nationalId", "[national id]", "national ID number", "national ID numbers"],
+  ["dob", "[date of birth]", "date of birth", "dates of birth"],
+  ["address", "[street address]", "street address", "street addresses"],
+  ["postcode", "[postcode]", "postcode", "postcodes"],
+  ["ip", "[ip address]", "IP address", "IP addresses"],
+]);
+
+/** A zeroed count for every kind, so callers can add runs together. */
+export function emptyMasked() {
+  return Object.fromEntries(MASK_KINDS.map(([kind]) => [kind, 0]));
+}
 
 function luhnValid(digits) {
   let sum = 0;
@@ -623,6 +661,18 @@ function luhnValid(digits) {
   return sum % 10 === 0;
 }
 
+function ibanValid(raw) {
+  const iban = raw.replace(/ /g, "");
+  if (iban.length < 15 || iban.length > 34) return false;
+  const moved = `${iban.slice(4)}${iban.slice(0, 4)}`;
+  let rem = 0;
+  for (const ch of moved) {
+    const v = /\d/.test(ch) ? ch : String(ch.charCodeAt(0) - 55);
+    for (const d of v) rem = (rem * 10 + Number(d)) % 97;
+  }
+  return rem === 1;
+}
+
 /**
  * Check one outgoing text. Returns the masked text, counts of what was masked, and the kinds of
  * secret found (the caller refuses to send when that list is non-empty). Never returns a value.
@@ -630,25 +680,35 @@ function luhnValid(digits) {
 export function redactSensitive(text) {
   const input = typeof text === "string" ? text : "";
   const secrets = SECRET_PATTERNS.filter(([, rx]) => rx.test(input)).map(([label]) => label);
-  const masked = { email: 0, phone: 0, card: 0 };
-  let out = input.replace(EMAIL_RX, () => {
-    masked.email += 1;
-    return "[email]";
-  });
+  const masked = emptyMasked();
+  const put = (kind, placeholder) => {
+    masked[kind] += 1;
+    return placeholder;
+  };
+  // Longest, most specific shapes first, so a shorter pattern never eats part of one.
+  let out = input.replace(EMAIL_RX, () => put("email", "[email]"));
+  out = out.replace(IBAN_RX, (m) => (ibanValid(m) ? put("bank", "[bank account]") : m));
+  out = out.replace(SORT_ACCOUNT_RX, () => put("bank", "[bank account]"));
   out = out.replace(CARD_RX, (m) => {
     const digits = m.replace(/[ -]/g, "");
     if (digits.length < 13 || digits.length > 19 || !luhnValid(digits)) return m;
-    masked.card += 1;
-    return "[card number]";
+    return put("card", "[card number]");
   });
+  out = out.replace(DOB_RX, (_m, label, gap) => `${label}${gap}${put("dob", "[date of birth]")}`);
+  out = out.replace(SSN_RX, () => put("nationalId", "[national id]"));
+  out = out.replace(NINO_RX, () => put("nationalId", "[national id]"));
   for (const rx of PHONE_RXS) {
     out = out.replace(rx, (m) => {
       const digits = m.replace(/\D/g, "");
       if (digits.length < 10 || digits.length > 15) return m;
-      masked.phone += 1;
-      return "[phone]";
+      return put("phone", "[phone]");
     });
   }
+  out = out.replace(STREET_RX, () => put("address", "[street address]"));
+  out = out.replace(UK_POSTCODE_RX, () => put("postcode", "[postcode]"));
+  out = out.replace(US_ZIP_RX, (_m, state) => `${state} ${put("postcode", "[postcode]")}`);
+  out = out.replace(IPV6_RX, () => put("ip", "[ip address]"));
+  out = out.replace(IPV4_RX, () => put("ip", "[ip address]"));
   return { text: out, masked, secrets };
 }
 
@@ -679,10 +739,10 @@ export function stripSecrets(text) {
 /** "2 email addresses, 1 phone number", or "" when nothing was masked. */
 export function describeMasked(masked = {}) {
   const parts = [];
-  const n = (count, one, many) => `${count} ${count === 1 ? one : many}`;
-  if (masked.email) parts.push(n(masked.email, "email address", "email addresses"));
-  if (masked.phone) parts.push(n(masked.phone, "phone number", "phone numbers"));
-  if (masked.card) parts.push(n(masked.card, "card number", "card numbers"));
+  for (const [kind, , one, many] of MASK_KINDS) {
+    const n = Number(masked?.[kind]) || 0;
+    if (n > 0) parts.push(`${n} ${n === 1 ? one : many}`);
+  }
   return parts.join(", ");
 }
 
@@ -2110,7 +2170,7 @@ function renderFull(result, subject) {
 
 /** The privacy half of the run note: one sentence, true on every route (local, Pro key, in-chat). */
 export const RUN_PRIVACY_LINE =
-  "Private: sent only to zero-data-retention endpoints, with keys blocked and contact details masked first.";
+  "Private: sent only to zero-data-retention endpoints, with keys blocked and common personally identifiable information masked first.";
 
 /** 48s, 1m 42s. Unknown or negative time reads "time not recorded", never a made-up number. */
 export function formatRunTime(ms) {
