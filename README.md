@@ -28,8 +28,8 @@ Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes c
 
 Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). Use the same email each time, the email you signed up with, every time.
 
-- **Claude.ai**, verified working. On the web, on a Free, Pro or Max plan: Settings → Connectors → Add custom connector. URL `https://grillyour.ai/mcp`, name it Grill, then sign in. Asking Claude in a chat to connect it does not work.
-- **ChatGPT**, verified working. On the web, with a paid plan: Plugins, the plus button, Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Click I understand and want to continue, then Create. Install it, then sign in.
+- **Claude.ai**, verified working. On the web, desktop or phone app, Free plan included: [Add Grill to Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Grill&connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp). Check the name says Grill and the URL says `https://grillyour.ai/mcp`, then Add and Connect, and sign in. Link didn't open? Customize → Connectors → Add custom connector and paste `https://grillyour.ai/mcp`. Asking Claude in a chat to connect it does not work.
+- **ChatGPT**. On chatgpt.com on a computer, then it works in the phone app too: Plugins → + → Add custom MCP server. If that option is missing, turn on Developer mode in Settings → Security and login. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Tick I understand and want to continue, then Create, then Install, and sign in.
 - **Grok Bot**, verified working. Tell the bot `Add this MCP server: https://grillyour.ai/mcp`, then sign in when asked.
 - **Gemini**: Should work, testing now. US only, a personal Google account, Keep Activity on. On gemini.google.com: Settings, Connected Apps, Add a custom app, paste `https://grillyour.ai/mcp`, Next, then sign in.
 - **Meta AI**, coming soon.

@@ -106,7 +106,7 @@ describe("founding members", () => {
     const openHtml = await open.text();
     assert.match(openHtml, /First 100 users get Grill free for life, 100 spots left\./);
     assert.match(openHtml, /Connect Grill to your AI/);
-    assert.equal(openHtml.includes("<script"), false);
+    assert.match(openHtml, /id="copy-starter"/);
     for (let i = 1; i <= FOUNDING_CAP; i += 1) await assignFoundingMember(command, `full${i}@example.com`);
     const full = await handleStart(new Request("https://grillyour.ai/start/"), { redis: command });
     assert.match(await full.text(), /All 100 founding spots are taken\./);
