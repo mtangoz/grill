@@ -2,9 +2,13 @@
 
 ## Voice
 
-Incredibly simple, confident but open. Less is more.
+Simple, confident, open. Less is more.
 
-Say what happened. Give one next step. Leave the call with the person. Be clear about uncertainty without apologizing for having a view. An invitation to reply is warmer than “no pressure.”
+- Say what happened, give one next step, then stop.
+- The person makes the call. We give a view, not an order.
+- Be honest about what we don't know, and don't apologise for having an opinion.
+- Use short sentences and everyday words. If a line can go, cut it.
+- Invite a reply instead of saying "no pressure".
 
 ## Who we speak to
 
@@ -35,6 +39,12 @@ Do not promise certainty, unshipped features, directory availability or universa
 ## Notifications
 
 Sender name: **Grill**. One purpose, at most two short editorial lines, one optional action. Code emails show the code instead of a button. Security and billing details stay intact in a small details block. Use `support@grillyour.ai` as a real help route; do not imply a noreply address accepts replies.
+
+## Approved email copy
+
+- Sign-in code. Subject: Your Grill code. Body: "{{otp_code}}" then "Enter this in Grill to sign in. Don't share it with anyone. If you didn't ask for it, you can ignore this email."
+- Invite. Subject: Try Grill on your next decision. Body: "Before you act on what your AI says, get a second opinion. Grill asks an AI from a different company and gives you a short verdict and one cheap test. You make the call." Button: Connect Grill.
+- New device. Subject: New sign-in to Grill. Body: "Your account was just signed in on a new device. If that was you, there's nothing to do. If not, sign that device out below." Button: Sign out that device.
 
 ## Privacy
 
