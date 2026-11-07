@@ -359,7 +359,7 @@ describe("hosted Grill", { concurrency: false }, () => {
     assert.equal(body.resource, RESOURCE);
     assert.deepEqual(body.authorization_servers, ["https://clerk.example.test"]);
     assert.deepEqual(body.bearer_methods_supported, ["header"]);
-    assert.deepEqual(body.scopes_supported, ["openid", "profile", "email"]);
+    assert.deepEqual(body.scopes_supported, ["openid", "profile", "email", "offline_access"]);
   });
 
   it("rejects a bad signature, the wrong issuer, an expired token, a missing token, and a query-string token", async () => {
@@ -1874,7 +1874,7 @@ describe("authorization server metadata on the connector host", { concurrency: f
     assert.deepEqual(await prm.json(), {
       resource: "https://grillyour.ai/mcp",
       authorization_servers: ["https://clerk.example.test"],
-      scopes_supported: ["openid", "profile", "email"],
+      scopes_supported: ["openid", "profile", "email", "offline_access"],
       bearer_methods_supported: ["header"],
     });
     assert.equal(deps.calls.length, 1);

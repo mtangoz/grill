@@ -86,7 +86,7 @@ export function protectedResourceMetadata(origin, issuer) {
   return {
     resource: mcpResource(origin),
     authorization_servers: [String(issuer || "").trim()],
-    scopes_supported: ["openid", "profile", "email"],
+    scopes_supported: ["openid", "profile", "email", "offline_access"],
     bearer_methods_supported: ["header"],
   };
 }
