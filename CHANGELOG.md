@@ -6,6 +6,7 @@ A change may add one optional line when someone has agreed to be named. Leave th
 
 ## Unreleased
 
+- ChatGPT can verify this domain. `GET /.well-known/openai-apps-challenge` returns OpenAI's public token as `text/plain`, with no extra bytes.
 - More personal details are masked before a write-up is sent: bank accounts (IBAN, UK sort code and account), US social security and UK National Insurance numbers, labelled dates of birth, street addresses, UK postcodes and US ZIP codes, and IP addresses, on top of email, phone and card numbers. A password in a link or a `password=` pair now stops the run, like a key. A labelled test set checks each kind in CI and checks that ordinary decision text is left alone. Names are still not masked, and PRIVACY.md says so.
 - GrillBot's pull request comment opens with the same run note as a grill in chat. Public @AskGrill verdicts use the same format.
 - Every grill now opens with a two-line run note, on the free tool, a Pro key and Grill inside your chat. The first line names the models that answered (the judge that served the answer, plus Jev when its quality check ran) and how long the run took. The second is one sentence on how the write-up was kept private. The first-use outside-judge line is unchanged and still shows once.

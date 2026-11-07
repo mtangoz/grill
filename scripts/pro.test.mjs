@@ -486,6 +486,12 @@ describe("the endpoints", () => {
           dest: "/api/hosted?__route=redeem",
         },
         {
+          src: "^/\\.well-known/openai-apps-challenge$",
+          dest: "/.well-known/openai-apps-challenge",
+          check: true,
+          headers: { "Content-Type": "text/plain" },
+        },
+        {
           src: "^/$",
           has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
           dest: "/index.md",
