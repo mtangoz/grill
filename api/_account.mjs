@@ -723,7 +723,7 @@ ${error ? `<p><strong>${esc(error)}</strong></p>` : ""}
 <input id="email" name="email" type="email" autocomplete="email" required>
 <div class="row"><button type="submit">Email me a sign-in link</button></div>
 </form>
-<p class="small">The free ways to use Grill are on <a href="/#setup">the site</a>.</p>`,
+<p class="small">The free ways to use Grill are on <a href="/start/">the site</a>.</p>`,
   );
 }
 

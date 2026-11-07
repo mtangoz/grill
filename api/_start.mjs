@@ -1,6 +1,6 @@
 /**
  * Serve /start. Record ?ref= as a counter and a cookie the later form can read.
- * The page includes how many founding spots are left. No script.
+ * The page includes how many founding spots are left. The only script copies the starter prompt.
  * An unknown or empty ref is not stored. A missing store still shows the page.
  */
 import { readFileSync } from "node:fs";
@@ -96,7 +96,7 @@ async function spotsFor(deps) {
 
 /**
  * Accept ?ref=, record it, and show /start with the founding spots that are left.
- * The cookie carries the source for a later form. The page runs no script.
+ * The cookie carries the source for a later form. The only script copies the starter prompt.
  */
 export async function handleStart(request, deps) {
   const ref = normalizeRef(new URL(request.url).searchParams.get("ref"));

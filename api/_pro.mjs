@@ -530,7 +530,7 @@ export function renderCheckoutError(state) {
     return page(
       "Pro isn’t ready · Grill",
       `<h1>Grill Pro isn’t taking payment yet.</h1>
-<p>The free ways to use Grill are on <a href="${SITE_URL}/#setup">the site</a>. A starter key needs no card: <a href="${SITE_URL}/pro">sign in</a>. Questions? Email <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>`,
+<p>The free ways to use Grill are on <a href="${SITE_URL}/start/">the site</a>. A starter key needs no card: <a href="${SITE_URL}/pro">sign in</a>. Questions? Email <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>`,
     );
   }
   if (state === "billing-off") {

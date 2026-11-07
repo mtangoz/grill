@@ -160,9 +160,9 @@ describe("waitlist", () => {
     const start = readFileSync(join(ROOT, "site/start.html"), "utf8");
     assert.doesNotMatch(start, /action="\/waitlist"/);
     assert.doesNotMatch(start, /No invite code\?/);
-    assert.match(start, /Anyone can sign up/);
-    assert.equal(start.includes("<script"), false);
-    assert.equal(/<button/i.test(start), false);
+    assert.doesNotMatch(start, /invite-only/);
+    assert.match(start, /id="copy-starter"/);
+    assert.match(start, /id="starter-prompt"/);
     const closed = await handleWaitlist(new Request("https://grillyour.ai/waitlist", { method: "POST", body: "email=friend@example.com&confirm=join" }), {
       env: {},
       fetch: async () => {
