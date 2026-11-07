@@ -2,9 +2,9 @@
  * Pure helpers for hosted Grill. No network and no logging.
  * The installed local tool does not import this file.
  */
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
 import { confidenceValue, parseRecords } from "./reflection.mjs";
-import { SCOPE_GUARD, clientCompanyHint } from "./judgeCore.mjs";
+import { SCOPE_GUARD, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
 import { buildGrillTools } from "../server/index.mjs";
 
 export { SCOPE_GUARD };
@@ -453,6 +453,51 @@ export function toMicros(usd) {
 export function chargeableUsd(costUsd) {
   const n = Number(costUsd);
   return Number.isFinite(n) && n > 0 ? n : TYPICAL_GRILL_USD;
+}
+
+/**
+ * A completed grill is one the judge actually judged. A run that exits with no
+ * recognisable verdict, including after its own retries, is not a check.
+ */
+export function completedGrill(parsed) {
+  const verdict = typeof parsed?.verdict === "string" ? parsed.verdict.trim().toLowerCase() : "";
+  return VERDICTS.includes(verdict);
+}
+
+/** Completed checks for one account in a UTC month. This is the usage number. */
+export function monthlyCheckKey(accountId, month) {
+  return `grill:hosted:checks:${accountId}:${month}`;
+}
+
+/** Completed checks for one account on a UTC day. The daily limit reads this, not attempts. */
+export function dailyCheckKey(accountId, day) {
+  return `grill:hosted:day:${accountId}:${day}`;
+}
+
+/** One count per run. A second compose of the same run does not add another check. */
+export function checkOnceKey(runId) {
+  return `grill:hosted:counted:${runId}`;
+}
+
+/**
+ * A short-lived lock so an automatic retry of the same decision is the same run.
+ * Empty when there is no server secret: nothing derived from the decision is stored.
+ */
+export function runFingerprint(accountId, subject, env = {}) {
+  const salt = String(env.GRILL_METRICS_SALT || env.GRILL_RECORD_KEY || "").trim();
+  if (!salt || !accountId) return "";
+  const body = `${accountId}\n${String(subject || "").trim()}`;
+  return createHmac("sha256", salt).update(body).digest("hex").slice(0, 32);
+}
+
+export function runLockKey(accountId, fingerprint) {
+  return `grill:hosted:run:${accountId}:${fingerprint}`;
+}
+
+/** What /account and /decisions show, and what a support lookup reads. */
+export function checksLine(count) {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  return `${n} ${n === 1 ? "check" : "checks"} this month.`;
 }
 
 /**

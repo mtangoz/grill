@@ -18,7 +18,10 @@ import {
   allowlistAllows,
   authorForJudge,
   capBlock,
+  dailyCheckKey,
+  isoDay,
   isoMonth,
+  monthlyCheckKey,
   judgeFailureText,
   monthlyCapUsd,
   serviceFailureText,
@@ -2803,5 +2806,185 @@ describe("what changed, from saved records", () => {
     assert.match(out, /\*\*Fixture call 244\*\*/);
     assert.doesNotMatch(out, /Fixture call 0/);
     assert.doesNotMatch(out, /245 calls with a choice/);
+  });
+});
+
+describe("fair check counting", () => {
+  const NOW = Date.parse("2026-11-07T16:00:00Z");
+  const SUBJECT = "Decision: repaint the shed this spring.";
+  const grillCall = (id, subject, extra = {}) => ({
+    jsonrpc: "2.0",
+    id,
+    method: "tools/call",
+    params: { name: "grill", arguments: { subject, keep_records: false, quality_check: false, ...extra } },
+  });
+  const depsFor = (fake, extra = {}) => ({ ...judgeDeps(fake), waitMs: 20_000, now: NOW, ...extra });
+  const monthKey = (ctx) => monthlyCheckKey(personOf(ctx), isoMonth(NOW));
+  const dayKey = (ctx) => dailyCheckKey(personOf(ctx), isoDay(NOW));
+  const checks = (ctx) => Number(ctx.memory.command(["GET", monthKey(ctx)])) || 0;
+  const today = (ctx) => Number(ctx.memory.command(["GET", dayKey(ctx)])) || 0;
+  const spendMoves = (ctx) => ctx.writes.filter((row) => row[0] === "INCRBY" && String(row[1]).includes(":capspend:")).length;
+
+  it("counts one completed grill toward the month, and shows that count on the account", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const done = await postMcp(ctx, grillCall(1, SUBJECT), { token, deps: depsFor(fake) });
+      assert.equal(done.json.result.isError, false, textOf(done.json));
+      assert.equal(checks(ctx), 1);
+      assert.equal(today(ctx), 1);
+      assert.equal(ctx.writes.some((row) => row.join(" ").includes("repaint")), false);
+      const session = signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 });
+      const account = await handleAccount(new Request("https://grillyour.ai/account", { headers: { cookie: `__session=${session}` } }), { ...ctx, now: NOW });
+      const decisions = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${session}` } }), { ...ctx, now: NOW });
+      for (const html of [await account.text(), await decisions.text()]) {
+        assert.match(html, /1 check this month\./);
+        assert.match(html, /Free for life: \$5 of use each month/);
+      }
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("does not count a failed judge, including the automatic retries of that run", async () => {
+    let open = false;
+    const usable = readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8");
+    const fake = await startFakeOpenRouter({
+      chat: () => (open ? { text: usable } : { status: 500, text: "nope" }),
+    });
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const before = spendMoves(ctx);
+      const failed = await postMcp(ctx, grillCall(1, SUBJECT), { token, deps: depsFor(fake) });
+      assert.match(textOf(failed.json), /No verdict/);
+      assert.equal(failed.json.result.isError, false);
+      assert.ok(fake.seen.chat.length > 1, "the judge retried the same run");
+      assert.equal(checks(ctx), 0);
+      assert.equal(today(ctx), 0);
+      assert.ok(spendMoves(ctx) > before, "the dollar cap still counts the cost of that finished run");
+      open = true;
+      const again = await postMcp(ctx, grillCall(2, SUBJECT), { token, deps: depsFor(fake) });
+      assert.equal(again.json.result.isError, false, textOf(again.json));
+      assert.equal(checks(ctx), 1, "the later success of that same run counts once");
+      assert.equal(today(ctx), 1);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("counts an automatic retry that then succeeds as one check", async () => {
+    let tries = 0;
+    const usable = readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8");
+    const fake = await startFakeOpenRouter({
+      chat: () => {
+        tries += 1;
+        return tries === 1 ? { status: 500, text: "nope" } : { text: usable };
+      },
+    });
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const done = await postMcp(ctx, grillCall(1, SUBJECT), { token, deps: depsFor(fake) });
+      assert.equal(done.json.result.isError, false, textOf(done.json));
+      assert.ok(tries > 1, "the same run was retried");
+      assert.equal(checks(ctx), 1);
+      assert.equal(today(ctx), 1);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("does not count a second grill of the same run, and does count a different one", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = depsFor(fake);
+      const first = await postMcp(ctx, grillCall(1, SUBJECT), { token, deps });
+      assert.equal(first.json.result.isError, false, textOf(first.json));
+      const again = await postMcp(ctx, grillCall(2, SUBJECT), { token, deps });
+      assert.equal(again.json.result.isError, false, textOf(again.json));
+      assert.equal(checks(ctx), 1);
+      assert.equal(today(ctx), 1);
+      assert.equal(spendMoves(ctx), 4, "both finished grills still count toward the dollar caps");
+      const other = await postMcp(ctx, grillCall(3, "Decision: hire the painter instead."), { token, deps });
+      assert.equal(other.json.result.isError, false, textOf(other.json));
+      assert.equal(checks(ctx), 2);
+      assert.equal(today(ctx), 2);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("does not count follow-ups or polls for a job result", async () => {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const usable = readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8");
+    const fake = await startFakeOpenRouter({ chat: () => gate.then(() => ({ text: usable })) });
+    const backgrounds = [];
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const started = await postMcp(ctx, grillCall(1, SUBJECT), { token, deps: depsFor(fake, { waitMs: 40, backgrounds }) });
+      const jobId = textOf(started.json).match(/job (g1\.[0-9a-f]{32}\.[A-Za-z0-9_-]+)/)?.[1];
+      assert.ok(jobId, textOf(started.json));
+      assert.equal(checks(ctx), 0);
+      assert.equal(today(ctx), 0);
+      const polled = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId } } },
+        { token, deps: depsFor(fake, { waitMs: 20 }) },
+      );
+      assert.match(textOf(polled.json), /Still grilling/);
+      assert.equal(checks(ctx), 0);
+      release();
+      await Promise.all(backgrounds);
+      assert.equal(checks(ctx), 1);
+      assert.equal(today(ctx), 1);
+      for (const [id, detail] of [[3, "more"], [4, "options"], [5, "full"], [6, "deepen"]]) {
+        await postMcp(
+          ctx,
+          { jsonrpc: "2.0", id, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId, detail } } },
+          { token, deps: depsFor(fake, { waitMs: 50 }) },
+        );
+      }
+      assert.equal(checks(ctx), 1);
+      assert.equal(today(ctx), 1);
+    } finally {
+      release();
+      await fake.close();
+    }
+  });
+
+  it("still stops at today's 30 completed checks, and leaves the dollar caps alone", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = depsFor(fake);
+      const first = await postMcp(ctx, grillCall(1, SUBJECT), { token, deps });
+      assert.equal(first.json.result.isError, false, textOf(first.json));
+      ctx.memory.command(["SET", dayKey(ctx), "30"]);
+      const before = fake.seen.chat.length;
+      const blocked = await postMcp(ctx, grillCall(2, "Decision: a different shed colour."), { token, deps });
+      assert.match(textOf(blocked.json), /You've used today's 30 grills on this account/);
+      assert.equal(fake.seen.chat.length, before);
+      assert.equal(checks(ctx), 1);
+      assert.equal(monthlyCapUsd({}), 20);
+      assert.equal(userMonthlyCapUsd({}), 5);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("says in the terms that only a completed grill counts", () => {
+    const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
+    assert.match(terms, /Only completed grills count as checks\. Retries, errors and follow-ups like 'more' or 'options' don't\./);
+    const line = terms.match(/Only completed grills count as checks[\s\S]*?don't\./)?.[0] || "";
+    assert.doesNotMatch(line, /\$/);
   });
 });
