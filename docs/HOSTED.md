@@ -46,6 +46,8 @@ On the preview environment only, until the spike in [hosted-spike.md](hosted-spi
 
 The caps count each finished grill's cost in micro-dollars with atomic `INCRBY` counters. A grill that reports no cost counts as a typical grill ($0.03). A grill may start while spend is under the cap, so the last one can finish slightly over; the next one is stopped. Fields a running grill changes (its spend row, the once-only disclosure, the per-person record key) are written to their own keys with atomic commands, so two grills finishing at once cannot overwrite each other's account data.
 
+A completed grill also adds one to that account's check count for the UTC month (`grill:hosted:checks:<account id>:<YYYY-MM>`). That number is what support and the account pages read. A failed judge, an automatic retry of the same run, a follow-up such as more or options, and a poll for a job result do not add one. The dollar caps above stay the safety limit. The daily limit still stops at 30 completed checks.
+
 Generate the two encryption keys with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Store them as secrets. Losing `GRILL_RECORD_KEY` makes stored records unreadable. Rotating it needs a re-wrap, which this slice does not do.
 
 The function that runs the judge is allowed 300 seconds, and its bundle includes `scripts/**`, because the judge is still `scripts/judge.mjs`.
