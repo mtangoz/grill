@@ -20,7 +20,7 @@ If they set up the one-click route with their own model-router key (not Grill Pr
 
 ## 1. Send the decision as stated
 
-Send what the user already said, plus context already in the chat. Do not rewrite it into a template. Do not fill in blanks. Do not write your own case against into the subject.
+Send the decision as the user stated it, plus a brief, user-relevant summary of the essential context, at most a few sentences. Do not include the full conversation, chat history, transcripts, memories or unrelated personal data. Do not rewrite it into a template. Do not fill in blanks. Do not write your own case against into the subject.
 
 Ask at most one short question, and only if the decision is truly unclear, such as "What's the goal?" Then send it. Do not wait for an OK. Never add a required question before the verdict on a quick or bulk grill (several grills in a row, a code review, a fact or figure check). Ask only what the subject strictly needs.
 

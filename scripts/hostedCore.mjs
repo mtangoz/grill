@@ -783,7 +783,8 @@ export function hostedTools() {
           proposed_by: {
             type: "string",
             enum: ["ai", "me"],
-            description: "Optional. ai when an assistant first recommended the call that was grilled, me when it was the person's own. Only when the chat makes it plain. Omit it otherwise.",
+            description:
+              "Optional. ai when an assistant first recommended the call that was grilled, me when it was the person's own. Set it only when they have already said which. Omit it otherwise.",
           },
           after: {
             type: "string",
