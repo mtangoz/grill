@@ -458,11 +458,11 @@ writePage("look-back.html", {
   blurb: "For the copy-and-paste route. Turn the judge's answer into a decision record, then come back and say what happened. Nothing is sent and nothing is stored.",
 });
 writePage("start.html", {
-  description: "Connect Grill to Claude or ChatGPT, then paste one message.",
+  description: "Pick ChatGPT or Claude, then connect Grill and paste one message.",
   url: `${SITE_URL}start/`,
   outDir: "start",
   name: "Start",
-  blurb: "Connect Grill to your AI. Two steps.",
+  blurb: "Pick ChatGPT or Claude, then connect.",
 });
 writePage("privacy.html", {
   description: "What Grill sends, what it counts, and what it never keeps.",
@@ -613,9 +613,9 @@ writeFileSync(
     "",
     "Get the strongest case against your plan from a different AI, right in the chat you already use. Then you decide.",
     "",
-    "[Connect Grill](https://grillyour.ai/start/)",
+    "[Connect Grill (2 minutes)](https://grillyour.ai/start/)",
     "",
-    "[Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else.](https://grillyour.ai/terms)",
+    "[Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.](https://grillyour.ai/terms)",
     "",
     "[llms.txt](https://grillyour.ai/llms.txt)",
     "",

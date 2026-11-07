@@ -82,13 +82,13 @@ Enforced by: test "gives every dead-end page a way back" in [scripts/pages.test.
 
 ## Pricing, while paid plans are off
 
-`/pricing` states the same prices as the rest of the site: $9 a month or $90 a year. While paid plans are off, a view of that page, a view of `/checkout`, and a Notify me click are anonymous counts. The page runs no script. Nothing is charged. A signed-in checkout, once billing is on, puts the account id on the session so a later payment can be tied to that account. The prices do not change.
+`/pricing` states the same prices as the rest of the site: $9 a month or $90 a year. The homepage does not offer Pro. Those offers live on `/pricing`. While paid plans are off, a view of that page, a view of `/checkout`, and a Notify me click are anonymous counts. The page runs no script. Nothing is charged. A signed-in checkout, once billing is on, puts the account id on the session so a later payment can be tied to that account. The prices do not change.
 
 ## An invite code
 
-`/redeem` is for a signed-in person who is not on the invite list. They enter a code, then a confirm page. The confirm value is the button on that page. A code can come from `GRILL_INVITE_CODES` or from a single-use code in the codes store, one per lead. After the code is used, the page says you're in and the next step is a plain link to `/start`. `/start` is two steps: connect Claude or ChatGPT, then paste one prompt. Its only script copies that prompt. A `?ref=` on `/start` is recorded as a count for that source and is not shown on the page. `/redeem` runs no script. When open sign-up is off, the invite-only message links here. Open sign-up is on in production.
+`/redeem` is for a signed-in person who is not on the invite list. They enter a code, then a confirm page. The confirm value is the button on that page. A code can come from `GRILL_INVITE_CODES` or from a single-use code in the codes store, one per lead. After the code is used, the page says you're in and the next step is a plain link to `/start`. `/start` asks which AI you use. ChatGPT shows four short steps on the ChatGPT website, and says a phone uses that website rather than the iOS app. Claude shows a pre-filled add-connector link. Then one prompt to copy. Its only script copies that prompt. A `?ref=` on `/start` is recorded as a count for that source and is not shown on the page. `/redeem` runs no script. When open sign-up is off, the invite-only message links here. Open sign-up is on in production.
 
-Enforced by: test "asks on a confirm page before a code is used, with no script", test "points the invite-only page at the redeem page", and test "the success page's next step is a plain link to /start, with no script" in [scripts/inviteCode.test.mjs](../scripts/inviteCode.test.mjs), and test "is two steps: the Claude link, at most four ChatGPT lines, and the starter prompt" in [scripts/site.test.mjs](../scripts/site.test.mjs).
+Enforced by: test "asks on a confirm page before a code is used, with no script", test "points the invite-only page at the redeem page", and test "the success page's next step is a plain link to /start, with no script" in [scripts/inviteCode.test.mjs](../scripts/inviteCode.test.mjs), and test "asks which AI, then shows that tool's steps and one prompt" in [scripts/site.test.mjs](../scripts/site.test.mjs).
 
 ## A waitlist
 

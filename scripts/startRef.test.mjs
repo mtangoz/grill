@@ -80,7 +80,7 @@ describe("start attribution", () => {
     const start = readFileSync(join(ROOT, "site/start.html"), "utf8");
     assert.match(start, /id="copy-starter"/);
     assert.match(start, /First 100 users get Grill free for life, 100 spots left\./);
-    const STARTER = 'Use the Grill connector for this. Grill this: [what you\'re deciding, e.g. "Should I raise my workshop price from $40 to $55?"]. I\'m [how sure, e.g. 70%] sure. Give me Grill\'s verdict as it comes back, then wait for me to say "more" or my call.';
+    const STARTER = "Grill this: should I captain Erling Haaland or Nicholas Jackson this week?";
     assert.ok(start.includes(STARTER), "starter prompt");
     assert.ok(start.includes("https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=Grill&amp;connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp"));
   });

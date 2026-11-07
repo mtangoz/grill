@@ -25,7 +25,7 @@ describe("site/page.html", () => {
   });
 
   it("links /start, and the README keeps the other setup routes", () => {
-    assert.match(page, /<a class="button" href="\/start\/">Connect Grill<\/a>/);
+    assert.match(page, /<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     for (const needle of ["releases/latest/download/grill.mcpb", "releases/latest/download/grill-skill.zip", "/plugin install grill@grill", "openrouter.ai/keys", "prompts/grill.md"]) {
       assert.ok(readme.includes(needle), `missing ${needle}`);
@@ -94,9 +94,8 @@ describe("site/page.html", () => {
     assert.ok(privacyPage.includes(visits));
     assert.ok(privacyPage.includes(tool));
     assert.ok(privacyPage.includes(launch));
-    const PRIVACY_LINE = "Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else.";
-    assert.ok(page.includes(PRIVACY_LINE), "the home page states the privacy line");
-    assert.match(page, /<a href="https:\/\/grillyour\.ai\/terms">Grill only uses your decisions/);
+    const PRIVACY_LINE = "Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.";
+    assert.ok(page.includes(`<a href="/terms">${PRIVACY_LINE}</a>`), "the home page states the privacy line, linked to /terms");
     assert.doesNotMatch(page, /Nothing kept unless you choose/);
     assert.doesNotMatch(page, /keeps nothing/i);
     assert.doesNotMatch(page, /keeps none of your decisions/);
@@ -168,8 +167,8 @@ describe("site/page.html", () => {
   it("is one pitch, one sentence, one Connect Grill button, and the privacy line", () => {
     assert.equal((page.match(/<h1>/g) || []).length, 1);
     assert.equal((page.match(/<a class="button"/g) || []).length, 1);
-    assert.match(page, /<a class="button" href="\/start\/">Connect Grill<\/a>/);
-    assert.match(page, /Grill only uses your decisions to give you a verdict and your later look-backs/);
+    assert.match(page, /<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(page, /Grill only uses your decisions to give you a verdict and your later look-backs\. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us\./);
     assert.doesNotMatch(page, /id="how"|id="examples"|id="setup"|class="chat"|class="routes"/);
     assert.equal((page.match(/<script\b/gi) || []).length, 0);
     assert.doesNotMatch(page, /Settings → Connectors/);
@@ -287,7 +286,7 @@ describe("the site build", () => {
     assert.match(head, /<meta name="theme-color" content="#f7f4ef" media="\(prefers-color-scheme: light\)">/);
     assert.match(head, /<meta name="theme-color" content="#161513" media="\(prefers-color-scheme: dark\)">/);
     assert.match(head, /--paper:/);
-    assert.match(rest, /<body>[\s\S]*<a class="button" href="\/start\/">Connect Grill<\/a>/);
+    assert.match(rest, /<body>[\s\S]*<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
     const terms = readFileSync(join(ROOT, "_site/terms/index.html"), "utf8");
     assert.match(terms, /<title>Grill terms<\/title>/);
     assert.match(terms, /<link rel="canonical" href="https:\/\/grillyour\.ai\/terms\/">/);
@@ -648,48 +647,68 @@ describe("the site build", () => {
   });
 });
 
-// /start is two steps: connect Claude or ChatGPT, then paste one prompt.
+// /start asks which AI, then shows that tool's short steps, then one prompt to copy.
 // The only script copies that prompt. It does not read ?ref=.
 describe("the /start page", () => {
   const startPath = join(ROOT, "site/start.html");
   const CLAUDE_LINK = "https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=Grill&amp;connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp";
-  const STARTER = 'Use the Grill connector for this. Grill this: [what you\'re deciding, e.g. "Should I raise my workshop price from $40 to $55?"]. I\'m [how sure, e.g. 70%] sure. Give me Grill\'s verdict as it comes back, then wait for me to say "more" or my call.';
-  const PRIVACY_LINE = "Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else.";
+  const STARTER = "Grill this: should I captain Erling Haaland or Nicholas Jackson this week?";
+  const PRIVACY_LINE = "Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.";
 
-  it("is two steps: the Claude link, at most four ChatGPT lines, and the starter prompt", () => {
+  it("asks which AI, then shows that tool's steps and one prompt", () => {
     const start = readFileSync(startPath, "utf8");
     assert.match(start, /^<title>Start using Grill<\/title>/);
     assert.match(start, /<h1>Connect Grill to your AI\.<\/h1>/);
-    assert.match(start, /<h2 id="connect">Step 1\. Connect<\/h2>/);
-    assert.ok(start.includes(CLAUDE_LINK), "Claude deep link");
-    assert.match(start, /Customize → Connectors → Add custom connector/);
-    assert.doesNotMatch(start, /Settings → Connectors/);
-    const steps = start.match(/<li>/g) ?? [];
-    assert.equal(steps.length, 4, "ChatGPT is four lines");
-    assert.match(start, /Plugins → \+ → Add custom MCP server/);
-    assert.match(start, /Developer mode/);
-    assert.match(start, /Settings → Security and login/);
-    assert.match(start, /Authentication: OAuth/);
-    assert.match(start, /I understand and want to continue/);
-    assert.match(start, /<h2 id="prompt">Step 2\. Paste this in a new chat<\/h2>/);
-    assert.ok(start.includes(STARTER), "starter prompt");
-    assert.match(start, /id="copy-starter"/);
+    assert.match(start, /id="pick-chatgpt"/);
+    assert.match(start, /id="pick-claude"/);
+    assert.match(start, /<label class="choice" for="pick-chatgpt">ChatGPT<\/label>/);
+    assert.match(start, /<label class="choice" for="pick-claude">Claude<\/label>/);
+    assert.match(page, /\.tool-panel\s*\{[^}]*display:\s*none/);
+    assert.match(page, /#pick-chatgpt:checked ~ \.for-chatgpt/);
+    assert.match(page, /#pick-claude:checked ~ \.for-claude/);
+    assert.match(page, /#pick-chatgpt:checked ~ \.for-either/);
+    assert.match(page, /#pick-claude:checked ~ \.for-either/);
+    assert.doesNotMatch(page, /#pick-chatgpt:checked ~ \.for-claude/);
+    assert.doesNotMatch(page, /#pick-claude:checked ~ \.for-chatgpt/);
+    const chatgpt = start.slice(start.indexOf('id="chatgpt-steps"'), start.indexOf('id="claude-steps"'));
+    assert.ok(chatgpt.length > 0, "ChatGPT steps");
+    assert.match(chatgpt, /On a phone, use the ChatGPT website, not the iOS app\. Custom plugins can't be added in the iOS app\./);
+    assert.match(chatgpt, /https:\/\/chatgpt\.com\//);
+    assert.equal((chatgpt.match(/<li>/g) ?? []).length, 4, "ChatGPT is four lines");
+    assert.match(chatgpt, /Plugins → \+ → Add custom MCP server/);
+    assert.match(chatgpt, /https:\/\/grillyour\.ai\/mcp/);
+    assert.match(chatgpt, /Authentication: OAuth/);
+    assert.match(chatgpt, /I understand and want to continue/);
+    assert.doesNotMatch(chatgpt, /Developer mode|Settings → Security and login/);
+    const claude = start.slice(start.indexOf('id="claude-steps"'), start.indexOf('id="try-grill"'));
+    assert.ok(claude.includes(CLAUDE_LINK), "Claude deep link");
+    assert.match(claude, /Customize → Connectors → Add custom connector/);
+    assert.doesNotMatch(claude, /Settings → Connectors/);
+    assert.equal((claude.match(/<li>/g) ?? []).length, 0);
+    assert.ok(start.includes(`<p id="starter-prompt">${STARTER}</p>`), "starter prompt");
     assert.match(start, /<button class="button" type="button" id="copy-starter">Copy<\/button>/);
     assert.doesNotMatch(start, /Should work, testing now|coming soon|Gemini|Meta AI|verified working/i);
     assert.doesNotMatch(start, /the same email you signed up with, every time/i);
     assert.doesNotMatch(start, /invite-only|waitlist/i);
-    assert.ok(start.includes(PRIVACY_LINE));
-    assert.match(start, /href="https:\/\/grillyour\.ai\/terms"/);
+    assert.doesNotMatch(start, /github\.com/i);
+    assert.doesNotMatch(start, /chatgpt\.com\/gpts|plugin directory|directory listing/i);
+    assert.ok(start.includes(`<a href="/terms">${PRIVACY_LINE}</a>`));
     assert.doesNotMatch(start, /Nothing kept unless you choose|keeps nothing/i);
     const scripts = start.match(/<script\b/gi) ?? [];
     assert.equal(scripts.length, 1);
-    assert.match(start, /getElementById\("copy-starter"\)/);
-    assert.doesNotMatch(start, /grillTrack|cookie|localStorage/);
+    const script = start.match(/<script>([\s\S]*)<\/script>/)?.[1] ?? "";
+    assert.match(script, /getElementById\("copy-starter"\)/);
+    assert.doesNotMatch(script, /grillTrack|cookie|localStorage|pick-chatgpt|pick-claude/);
+    const log = readFileSync(join(ROOT, "MERGE-LOG.md"), "utf8");
+    assert.match(log, /2026-11-07/);
+    assert.match(log, /Connect Grill \(2 minutes\)/);
+    assert.match(log, /\/start/);
   });
 
   it("the homepage button is the only way in, and the README keeps the other setups", () => {
-    assert.match(page, /<a class="button" href="\/start\/">Connect Grill<\/a>/);
+    assert.match(page, /<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
     assert.equal((page.match(/<a class="button"/g) || []).length, 1);
+    assert.doesNotMatch(page, /id="pro"|Get Pro|checkout\?plan|Notify me|Get a starter key/);
     assert.doesNotMatch(page, /Settings → Connectors/);
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     const chat = readme.slice(readme.indexOf("### Grill in chat"), readme.indexOf("###", readme.indexOf("### Grill in chat") + 4));
@@ -1115,13 +1134,13 @@ describe("anyone can sign up", () => {
   };
 
   it("points the homepage Connect Grill button at /start", () => {
-    assert.match(page, /<a class="button" href="\/start\/">Connect Grill<\/a>/);
+    assert.match(page, /<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
     assert.doesNotMatch(page, /Settings → Connectors/);
     build();
     const html = readFileSync(join(ROOT, "_site/index.html"), "utf8");
-    assert.match(html, /<a class="button" href="\/start\/">Connect Grill<\/a>/);
+    assert.match(html, /<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
     const md = readFileSync(join(ROOT, "_site/index.md"), "utf8");
-    assert.match(md, /\[Connect Grill\]\(https:\/\/grillyour\.ai\/start\/\)/);
+    assert.match(md, /\[Connect Grill \(2 minutes\)\]\(https:\/\/grillyour\.ai\/start\/\)/);
   });
 
   it("points llms.txt at sign-up, not a waitlist", () => {
@@ -1251,7 +1270,7 @@ describe("markdown for agents", () => {
       "Grill your AI before you send it to your boss.",
       "Get the strongest case against your plan from a different AI, right in the chat you already use. Then you decide.",
       "Connect Grill",
-      "Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else.",
+      "Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.",
     ];
     for (const phrase of phrases) {
       assert.ok(page.includes(phrase), `homepage is missing the wording ${phrase}`);
@@ -1272,7 +1291,7 @@ describe("markdown for agents", () => {
     ]) {
       assert.ok(md.includes(url), `markdown homepage should link ${url}`);
     }
-    assert.match(md, /\[Connect Grill\]\(https:\/\/grillyour\.ai\/start\/\)/);
+    assert.match(md, /\[Connect Grill \(2 minutes\)\]\(https:\/\/grillyour\.ai\/start\/\)/);
   });
 
   it("writes a markdown 404 that says the page is missing and links the agent files", () => {
@@ -1409,10 +1428,10 @@ describe("markdown for agents", () => {
       assert.equal(start.includes("Settings → Connectors"), false);
       assert.equal(start.includes("invite-only"), false);
       assert.equal(start.includes("You hit the invite wall"), false);
-      assert.ok(start.includes("Use the Grill connector for this."));
+      assert.ok(start.includes("Grill this: should I captain Erling Haaland or Nicholas Jackson this week?"));
       assert.ok(start.includes("https://grillyour.ai/mcp"));
       assert.ok(start.includes("https://grillyour.ai/terms"));
-      assert.ok(start.includes("Grill only uses your decisions to give you a verdict and your later look-backs."));
+      assert.ok(start.includes("Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us."));
       const privacy = readFileSync(twinPath("https://grillyour.ai/privacy/"), "utf8");
       for (const line of [
         "Your decisions are never public.",
