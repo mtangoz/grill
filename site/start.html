@@ -7,23 +7,36 @@
   <h1>Connect Grill to your AI.</h1>
   <p id="founding-spots" class="note">First 100 users get Grill free for life, 100 spots left.</p>
 
-  <h2 id="connect">Step 1. Connect</h2>
-  <p><a href="https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=Grill&amp;connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp">Add Grill to Claude</a></p>
-  <p class="note">Link didn't open? Customize → Connectors → Add custom connector, then paste <code>https://grillyour.ai/mcp</code>.</p>
-  <p><strong>ChatGPT</strong></p>
-  <ol class="steps">
-    <li>On <a href="https://chatgpt.com/">chatgpt.com</a>: Plugins → + → Add custom MCP server. Don't see it? Turn on Developer mode in Settings → Security and login.</li>
-    <li>Name: <code>Grill</code>. Server URL: <code>https://grillyour.ai/mcp</code>. Authentication: OAuth.</li>
-    <li>Tick I understand and want to continue → Create → Install.</li>
-    <li>Sign in with your email. We send you a code (check spam).</li>
-  </ol>
+  <fieldset class="picker" id="tool-picker">
+    <legend class="ask-q">Pick your AI</legend>
+    <input class="tool-pick" type="radio" name="tool" id="pick-chatgpt">
+    <label class="choice" for="pick-chatgpt">ChatGPT</label>
+    <input class="tool-pick" type="radio" name="tool" id="pick-claude">
+    <label class="choice" for="pick-claude">Claude</label>
 
-  <h2 id="prompt">Step 2. Paste this in a new chat</h2>
-  <p id="starter-prompt">Use the Grill connector for this. Grill this: [what you're deciding, e.g. "Should I raise my workshop price from $40 to $55?"]. I'm [how sure, e.g. 70%] sure. Give me Grill's verdict as it comes back, then wait for me to say "more" or my call.</p>
-  <p><button class="button" type="button" id="copy-starter">Copy</button></p>
-  <p class="note">ChatGPT: type <code>@Grill</code> first, or pick Grill from the + menu.</p>
+    <div class="tool-panel for-chatgpt" id="chatgpt-steps">
+      <p class="note">On a phone, use the ChatGPT website, not the iOS app. Custom plugins can't be added in the iOS app.</p>
+      <ol class="steps">
+        <li>On <a href="https://chatgpt.com/">chatgpt.com</a>: Plugins → + → Add custom MCP server.</li>
+        <li>Name: <code>Grill</code>. Server URL: <code>https://grillyour.ai/mcp</code>. Authentication: OAuth.</li>
+        <li>Tick I understand and want to continue, then Create, then Install.</li>
+        <li>Sign in with your email. We send you a code (check spam).</li>
+      </ol>
+    </div>
 
-  <p class="privacy"><a href="https://grillyour.ai/terms">Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else.</a></p>
+    <div class="tool-panel for-claude" id="claude-steps">
+      <p><a href="https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=Grill&amp;connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp">Add Grill to Claude</a></p>
+      <p class="note">Link didn't open? Customize → Connectors → Add custom connector, then paste <code>https://grillyour.ai/mcp</code>.</p>
+    </div>
+
+    <div class="tool-panel for-either" id="try-grill">
+      <p class="note">Paste this in a new chat.</p>
+      <p id="starter-prompt">Grill this: should I captain Erling Haaland or Nicholas Jackson this week?</p>
+      <p><button class="button" type="button" id="copy-starter">Copy</button></p>
+    </div>
+  </fieldset>
+
+  <p class="privacy"><a href="/terms">Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.</a></p>
 
   <div class="footer">
     <span>Made at <a href="https://hold.quest">Hold</a></span>

@@ -88,6 +88,17 @@
   .ask-choices { display: flex; gap: 8px; }
   .choice { display: inline-block; width: fit-content; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--ink); background: transparent; color: var(--ink); font: 600 0.95rem/1.2 var(--sans); white-space: nowrap; cursor: pointer; }
   .choice[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .tool-pick { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .picker { border: 0; margin: 0 0 1.6rem; padding: 0; min-inline-size: 0; }
+  .picker legend { padding: 0; margin: 0 0 0.7rem; }
+  .picker .choice { margin: 0 8px 8px 0; }
+  .tool-pick:focus-visible + .choice { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .tool-pick:checked + .choice { background: var(--ink); color: var(--paper); }
+  .tool-panel { display: none; }
+  #pick-chatgpt:checked ~ .for-chatgpt,
+  #pick-claude:checked ~ .for-claude,
+  #pick-chatgpt:checked ~ .for-either,
+  #pick-claude:checked ~ .for-either { display: block; }
   button.button { border: 0; cursor: pointer; font-family: var(--sans); }
   [hidden] { display: none !important; }
 
@@ -184,8 +195,8 @@
 
   <h1>Grill your AI before you send it to your boss.</h1>
   <p class="lede">Get the strongest case against your plan from a different AI, right in the chat you already use. Then you decide.</p>
-  <p class="cta"><a class="button" href="/start/">Connect Grill</a></p>
-  <p class="privacy"><a href="https://grillyour.ai/terms">Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else.</a></p>
+  <p class="cta"><a class="button" href="/start/">Connect Grill (2 minutes)</a></p>
+  <p class="privacy"><a href="/terms">Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.</a></p>
 
   <div class="footer">
     <span>Made at <a href="https://hold.quest">Hold</a></span>
