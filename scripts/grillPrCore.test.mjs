@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { COMMENT_MARKER, commentPlan, loadConfig } from "./automergeCore.mjs";
-import { redactSensitive } from "./judgeCore.mjs";
+import { RUN_PRIVACY_LINE, redactSensitive } from "./judgeCore.mjs";
 import {
   GRILL_MARKER,
   GRILL_QUESTION,
@@ -173,6 +173,18 @@ describe("the post-run company check", () => {
   });
 
   it("does not fail an unknown author, and accepts a Grok judge of a Codex pull request", () => {
+    const viaBranch = judgePlan({ author: "mtangoz", body: "", headRef: "claude/grill-response-disclosure-lmaa19", config });
+    assert.equal(viaBranch.authorVendor, "anthropic");
+    assert.deepEqual(viaBranch.excludedVendors, ["anthropic"]);
+    assert.deepEqual(viaBranch.authorArgs, ["--author", "anthropic"]);
+    const branchBeatsBody = judgePlan({ author: "mtangoz", body: "Written-by-model: google/gemini-2.5-pro", headRef: "claude/x", config });
+    assert.equal(branchBeatsBody.authorVendor, "anthropic", "a body line cannot clear a claude/ branch");
+    assert.equal(judgePlan({ author: "mtangoz", body: "", headRef: "codex/y", config }).authorVendor, "openai");
+    assert.equal(judgePlan({ author: "mtangoz", body: "", headRef: "feature/claude/z", config }).authorVendor, "unknown");
+    const clash = judgePlan({ author: "chatgpt-codex-connector[bot]", body: "", headRef: "claude/x", config });
+    assert.equal(clash.ok, false, "two companies cannot both be excluded, so the plan refuses");
+    assert.match(clash.reason, /openai.*anthropic/);
+    assert.equal(judgePlan({ author: "claude[bot]", body: "", headRef: "claude/x", config }).ok, true, "agreeing signals are fine");
     const unknown = judgePlan({ author: "mtangoz", body: "", config });
     for (const servedModel of ["google/gemini-2.5-pro", "openai/gpt-5.6-sol", "anthropic/claude-opus-4", "x-ai/grok-4"]) {
       const check = companyCheck({
@@ -267,6 +279,17 @@ describe("the sticky comment", () => {
     assert.match(body, /Author model vendor: openai, judge: google \(different company ✓\)/);
     assert.match(body, /needs-review/);
     assert.equal(body.includes(SECRET), false);
+  });
+
+  it("opens with the same run note as a grill in chat: models and time, then privacy", () => {
+    const body = formatGrillComment({ kind: "result", sha: SHA, tier: "high", reasons: [], badge: "solid", challenges: [], servedModel: "google/gemini-2.5-pro", costUsd: 0.01, ms: 84_200 });
+    const note = `Models: google/gemini-2.5-pro (judge) · took 1m 24s\n${RUN_PRIVACY_LINE}`;
+    assert.ok(body.includes(note), body);
+    assert.ok(body.indexOf("**Grill CI") < body.indexOf(note));
+    assert.ok(body.indexOf(note) < body.indexOf("**What could break"));
+    assert.doesNotMatch(body, /Judge model:/);
+    const untimed = formatGrillComment({ kind: "degraded", sha: SHA, tier: "high", degraded: ["x"], costUsd: 0 });
+    assert.match(untimed, /Models: judge model not reported · time not recorded\n/);
   });
 
   it("redacts a secret the judge copied into a challenge", () => {

@@ -723,7 +723,7 @@ ${error ? `<p><strong>${esc(error)}</strong></p>` : ""}
 <input id="email" name="email" type="email" autocomplete="email" required>
 <div class="row"><button type="submit">Email me a sign-in link</button></div>
 </form>
-<p class="small">The free ways to use Grill are on <a href="/#setup">the site</a>.</p>`,
+<p class="small">The free ways to use Grill are on <a href="/start/">the site</a>.</p>`,
   );
 }
 
@@ -991,7 +991,7 @@ async function dashboard(account, deps) {
       : account.subscription === "active"
       ? "Pro is on."
       : account.plan === "starter"
-        ? `Starter allowance is on. No card. It is ${dollars(starterAllowanceUsd(env))} of judge spend, and it does not refill.`
+        ? "A starter key is free. No card. It includes a one-time allowance of checks for one verified email and does not refill."
         : account.subscription === "canceled"
           ? "Pro is cancelled. The key is off."
           : billing === "subscription"
@@ -1005,7 +1005,7 @@ async function dashboard(account, deps) {
   const starter =
     !hasKey && account.subscription !== "active" && !account.starterIssued
       ? `<form method="post" action="/pro"><input type="hidden" name="action" value="starter"><button type="submit">Get a starter key</button></form>
-<p class="small">No card. ${esc(dollars(starterAllowanceUsd(env)))} of judge spend, once, for this email. Bring your own key if you want unlimited checks. That stays free, and it has no account.</p>`
+<p class="small">A starter key is free. No card. It includes a one-time allowance of checks for one verified email and does not refill. Bring your own key if you want unlimited checks. That stays free, and it has no account.</p>`
       : "";
   const purchase =
     !freeForLife && billing === "subscription" && account.subscription !== "active"

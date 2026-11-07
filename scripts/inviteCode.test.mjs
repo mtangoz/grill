@@ -412,7 +412,7 @@ describe("invite codes", { concurrency: false }, () => {
     assert.equal(html.includes("<script"), false);
     assert.doesNotMatch(html, /GRILL_|Clerk|CLERK_/);
     const start = readFileSync(join(ROOT, "site/start.html"), "utf8");
-    assert.match(start, /Anyone can sign up/);
+    assert.match(start, /Connect Grill to your AI/);
     assert.doesNotMatch(start, /invite-only/);
     assert.doesNotMatch(start, /You hit the invite wall/);
   });

@@ -28,8 +28,8 @@ Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes c
 
 Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). Use the same email each time, the email you signed up with, every time.
 
-- **Claude.ai**, verified working. On the web, on a Free, Pro or Max plan: Settings → Connectors → Add custom connector. URL `https://grillyour.ai/mcp`, name it Grill, then sign in. Asking Claude in a chat to connect it does not work.
-- **ChatGPT**, verified working. On the web, with a paid plan: Plugins, the plus button, Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Click I understand and want to continue, then Create. Install it, then sign in.
+- **Claude.ai**, verified working. On the web, desktop or phone app, Free plan included: [Add Grill to Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Grill&connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp). Check the name says Grill and the URL says `https://grillyour.ai/mcp`, then Add and Connect, and sign in. Link didn't open? Customize → Connectors → Add custom connector and paste `https://grillyour.ai/mcp`. Asking Claude in a chat to connect it does not work.
+- **ChatGPT**. On chatgpt.com on a computer, then it works in the phone app too: Plugins → + → Add custom MCP server. If that option is missing, turn on Developer mode in Settings → Security and login. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Tick I understand and want to continue, then Create, then Install, and sign in.
 - **Grok Bot**, verified working. Tell the bot `Add this MCP server: https://grillyour.ai/mcp`, then sign in when asked.
 - **Gemini**: Should work, testing now. US only, a personal Google account, Keep Activity on. On gemini.google.com: Settings, Connected Apps, Add a custom app, paste `https://grillyour.ai/mcp`, Next, then sign in.
 - **Meta AI**, coming soon.
@@ -38,7 +38,7 @@ Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
 
 ### Claude Desktop (Mac or Windows): the one-click judge, about 2 minutes with a key, about 10 if you need one
 
-1. **Get a key** for Grill's model router: go to [openrouter.ai/keys](https://openrouter.ai/keys), sign in, click **Create key**, and add $5 of credit. A grill costs about a cent or two.
+1. **Get a key** for Grill's model router: go to [openrouter.ai/keys](https://openrouter.ai/keys), sign in, click **Create key**, and add credit.
 2. **Install Grill.** Download **[grill.mcpb](https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb)** and double-click it, or drag it onto the Claude window. Paste your key when Claude asks. There's nothing else to install; Claude Desktop runs it.
 3. **Try it.** In any chat, type:
    *Grill this: we're moving our launch to March. I'm 70% sure it gets us more signups.*
@@ -97,7 +97,7 @@ Claude Code's advisor (`/advisor`) has a stronger Claude look over the work. Tha
 
 ## What it costs
 
-Grill is free. On your own key a grill costs about a cent or two. Copy and paste uses the assistants you already have.
+Grill is free. On your own key you pay the router. Copy and paste uses the assistants you already have.
 
 Coming later: an optional Pro plan with saved decision history and look-back reminders. The free tool stays free and account-free. [Hear when it's ready](https://grillyour.ai/notify?via=site).
 
@@ -105,7 +105,7 @@ Coming later: an optional Pro plan with saved decision history and look-back rem
 
 - Your notes stay in your tools. Only the write-up you approve is sent. The reflection you write stays in your chat or your own notes.
 - The free tool has no account. Grill's makers never see your decisions on that tool. Anonymous usage stats are off unless you turn them on. An in-chat account is open to anyone who signs up; what it stores is in [docs/DATA-LEDGER.md](docs/DATA-LEDGER.md).
-- A key or token in the write-up stops the run. Email addresses, phone numbers and card numbers are masked.
+- A key, token or password in the write-up stops the run. Email addresses, phone numbers, card and bank numbers, ID numbers, labelled dates of birth, street addresses, postcodes and IP addresses are masked. Names are not. The full list is in [docs/PRIVACY.md](docs/PRIVACY.md).
 - The quality check (Jev) is on by default and also sees the masked write-up. Say "skip the check" to skip it for one grill, or switch it off in Grill's settings. The website counts visits without cookies.
 - Grill news line: after a finished grill, at most once a session, and only within 7 days of a release or on the first 3 days of a month, a line with a link to hear when an optional Pro plan is ready. Showing the line sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own.
 - Anonymous usage stats: off by default. One metadata ping to Grill's website after the first successful grill, and never again. Never the decision, the question, the verdict, or your key.

@@ -85,6 +85,13 @@ import {
   newCalendarToken,
   capBlock,
   chargeableUsd,
+  checkOnceKey,
+  checksLine,
+  completedGrill,
+  dailyCheckKey,
+  monthlyCheckKey,
+  runFingerprint,
+  runLockKey,
   chainIds,
   decisionHabits,
   decryptString,
@@ -406,8 +413,43 @@ async function countActive(account, deps) {
     // ignored on purpose
   }
 }
-function dayKey(userId, day) {
-  return `grill:hosted:day:${userId}:${day}`;
+/**
+ * The run a retry should join. The lock holds a salted fingerprint, not the decision.
+ * With no server secret there is no lock, and each completed grill counts on its own.
+ */
+async function claimRun(account, subject, runId, deps) {
+  const fingerprint = runFingerprint(account.id, subject, deps.env);
+  if (!fingerprint) return runId;
+  const key = runLockKey(account.id, fingerprint);
+  const won = await redis(deps, ["SET", key, runId, "NX", "EX", String(JOB_TTL_SECONDS)]);
+  if (won === "OK") return runId;
+  const existing = await redis(deps, ["GET", key]);
+  return typeof existing === "string" && /^[0-9a-f]{32}$/.test(existing) ? existing : runId;
+}
+
+/** One completed grill. A second finish of the same run, a follow-up and a poll do not get here. */
+async function countCompletedCheck(account, deps, runId) {
+  if (!runId) return;
+  const once = await redis(deps, ["SET", checkOnceKey(runId), "1", "NX", "EX", String(JOB_TTL_SECONDS)]);
+  if (once !== "OK") return;
+  const now = typeof deps.now === "number" ? deps.now : Date.now();
+  const monthKey = monthlyCheckKey(account.id, isoMonth(now));
+  const dayKey = dailyCheckKey(account.id, isoDay(now));
+  await redis(deps, ["INCR", monthKey]);
+  await redis(deps, ["EXPIRE", monthKey, String(CAP_COUNTER_TTL_SECONDS)]);
+  await redis(deps, ["INCR", dayKey]);
+  await redis(deps, ["EXPIRE", dayKey, String(2 * 24 * 60 * 60)]);
+}
+
+async function dailyChecksUsed(account, deps) {
+  const now = typeof deps.now === "number" ? deps.now : Date.now();
+  return Number(await redis(deps, ["GET", dailyCheckKey(account.id, isoDay(now))])) || 0;
+}
+
+/** The number support and the account pages read. Not the per-day attempt counter. */
+async function readMonthlyChecks(account, deps) {
+  const now = typeof deps.now === "number" ? deps.now : Date.now();
+  return Number(await redis(deps, ["GET", monthlyCheckKey(account.id, isoMonth(now))])) || 0;
 }
 
 async function loadJwks(url, fetchImpl) {
@@ -1328,7 +1370,7 @@ async function firstDisclosure(account, deps) {
   return won === "OK";
 }
 
-async function composeReport({ outcome, subject, sourceApp, account, credit, supersedes, changed, deps, depthJob, big }) {
+async function composeReport({ outcome, subject, sourceApp, account, credit, supersedes, changed, deps, depthJob, big, runId }) {
   const stderr = String(outcome?.stderr || "");
   const parsed = outcome?.parsed || null;
   if (!outcome || outcome.code !== 0 || (!parsed && !String(outcome.report || "").trim())) {
@@ -1366,6 +1408,7 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
   await redis(deps, ["RPUSH", spendLogKey(account.id), JSON.stringify({ at: new Date().toISOString(), costUsd: cost, model })]);
   await redis(deps, ["LTRIM", spendLogKey(account.id), String(-SPEND_LOG_MAX), "-1"]);
   await countSpend(account, deps, cost);
+  if (completedGrill(parsed)) await countCompletedCheck(account, deps, runId);
   let text = `${renderRunDisclosure(parsed || {}, Number(outcome.ms))}\n\n${layers.brief.trim()}`;
   if (await firstDisclosure(account, deps)) text = `${ONCE_DISCLOSURE}\n\n${text}`;
   creditCache.delete(account.id);
@@ -1433,17 +1476,15 @@ async function callGrill(args, account, payload, params, deps) {
     running = Number(await redis(deps, ["SCARD", runningKey(account.id)])) || 0;
   }
   if (running >= RUNNING_JOB_LIMIT) return toolText(CAP_RETRY_TEXT, true);
-  const today = isoDay(Date.now());
-  const used = Number(await redis(deps, ["GET", dayKey(account.id, today)])) || 0;
+  const used = await dailyChecksUsed(account, deps);
   if (used >= DAILY_GRILL_LIMIT) return toolText(`You've used today's ${DAILY_GRILL_LIMIT} grills on this account. It resets tomorrow (UTC).`);
-  await redis(deps, ["INCR", dayKey(account.id, today)]);
-  await redis(deps, ["EXPIRE", dayKey(account.id, today), 172800]);
   const apiKey = openSecret(account.keyCipher, deps.env, "GRILL_KEY_ENCRYPTION_KEY");
   if (!apiKey) {
     logHosted(deps.requestId, "key-open");
     return toolText(serviceFailureText("key-encryption", deps.requestId), true);
   }
   const credential = newJobCredential();
+  const runId = await claimRun(account, subject, credential.id, deps);
   await redis(deps, ["SADD", runningKey(account.id), credential.id]);
   await redis(deps, ["EXPIRE", runningKey(account.id), JOB_TTL_SECONDS]);
   const wantDeepen = args.big === true && deepenTestEnabled(deps.env);
@@ -1474,6 +1515,7 @@ async function callGrill(args, account, payload, params, deps) {
       deps,
       depthJob,
       big: wantDeepen,
+      runId,
     });
     if (account.records !== "keep" && !result.isError) {
       const credential = newJobCredential();
@@ -1497,6 +1539,7 @@ async function callGrill(args, account, payload, params, deps) {
           deps,
           depthJob,
           big: wantDeepen,
+          runId,
         });
       } catch {
         // Store a told failure rather than nothing, so grill_result does not read it as expired.
@@ -2410,6 +2453,7 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
     ${records}
     <h2>Manage</h2>
     <p>${credit?.out ? esc(OUT_OF_CREDIT) : esc(allowanceLine(credit?.remaining, extra.env))}</p>
+    <p>${esc(checksLine(extra.checks))}</p>
     <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them.</p>
     <form method="post" action="/decisions" class="row">
       <input type="hidden" name="action" value="records">
@@ -2488,6 +2532,7 @@ function renderAccount(account, credit, extra = {}) {
     <p>${esc(account.email)}</p>
     <p>Records: ${esc(keeping)}.</p>
     <p>${credit?.out ? esc(OUT_OF_CREDIT) : esc(allowanceLine(credit?.remaining, extra.env))}</p>
+    <p>${esc(checksLine(extra.checks))}</p>
     <p>Grill holds a model-router key for you. It is not shown here. The write-up you approve passes through Grill's server in memory and is not stored.</p>
     <form method="post" action="/account" class="row">
       <input type="hidden" name="action" value="records">
@@ -2985,6 +3030,7 @@ export async function handleDecisions(request, deps) {
     const flashed = readFlashLink(request);
     const rows = await loadRecords(session.account, deps);
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
+    const checks = await readMonthlyChecks(session.account, deps);
     const waiting = (await loadPendings(session.account, deps)).length;
     const now = typeof deps.now === "number" ? deps.now : Date.now();
     const habits = decisionHabits({ records: rows, waiting, now });
@@ -2995,7 +3041,7 @@ export async function handleDecisions(request, deps) {
       const token = await readShareToken(session.account, deps, row.id);
       if (token) shares.set(row.id, shareUrl(origin, token));
     }
-    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed, env: deps.env, shares }), { clearFlash: Boolean(flashed) });
+    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed, env: deps.env, shares, checks }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
@@ -3038,9 +3084,10 @@ export async function handleAccount(request, deps) {
     }
     const flashed = readFlashLink(request);
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
+    const checks = await readMonthlyChecks(session.account, deps);
     const calendar = await calendarState(session.account, deps);
     const founding = await foundingNumber(session.account.email, deps);
-    return htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding }), { clearFlash: Boolean(flashed) });
+    return htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, checks }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);

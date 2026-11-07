@@ -380,13 +380,18 @@ if (couponId(process.env)) mainAttrs.push("data-offer");
 if (billingMode(process.env) === "subscription") mainAttrs.push('data-billing="subscription"');
 homeBody = homeBody.replace(/<main\b[^>]*>/, `<main ${mainAttrs.join(" ")}>`);
 const starterLabel = `$${starterAllowanceUsd(process.env).toFixed(2)}`;
-homeBody = homeBody.replace(/(<span class="starter-amount">)[^<]*/, (match, open) => open + starterLabel);
-if (notifyOn(process.env)) {
-  homeBody = stripClass(homeBody, "starter");
-  homeBody = stripClass(homeBody, "accounts-line");
-} else {
-  homeBody = stripClass(homeBody, "notify");
-  homeBody = stripClass(homeBody, "notify-line");
+if (homeBody.includes('class="starter-amount"')) {
+  homeBody = homeBody.replace(/(<span class="starter-amount">)[^<]*/, (match, open) => open + starterLabel);
+}
+// Pro checkout and the launch list live on /pricing. Strip them here only if a homepage still has that section.
+if (homeBody.includes('id="pro"')) {
+  if (notifyOn(process.env)) {
+    homeBody = stripClass(homeBody, "starter");
+    homeBody = stripClass(homeBody, "accounts-line");
+  } else {
+    homeBody = stripClass(homeBody, "notify");
+    homeBody = stripClass(homeBody, "notify-line");
+  }
 }
 
 mkdirSync(OUT, { recursive: true });
@@ -408,7 +413,7 @@ function addPublicPage({ url, name, blurb }) {
 addPublicPage({
   url: SITE_URL,
   name: "Home",
-  blurb: "Hear the strongest case against your plan, then decide for yourself.",
+  blurb: "Get the strongest case against your plan from a different AI, right in the chat you already use. Then you decide.",
 });
 
 // Other pages are a <title> and a body; they borrow the main page's styles.
@@ -453,11 +458,11 @@ writePage("look-back.html", {
   blurb: "For the copy-and-paste route. Turn the judge's answer into a decision record, then come back and say what happened. Nothing is sent and nothing is stored.",
 });
 writePage("start.html", {
-  description: "Connect Grill to your AI. Anyone can sign up. Claude.ai, ChatGPT and Grok Bot are verified working. Gemini is still being tested. Meta AI is coming soon.",
+  description: "Pick ChatGPT or Claude, then connect Grill and paste one message.",
   url: `${SITE_URL}start/`,
   outDir: "start",
   name: "Start",
-  blurb: "Connect Grill to your AI. Anyone can sign up.",
+  blurb: "Pick ChatGPT or Claude, then connect.",
 });
 writePage("privacy.html", {
   description: "What Grill sends, what it counts, and what it never keeps.",
@@ -535,6 +540,10 @@ if (process.env.GRILL_MISS === "1") {
   );
 }
 writeFileSync(join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}sitemap.xml\n`);
+// OpenAI's public domain-verification token. The body is these bytes and nothing else:
+// no newline, and text/plain comes from the vercel.json route for this path.
+mkdirSync(join(OUT, ".well-known"), { recursive: true });
+writeFileSync(join(OUT, ".well-known", "openai-apps-challenge"), "qUFqSGmOG8CWwJUnLKQuZ-6pUmSzTgCZRDsib-tA2j0");
 writeFileSync(
   join(OUT, "sitemap.xml"),
   `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${publicPages.map((p) => `  <url><loc>${p.url}</loc></url>`).join("\n")}\n</urlset>\n`,
@@ -554,10 +563,9 @@ function faqForAgents(html) {
 }
 const FAQ_FOR_AGENTS = faqForAgents(readFileSync(join(ROOT, "site/faq.html"), "utf8"));
 const WHEN_TO_USE = [
-  "Hear the strongest case against your plan, then decide for yourself.",
-  "A model from another company gives a verdict and one cheap test.",
-  "The judge never comes from the company behind your AI, so it won\u2019t share its blind spots.",
-  "To keep a record and look back later, use the look-back page.",
+  "Grill your AI before you send it to your boss.",
+  "Get the strongest case against your plan from a different AI, right in the chat you already use.",
+  "Then you decide.",
 ];
 writeFileSync(
   join(OUT, "llms.txt"),
@@ -568,7 +576,7 @@ writeFileSync(
     "",
     "Anyone can sign up and connect Grill to the AI they use at https://grillyour.ai/mcp.",
     "",
-    "In Claude, open Settings → Connectors → Add custom connector and paste https://grillyour.ai/mcp. Asking Claude in a chat to connect it does not work.",
+    "In Claude, open Customize → Connectors → Add custom connector and paste https://grillyour.ai/mcp. Asking Claude in a chat to connect it does not work.",
     "",
     "## When to use Grill",
     "",
@@ -603,47 +611,11 @@ writeFileSync(
   [
     "# Grill your AI before you send it to your boss.",
     "",
-    "Hear the strongest case against your plan, then decide for yourself.",
+    "Get the strongest case against your plan from a different AI, right in the chat you already use. Then you decide.",
     "",
-    "Free, with the AI you already use.",
+    "[Connect Grill (2 minutes)](https://grillyour.ai/start/)",
     "",
-    "## How it works",
-    "",
-    "1. **Say “grill this”** Tell the AI you already use what you’re deciding.",
-    "2. **A different AI pushes back** A model from another company gives a verdict and one cheap test.",
-    "3. **You make the call** The verdict never becomes the decision. The free tool keeps nothing; Grill in chat keeps only what you choose, encrypted, and you can delete it.",
-    "",
-    "## Worked examples",
-    "",
-    "Illustrative example, invented numbers, not a benchmark",
-    "",
-    "Decision: Raise the Saturday workshop from $40 to $55. Last month 62 of 80 seats sold.",
-    "",
-    "Verdict: Shaky. The 62 of 80 sold at $40, and nothing shows they would still buy at $55.",
-    "",
-    "Challenge: A $15 rise on 62 seats is $930 if everyone stays, and $0 if the extra $15 empties the room.",
-    "",
-    "The question that would change this: whether “62 of 80 seats” would still sell at $55.",
-    "",
-    "Illustrative example, invented numbers, not a benchmark",
-    "",
-    "Decision: Hire a second baker. Saturday orders hit 140, and one person finishes 90.",
-    "",
-    "Verdict: Solid, if… It holds only if the 140 are all new work for Saturday.",
-    "",
-    "Challenge: 40 of the 140 are standing orders already finished on Friday, so the new load is 100, not 140.",
-    "",
-    "The question that would change this: whether the 140 Saturday orders are all new work, or 40 are already done.",
-    "",
-    "## Get started: pick the AI you use",
-    "",
-    "Anyone can sign up and connect Grill to the AI they use at [https://grillyour.ai/mcp](https://grillyour.ai/mcp). [Connect Grill](https://grillyour.ai/start/). In Claude, open Settings → Connectors → Add custom connector and paste https://grillyour.ai/mcp. Asking Claude in a chat to connect it does not work. Claude.ai, ChatGPT and Grok Bot are verified working. Gemini: Should work, testing now. US only, a personal Google account, Keep Activity on. Meta AI is coming soon. Use the same email each time, the email you signed up with, every time.",
-    "",
-    "**Any AI (easiest)** ChatGPT, Copilot, Gemini, Grok, Muse · free",
-    "",
-    "[See four more examples](https://grillyour.ai/demo/)",
-    "",
-    "Every detail of what is sent and counted is in [Privacy](https://grillyour.ai/privacy/).",
+    "[Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.](https://grillyour.ai/terms)",
     "",
     "[llms.txt](https://grillyour.ai/llms.txt)",
     "",

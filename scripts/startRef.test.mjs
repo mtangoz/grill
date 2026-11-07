@@ -35,7 +35,8 @@ describe("start attribution", () => {
     assert.equal(res.headers.get("location"), null);
     const html = await res.text();
     assert.match(html, /First 100 users get Grill free for life, 100 spots left\./);
-    assert.equal(html.includes("<script"), false);
+    assert.match(html, /id="copy-starter"/);
+    assert.match(html, /id="starter-prompt"/);
     assert.equal(html.includes("askgrill"), false);
     assert.match(res.headers.get("set-cookie"), /grill_ref=askgrill/);
     assert.match(res.headers.get("set-cookie"), /HttpOnly/);
@@ -77,7 +78,10 @@ describe("start attribution", () => {
     const route = config.routes.find((row) => row.dest === "/api/hosted?__route=start" && row.src === "^/start/?$");
     assert.ok(route, "a route serves /start before the HTML file");
     const start = readFileSync(join(ROOT, "site/start.html"), "utf8");
-    assert.equal(start.includes("<script"), false);
+    assert.match(start, /id="copy-starter"/);
     assert.match(start, /First 100 users get Grill free for life, 100 spots left\./);
+    const STARTER = "Grill this: should I captain Erling Haaland or Nicholas Jackson this week?";
+    assert.ok(start.includes(STARTER), "starter prompt");
+    assert.ok(start.includes("https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=Grill&amp;connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp"));
   });
 });

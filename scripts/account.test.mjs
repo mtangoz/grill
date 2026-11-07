@@ -346,7 +346,8 @@ describe("the starter allowance", () => {
     const cookie = await signedIn("starter@example.com", d);
     const home = await body(await handlePro(new Request("https://grillyour.ai/pro", { headers: { cookie } }), d));
     assert.match(home, /Get a starter key/);
-    assert.match(home, /\$0\.50/);
+    assert.match(home, /a one-time allowance of checks for one verified email and does not refill/);
+    assert.doesNotMatch(home, /\$0\.50|judge spend/);
     assert.doesNotMatch(home, /Simulate purchase/);
 
     const issued = await post(handlePro, "/pro", { action: "starter" }, cookie, d);

@@ -11,7 +11,7 @@ The judge is always OpenRouter's Auto Router (`openrouter/auto`). Grill excludes
 ## What a person does
 
 1. Follow the steps for the AI at `https://grillyour.ai/start/` (on a preview, use that preview's origin instead of grillyour.ai). Claude.ai, ChatGPT and Grok Bot are verified working. Gemini should work and is still being tested. Meta AI is coming soon. The connector URL is `https://<host>/mcp`. On a preview that host is the preview origin. `https://mcp.grillyour.ai/mcp` comes later, when the owner adds that domain.
-2. Connect. A sign-in opens. Anyone can sign up. Sign in with an emailed code: use the same email each time, the same email you signed up with, every time, and check spam if the code isn't there in a minute. No key to paste, no password, and no card. In Claude, open Settings → Connectors → Add custom connector and paste `https://<host>/mcp`. Asking Claude in a chat to connect it does not work. A code at `/redeem` still grants early-tester access: free, $5 of use each month, on the same $20 service cap.
+2. Connect. A sign-in opens. Anyone can sign up. Sign in with an emailed code: use the same email each time, the same email you signed up with, every time, and check spam if the code isn't there in a minute. No key to paste, no password, and no card. In Claude, open Customize → Connectors → Add custom connector and paste `https://<host>/mcp`. Asking Claude in a chat to connect it does not work. A code at `/redeem` still grants early-tester access: free, $5 of use each month, on the same $20 service cap.
 3. The first grill asks, once, whether to keep decision records. Answer once. The outside-judge disclosure is shown once per account, then not again.
 4. Say the decision as you mean it. The assistant sends that. It does not show a template or wait for an OK. The note comes back in the chat. If three grills are already running, the assistant waits and retries on its own.
 
@@ -45,6 +45,8 @@ On the preview environment only, until the spike in [hosted-spike.md](hosted-spi
 | `GRILL_RECORD_KEY` | 32 bytes, base64. Wraps the per-person key that encrypts records. |
 
 The caps count each finished grill's cost in micro-dollars with atomic `INCRBY` counters. A grill that reports no cost counts as a typical grill ($0.03). A grill may start while spend is under the cap, so the last one can finish slightly over; the next one is stopped. Fields a running grill changes (its spend row, the once-only disclosure, the per-person record key) are written to their own keys with atomic commands, so two grills finishing at once cannot overwrite each other's account data.
+
+A completed grill also adds one to that account's check count for the UTC month (`grill:hosted:checks:<account id>:<YYYY-MM>`). That number is what support and the account pages read. A failed judge, an automatic retry of the same run, a follow-up such as more or options, and a poll for a job result do not add one. The dollar caps above stay the safety limit. The daily limit still stops at 30 completed checks.
 
 Generate the two encryption keys with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Store them as secrets. Losing `GRILL_RECORD_KEY` makes stored records unreadable. Rotating it needs a re-wrap, which this slice does not do.
 

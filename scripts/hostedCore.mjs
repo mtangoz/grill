@@ -2,9 +2,9 @@
  * Pure helpers for hosted Grill. No network and no logging.
  * The installed local tool does not import this file.
  */
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
 import { confidenceValue, parseRecords } from "./reflection.mjs";
-import { SCOPE_GUARD, clientCompanyHint } from "./judgeCore.mjs";
+import { SCOPE_GUARD, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
 import { buildGrillTools } from "../server/index.mjs";
 
 export { SCOPE_GUARD };
@@ -86,7 +86,7 @@ export function protectedResourceMetadata(origin, issuer) {
   return {
     resource: mcpResource(origin),
     authorization_servers: [String(issuer || "").trim()],
-    scopes_supported: ["openid", "profile", "email"],
+    scopes_supported: ["openid", "profile", "email", "offline_access"],
     bearer_methods_supported: ["header"],
   };
 }
@@ -456,6 +456,51 @@ export function chargeableUsd(costUsd) {
 }
 
 /**
+ * A completed grill is one the judge actually judged. A run that exits with no
+ * recognisable verdict, including after its own retries, is not a check.
+ */
+export function completedGrill(parsed) {
+  const verdict = typeof parsed?.verdict === "string" ? parsed.verdict.trim().toLowerCase() : "";
+  return VERDICTS.includes(verdict);
+}
+
+/** Completed checks for one account in a UTC month. This is the usage number. */
+export function monthlyCheckKey(accountId, month) {
+  return `grill:hosted:checks:${accountId}:${month}`;
+}
+
+/** Completed checks for one account on a UTC day. The daily limit reads this, not attempts. */
+export function dailyCheckKey(accountId, day) {
+  return `grill:hosted:day:${accountId}:${day}`;
+}
+
+/** One count per run. A second compose of the same run does not add another check. */
+export function checkOnceKey(runId) {
+  return `grill:hosted:counted:${runId}`;
+}
+
+/**
+ * A short-lived lock so an automatic retry of the same decision is the same run.
+ * Empty when there is no server secret: nothing derived from the decision is stored.
+ */
+export function runFingerprint(accountId, subject, env = {}) {
+  const salt = String(env.GRILL_METRICS_SALT || env.GRILL_RECORD_KEY || "").trim();
+  if (!salt || !accountId) return "";
+  const body = `${accountId}\n${String(subject || "").trim()}`;
+  return createHmac("sha256", salt).update(body).digest("hex").slice(0, 32);
+}
+
+export function runLockKey(accountId, fingerprint) {
+  return `grill:hosted:run:${accountId}:${fingerprint}`;
+}
+
+/** What /account and /decisions show, and what a support lookup reads. */
+export function checksLine(count) {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  return `${n} ${n === 1 ? "check" : "checks"} this month.`;
+}
+
+/**
  * Which cap, if any, stops the next grill. `serviceMicros` and `userMicros` are the
  * month's counters. A grill is allowed while the spend so far is under the cap, so
  * one grill can finish a little over; the next one is stopped.
@@ -700,10 +745,16 @@ export function hostedTools() {
     /The first time you use Grill with this person, say once\b.*?Do not mention a score, a balance, or a quote check\. /;
   const hostedDisclosure =
     "Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Every result then has a two-line run note (models and time, then privacy). Show it as written, before the note, every time. Do not mention a Jev score, a credit balance, or a quote check. ";
+  // Hosted hints are set here, not copied from the local tools. A local look-back stores
+  // nothing, and a local grill does not write an account. OpenAI's review reads all three,
+  // and the MCP defaults (read-only false, destructive true, open-world true) are wrong for
+  // a tool that only reads. grill reaches the judge and only adds. grill_result only reads
+  // a stored layer. grill_look_back can overwrite a saved look-back. grill_decided can replace a record.
   return [
     {
       ...grill,
       description: `${grill.description.replace(localDisclosure, hostedDisclosure)} ${HOSTED_COST_LINE}`,
+      annotations: { title: "Grill a decision", readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       inputSchema: {
         ...grill.inputSchema,
         properties: {
@@ -729,6 +780,7 @@ export function hostedTools() {
     {
       ...result,
       description: HOSTED_RESULT_DESCRIPTION,
+      annotations: { title: "Collect a grill", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       inputSchema: {
         ...result.inputSchema,
         properties: {
@@ -745,6 +797,7 @@ export function hostedTools() {
       ...look,
       description:
         "Score decision records against what actually happened. If they have not said what happened, ask. With no records argument, read this account's saved records that are due, or the ones they named. With view changes, read all saved records and show where their calls changed after a challenge. When they chose to keep records, save the look-back answers. The judge's verdict is not revised.",
+      annotations: { title: "Look back", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       inputSchema: {
         type: "object",
         properties: look.inputSchema.properties,
@@ -775,7 +828,8 @@ export function hostedTools() {
           proposed_by: {
             type: "string",
             enum: ["ai", "me"],
-            description: "Optional. ai when an assistant first recommended the call that was grilled, me when it was the person's own. Only when the chat makes it plain. Omit it otherwise.",
+            description:
+              "Optional. ai when an assistant first recommended the call that was grilled, me when it was the person's own. Set it only when they have already said which. Omit it otherwise.",
           },
           after: {
             type: "string",

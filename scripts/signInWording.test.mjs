@@ -13,8 +13,8 @@ const read = (p) => readFileSync(join(ROOT, p), "utf8");
 const SAME_EMAIL = /the same email you signed up with, every time/i;
 
 describe("sign-in wording", () => {
-  it("the Meta AI steps on the home page and README name the sign-up email and spam", () => {
-    for (const file of ["site/page.html", "README.md"]) {
+  it("the Meta AI steps in the README name the sign-up email and spam", () => {
+    for (const file of ["README.md"]) {
       const text = read(file);
       const muse = text.slice(text.indexOf("Meta AI (Muse)"));
       const step = muse.match(/(?:<li>|4\. )Tap[^\n]*/)?.[0] ?? "";

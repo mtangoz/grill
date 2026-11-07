@@ -458,8 +458,7 @@ export function renderWelcome(result, env = {}, sessionId = "") {
 <form method="post" action="/welcome"><input type="hidden" name="session_id" value="${esc(sessionId)}"><button type="submit">Show my key</button></form>
 ${help}`,
       );
-    case "issued": {
-      const dollars = Number.isInteger(result.limitUsd) ? `$${result.limitUsd}` : `$${Number(result.limitUsd).toFixed(2)}`;
+    case "issued":
       return page(
         "Your key · Grill Pro",
         `<h1>You’re in. Here’s your key.</h1>
@@ -472,11 +471,10 @@ ${help}`,
 <li>In any chat, say “grill this” and tell it what you’re deciding.</li>
 <li>Or open <a href="/pro">your Pro account</a> to pick a judge and copy a config for the assistant you use. Paste this key there if it asks. We don't keep a copy.</li>
 </ol>
-<p class="small">Your key includes up to ${dollars} of AI time a month, and a typical check costs about a cent. The allowance resets each month.</p>
+<p class="small">Each paid key includes a generous monthly allowance of checks. It resets each month and doesn’t roll over.</p>
 ${manage}${help}
 <script>document.getElementById("copy").addEventListener("click",function(){var k=document.getElementById("k");k.select();(navigator.clipboard?navigator.clipboard.writeText(k.value):Promise.reject()).then(function(){document.getElementById("copy").textContent="Copied";},function(){document.execCommand("copy");document.getElementById("copy").textContent="Copied";});});</script>`,
       );
-    }
     case "already":
       return page(
         "Key already shown · Grill Pro",
@@ -530,7 +528,7 @@ export function renderCheckoutError(state) {
     return page(
       "Pro isn’t ready · Grill",
       `<h1>Grill Pro isn’t taking payment yet.</h1>
-<p>The free ways to use Grill are on <a href="${SITE_URL}/#setup">the site</a>. A starter key needs no card: <a href="${SITE_URL}/pro">sign in</a>. Questions? Email <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>`,
+<p>The free ways to use Grill are on <a href="${SITE_URL}/start/">the site</a>. A starter key needs no card: <a href="${SITE_URL}/pro">sign in</a>. Questions? Email <a href="mailto:${CONTACT}">${CONTACT}</a>.</p>`,
     );
   }
   if (state === "billing-off") {

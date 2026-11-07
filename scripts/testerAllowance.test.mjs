@@ -160,8 +160,10 @@ describe("the early-tester monthly allowance", () => {
     const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
     assert.match(terms, /Early testers/);
     assert.ok(terms.includes("free for life: $5 of use each month, resets on the 1st"));
+    const chat = terms.slice(terms.indexOf("<h2>Grill inside your chat</h2>"), terms.indexOf("<h2>Using Grill fairly</h2>"));
+    assert.doesNotMatch(chat, /does not refill/, "the monthly early-tester allowance is not the one-time starter key");
     for (const sentence of terms.match(/[^.]*does not refill[^.]*\./g) || []) {
-      assert.match(sentence, /starter key/, `"does not refill" names the website starter key only: ${sentence}`);
+      assert.match(sentence, /starter key|one-time allowance of checks/, `"does not refill" stays on the website starter key: ${sentence}`);
     }
   });
 });

@@ -364,7 +364,8 @@ describe("the welcome page", () => {
     assert.match(html, /value="sk-or-v1-&lt;b&gt;&amp;"/);
     assert.ok(html.includes(DOWNLOAD_URL));
     assert.match(html, /Model router key/);
-    assert.match(html, /up to \$3 of AI time a month/);
+    assert.match(html, /a generous monthly allowance of checks/);
+    assert.doesNotMatch(html, /of AI time|about a cent|\$3/);
   });
 
   it("the 'ready' page asks before creating the key, and shows no key", () => {
@@ -484,6 +485,12 @@ describe("the endpoints", () => {
         {
           src: "^/redeem/$",
           dest: "/api/hosted?__route=redeem",
+        },
+        {
+          src: "^/\\.well-known/openai-apps-challenge$",
+          dest: "/.well-known/openai-apps-challenge",
+          check: true,
+          headers: { "Content-Type": "text/plain" },
         },
         {
           src: "^/$",

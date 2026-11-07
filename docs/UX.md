@@ -82,13 +82,13 @@ Enforced by: test "gives every dead-end page a way back" in [scripts/pages.test.
 
 ## Pricing, while paid plans are off
 
-`/pricing` states the same prices as the rest of the site: $9 a month or $90 a year. While paid plans are off, a view of that page, a view of `/checkout`, and a Notify me click are anonymous counts. The page runs no script. Nothing is charged. A signed-in checkout, once billing is on, puts the account id on the session so a later payment can be tied to that account. The prices do not change.
+`/pricing` states the same prices as the rest of the site: $9 a month or $90 a year. The homepage does not offer Pro. Those offers live on `/pricing`. While paid plans are off, a view of that page, a view of `/checkout`, and a Notify me click are anonymous counts. The page runs no script. Nothing is charged. A signed-in checkout, once billing is on, puts the account id on the session so a later payment can be tied to that account. The prices do not change.
 
 ## An invite code
 
-`/redeem` is for a signed-in person who is not on the invite list. They enter a code, then a confirm page. The confirm value is the button on that page. A code can come from `GRILL_INVITE_CODES` or from a single-use code in the codes store, one per lead. After the code is used, the page says you're in and the next step is a plain link to `/start`. `/start` says to sign in with the same email you signed up with, every time, so a code works for someone who was never emailed an invite. A `?ref=` on `/start` is recorded as a count for that source and is not shown on the page. The pages run no script. When open sign-up is off, the invite-only message links here. Open sign-up is on in production.
+`/redeem` is for a signed-in person who is not on the invite list. They enter a code, then a confirm page. The confirm value is the button on that page. A code can come from `GRILL_INVITE_CODES` or from a single-use code in the codes store, one per lead. After the code is used, the page says you're in and the next step is a plain link to `/start`. `/start` asks which AI you use. ChatGPT shows four short steps on the ChatGPT website, and says a phone uses that website rather than the iOS app. Claude shows a pre-filled add-connector link. Then one prompt to copy. Its only script copies that prompt. A `?ref=` on `/start` is recorded as a count for that source and is not shown on the page. `/redeem` runs no script. When open sign-up is off, the invite-only message links here. Open sign-up is on in production.
 
-Enforced by: test "asks on a confirm page before a code is used, with no script", test "points the invite-only page at the redeem page", and test "the success page's next step is a plain link to /start, with no script" in [scripts/inviteCode.test.mjs](../scripts/inviteCode.test.mjs), and test "tells a code user to sign in with the email they signed up with" in [scripts/site.test.mjs](../scripts/site.test.mjs).
+Enforced by: test "asks on a confirm page before a code is used, with no script", test "points the invite-only page at the redeem page", and test "the success page's next step is a plain link to /start, with no script" in [scripts/inviteCode.test.mjs](../scripts/inviteCode.test.mjs), and test "asks which AI, then shows that tool's steps and one prompt" in [scripts/site.test.mjs](../scripts/site.test.mjs).
 
 ## A waitlist
 
@@ -96,7 +96,7 @@ Someone without an invite code can join a waitlist from `/start` or the invite w
 
 ## Founding members
 
-The first 100 people let in are founding members. `/start` and `/redeem` say "First 100 users get Grill free for life, N spots left", or "All 100 founding spots are taken" once those spots are gone. One spot left says "1 spot left". After a code is used, and on the account page, the line is "Founding member #N of 100: Grill is free for you for life." Pricing and checkout tell a founding member "You don't need to pay." A paid plan does not apply to them. The pages run no script.
+The first 100 people let in are founding members. `/start` and `/redeem` say "First 100 users get Grill free for life, N spots left", or "All 100 founding spots are taken" once those spots are gone. One spot left says "1 spot left". After a code is used, and on the account page, the line is "Founding member #N of 100: Grill is free for you for life." Pricing and checkout tell a founding member "You don't need to pay." A paid plan does not apply to them. `/pricing`, `/checkout` and `/redeem` run no script. `/start` has one script, and it only copies the starter prompt.
 
 ## A judge page, when the assistant cannot connect
 

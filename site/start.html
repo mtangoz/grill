@@ -2,94 +2,59 @@
 <main id="top" class="prose">
   <div class="top">
     <a class="mark" href="/"><img src="/brand/favicon-32.png" alt="" width="24" height="24">grill</a>
-    <nav aria-label="Sections">
-      <a href="/#setup">Get started</a>
-      <a href="/#how">How it works</a>
-      <a href="/privacy/">Privacy</a>
-      <a href="/decisions">Your grills</a>
-      <a href="/contribute/">Contribute</a>
-      <a href="https://github.com/mtangoz/grill">GitHub</a>
-    </nav>
   </div>
 
   <h1>Connect Grill to your AI.</h1>
-  <p class="lede">Grill works in whatever AI chat you use. It is not tied to one model. About two minutes. You don’t need a key, an install, or a card.</p>
   <p id="founding-spots" class="note">First 100 users get Grill free for life, 100 spots left.</p>
-  <p class="note">Anyone can sign up. Add the connector in the chat you already have. The address is the same in every chat: <code>https://grillyour.ai/mcp</code>. The sections below are the clicks for each chat.</p>
-  <p class="note"><strong>One login:</strong> sign in with the same email you signed up with, every time, in every AI. That’s how your saved decisions follow you.</p>
-  <p class="note">Already using Grill in chat? Your saved choices are at <a href="/decisions">Your grills</a>.</p>
 
-  <h2 id="claude">Claude.ai</h2>
-  <p class="note">On the web, on Claude’s Free, Pro or Max plan. On a Team or Enterprise plan, an owner may need to allow custom connectors first. In Claude, open Settings → Connectors → Add custom connector and paste https://grillyour.ai/mcp. Asking Claude in a chat to connect it does not work.</p>
-  <div class="routes">
-    <ol class="steps">
-      <li>In Claude.ai, open Settings → Connectors → Add custom connector.</li>
-      <li>Paste this address as the URL, name it Grill, then click Add and Connect:
-        <div class="copyrow">
-          <input id="connector-url" type="text" readonly value="https://grillyour.ai/mcp" aria-label="Connector URL">
-        </div>
-        <code>https://grillyour.ai/mcp</code>
-      </li>
-      <li>Sign in with the same email you signed up with, every time. We email you a code. If it isn’t there in a minute, check spam.</li>
-      <li>Start a new chat and type “Grill this:” followed by a decision you’re weighing. The verdict takes a minute or two.</li>
-    </ol>
-  </div>
+  <fieldset class="picker" id="tool-picker">
+    <legend class="ask-q">Pick your AI</legend>
+    <input class="tool-pick" type="radio" name="tool" id="pick-chatgpt">
+    <label class="choice" for="pick-chatgpt">ChatGPT</label>
+    <input class="tool-pick" type="radio" name="tool" id="pick-claude">
+    <label class="choice" for="pick-claude">Claude</label>
 
-  <h2 id="chatgpt">ChatGPT</h2>
-  <p class="note">Verified working. On the web, with a paid plan.</p>
-  <div class="routes">
-    <ol class="steps">
-      <li>Go to Plugins, click the plus button, then Add custom MCP server.</li>
-      <li>Name it Grill. Paste this address as the Server URL, and choose OAuth:
-        <div class="copyrow">
-          <input id="chatgpt-url" type="text" readonly value="https://grillyour.ai/mcp" aria-label="Server URL">
-        </div>
-        <code>https://grillyour.ai/mcp</code>
-      </li>
-      <li>Click I understand and want to continue, then Create.</li>
-      <li>Install it, then sign in with the same email you signed up with, every time. We email you a code. If it isn’t there in a minute, check spam.</li>
-    </ol>
-  </div>
+    <div class="tool-panel for-chatgpt" id="chatgpt-steps">
+      <p class="note">On a phone, use the ChatGPT website, not the iOS app. Custom plugins can't be added in the iOS app.</p>
+      <ol class="steps">
+        <li>On <a href="https://chatgpt.com/">chatgpt.com</a>: Plugins → + → Add custom MCP server.</li>
+        <li>Name: <code>Grill</code>. Server URL: <code>https://grillyour.ai/mcp</code>. Authentication: OAuth.</li>
+        <li>Tick I understand and want to continue, then Create, then Install.</li>
+        <li>Sign in with your email. We send you a code (check spam).</li>
+      </ol>
+    </div>
 
-  <h2 id="grok">Grok Bot</h2>
-  <p class="note">Verified working.</p>
-  <div class="routes">
-    <ol class="steps">
-      <li>Tell your bot: <code>Add this MCP server: https://grillyour.ai/mcp</code></li>
-      <li>Sign in when asked: sign in with the same email you signed up with, every time. We email you a code. If it isn’t there in a minute, check spam.</li>
-    </ol>
-  </div>
+    <div class="tool-panel for-claude" id="claude-steps">
+      <p><a href="https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=Grill&amp;connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp">Add Grill to Claude</a></p>
+      <p class="note">Link didn't open? Customize → Connectors → Add custom connector, then paste <code>https://grillyour.ai/mcp</code>.</p>
+    </div>
 
-  <h2 id="gemini">Gemini</h2>
-  <p class="note">Should work, testing now. US only, a personal Google account, and Keep Activity on.</p>
-  <div class="routes">
-    <ol class="steps">
-      <li>On gemini.google.com, open Settings, then Connected Apps, then Add a custom app.</li>
-      <li>Paste this address, then Next:
-        <div class="copyrow">
-          <input id="gemini-url" type="text" readonly value="https://grillyour.ai/mcp" aria-label="Server URL">
-        </div>
-        <code>https://grillyour.ai/mcp</code>
-      </li>
-      <li>If you use Gemini in the terminal, add this to <code>~/.gemini/settings.json</code>:
-<pre>{
-  "mcpServers": {
-    "grill": { "httpUrl": "https://grillyour.ai/mcp" }
-  }
-}</pre></li>
-      <li>Sign in with the same email you signed up with, every time. We email you a code. If it isn’t there in a minute, check spam.</li>
-    </ol>
-  </div>
+    <div class="tool-panel for-either" id="try-grill">
+      <p class="note">Paste this in a new chat.</p>
+      <p id="starter-prompt">Grill this: should I captain Erling Haaland or Nicholas Jackson this week?</p>
+      <p><button class="button" type="button" id="copy-starter">Copy</button></p>
+    </div>
+  </fieldset>
 
-  <h2 id="soon">Meta AI</h2>
-  <p class="note">Coming soon. Sign in with the same email you signed up with, every time, on an AI above. We’ll email you when Meta AI works.</p>
-
-  <h2>If something goes wrong</h2>
-  <p class="note"><strong>No code arrived.</strong> Check spam, then ask for a new code on the sign-in screen.</p>
-  <p class="note">Anything else: write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>. Your decisions stay private. See <a href="/privacy/">Privacy</a>.</p>
+  <p class="privacy"><a href="/terms">Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.</a></p>
 
   <div class="footer">
-    <span>Open source · <a href="/contribute/">Contribute</a> · <a href="https://github.com/mtangoz/grill">GitHub</a> · <a href="/privacy/">Privacy</a></span>
     <span>Made at <a href="https://hold.quest">Hold</a></span>
   </div>
 </main>
+<script>
+(function () {
+  var button = document.getElementById("copy-starter");
+  var prompt = document.getElementById("starter-prompt");
+  if (!button || !prompt) return;
+  button.addEventListener("click", function () {
+    var value = prompt.textContent.trim();
+    function done() { button.textContent = "Copied"; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(value).then(done, function () { done(); });
+    } else {
+      done();
+    }
+  });
+})();
+</script>
