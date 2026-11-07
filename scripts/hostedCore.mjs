@@ -700,10 +700,16 @@ export function hostedTools() {
     /The first time you use Grill with this person, say once\b.*?Do not mention a score, a balance, or a quote check\. /;
   const hostedDisclosure =
     "Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Every result then has a two-line run note (models and time, then privacy). Show it as written, before the note, every time. Do not mention a Jev score, a credit balance, or a quote check. ";
+  // Hosted hints are set here, not copied from the local tools. A local look-back stores
+  // nothing, and a local grill does not write an account. OpenAI's review reads all three,
+  // and the MCP defaults (read-only false, destructive true, open-world true) are wrong for
+  // a tool that only reads. grill reaches the judge and only adds. grill_result only reads
+  // a stored layer. grill_look_back can overwrite a saved look-back. grill_decided can replace a record.
   return [
     {
       ...grill,
       description: `${grill.description.replace(localDisclosure, hostedDisclosure)} ${HOSTED_COST_LINE}`,
+      annotations: { title: "Grill a decision", readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       inputSchema: {
         ...grill.inputSchema,
         properties: {
@@ -729,6 +735,7 @@ export function hostedTools() {
     {
       ...result,
       description: HOSTED_RESULT_DESCRIPTION,
+      annotations: { title: "Collect a grill", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       inputSchema: {
         ...result.inputSchema,
         properties: {
@@ -745,6 +752,7 @@ export function hostedTools() {
       ...look,
       description:
         "Score decision records against what actually happened. If they have not said what happened, ask. With no records argument, read this account's saved records that are due, or the ones they named. With view changes, read all saved records and show where their calls changed after a challenge. When they chose to keep records, save the look-back answers. The judge's verdict is not revised.",
+      annotations: { title: "Look back", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       inputSchema: {
         type: "object",
         properties: look.inputSchema.properties,

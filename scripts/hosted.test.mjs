@@ -527,15 +527,18 @@ describe("hosted Grill", { concurrency: false }, () => {
     const listed = await postMcp(ctx, { jsonrpc: "2.0", id: 2, method: "tools/list" }, { token });
     const tools = listed.json.result.tools;
     assert.deepEqual(tools.map((tool) => tool.name), ["grill", "grill_result", "grill_look_back", "grill_decided"]);
-    // OpenAI's scan reads title, readOnlyHint and destructiveHint on every tool.
-    // destructiveHint follows the MCP spec: true when the tool may overwrite or remove
-    // something, false when it only reads or only adds. The default is true, so a read
-    // tool has to say false. grill_decided writes a record, and can replace one, so it is true.
+    // OpenAI's review reads title, readOnlyHint, destructiveHint and openWorldHint.
+    // The MCP defaults are readOnlyHint false, destructiveHint true and openWorldHint true,
+    // so a tool that only reads has to say so. destructiveHint is true only when the tool
+    // may overwrite or remove something. openWorldHint is true only when it talks to an
+    // outside service. grill sends the write-up to the judge and only adds. grill_result
+    // only reads a stored layer. grill_look_back can overwrite a saved look-back.
+    // grill_decided writes a record and can replace one.
     const annotations = {
-      grill: { title: "Grill a decision", readOnlyHint: true, destructiveHint: false },
-      grill_result: { title: "Collect a grill", readOnlyHint: true, destructiveHint: false },
-      grill_look_back: { title: "Look back", readOnlyHint: true, destructiveHint: false },
-      grill_decided: { title: "Add what you decided", readOnlyHint: false, destructiveHint: true },
+      grill: { title: "Grill a decision", readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+      grill_result: { title: "Collect a grill", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      grill_look_back: { title: "Look back", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      grill_decided: { title: "Add what you decided", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     };
     for (const tool of tools) {
       const want = annotations[tool.name];
@@ -544,6 +547,7 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.equal(tool.annotations.title, want.title, tool.name);
       assert.equal(tool.annotations.readOnlyHint, want.readOnlyHint, tool.name);
       assert.equal(tool.annotations.destructiveHint, want.destructiveHint, tool.name);
+      assert.equal(tool.annotations.openWorldHint, want.openWorldHint, tool.name);
     }
     const grill = tools[0];
     assert.match(grill.description, /Send the decision as the user stated it/);
@@ -552,6 +556,19 @@ describe("hosted Grill", { concurrency: false }, () => {
     assert.match(grill.description, /openrouter\/auto/);
     assert.match(grill.description, /never falls back to this chat's own model/);
     assert.equal(typeof grill.inputSchema.properties.keep_records, "object");
+  });
+
+  it("sets readOnlyHint, destructiveHint and openWorldHint on every hosted tool", async () => {
+    const ctx = world();
+    const token = signJwt(claims());
+    const listed = await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "tools/list" }, { token });
+    const tools = listed.json.result.tools;
+    assert.ok(tools.length >= 4);
+    for (const tool of tools) {
+      for (const hint of ["readOnlyHint", "destructiveHint", "openWorldHint"]) {
+        assert.equal(typeof tool.annotations?.[hint], "boolean", `${tool.name} ${hint}`);
+      }
+    }
   });
 
   it("tells the assistant to call grill_result again right now, before any reply", async () => {
