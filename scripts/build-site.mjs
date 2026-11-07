@@ -540,6 +540,10 @@ if (process.env.GRILL_MISS === "1") {
   );
 }
 writeFileSync(join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}sitemap.xml\n`);
+// OpenAI's public domain-verification token. The body is these bytes and nothing else:
+// no newline, and text/plain comes from the vercel.json route for this path.
+mkdirSync(join(OUT, ".well-known"), { recursive: true });
+writeFileSync(join(OUT, ".well-known", "openai-apps-challenge"), "qUFqSGmOG8CWwJUnLKQuZ-6pUmSzTgCZRDsib-tA2j0");
 writeFileSync(
   join(OUT, "sitemap.xml"),
   `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${publicPages.map((p) => `  <url><loc>${p.url}</loc></url>`).join("\n")}\n</urlset>\n`,
