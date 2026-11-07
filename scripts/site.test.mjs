@@ -110,7 +110,7 @@ describe("site/page.html", () => {
 
   it("keeps the README short enough for a directory listing", () => {
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
-    assert.match(readme, /about a cent or two/);
+    assert.match(readme, /On your own key you pay the router/);
     assert.match(readme, /docs\/WEEKLY-REVIEW\.md/);
     assert.match(readme, /docs\/PRIVACY\.md/);
     assert.doesNotMatch(readme, /\$9 a month|UPSTASH_|STRIPE_|GRILL_PRO_BILLING|Gmail|Google Calendar|Google Drive|Notion/);
@@ -184,15 +184,14 @@ describe("site/page.html", () => {
 describe("the terms page", () => {
   const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
 
-  it("says what the code does: the allowance, the prices, cancelling and refunds", async () => {
-    const { DEFAULT_LIMIT_USD } = await import("../api/_pro.mjs");
-    assert.match(terms, new RegExp(`up to \\$${DEFAULT_LIMIT_USD} of AI time a month`));
+  it("says what the code does: the allowance, the prices, cancelling and refunds", () => {
+    assert.match(terms, /a one-time allowance of checks for one verified email and does not refill/);
+    assert.match(terms, /a generous monthly allowance of checks/);
     assert.match(terms, /\$9 a month or \$90 a year/);
     assert.doesNotMatch(page, /Grill Pro is \$9 a month/);
     assert.match(readFileSync(join(ROOT, "api/_pricing.mjs"), "utf8"), /a month or/);
     assert.match(terms, /cancel anytime/);
     assert.match(terms, /within 30 days of your first payment/);
-    assert.match(terms, /\$0\.50 of judge spend/);
     assert.match(terms, /No card/);
     assert.match(terms, /mailto:support@grillyour\.ai/);
     assert.doesNotMatch(terms, /hello@/);

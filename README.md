@@ -38,7 +38,7 @@ Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
 
 ### Claude Desktop (Mac or Windows): the one-click judge, about 2 minutes with a key, about 10 if you need one
 
-1. **Get a key** for Grill's model router: go to [openrouter.ai/keys](https://openrouter.ai/keys), sign in, click **Create key**, and add $5 of credit. A grill costs about a cent or two.
+1. **Get a key** for Grill's model router: go to [openrouter.ai/keys](https://openrouter.ai/keys), sign in, click **Create key**, and add credit.
 2. **Install Grill.** Download **[grill.mcpb](https://github.com/mtangoz/grill/releases/latest/download/grill.mcpb)** and double-click it, or drag it onto the Claude window. Paste your key when Claude asks. There's nothing else to install; Claude Desktop runs it.
 3. **Try it.** In any chat, type:
    *Grill this: we're moving our launch to March. I'm 70% sure it gets us more signups.*
@@ -97,7 +97,7 @@ Claude Code's advisor (`/advisor`) has a stronger Claude look over the work. Tha
 
 ## What it costs
 
-Grill is free. On your own key a grill costs about a cent or two. Copy and paste uses the assistants you already have.
+Grill is free. On your own key you pay the router. Copy and paste uses the assistants you already have.
 
 Coming later: an optional Pro plan with saved decision history and look-back reminders. The free tool stays free and account-free. [Hear when it's ready](https://grillyour.ai/notify?via=site).
 

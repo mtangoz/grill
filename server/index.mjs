@@ -247,7 +247,7 @@ export function withNews(report, { env = process.env, now = Date.now(), state = 
 
 const SETUP_TEXT = [
   "Grill isn't set up yet: it needs a key for its model router, OpenRouter.",
-  "1. Create one at https://openrouter.ai/keys. Sign in, and add a few dollars of credit; a grill costs about a cent.",
+  "1. Create one at https://openrouter.ai/keys. Sign in, and add credit.",
   "2. Paste it into Grill's settings where you installed it (Claude Desktop: Settings → Extensions → Grill).",
   "   Or save it once for every app on this computer: run `npx -y grillyour --set-key` in a terminal, paste the key, press Enter, then Ctrl-D.",
   `Step-by-step: ${SETUP_URL}`,
