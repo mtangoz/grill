@@ -266,7 +266,7 @@ export function buildGrillTools({ checkOn }) {
   const description = [
     "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).",
     "The judge is picked by openrouter/auto. Do not pin a model, and do not fall back to this chat's own model for speed or cost.",
-    "Send the decision as the user stated it, with whatever context is already in the chat. Do not rewrite it into a template, and do not add your own case against.",
+    "Send the decision as the user stated it, plus a brief, user-relevant summary of the essential context, at most a few sentences. Do not include the full conversation, chat history, transcripts, memories or unrelated personal data. Do not rewrite it into a template, and do not add your own case against.",
     "Ask at most one short question, and only if the decision is truly unclear, such as 'What's the goal?'. Then call this tool. Do not wait for an OK, and do not show a write-up full of blanks.",
     "Never add a required question before the verdict on a quick or bulk grill. Ask only what the subject strictly needs.",
     `The first time you use Grill with this person, say once, as one line, and not again: ${ONCE_DISCLOSURE}`,
@@ -292,7 +292,8 @@ export function buildGrillTools({ checkOn }) {
         properties: {
           subject: {
             type: "string",
-            description: "The decision as the user stated it, plus context already in the chat. Not a template, and not a case against you wrote.",
+            description:
+              "The decision text as the user stated it, plus a brief, user-relevant summary of the essential context, at most a few sentences. Do not include the full conversation, chat history, transcripts, memories or unrelated personal data. Not a template, and not a case against you wrote.",
           },
           question: {
             type: "string",
