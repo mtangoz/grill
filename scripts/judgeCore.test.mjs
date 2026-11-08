@@ -396,9 +396,9 @@ describe("buildJudgeMessages", () => {
   // measurement, not a verdict. The paste route uses the public words; the tool uses its own.
   it("does not call a cheap, easy-to-undo decision shaky for lack of data, and frames the challenge as an experiment", () => {
     const toolRule =
-      "When a decision is cheap and easy to undo, lack of data or evidence alone is never grounds for weak or refuted. Early on, a small sample is normal. Name the concrete risk and the cheapest, fastest way to measure it, and you may return holds-with-conditions when that measurement is in place. An expensive or hard-to-undo decision can still be challenged for missing evidence. A claim that overreads a small sample is still a challenge. Frame a challenge as an experiment and a way to learn (try X, watch Y), not as a reason to stop. Stay honest and direct.";
+      "When a decision is cheap and easy to undo, lack of data or evidence alone is never grounds for weak or refuted. Early on, a small sample is normal. Name the concrete risk and the cheapest, fastest way to measure it, and you may return holds-with-conditions when that measurement is in place. An expensive or hard-to-undo decision can still be challenged for missing evidence. A claim that one option beats another, or that overreads a small sample, can still be weak. Frame a cheap try as an experiment (try X, watch Y). A fatal defect or an irreversible hazard can still say stop. Stay honest and direct.";
     const pasteRule =
-      "When a decision is cheap and easy to undo, lack of data or evidence alone is never grounds for shaky or doesn't hold up. Early on, a small sample is normal. Name the concrete risk and the cheapest, fastest way to measure it, and you may say solid if that measurement is in place. An expensive or hard-to-undo decision can still be challenged for missing evidence. A claim that overreads a small sample is still a challenge. Frame a challenge as an experiment and a way to learn (try X, watch Y), not as a reason to stop. Stay honest and direct.";
+      "When a decision is cheap and easy to undo, lack of data or evidence alone is never grounds for shaky or doesn't hold up. Early on, a small sample is normal. Name the concrete risk and the cheapest, fastest way to measure it, and you may say solid if that measurement is in place. An expensive or hard-to-undo decision can still be challenged for missing evidence. A claim that one option beats another, or that overreads a small sample, can still be shaky. Frame a cheap try as an experiment (try X, watch Y). A fatal defect or an irreversible hazard can still say stop. Stay honest and direct.";
     const [system] = buildJudgeMessages({ subject: "x" });
     const at = (needle) => system.content.indexOf(needle);
     assert.ok(system.content.includes(toolRule));
@@ -408,16 +408,20 @@ describe("buildJudgeMessages", () => {
     assert.doesNotMatch(toolRule, /before the verdict/i);
     assert.match(
       SEVERITY_DESCRIPTIONS.serious,
-      /Lack of data or evidence alone, on a decision that is cheap and easy to undo, is not serious/,
+      /Lack of data or evidence alone, on a try that is cheap and easy to undo, is not serious/,
     );
+    assert.match(SEVERITY_DESCRIPTIONS.serious, /An unsupported claim that the chosen option beats another can still be serious/);
     assert.match(
       VERDICT_DESCRIPTIONS.weak,
-      /Lack of data or evidence alone, on a decision that is cheap and easy to undo, is not this verdict/,
+      /Lack of data or evidence alone, on a try that is cheap and easy to undo, is not this verdict/,
     );
-    assert.match(
-      JUDGE_TOOL.parameters.properties.challenges.items.properties.challenge.description,
-      /try X, watch Y/,
-    );
+    assert.match(VERDICT_DESCRIPTIONS.weak, /An unsupported claim that the chosen option beats another can still be/);
+    const challenge = JUDGE_TOOL.parameters.properties.challenges.items.properties.challenge.description;
+    assert.match(challenge, /try X, watch Y/);
+    assert.match(challenge, /can still say stop/);
+    assert.doesNotMatch(challenge, /not as a reason to stop/);
+    assert.doesNotMatch(toolRule, /not as a reason to stop/);
+    assert.doesNotMatch(pasteRule, /not as a reason to stop/);
     const root = join(dirname(fileURLToPath(import.meta.url)), "..");
     for (const file of ["skills/grill/paste-prompt.md", "prompts/grill.md"]) {
       const text = readFileSync(join(root, file), "utf8");

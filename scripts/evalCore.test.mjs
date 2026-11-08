@@ -309,13 +309,13 @@ describe("renderSummary — never subject text beyond the case id", () => {
 describe("every committed case under evals/cases/ parses and has the fields its kind requires", () => {
   const files = readdirSync(CASES_DIR).filter((f) => f.endsWith(".json")).sort();
 
-  it("finds the full committed set: 13 flawed, 6 sound, 4 loaded", () => {
+  it("finds the full committed set: 15 flawed, 6 sound, 4 loaded", () => {
     const byKind = { flawed: 0, sound: 0, loaded: 0 };
     for (const f of files) {
       const c = JSON.parse(readFileSync(join(CASES_DIR, f), "utf8"));
       byKind[c.kind] = (byKind[c.kind] ?? 0) + 1;
     }
-    assert.deepEqual(byKind, { flawed: 13, sound: 6, loaded: 4 });
+    assert.deepEqual(byKind, { flawed: 15, sound: 6, loaded: 4 });
   });
 
   it("a cheap reversible try with no data must not be shaky just for lack of data", () => {
@@ -330,6 +330,21 @@ describe("every committed case under evals/cases/ parses and has the fields its 
     assert.match(c.subject, /not claiming the short line works/);
     assert.match(c.why, /not grounds for shaky/);
     assert.deepEqual(caseProblems(c, `${id}.json`), []);
+  });
+
+  it("an irreversible hazard can still say stop, and an unsupported A-beats-B claim can still be shaky", () => {
+    const stop = JSON.parse(readFileSync(join(CASES_DIR, "missing-failure-mode-unlabeled-pecan-glaze.json"), "utf8"));
+    assert.equal(stop.kind, "flawed");
+    assert.ok(stop.expect.verdict_not.includes("holds"));
+    assert.match(stop.subject, /does not undo that serving/);
+    assert.match(stop.why, /can still say stop/);
+    assert.deepEqual(caseProblems(stop, "missing-failure-mode-unlabeled-pecan-glaze.json"), []);
+    const beats = JSON.parse(readFileSync(join(CASES_DIR, "unsupported-claim-short-line-beats-long.json"), "utf8"));
+    assert.equal(beats.kind, "flawed");
+    assert.ok(beats.expect.verdict_not.includes("holds"));
+    assert.match(beats.subject, /short line beats the long one/);
+    assert.match(beats.why, /can still be shaky/);
+    assert.deepEqual(caseProblems(beats, "unsupported-claim-short-line-beats-long.json"), []);
   });
 
   // An earlier turn names a hard limit. The later plan does the thing that limit rules out,

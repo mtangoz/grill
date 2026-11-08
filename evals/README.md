@@ -1,13 +1,13 @@
 # Evals
 
-A self-improvement measurement loop for the judge, built on synthetic material only: 23 fictional
+A self-improvement measurement loop for the judge, built on synthetic material only: 25 fictional
 founder/operator decisions under `cases/`, never a real user's decision. `node scripts/eval.mjs`
 runs each one through the real judge CLI and scores the result against `thresholds.json`.
 
-**These thresholds are sanity floors, not precise scores.** Twenty-three cases is not a statistically
+**These thresholds are sanity floors, not precise scores.** Twenty-five cases is not a statistically
 powered benchmark, and the judge is a stochastic third-party model reached through OpenRouter's
 Auto Router — the same case can score differently run to run. The numbers are loose on purpose:
-`catchRate`/`loadedCatchRate` only require catching 9 of 13 / 3 of 4 cases, and `decorrelatedRate`
+`catchRate`/`loadedCatchRate` only require catching 11 of 15 / 3 of 4 cases, and `decorrelatedRate`
 (at least 1.0: every run judged outside Claude's family) and `schemaViolationRate` (at most 0.1) are strict. The goal is to
 catch a *regression* — the judge going quiet, or the output contract breaking — not to grade its
 reasoning precisely. Treat a red run as "go look," not a graded score.
@@ -24,6 +24,12 @@ tries a shorter newsletter subject line for two sends and can switch the old lin
 same day. There is no past test. A passing verdict is solid, or solid if the judge names the
 concrete risk and the cheapest measurement. An expensive or hard-to-undo decision can still
 be challenged for missing evidence. The five-year office lease stays a flawed case.
+
+**Two cases keep that exception from swallowing a real flaw.** `missing-failure-mode-unlabeled-pecan-glaze`
+serves an unlabeled pecan glaze and watches for a reaction. The ingredients are cheap, and one
+serving is not undoable. The judge can still say stop. `unsupported-claim-short-line-beats-long`
+adopts a shorter subject line for the year because it will get more opens, with no test. Both
+lines are cheap to undo. The unsupported claim that one beats the other can still be shaky.
 
 **Two cases cover a stated goal and guardrails.** `guardrail-crossed-qa-outsourcing` states a
 guardrail and then chooses a plan that crosses it. `sound-goal-tradeoff-support-hours` names a
