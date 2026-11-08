@@ -27,3 +27,4 @@
 | 2026-11-07 | Homepage button is "Connect Grill (2 minutes)" and links to /start. Pro offers stay on /pricing. /start asks for ChatGPT or Claude, then shows that tool's short steps and a prompt to try. |
 | 2026-11-07 | Tony approved on 2026-11-07: docs-only brand guide (docs/BRAND.md) and surface audit plan (docs/brand-surface-audit-plan.md), including the approved voice and email copy. |
 | 2026-11-08 | Tony asked on 2026-11-08 that the weekly email test end on people reached, not weeks, with an independent check. It now runs Mondays until 30 people and 60 sends, plus 7 days, backstop 25 Jan 2027, with a fixed 1-in-4 holdout. Plan: docs/experiments/weekly-email.md. |
+| 2026-11-08 | Your grills: the impact block is one headline and one quiet detail line, and the up-to-three examples of calls that moved now sit inside it. The separate "Where your calls changed" section at the bottom is gone from this page; look_back changes still shows it. |

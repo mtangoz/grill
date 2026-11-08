@@ -1293,8 +1293,9 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.equal(parsed.decided, "Trial two weeks first. | after challenge 1");
       const html = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${session}` } }), ctx)).text();
       assert.match(html, /1 of 1 grill changed the call/);
-      assert.match(html, /Where your calls changed/);
-      assert.match(html, /<strong>Switch vendor now<\/strong> \(AI suggestion\)/);
+      const impactSection = html.slice(html.indexOf('<section id="impact">'), html.indexOf("</section>", html.indexOf('<section id="impact">')));
+      assert.match(impactSection, /<strong>Switch vendor now<\/strong> \(AI suggestion\)/, "change examples sit in the impact block");
+      assert.equal(html.includes("<h2>Where your calls changed</h2>"), false, "no second changes section");
       const href = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
       const detail = await (await handleDecisions(new Request(`https://grillyour.ai${href}`, { headers: { cookie: `__session=${session}` } }), ctx)).text();
       assert.match(detail, /You marked this as changed after a challenge/);
