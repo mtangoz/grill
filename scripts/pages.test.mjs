@@ -355,6 +355,9 @@ describe("the decisions page layout", () => {
       assert.ok(record > 0, "a record row is shown");
       assert.ok(exported > record, "export follows the records");
       assert.ok(recordsSwitch > exported && calendar > recordsSwitch, "settings sit under the list");
+      const settings = html.indexOf('<details class="settings">');
+      assert.ok(settings > exported && settings < recordsSwitch && html.indexOf("</details>") > calendar, "settings fold away under one closed Settings line");
+      assert.equal(html.includes('<details class="settings" open'), false);
       assert.match(html, /href="\/decisions\?confirm=delete-all">Delete all</);
       assert.equal(html.includes("<h2>Manage</h2>"), false);
       assert.equal(html.includes("Share verdict"), false);

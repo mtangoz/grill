@@ -2489,7 +2489,7 @@ function renderListRow(row, byId, now, { type = "", source = "" } = {}) {
   const verdict = String(row.verdict || parsed.verdict || "").trim();
   const verdictBit = verdict && verdict.toLowerCase() !== "unknown" ? `<strong>${esc(verdict)}</strong>` : "No verdict";
   const outcome = outcomeLine(row, now) || "Not yet";
-  const title = shortDecision(row.title || parsed.title || "");
+  const title = String(row.title || parsed.title || "").replace(/\s+/g, " ").trim() || "Untitled";
   return `<li class="decision">
       <a class="record-title" href="${esc(href)}">${esc(title)}</a>
       <p class="meta">Chose: ${esc(choice)} · ${verdictBit} · ${esc(outcome)}</p>
@@ -2729,6 +2729,7 @@ const LIST_STYLE = `<style>
     .decision .record-title { display: block; margin: 0; font-size: 1.02rem; overflow-wrap: break-word; }
     .decision .meta { margin: 0.15rem 0 0; color: var(--quiet); font-size: 0.9rem; }
     .footer { margin-top: 1.5rem; }
+    .settings summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
     .outcomes { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; margin: 0.35rem 0 0; }
     .outcomes button { min-height: 44px; }
     @media (max-width: 40rem) {
@@ -2777,13 +2778,16 @@ function renderDecisions(account, rows, _credit, habits, extra = {}) {
     ${how}
     ${renderNudge(shown, { waiting: habits?.waiting || 0, now, type, source })}
     ${renderFooter(linked.length, narrowed)}
+    <details class="settings">
+    <summary>Settings</summary>
     <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them.</p>
     <form method="post" action="/decisions" class="row">
       <input type="hidden" name="action" value="records">
       <button type="submit" name="value" value="keep">Keep my decision records</button>
       <button type="submit" name="value" value="off">Don't keep records</button>
     </form>
-    ${renderCalendar("/decisions", extra.calendar, extra.freshUrl || "")}`,
+    ${renderCalendar("/decisions", extra.calendar, extra.freshUrl || "")}
+    </details>`,
   );
 }
 
@@ -3793,4 +3797,9 @@ export async function handleShare(request, deps) {
     logHosted(id, code || "share");
     return fixedError(id, 500, code);
   }
+}
+
+/** Test hook: the list page with no session or store. */
+export function renderDecisionsForTest(account, rows, extra = {}) {
+  return renderDecisions(account, rows, null, { waiting: 0 }, extra);
 }
