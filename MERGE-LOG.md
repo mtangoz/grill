@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-08 | A due decision can be closed in one tap: Held up, Didn't, or Mixed. A second tap does not replace it. |
 | 2026-11-08 | A look-back lands on the day the decision named, when it named one, and 14 days out otherwise. The record page can change that date, drop the look-back, or add one. |
 | 2026-11-08 | Your grills opens on decisions due for a look-back, then one scorecard line, then a grouped list. Share, delete and export sit on the record or in the footer. The page does not show a dollar cost. |
 | 2026-11-08 | A saved decision is due for a look-back on its review day, 14 days after the choice unless a date was named. A blank look-back note does not count as done. |

@@ -580,6 +580,36 @@ describe("the decisions page layout", () => {
     }
   });
 
+  it("closes a due look-back in one tap, and does not replace it", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Hire contractor", JAN);
+      const { html } = await getPage(ctx, "/decisions", { now: FEB });
+      assert.match(html, /Held up/);
+      assert.match(html, /Didn't/);
+      assert.match(html, /Mixed/);
+      const id = new URL(`https://grillyour.ai${html.match(/href="(\/decisions\?id=[^"#]+)"/)[1]}`).searchParams.get("id");
+      const junk = await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=maybe`, FEB);
+      assert.equal(junk.status, 303);
+      const still = await getPage(ctx, "/decisions", { now: FEB });
+      assert.match(still.html, /decision due for a look-back/);
+      const tapped = await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=no`, FEB);
+      assert.equal(tapped.status, 303);
+      const after = await getPage(ctx, "/decisions", { now: FEB });
+      assert.match(after.html, /Did not come true/);
+      assert.equal(after.html.includes("decision due for a look-back"), false);
+      assert.equal(after.html.includes(">Held up<"), false);
+      await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=held`, FEB);
+      const kept = await getPage(ctx, "/decisions", { now: FEB });
+      assert.match(kept.html, /Did not come true/);
+      assert.equal(kept.html.includes("Came true"), false);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("uses a named day for the look-back, and lets the record change or drop it", async () => {
     const fake = await startFakeOpenRouter();
     try {

@@ -2368,6 +2368,7 @@ function renderListRow(row, byId, now, { type = "", source = "" } = {}) {
   const href = listHref({ id: row.id, type, source });
   const group = decisionGroup(row, now);
   const happened = group === "due" ? `<a class="happened" href="${esc(href)}#look-back">What happened?</a>` : "";
+  const taps = group === "due" ? outcomeTaps(row.id) : "";
   const bits = [esc(decisionTypeLabel(decisionType(row)))];
   const sourceId = decisionSource(row);
   if (sourceId !== "unknown") bits.push(esc(decisionSourceLabel(sourceId)));
@@ -2387,7 +2388,25 @@ function renderListRow(row, byId, now, { type = "", source = "" } = {}) {
       ${happened}
       <p class="meta">${bits.join(" · ")}</p>
       ${chain ? `<p class="meta">${esc(chain)}</p>` : ""}
+      ${taps}
     </li>`;
+}
+
+const OUTCOME_NOTES = {
+  held: "came_true: yes\nhappened: Held up.",
+  no: "came_true: no\nhappened: It did not hold up.",
+  mixed: "happened: Mixed.",
+};
+
+function outcomeTaps(id) {
+  const buttons = [
+    ["held", "Held up"],
+    ["no", "Didn't"],
+    ["mixed", "Mixed"],
+  ]
+    .map(([value, label]) => `<button type="submit" name="value" value="${value}">${label}</button>`)
+    .join(" ");
+  return `<form method="post" action="/decisions" class="outcomes"><input type="hidden" name="action" value="outcome"><input type="hidden" name="id" value="${esc(id)}">${buttons}</form>`;
 }
 
 function renderDueAction(rows, byId, now, query) {
@@ -2565,6 +2584,11 @@ const LIST_STYLE = `<style>
     .decision .meta { grid-column: 1 / -1; margin: 0; color: var(--quiet); font-size: 0.9rem; }
     a.happened { color: var(--ink); font-weight: 650; min-height: 44px; display: inline-flex; align-items: center; }
     .footer { margin-top: 1.5rem; }
+    .outcomes { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; margin: 0.35rem 0 0; }
+    .outcomes button { min-height: 44px; }
+    @media (max-width: 40rem) {
+      .outcomes button { width: auto; flex: 1 1 auto; }
+    }
     @media (max-width: 390px) {
       .decision { grid-template-columns: minmax(0, 1fr); }
       a.happened { justify-self: start; }
@@ -3180,6 +3204,18 @@ export async function handleDecisions(request, deps) {
         const recordId = form.get("id") || "";
         await revokeShare(session.account, deps, recordId);
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
+      } else if (action === "outcome") {
+        const recordId = form.get("id") || "";
+        const note = OUTCOME_NOTES[form.get("value") || ""];
+        if (note && recordId) {
+          const rows = await loadRecords(session.account, deps);
+          const row = rows.find((item) => item.id === recordId);
+          if (row && !String(row.lookback?.happened || "").trim()) {
+            const now = typeof deps.now === "number" ? deps.now : Date.now();
+            row.lookback = { at: new Date(now).toISOString(), happened: note };
+            await writeRecord(session.account, deps, row);
+          }
+        }
       } else if (action === "review") {
         const recordId = form.get("id") || "";
         const rows = await loadRecords(session.account, deps);
