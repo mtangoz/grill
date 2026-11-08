@@ -1594,6 +1594,15 @@ describe("where saved grills are", () => {
     }
   });
 
+  it("links Your grills from the built homepage", () => {
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+    const html = readFileSync(join(ROOT, "_site/index.html"), "utf8");
+    const header = html.match(/<div class="top">[\s\S]*?<\/div>/)?.[0] ?? "";
+    assert.match(header, /<nav aria-label="Sections">[\s\S]*<a href="\/decisions">Your grills<\/a>[\s\S]*<\/nav>/);
+    assert.equal((html.match(/<a class="button"/g) || []).length, 1);
+    assert.match(html, /<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
+  });
+
   it("keeps Your grills on the about page for someone already using Grill", () => {
     const about = readFileSync(join(ROOT, "site/about.html"), "utf8");
     assert.match(about, /If you use Grill in chat, those choices are at <a href="\/decisions">Your grills<\/a>\./);
