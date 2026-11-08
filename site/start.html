@@ -13,6 +13,12 @@
     <label class="choice" for="pick-chatgpt">ChatGPT</label>
     <input class="tool-pick" type="radio" name="tool" id="pick-claude">
     <label class="choice" for="pick-claude">Claude</label>
+    <input class="tool-pick" type="radio" name="tool" id="pick-grok">
+    <label class="choice" for="pick-grok">Grok Bot</label>
+    <input class="tool-pick" type="radio" name="tool" id="pick-cursor">
+    <label class="choice" for="pick-cursor">Cursor / VS Code</label>
+    <input class="tool-pick" type="radio" name="tool" id="pick-other">
+    <label class="choice" for="pick-other">Other AI</label>
 
     <div class="tool-panel for-chatgpt" id="chatgpt-steps">
       <p class="note">On a phone, use the ChatGPT website, not the iOS app. Custom plugins can't be added in the iOS app.</p>
@@ -27,6 +33,28 @@
     <div class="tool-panel for-claude" id="claude-steps">
       <p><a href="https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=Grill&amp;connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp">Add Grill to Claude</a></p>
       <p class="note">Link didn't open? Customize → Connectors → Add custom connector, then paste <code>https://grillyour.ai/mcp</code>.</p>
+    </div>
+
+    <div class="tool-panel for-grok" id="grok-steps">
+      <p>Tell the bot <code>Add this MCP server: https://grillyour.ai/mcp</code>, then sign in when asked.</p>
+    </div>
+
+    <div class="tool-panel for-cursor" id="cursor-steps">
+      <p>Once: <code>npx -y grillyour --set-key</code>. Paste your key, Enter, then Ctrl-D.</p>
+      <p><a href="https://cursor.com/en/install-mcp?name=grill&amp;config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImdyaWxseW91ciJdfQ==">Add Grill to Cursor</a> · <a href="https://insiders.vscode.dev/redirect/mcp/install?name=grill&amp;config=%7B%22name%22%3A%22grill%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22grillyour%22%5D%7D">Add Grill to VS Code</a></p>
+      <p class="note">Or add a server named <code>grill</code> that runs:</p>
+      <p><code>npx -y grillyour</code></p>
+      <p class="note">In VS Code: MCP: Open User Configuration.</p>
+    </div>
+
+    <div class="tool-panel for-other" id="other-steps">
+      <p class="note">Copilot, Gemini, Muse, Grok and more. Copy and paste. No install, no key.</p>
+      <ol class="steps">
+        <li>Copy <a href="https://github.com/mtangoz/grill/blob/main/prompts/grill.md">the Grill prompt</a> into the assistant you think with, and say what you're deciding.</li>
+        <li>It writes the decision up with you, then gives you a prompt for the judge.</li>
+        <li>Paste that into an assistant from a different company, then paste the answer back.</li>
+      </ol>
+      <p class="note">ChatGPT into Claude, Gemini or Grok. Copilot into Gemini, because Copilot can run OpenAI, Anthropic or xAI models. Gemini into Claude, ChatGPT or Grok. Grok into Claude, ChatGPT or Gemini. Muse into Claude, ChatGPT or Gemini.</p>
     </div>
 
     <div class="tool-panel for-either" id="try-grill">

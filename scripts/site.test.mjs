@@ -651,26 +651,51 @@ describe("the site build", () => {
 describe("the /start page", () => {
   const startPath = join(ROOT, "site/start.html");
   const CLAUDE_LINK = "https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=Grill&amp;connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp";
+  const CURSOR_LINK = "https://cursor.com/en/install-mcp?name=grill&amp;config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImdyaWxseW91ciJdfQ==";
+  const VSCODE_LINK = "https://insiders.vscode.dev/redirect/mcp/install?name=grill&amp;config=%7B%22name%22%3A%22grill%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22grillyour%22%5D%7D";
+  const PROMPT_LINK = "https://github.com/mtangoz/grill/blob/main/prompts/grill.md";
   const STARTER = "Grill this: should I captain Erling Haaland or Nicholas Jackson this week?";
   const PRIVACY_LINE = "Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.";
+  const CHIPS = [
+    ["chatgpt", "ChatGPT"],
+    ["claude", "Claude"],
+    ["grok", "Grok Bot"],
+    ["cursor", "Cursor / VS Code"],
+    ["other", "Other AI"],
+  ];
+
+  function section(html, id, next) {
+    const from = html.indexOf(`id="${id}"`);
+    const to = html.indexOf(`id="${next}"`);
+    assert.ok(from !== -1, id);
+    assert.ok(to > from, `${id} comes before ${next}`);
+    return html.slice(from, to);
+  }
 
   it("asks which AI, then shows that tool's steps and one prompt", () => {
     const start = readFileSync(startPath, "utf8");
     assert.match(start, /^<title>Start using Grill<\/title>/);
     assert.match(start, /<h1>Connect Grill to your AI\.<\/h1>/);
-    assert.match(start, /id="pick-chatgpt"/);
-    assert.match(start, /id="pick-claude"/);
-    assert.match(start, /<label class="choice" for="pick-chatgpt">ChatGPT<\/label>/);
-    assert.match(start, /<label class="choice" for="pick-claude">Claude<\/label>/);
     assert.match(page, /\.tool-panel\s*\{[^}]*display:\s*none/);
-    assert.match(page, /#pick-chatgpt:checked ~ \.for-chatgpt/);
-    assert.match(page, /#pick-claude:checked ~ \.for-claude/);
-    assert.match(page, /#pick-chatgpt:checked ~ \.for-either/);
-    assert.match(page, /#pick-claude:checked ~ \.for-either/);
-    assert.doesNotMatch(page, /#pick-chatgpt:checked ~ \.for-claude/);
-    assert.doesNotMatch(page, /#pick-claude:checked ~ \.for-chatgpt/);
-    const chatgpt = start.slice(start.indexOf('id="chatgpt-steps"'), start.indexOf('id="claude-steps"'));
-    assert.ok(chatgpt.length > 0, "ChatGPT steps");
+    assert.match(page, /code\s*\{[^}]*overflow-wrap:\s*anywhere/);
+    assert.match(page, /\.picker\s*\{[^}]*min-inline-size:\s*0/);
+    assert.match(page, /@media \(prefers-color-scheme: dark\)/);
+    let seen = -1;
+    for (const [id, label] of CHIPS) {
+      const at = start.indexOf(`id="pick-${id}"`);
+      assert.ok(at > seen, `chip ${id} keeps the order`);
+      seen = at;
+      assert.match(start, new RegExp(`<input class="tool-pick" type="radio" name="tool" id="pick-${id}">`));
+      assert.match(start, new RegExp(`<label class="choice" for="pick-${id}">${label.replace("/", "\\/")}<\\/label>`));
+      assert.match(page, new RegExp(`#pick-${id}:checked ~ \\.for-${id}`));
+      assert.match(page, new RegExp(`#pick-${id}:checked ~ \\.for-either`));
+      for (const [other] of CHIPS) {
+        if (other === id) continue;
+        assert.doesNotMatch(page, new RegExp(`#pick-${id}:checked ~ \\.for-${other}`));
+      }
+    }
+    assert.ok(start.indexOf('id="pick-other"') < start.indexOf('id="chatgpt-steps"'), "every chip comes before the panels");
+    const chatgpt = section(start, "chatgpt-steps", "claude-steps");
     assert.match(chatgpt, /On a phone, use the ChatGPT website, not the iOS app\. Custom plugins can't be added in the iOS app\./);
     assert.match(chatgpt, /https:\/\/chatgpt\.com\//);
     assert.equal((chatgpt.match(/<li>/g) ?? []).length, 4, "ChatGPT is four lines");
@@ -679,29 +704,63 @@ describe("the /start page", () => {
     assert.match(chatgpt, /Authentication: OAuth/);
     assert.match(chatgpt, /I understand and want to continue/);
     assert.doesNotMatch(chatgpt, /Developer mode|Settings → Security and login/);
-    const claude = start.slice(start.indexOf('id="claude-steps"'), start.indexOf('id="try-grill"'));
+    const claude = section(start, "claude-steps", "grok-steps");
     assert.ok(claude.includes(CLAUDE_LINK), "Claude deep link");
     assert.match(claude, /Customize → Connectors → Add custom connector/);
     assert.doesNotMatch(claude, /Settings → Connectors/);
     assert.equal((claude.match(/<li>/g) ?? []).length, 0);
+    const grok = section(start, "grok-steps", "cursor-steps");
+    assert.match(grok, /Tell the bot <code>Add this MCP server: https:\/\/grillyour\.ai\/mcp<\/code>, then sign in when asked\./);
+    assert.equal((grok.match(/<li>/g) ?? []).length, 0);
+    assert.doesNotMatch(grok, /coming soon|Gemini|Meta AI|Keep Activity|custom app/i);
+    const cursor = section(start, "cursor-steps", "other-steps");
+    assert.match(cursor, /Once: <code>npx -y grillyour --set-key<\/code>\. Paste your key, Enter, then Ctrl-D\./);
+    assert.ok(cursor.includes(CURSOR_LINK), "Cursor one-click install");
+    assert.ok(cursor.includes(VSCODE_LINK), "VS Code one-click install");
+    assert.match(cursor, /Add Grill to Cursor/);
+    assert.match(cursor, /Add Grill to VS Code/);
+    assert.match(cursor, /Or add a server named <code>grill<\/code> that runs:/);
+    assert.match(cursor, /<p><code>npx -y grillyour<\/code><\/p>/);
+    assert.match(cursor, /In VS Code: MCP: Open User Configuration\./);
+    assert.doesNotMatch(cursor, /grillyour\.ai\/mcp|coming soon|verified working/i);
+    const other = section(start, "other-steps", "try-grill");
+    assert.match(other, /Copilot, Gemini, Muse, Grok and more\. Copy and paste\. No install, no key\./);
+    assert.ok(other.includes(PROMPT_LINK), "the paste prompt");
+    assert.match(other, /into the assistant you think with, and say what you're deciding/);
+    assert.match(other, /gives you a prompt for the judge/);
+    assert.match(other, /Paste that into an assistant from a different company, then paste the answer back/);
+    assert.match(other, /ChatGPT into Claude, Gemini or Grok\. Copilot into Gemini, because Copilot can run OpenAI, Anthropic or xAI models\. Gemini into Claude, ChatGPT or Grok\. Grok into Claude, ChatGPT or Gemini\. Muse into Claude, ChatGPT or Gemini\./);
+    assert.doesNotMatch(other, /Copilot into (Claude|ChatGPT|Grok)/);
+    assert.doesNotMatch(other, /grillyour\.ai\/mcp|custom connector|Keep Activity|Connected Apps|Add a custom app|Should work|coming soon|Meta AI|RNdHSHmWCRJO40vd|US only|personal Google/i);
     assert.ok(start.includes(`<p id="starter-prompt">${STARTER}</p>`), "starter prompt");
     assert.match(start, /<button class="button" type="button" id="copy-starter">Copy<\/button>/);
-    assert.doesNotMatch(start, /Should work, testing now|coming soon|Gemini|Meta AI|verified working/i);
+    assert.match(start, /class="tool-panel for-either" id="try-grill"/);
+    assert.doesNotMatch(start, /Should work, testing now|coming soon|Meta AI|verified working|Keep Activity|Connected Apps|Add a custom app|personal Google account/i);
     assert.doesNotMatch(start, /the same email you signed up with, every time/i);
     assert.doesNotMatch(start, /invite-only|waitlist/i);
-    assert.doesNotMatch(start, /github\.com/i);
+    const github = [...start.matchAll(/https:\/\/github\.com[^"'\s<]*/g)].map((match) => match[0]);
+    assert.deepEqual(github, [PROMPT_LINK]);
     assert.doesNotMatch(start, /chatgpt\.com\/gpts|plugin directory|directory listing/i);
+    assert.doesNotMatch(start, /<style/i);
     assert.ok(start.includes(`<a href="/terms">${PRIVACY_LINE}</a>`));
     assert.doesNotMatch(start, /Nothing kept unless you choose|keeps nothing/i);
     const scripts = start.match(/<script\b/gi) ?? [];
     assert.equal(scripts.length, 1);
     const script = start.match(/<script>([\s\S]*)<\/script>/)?.[1] ?? "";
     assert.match(script, /getElementById\("copy-starter"\)/);
-    assert.doesNotMatch(script, /grillTrack|cookie|localStorage|pick-chatgpt|pick-claude/);
+    assert.doesNotMatch(script, /grillTrack|cookie|localStorage|pick-/);
     const log = readFileSync(join(ROOT, "MERGE-LOG.md"), "utf8");
     assert.match(log, /2026-11-07/);
     assert.match(log, /Connect Grill \(2 minutes\)/);
     assert.match(log, /\/start/);
+    assert.match(log, /\| 2026-11-08 \| \/start also offers Grok Bot, Cursor \/ VS Code, and Other AI\. Grok Bot uses its verified connector line\. Cursor and VS Code use the documented npx setup\. Other AI is copy and paste for Copilot, Gemini, Muse, Grok and more\. \|/);
+    const ux = readFileSync(join(ROOT, "docs/UX.md"), "utf8");
+    assert.match(ux, /ChatGPT shows four short steps/);
+    assert.match(ux, /Claude shows a pre-filled add-connector link/);
+    assert.match(ux, /Grok Bot shows the one line that adds `https:\/\/grillyour\.ai\/mcp`/);
+    assert.match(ux, /Cursor and VS Code show the npx setup/);
+    assert.match(ux, /Other AI shows the copy-and-paste steps for Copilot, Gemini, Muse, Grok and more/);
+    assert.match(ux, /Then one prompt to copy\. Its only script copies that prompt/);
   });
 
   it("the homepage button is the only way in, and the README keeps the other setups", () => {
@@ -738,9 +797,15 @@ describe("the /start page", () => {
     const built = readFileSync(join(ROOT, "_site/start/index.html"), "utf8");
     assert.match(built, /<title>Start using Grill<\/title>/);
     assert.match(built, /<link rel="canonical" href="https:\/\/grillyour\.ai\/start\/">/);
+    assert.match(built, /<meta name="description" content="Pick your AI, then connect Grill and paste one message\.">/);
     assert.match(built, /--paper:/);
+    assert.match(built, /prefers-color-scheme: dark/);
     assert.ok(built.includes(CLAUDE_LINK));
+    assert.ok(built.includes(CURSOR_LINK));
+    assert.ok(built.includes(VSCODE_LINK));
+    assert.ok(built.includes(PROMPT_LINK));
     assert.ok(built.includes(STARTER));
+    assert.match(readFileSync(join(ROOT, "_site/llms.txt"), "utf8"), /\[Start\]\(https:\/\/grillyour\.ai\/start\/\): Pick your AI, then connect\./);
     assert.match(readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8"), /https:\/\/grillyour\.ai\/start\//);
   });
 });
@@ -1424,7 +1489,14 @@ describe("markdown for agents", () => {
       const start = readFileSync(twinPath("https://grillyour.ai/start/"), "utf8");
       assert.ok(start.includes("Add Grill to Claude"));
       assert.ok(start.includes("Customize → Connectors → Add custom connector"));
+      assert.ok(start.includes("Add this MCP server: https://grillyour.ai/mcp"));
+      assert.ok(start.includes("npx -y grillyour --set-key"));
+      assert.ok(start.includes("Copilot, Gemini, Muse, Grok and more"));
+      assert.ok(start.includes("Copilot into Gemini, because Copilot can run OpenAI, Anthropic or xAI models"));
       assert.equal(start.includes("Settings → Connectors"), false);
+      assert.equal(start.includes("coming soon"), false);
+      assert.equal(start.includes("Keep Activity"), false);
+      assert.equal(start.includes("Meta AI"), false);
       assert.equal(start.includes("invite-only"), false);
       assert.equal(start.includes("You hit the invite wall"), false);
       assert.ok(start.includes("Grill this: should I captain Erling Haaland or Nicholas Jackson this week?"));
