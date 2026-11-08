@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-08 | A simulated look-back against the ICP. Encourage dated ship calls, pricing and spend with a readout, near forecasts, weekly bets on their own date, and a vendor or hire with a check inside four weeks. Do not nudge one-off life choices or bulk quick checks. A fixed 14 days is the wrong day when the decision names its own. |
 | 2026-11-08 | /start also offers Grok Bot, Cursor / VS Code, and Other AI. Grok Bot uses its verified connector line. Cursor and VS Code use the documented npx setup. Other AI is copy and paste for Copilot, Gemini, Muse, Grok and more. |
 | 2026-11-08 | Your grills can be filtered by the client the grill came from. Takeaways follow that filter. Unknown stays unknown. |
 | 2026-11-08 | Your grills opens with takeaways: counts, look-backs, whether the verdict matched what happened, and one or two nudges. |
