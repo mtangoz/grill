@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-08 | A list row is two lines. The decision is the first sentence, cut on a word past about 90 characters. The second line is what you chose, the verdict, and the outcome. The full text stays on the decision. |
 | 2026-11-08 | The decision page shows the full text, what you chose, the verdict, and outcome taps. A tap before the date is an early read. A later tap overwrites it. Early reads do not count toward held-up until the date. |
 | 2026-11-08 | The weekly counts include the look-back funnel: grills, choices logged, look-backs set, look-backs done. Counts only. No decision text. |
 | 2026-11-08 | A dated ship, price, forecast, weekly bet, or hire gets one optional look-back line after the verdict. A quick take, a burst, a check, and a life choice do not. |

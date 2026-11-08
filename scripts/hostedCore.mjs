@@ -1295,14 +1295,6 @@ export function dueReminderLine(count) {
   return `${n} earlier call${n === 1 ? " is" : "s are"} due for a look-back. Say "look back" when you're ready.`;
 }
 
-/** Whole days from a YYYY-MM-DD date to today (UTC). 0 on the day itself. */
-export function daysOverdue(review, now = Date.now()) {
-  const at = Date.parse(`${review}T00:00:00Z`);
-  const today = Date.parse(`${isoDay(now)}T00:00:00Z`);
-  if (!Number.isFinite(at)) return 0;
-  return Math.max(0, Math.round((today - at) / 86_400_000));
-}
-
 /** The calendar link's secret. 32 random bytes, base64url, 43 characters. Shown once, stored only as a hash. */
 export function newCalendarToken() {
   return randomBytes(32).toString("base64url");

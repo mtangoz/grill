@@ -1188,7 +1188,9 @@ describe("hosted Grill", { concurrency: false }, () => {
       const html = await page.text();
       assert.match(html, /Hire contractor/);
       assert.match(html, /Hire in house/);
-      assert.match(html, /Replaces 10 Jan Hire contractor/);
+      const chainHref = html.match(/href="(\/decisions\?id=[^"]+)"[^>]*>Hire in house/)?.[1];
+      const chainPage = await handleDecisions(new Request(`https://grillyour.ai${chainHref}`, { headers: { cookie: `__session=${session}` } }), ctx);
+      assert.match(await chainPage.text(), /Replaces 10 Jan Hire contractor/);
       assert.doesNotMatch(html, /flip-flop|consistency score/i);
       assert.match(html, /A look-back is due 14 days after you choose/);
       assert.doesNotMatch(html, /\d+ decisions · \d+% looked back/);
@@ -2345,9 +2347,13 @@ describe("look-back reminders", { concurrency: false }, () => {
       let html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
       assert.match(html, /1 decision due for a look-back/);
       assert.match(html, /Hire contractor/);
-      assert.match(html, /What happened\?/);
-      assert.match(html, /17 days overdue/);
+      assert.match(html, /Chose: Go with Hire contractor\./);
+      assert.match(html, / · Due</);
       assert.equal(html.includes("2026-01-15"), false);
+      const dueHref = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
+      const dueDetail = await page(ctx, handleDecisions, dueHref, { now: FEB });
+      assert.match(dueDetail, /What happened\?/);
+      assert.match(dueDetail, /15 Jan/);
       const due = html.slice(html.indexOf('id="due"'), html.indexOf('id="open"'));
       assert.match(due, /Hire contractor/);
       assert.doesNotMatch(due, /Move office/);

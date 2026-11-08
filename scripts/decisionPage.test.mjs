@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { addDays, isoDate, REVIEW_DAYS, reviewDateFor } from "./reflection.mjs";
+import { addDays, isoDate, REVIEW_DAYS, reviewDateFor, shortDecision } from "./reflection.mjs";
 import {
   calendarFeed,
   decisionSource,
@@ -250,6 +250,20 @@ describe("a look-back date follows the decision when it names one", () => {
     assert.equal(reviewDateFor("Switch payroll before 15 Nov", sun), "2026-11-15");
     assert.equal(reviewDateFor("The mover comes on November 20", sun), "2026-11-20");
     assert.equal(reviewDateFor("We shipped on 2026-11-01", sun), "2026-11-22");
+  });
+});
+
+describe("a list title stays on a word", () => {
+  it("keeps a short sentence and cuts a long one on a word", () => {
+    assert.equal(shortDecision("Hire a contractor"), "Hire a contractor");
+    assert.equal(shortDecision("Ship it Friday. Then rewrite billing from scratch over the following month."), "Ship it Friday.");
+    const long = "Ship the billing rewrite on Friday if activation is still under the line we set with the team last month";
+    const shown = shortDecision(long);
+    const body = shown.slice(0, -1);
+    assert.ok(shown.endsWith("…"));
+    assert.ok(body.length <= 90);
+    assert.ok(long.startsWith(body));
+    assert.equal(long[body.length], " ");
   });
 });
 
