@@ -24,7 +24,10 @@ import {
   IMPACT_LOOKBACKS_KEY,
   IMPACT_UNSUB_KEY,
   digestForAccount,
+  emailReturnWeek,
+  impactArm,
   impactDigestWeek,
+  impactExpKey,
   impactEmailOn,
   impactSentKey,
   openImpactToken,
@@ -473,6 +476,7 @@ async function countCompletedCheck(account, deps, runId) {
   await redis(deps, ["INCR", dayKey]);
   await redis(deps, ["EXPIRE", dayKey, String(2 * 24 * 60 * 60)]);
   await countFunnel(deps, FUNNEL_KEYS.grills);
+  await markEmailReturn(account, deps, "grill");
 }
 
 /** A funnel step. The value is 1. The key is a fixed name. A missed count does not fail the grill. */
@@ -491,6 +495,30 @@ async function countImpactMetric(deps, key, label) {
     console.log(`[grill-impact] ${label} ${n}`);
   } catch {
     // A missed count does not block the page or the send.
+  }
+}
+
+/** The weekly email test: this account came back within 7 days of a Monday. The id stays in Redis only. */
+async function markEmailReturn(account, deps, kind) {
+  try {
+    const now = typeof deps.now === "number" ? deps.now : Date.now();
+    const week = emailReturnWeek(now);
+    if (!week || !account?.id) return;
+    const key = impactExpKey(week, kind);
+    await redis(deps, ["SADD", key, String(account.id)]);
+    await redis(deps, ["EXPIRE", key, String(180 * 24 * 60 * 60)]);
+  } catch {
+    // A missed mark does not block the page or the grill.
+  }
+}
+
+async function addToExpSet(deps, weekKey, part, id) {
+  try {
+    const key = impactExpKey(weekKey, part);
+    await redis(deps, ["SADD", key, String(id)]);
+    await redis(deps, ["EXPIRE", key, String(180 * 24 * 60 * 60)]);
+  } catch {
+    // A missed mark does not block the send.
   }
 }
 
@@ -1698,7 +1726,10 @@ async function callLookBack(args, account, deps) {
         happened: happened.replace(/\s+/g, " ").trim().slice(0, 2000),
       };
       await writeRecord(account, deps, row);
-      if (firstLook) await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
+      if (firstLook) {
+        await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
+        await markEmailReturn(account, deps, "lookback");
+      }
       savedAny = true;
     }
   }
@@ -3339,6 +3370,10 @@ export async function handleDecisions(request, deps) {
     if (session.html) return html(200, session.html);
     const url = pageUrl(request);
     let fresh = "";
+    if (request.method === "GET" && url.searchParams.get("from") === "email") {
+      const week = emailReturnWeek(typeof deps.now === "number" ? deps.now : Date.now());
+      if (week) await redis(deps, ["INCR", impactExpKey(week, "clicks")]).catch(() => {});
+    }
     if (request.method === "GET" && url.searchParams.get("export") === "text") return exportRecords(session.account, deps, "text");
     if (request.method === "GET" && url.searchParams.get("export") === "json") return exportRecords(session.account, deps, "json");
     if (request.method === "GET" && url.searchParams.get("confirm") === "delete-all") return html(200, renderDeleteAllConfirm());
@@ -3407,6 +3442,7 @@ export async function handleDecisions(request, deps) {
             await writeRecord(session.account, deps, row);
             if (!finished && !earlyRead(row, now)) {
               await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
+              await markEmailReturn(session.account, deps, "lookback");
               if (fromEmail) await countImpactMetric(deps, IMPACT_LOOKBACKS_KEY, "lookbacks");
             }
           }
@@ -3421,6 +3457,7 @@ export async function handleDecisions(request, deps) {
           if (row) {
             row.impact = value;
             await writeRecord(session.account, deps, row);
+            await markEmailReturn(session.account, deps, "tap");
           }
         }
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
@@ -3631,6 +3668,7 @@ export async function runImpactDigest(deps) {
   let sent = 0;
   let skipped = 0;
   let failed = 0;
+  let held = 0;
   for (const id of ids) {
     const account = await loadAccount(id, deps);
     if (!impactEmailOn(account)) {
@@ -3643,12 +3681,18 @@ export async function runImpactDigest(deps) {
     const unsubscribe = `${origin}/account?unsubscribe=${encodeURIComponent(token)}`;
     const packed = digestForAccount(rows, week, {
       outcome: (recordId, value) => outcomeConfirmUrl(origin, recordId, value),
-      decisions: `${origin}/decisions`,
+      decisions: `${origin}/decisions?from=email`,
       unsubscribe,
       settings: `${origin}/account`,
     });
     if (!packed) {
       skipped += 1;
+      continue;
+    }
+    // The fixed holdout would have got a note this week. Logged, not sent. Settings still work for them.
+    if ((typeof deps.impactArm === "function" ? deps.impactArm : impactArm)(account.id) === "holdout") {
+      await addToExpSet(deps, week.key, "holdout", account.id);
+      held += 1;
       continue;
     }
     const marker = impactSentKey(email, week.key);
@@ -3668,15 +3712,16 @@ export async function runImpactDigest(deps) {
         },
       });
       sent += 1;
+      await addToExpSet(deps, week.key, "send", account.id);
     } catch {
       await redis(deps, ["DEL", marker]).catch(() => {});
       failed += 1;
       console.error("[grill-impact] resend failed");
     }
   }
-  console.log(`[grill-impact] sent ${sent} skipped ${skipped}`);
+  console.log(`[grill-impact] sent ${sent} held ${held} skipped ${skipped}`);
   if (failed) throw new Error("resend");
-  return { sent, skipped, week: week.key };
+  return { sent, held, skipped, week: week.key };
 }
 
 function calendarResponse(body) {

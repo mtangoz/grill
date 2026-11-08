@@ -11,13 +11,13 @@ import { CLAUDE_WEB_REDIRECT, createMemoryRedis, grillImpact } from "./hostedCor
 import { testSigningKey } from "./testSigningKey.mjs";
 import {
   IMPACT_EMAIL_SUBJECT,
-  IMPACT_PILOT_MONDAYS,
   digestForAccount,
   impactDigestText,
   impactDigestWeek,
   impactEmailOn,
   impactSentKey,
   newlyDueLookbacks,
+  readEmailExperiment,
   openImpactToken,
   sealImpactToken,
   weekGrills,
@@ -131,13 +131,11 @@ describe("weekly impact email copy", () => {
     assert.equal(digestForAccount([row({ id: "quiet", createdAt: "2026-10-01T00:00:00.000Z", review: "2026-10-20" })], WINDOW, { outcome: () => "", decisions: "", unsubscribe: "", settings: "" }), null);
   });
 
-  it("sends on four Monday afternoons and not on any other day", () => {
-    assert.deepEqual(IMPACT_PILOT_MONDAYS, ["2026-11-09", "2026-11-16", "2026-11-23", "2026-11-30"]);
+  it("sends on Monday afternoons and not on any other day", () => {
     assert.equal(impactDigestWeek(Date.parse("2026-11-09T15:00:00Z")).key, "2026-11-09");
     assert.equal(impactDigestWeek(Date.parse("2026-11-30T14:00:00Z")).index, 3);
     assert.equal(impactDigestWeek(Date.parse("2026-11-16T13:59:00Z")), null);
     assert.equal(impactDigestWeek(Date.parse("2026-11-17T15:00:00Z")), null);
-    assert.equal(impactDigestWeek(Date.parse("2026-12-07T15:00:00Z")), null);
     assert.equal(impactEmailOn({ email: "a@example.com" }), true);
     assert.equal(impactEmailOn({ email: "a@example.com", impactEmail: false }), false);
     assert.equal(impactEmailOn({ impactEmail: true }), false);
@@ -193,7 +191,7 @@ function world() {
     if (u.startsWith("https://api.resend.com/")) throw new Error(`launch list was contacted ${u}`);
     throw new Error(`unexpected fetch ${init.method || "GET"} ${u}`);
   };
-  return { env, fetch: fetchImpl, redis: async (args) => memory.command(args), memory, emails };
+  return { env, fetch: fetchImpl, redis: async (args) => memory.command(args), memory, emails, impactArm: () => "send" };
 }
 
 function cookie() {
@@ -223,6 +221,33 @@ async function decide(ctx, fake, title, now) {
 }
 
 describe("weekly impact email batch", () => {
+  it("logs a held-out account without sending, and marks a return within the week", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = { ...world(), impactArm: () => "holdout" };
+      await decide(ctx, fake, "Hire the contractor", Date.parse("2026-11-12T12:00:00Z"));
+      const held = await runImpactDigest({ ...ctx, now: MONDAY });
+      assert.equal(held.sent, 0);
+      assert.equal(held.held, 1);
+      assert.equal(ctx.emails.length, 0);
+      const holdout = await ctx.memory.command(["SMEMBERS", "grill:exp:weekly-email:2026-11-16:holdout"]);
+      assert.equal(holdout.length, 1);
+      await decide(ctx, fake, "Raise the price", Date.parse("2026-11-18T12:00:00Z"));
+      const back = await ctx.memory.command(["SMEMBERS", "grill:exp:weekly-email:2026-11-16:grill"]);
+      assert.deepEqual(back, holdout);
+      const readout = await readEmailExperiment((args) => ctx.memory.command(args), Date.parse("2026-11-19T00:00:00Z"));
+      assert.deepEqual(readout.holdout, { weeks: 1, returned: 1, activity: 1, tapOnly: 0 });
+      assert.equal(readout.ready, false);
+      const sendCtx = world();
+      await decide(sendCtx, fake, "Hire the contractor", Date.parse("2026-11-12T12:00:00Z"));
+      await runImpactDigest({ ...sendCtx, now: MONDAY });
+      assert.equal((await sendCtx.memory.command(["SMEMBERS", "grill:exp:weekly-email:2026-11-16:send"])).length, 1);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("emails a signed-in account by default, skips a quiet week, and does not send twice", async () => {
     const fake = await startFakeOpenRouter();
     try {
@@ -238,7 +263,7 @@ describe("weekly impact email batch", () => {
       assert.equal(ctx.emails[0].subject, "Did Grill change your call?");
       assert.equal(ctx.emails[0].to, "invitee@example.com");
       assert.match(ctx.emails[0].text, /This week: 0 of 1 grills changed your call\./);
-      assert.match(ctx.emails[0].text, /Your grills → https:\/\/grillyour\.ai\/decisions/);
+      assert.match(ctx.emails[0].text, /Your grills → https:\/\/grillyour\.ai\/decisions\?from=email/);
       assert.match(ctx.emails[0].text, /Unsubscribe: https:\/\/grillyour\.ai\/account\?unsubscribe=/);
       assert.match(ctx.emails[0].text, /Email settings: https:\/\/grillyour\.ai\/account/);
       assert.equal(ctx.emails[0].headers["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click");
