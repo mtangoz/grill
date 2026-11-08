@@ -1,0 +1,11 @@
+{
+  "id": "unsupported-claim-short-line-beats-long",
+  "kind": "flawed",
+  "subject": "Lumen Post, a three-person weekly newsletter, is deciding to replace its long subject line with a shorter one on every send for the rest of the year. Both lines take the same hour to write, and either can be put back with one edit in the same tool. The team recommends the short line because they believe it will get more opens. They have no past test of short lines on this list, no benchmark they trust, and no plan to compare the two. This is not a two-send try. The plan adopts the short line as the new default now, and the long line is retired. Prediction, offered at 70% confidence: the short line will raise the open rate by a few points, so it should replace the long line through December. The strongest case against: nothing in the write-up shows the short line beats the long one. Both are equally cheap to run and equally easy to undo, so the claimed benefit is an unsupported reason to pick one of them. Waiting to try both for two sends would cost the same writing hour and would show which line the list actually opens.",
+  "question": "Should Lumen Post adopt the shorter subject line as its default for the rest of the year because it will get more opens?",
+  "expect": {
+    "must_target": ["adopts the short line as the new default", "short line beats the long one", "will raise the open rate"],
+    "verdict_not": ["holds"]
+  },
+  "why": "Both options are cheap and easy to undo. The write-up still claims the short line beats the long one, with no test. That unsupported comparison can still be shaky. Lack of data excuses a try, not a claim that one option wins."
+}
