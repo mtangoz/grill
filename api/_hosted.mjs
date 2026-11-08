@@ -30,8 +30,6 @@ import {
   renderRunDisclosure,
 } from "../scripts/judgeCore.mjs";
 import {
-  REVIEW_DAYS,
-  addDays,
   changeCountLines,
   changeExample,
   changeSummary,
@@ -44,6 +42,7 @@ import {
   guardrailsFromSubject,
   isoDate,
   lookBack,
+  reviewDateFor,
   outcomesForSaved,
   parseRecords,
   plainVerdict,
@@ -1714,8 +1713,7 @@ async function callDecided(args, account, deps) {
   const pending = ref ? pendings.find((item) => matchesRef(item, ref)) : pendings[pendings.length - 1];
   if (!pending) return toolText("No grill is waiting for a choice. A record is saved only after the person states one.", true);
   const now = typeof deps.now === "number" ? new Date(deps.now) : new Date();
-  const anchor = /^\d{4}-\d{2}-\d{2}$/.test(pending.date) ? new Date(`${pending.date}T00:00:00Z`) : now;
-  const review = isoDate(addDays(anchor, REVIEW_DAYS));
+  const review = reviewDateFor([pending.title, pending.prediction, pending.goal, pending.falsifier, decided].filter(Boolean).join("\n"), now);
   const fields = {
     date: pending.date || isoDate(now),
     title: pending.title,
@@ -2482,9 +2480,35 @@ function renderDecision(row, byId, extra = {}) {
       <p>${esc(status.text)}</p>
       ${status.state === "done" ? "" : "<p>Say “look back” in your chat and say what happened. Grill saves it on this decision.</p>"}
     </section>
+    ${reviewForm(row)}
     ${sharing}
     <p class="row">${shareLink}<a class="button" href="/decisions?confirm=delete&amp;id=${esc(id)}">Delete this record</a>${chainLink}</p>`,
   );
+}
+
+function validDay(value) {
+  const day = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return "";
+  const parsed = new Date(`${day}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) || isoDate(parsed) !== day ? "" : day;
+}
+
+function reviewForm(row) {
+  const id = esc(row.id);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(row.review || ""))) {
+    return `<form method="post" action="/decisions">
+      <input type="hidden" name="action" value="review">
+      <input type="hidden" name="id" value="${id}">
+      <p class="row"><button type="submit" name="value" value="on">Add a look-back</button></p>
+    </form>`;
+  }
+  return `<form method="post" action="/decisions">
+      <input type="hidden" name="action" value="review">
+      <input type="hidden" name="id" value="${id}">
+      <label for="review">Look-back</label>
+      <input id="review" type="date" name="review" value="${esc(row.review)}">
+      <p class="row"><button type="submit" name="value" value="set">Save date</button> <button type="submit" name="value" value="off">No look-back</button></p>
+    </form>`;
 }
 
 function listHref({ id = "", type = "", source = "" } = {}) {
@@ -3155,6 +3179,28 @@ export async function handleDecisions(request, deps) {
       } else if (action === "unshare") {
         const recordId = form.get("id") || "";
         await revokeShare(session.account, deps, recordId);
+        if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
+      } else if (action === "review") {
+        const recordId = form.get("id") || "";
+        const rows = await loadRecords(session.account, deps);
+        const row = rows.find((item) => item.id === recordId);
+        if (row) {
+          const parsed = parseRecords(row.block || "")[0];
+          if (parsed) {
+            const value = form.get("value") || "";
+            const now = typeof deps.now === "number" ? new Date(deps.now) : new Date();
+            let review = String(row.review || "");
+            if (value === "off") review = "";
+            else if (value === "on") review = reviewDateFor([row.title, row.decided, parsed.prediction, parsed.goal].filter(Boolean).join("\n"), now);
+            else if (value === "set") {
+              const posted = validDay(form.get("review"));
+              if (posted) review = posted;
+            }
+            row.block = recordBlock({ ...parsed, review });
+            row.review = review;
+            await writeRecord(session.account, deps, row);
+          }
+        }
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
       } else if (action === "calendar") {
         fresh = await calendarAction(session.account, deps, form.get("value") || "");

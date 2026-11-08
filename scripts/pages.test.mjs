@@ -580,6 +580,45 @@ describe("the decisions page layout", () => {
     }
   });
 
+  it("uses a named day for the look-back, and lets the record change or drop it", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      const sunday = Date.parse("2026-11-08T15:00:00Z");
+      await decide(ctx, fake, "Ship the beta Friday", sunday);
+      const { html } = await getPage(ctx, "/decisions", { now: sunday });
+      assert.match(html, /Look back 13 Nov|13 Nov/);
+      assert.equal(html.includes("22 Nov"), false);
+      const href = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
+      const detail = await getPage(ctx, href, { now: sunday });
+      assert.match(detail.html, /type="date"/);
+      assert.match(detail.html, /value="2026-11-13"/);
+      assert.match(detail.html, /No look-back/);
+      const id = new URL(`https://grillyour.ai${href}`).searchParams.get("id");
+      const moved = await postForm(ctx, `action=review&id=${encodeURIComponent(id)}&value=set&review=2026-12-01`, sunday);
+      assert.equal(moved.status, 303);
+      assert.match(moved.headers.get("location") || "", /id=/);
+      const later = await getPage(ctx, href, { now: sunday });
+      assert.match(later.html, /value="2026-12-01"/);
+      const dropped = await postForm(ctx, `action=review&id=${encodeURIComponent(id)}&value=off`, sunday);
+      assert.equal(dropped.status, 303);
+      const none = await getPage(ctx, href, { now: sunday });
+      assert.match(none.html, /Add a look-back/);
+      assert.equal(none.html.includes("due for a look-back"), false);
+      const back = await postForm(ctx, `action=review&id=${encodeURIComponent(id)}&value=on`, sunday);
+      assert.equal(back.status, 303);
+      const restored = await getPage(ctx, href, { now: sunday });
+      assert.match(restored.html, /type="date"/);
+      const junk = await postForm(ctx, `action=review&id=${encodeURIComponent(id)}&value=set&review=2026-02-31`, sunday);
+      assert.equal(junk.status, 303);
+      const kept = await getPage(ctx, href, { now: sunday });
+      assert.doesNotMatch(kept.html, /2026-02-31/);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("says what to do when there are no records yet", async () => {
     resetHostedCaches();
     const ctx = world();

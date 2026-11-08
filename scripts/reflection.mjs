@@ -70,6 +70,85 @@ export function addDays(now, days) {
   return date;
 }
 
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const MONTH_INDEX = new Map(
+  ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"].flatMap(
+    (name, index) => [
+      [name, index],
+      [name.slice(0, 3), index],
+    ],
+  ),
+);
+MONTH_INDEX.set("sept", 8);
+
+function asDate(now) {
+  const date = now instanceof Date ? now : new Date(now);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function utcDay(now, delta = 0) {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + delta));
+}
+
+function weekdayOnOrAfter(now, index, { includeToday = true } = {}) {
+  const today = utcDay(now);
+  let delta = (index - today.getUTCDay() + 7) % 7;
+  if (delta === 0 && !includeToday) delta = 7;
+  return isoDate(utcDay(now, delta));
+}
+
+function calendarDay(year, month, day) {
+  if (month < 0 || month > 11 || day < 1 || day > 31) return "";
+  const date = new Date(Date.UTC(year, month, day));
+  if (date.getUTCMonth() !== month || date.getUTCDate() !== day) return "";
+  return isoDate(date);
+}
+
+function ahead(iso, today) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) && iso >= today ? iso : "";
+}
+
+/**
+ * When the decision names when it resolves, the look-back is that day.
+ * A slate is the morning after. Otherwise 14 days. The person can change it later.
+ */
+export function reviewDateFor(text, now = new Date()) {
+  const source = String(text || "");
+  const anchor = asDate(now);
+  const today = isoDate(utcDay(anchor));
+  const fallback = isoDate(addDays(utcDay(anchor), REVIEW_DAYS));
+  const iso = source.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+  if (iso && ahead(iso[1], today)) return iso[1];
+  const dayFirst = source.match(
+    /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+(20\d{2}))?\b/i,
+  );
+  const monthFirst = source.match(
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(20\d{2}))?\b/i,
+  );
+  const named = dayFirst
+    ? { day: Number(dayFirst[1]), month: dayFirst[2], year: dayFirst[3] }
+    : monthFirst
+      ? { day: Number(monthFirst[2]), month: monthFirst[1], year: monthFirst[3] }
+      : null;
+  if (named) {
+    const month = MONTH_INDEX.get(named.month.toLowerCase());
+    const year = named.year ? Number(named.year) : anchor.getUTCFullYear();
+    const exact = calendarDay(year, month ?? -1, named.day);
+    const rolled = named.year || !exact ? "" : calendarDay(year + 1, month ?? -1, named.day);
+    const picked = ahead(exact, today) || ahead(rolled, today);
+    if (picked) return picked;
+  }
+  const slate = /\b(captain|start\/sit|start or sit|gameweek|game week|waiver|the slate|this slate)\b/i.test(source);
+  const weekday = source.match(/\b(?:(after|next)\s+)?(?:this\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i);
+  if (weekday) {
+    const on = weekdayOnOrAfter(anchor, WEEKDAYS.indexOf(weekday[2].toLowerCase()), { includeToday: weekday[1] !== "next" });
+    const resolved = weekday[1] === "after" || slate ? isoDate(addDays(new Date(`${on}T00:00:00Z`), 1)) : on;
+    if (ahead(resolved, today)) return resolved;
+  }
+  if (slate) return weekdayOnOrAfter(anchor, 2, { includeToday: false });
+  return fallback;
+}
+
 function clip(text, max = 80) {
   const clean = oneLine(text).replace(/^#{1,6}\s*/, "").replace(/\*\*/g, "");
   if (clean.length <= max) return clean;
@@ -361,7 +440,7 @@ export function appendReflection(report, { subject = "", now = new Date(), route
     guardrails: guardrailsFromSubject(subject),
     sourceApp: sourceAppLabel(sourceApp) || sourceAppFromSubject(subject),
     date: isoDate(now),
-    review: isoDate(addDays(now, REVIEW_DAYS)),
+    review: reviewDateFor(subject, now),
     route,
     supersedes,
     changed,
