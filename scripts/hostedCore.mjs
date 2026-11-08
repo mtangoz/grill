@@ -206,10 +206,15 @@ export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInf
     return { company: "google", sourceApp: "gemini" };
   }
 
+  // Cursor is not one model company, so the judge still excludes nobody.
+  // The name is stored on new records. Older ones stay unknown.
+  const named = String(clientInfo?.name || clientInfo?.title || "");
+  if (/\bcursor\b/i.test(named)) return { company: "", sourceApp: "cursor" };
   const fromName = clientCompanyHint({ clientInfo });
   if (fromName) return fromName;
   const kept = rememberedHint(remembered);
   if (kept) return kept;
+  if (/\bcursor\b/i.test(String(userAgent || ""))) return { company: "", sourceApp: "cursor" };
   const fromAgent = clientCompanyHint({ userAgent });
   if (fromAgent) return fromAgent;
   return { company: "", sourceApp: "unknown" };
