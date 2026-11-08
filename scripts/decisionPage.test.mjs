@@ -1,7 +1,7 @@
 // How one saved grill reads on Your grills. No network. Made-up records only.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { decisionType, decisionTypeId, lookbackStatus } from "./hostedCore.mjs";
+import { decisionTakeaways, decisionType, decisionTypeId, lookbackStatus } from "./hostedCore.mjs";
 
 const FEB = Date.parse("2026-02-01T15:00:00Z");
 
@@ -52,5 +52,32 @@ describe("decision type", () => {
     assert.equal(decisionTypeId("Work"), "work");
     assert.equal(decisionTypeId("<script>"), "");
     assert.equal(decisionTypeId("sports"), "");
+  });
+});
+
+describe("takeaways", () => {
+  const block = (verdict, confidence = "60%") =>
+    `version: 1\ndate: 2026-01-01\ntitle: T\nverdict: ${verdict}\nconfidence: ${confidence}\nreview: 2026-01-15`;
+
+  it("counts look-backs and whether the verdict matched what happened", () => {
+    const rows = [
+      { block: block("shaky"), review: "2026-01-15", lookback: { happened: "came_true: no happened: It missed." } },
+      { block: block("solid"), review: "2026-01-15", lookback: { happened: "came_true: no\nhappened: It missed." } },
+      { block: block("shaky", ""), review: "2026-03-01" },
+    ];
+    const summary = decisionTakeaways(rows, { waiting: 2, now: FEB });
+    assert.equal(summary.count, 3);
+    assert.equal(summary.looked, 2);
+    assert.equal(summary.scored, 2);
+    assert.equal(summary.held, 1);
+    assert.equal(summary.dueOpen, 0);
+    assert.deepEqual(summary.nudges, ["Log your choice after a grill so it counts."]);
+  });
+
+  it("nudges a due look-back, and skips the choice nudge on a filtered set", () => {
+    const due = decisionTakeaways([{ block: block("shaky"), review: "2026-01-15" }], { now: FEB });
+    assert.deepEqual(due.nudges, ["1 decision is due for a look-back."]);
+    const filtered = decisionTakeaways([{ block: block("shaky", ""), review: "2026-03-01" }], { waiting: 4, now: FEB, filtered: true });
+    assert.deepEqual(filtered.nudges, ["Add how sure you were. A rough percent is enough."]);
   });
 });

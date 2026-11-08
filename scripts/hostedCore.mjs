@@ -3,7 +3,7 @@
  * The installed local tool does not import this file.
  */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
-import { confidenceValue, parseOutcomes, parseRecords } from "./reflection.mjs";
+import { confidenceValue, parseOutcomes, parseRecords, plainVerdict } from "./reflection.mjs";
 import { SCOPE_GUARD, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
 import { buildGrillTools } from "../server/index.mjs";
 
@@ -686,6 +686,43 @@ export function decisionTypeLabel(id) {
 export function decisionTypeId(value) {
   const id = String(value || "").trim().toLowerCase();
   return DECISION_TYPES.some((item) => item.id === id) ? id : "";
+}
+
+/**
+ * Counts for the takeaways block. Worked out from the records on the page.
+ * A verdict held up when a solid call came true, or a doubted call did not.
+ * Nothing here is stored.
+ */
+export function decisionTakeaways(rows, { waiting = 0, now = Date.now(), filtered = false } = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  const count = list.length;
+  const looked = list.filter((row) => String(row?.lookback?.happened || "").trim()).length;
+  const today = isoDay(now);
+  const dueOpen = list.filter((row) => {
+    const review = String(row?.review || "");
+    return /^\d{4}-\d{2}-\d{2}$/.test(review) && review <= today && !String(row?.lookback?.happened || "").trim();
+  }).length;
+  let scored = 0;
+  let held = 0;
+  for (const row of list) {
+    const note = String(row?.lookback?.happened || "").replace(/\s+/g, " ").trim();
+    if (!note) continue;
+    const outcome = readStoredOutcome(note);
+    const came = outcome?.cameTrue;
+    if (came !== "yes" && came !== "no") continue;
+    const verdict = plainVerdict(parseRecords(row?.block || "")[0]?.verdict || row?.verdict || "");
+    const doubt = verdict === "shaky" || verdict === "doesn't hold up";
+    const allowed = verdict === "solid" || verdict === "solid if";
+    if (!doubt && !allowed) continue;
+    scored += 1;
+    if ((doubt && came === "no") || (allowed && came === "yes")) held += 1;
+  }
+  const withConfidence = list.filter((row) => confidenceValue(parseRecords(row?.block || "")[0]?.confidence) != null).length;
+  const nudges = [];
+  if (dueOpen > 0) nudges.push(`${dueOpen} ${dueOpen === 1 ? "decision is" : "decisions are"} due for a look-back.`);
+  if (!filtered && waiting > 0) nudges.push("Log your choice after a grill so it counts.");
+  if (nudges.length < 2 && count > 0 && withConfidence * 2 < count) nudges.push("Add how sure you were. A rough percent is enough.");
+  return { count, looked, dueOpen, scored, held, nudges: nudges.slice(0, 2) };
 }
 
 export function encryptString(plain, key) {
