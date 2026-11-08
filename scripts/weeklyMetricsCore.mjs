@@ -6,6 +6,7 @@
  * import those writers, so the report can ship on its own.
  */
 import { redisCommand } from "../api/_account.mjs";
+import { readEmailExperiment } from "./impactDigest.mjs";
 
 export const PAID_INTENT_KEYS = Object.freeze({
   pricing: "grill:metric:paid_intent_pricing",
@@ -25,6 +26,16 @@ export const IMPACT_EMAIL_KEYS = Object.freeze({
   lookbacks: "grill:metric:impact_email_lookbacks",
   unsubscribes: "grill:metric:impact_email_unsubscribes",
 });
+
+/** The weekly email test in two lines. Counts only. */
+export function emailTestLines(test) {
+  if (!test) return [];
+  const rate = (row) => `${row.returned}/${row.weeks} returned (${row.activity} grill or look-back, ${row.tapOnly} tap only)`;
+  return [
+    `email test: ${test.recipients} people, ${test.sends} sends, ${test.ready ? "ready to decide" : "not ready"}, guardrail ${test.guardrail}, clicks ${test.clicks}`,
+    `email test arms: sent ${rate(test.send)} · held out ${rate(test.holdout)}`,
+  ];
+}
 
 export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) {
   const url = typeof env.UPSTASH_REDIS_REST_URL === "string" ? env.UPSTASH_REDIS_REST_URL.trim() : "";
@@ -51,6 +62,7 @@ export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) 
     lookbacksDone: await n(FUNNEL_KEYS.lookbacksDone),
     emailLookbacks: await n(IMPACT_EMAIL_KEYS.lookbacks),
     emailUnsubscribes: await n(IMPACT_EMAIL_KEYS.unsubscribes),
+    emailTest: await readEmailExperiment(command).catch(() => null),
   };
 }
 
@@ -75,6 +87,7 @@ export function weeklyMetricLines(report) {
     `look-backs done: ${report.lookbacksDone ?? 0}`,
     `email look-backs: ${report.emailLookbacks ?? 0}`,
     `email unsubscribes: ${report.emailUnsubscribes ?? 0}`,
+    ...emailTestLines(report.emailTest),
     JSON.stringify(report),
   ];
 }

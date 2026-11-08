@@ -7,7 +7,12 @@ import { grillImpact, hasLookback, isoDay } from "./hostedCore.mjs";
 import { shortDecision } from "./reflection.mjs";
 
 export const IMPACT_EMAIL_SUBJECT = "Did Grill change your call?";
-export const IMPACT_PILOT_MONDAYS = Object.freeze(["2026-11-09", "2026-11-16", "2026-11-23", "2026-11-30"]);
+// The test ends on people reached, not weeks. See docs/experiments/weekly-email.md.
+export const IMPACT_PILOT_START = "2026-11-09";
+export const IMPACT_PILOT_LAST = "2027-01-25";
+export const IMPACT_DECISION = Object.freeze({ recipients: 30, sends: 60, unsubscribeShare: 0.1 });
+export const IMPACT_EXP_PREFIX = "grill:exp:weekly-email";
+export const IMPACT_RETURN_KINDS = Object.freeze(["grill", "lookback", "tap"]);
 export const IMPACT_LOOKBACKS_KEY = "grill:metric:impact_email_lookbacks";
 export const IMPACT_UNSUB_KEY = "grill:metric:impact_email_unsubscribes";
 
@@ -25,13 +30,13 @@ export function impactSentKey(email, weekKey) {
   return `grill:hosted:impact-sent:${hash}:${weekKey}`;
 }
 
-/** A pilot Monday at or after 14:00 UTC. Four weeks, then nothing. */
+/** A pilot Monday at or after 14:00 UTC, from the start through the backstop. */
 export function impactDigestWeek(now = Date.now()) {
   const date = new Date(now);
   if (date.getUTCDay() !== 1 || date.getUTCHours() < 14) return null;
   const key = isoDay(now);
-  const index = IMPACT_PILOT_MONDAYS.indexOf(key);
-  if (index < 0) return null;
+  if (key < IMPACT_PILOT_START || key > IMPACT_PILOT_LAST) return null;
+  const index = Math.round((Date.parse(`${key}T00:00:00Z`) - Date.parse(`${IMPACT_PILOT_START}T00:00:00Z`)) / (7 * DAY_MS));
   const endMs = Date.parse(`${key}T00:00:00Z`);
   return { key, index, startMs: endMs - 7 * DAY_MS, endMs };
 }
@@ -158,4 +163,102 @@ export function openImpactToken(token, secret, now) {
   if (!claims || typeof claims.id !== "string" || !claims.id || typeof claims.exp !== "number") return null;
   if (!(claims.exp > now)) return null;
   return { id: claims.id };
+}
+
+/** A fixed split by account id: about one in four is held out and not sent. The same every week. */
+export function impactArm(accountId) {
+  const byte = createHash("sha256").update(`weekly-email-v1:${String(accountId)}`).digest()[0];
+  return byte % 4 === 0 ? "holdout" : "send";
+}
+
+export function impactExpKey(weekKey, part) {
+  return `${IMPACT_EXP_PREFIX}:${weekKey}:${part}`;
+}
+
+/** The pilot Monday (after the 14:00 UTC send) in the last seven days, or null. */
+export function emailReturnWeek(now = Date.now()) {
+  for (let back = 0; back < 8; back += 1) {
+    const at = now - back * DAY_MS;
+    const day = new Date(at);
+    if (day.getUTCDay() !== 1) continue;
+    const key = isoDay(at);
+    const sendAt = Date.parse(`${key}T14:00:00Z`);
+    if (now < sendAt || now - sendAt >= 7 * DAY_MS) continue;
+    if (key < IMPACT_PILOT_START || key > IMPACT_PILOT_LAST) return null;
+    return key;
+  }
+  return null;
+}
+
+function armRow(ids, sets) {
+  const row = { weeks: 0, returned: 0, activity: 0, tapOnly: 0 };
+  for (const id of ids) {
+    row.weeks += 1;
+    const active = sets.grill.has(id) || sets.lookback.has(id);
+    const tapped = sets.tap.has(id);
+    if (active || tapped) row.returned += 1;
+    if (active) row.activity += 1;
+    else if (tapped) row.tapOnly += 1;
+  }
+  return row;
+}
+
+function add(a, b) {
+  return { weeks: a.weeks + b.weeks, returned: a.returned + b.returned, activity: a.activity + b.activity, tapOnly: a.tapOnly + b.tapOnly };
+}
+
+/**
+ * The pre-set readout. Ready once 30 people and 60 sends are reached and a full week has passed
+ * after that Monday, or a week after the backstop. A return is a grill, a look-back or a Yes/No tap
+ * within 7 days of a Monday; activity (grill or look-back) is kept apart from a tap alone.
+ */
+export function experimentReadout(weeks, totals, now = Date.now()) {
+  let send = { weeks: 0, returned: 0, activity: 0, tapOnly: 0 };
+  let holdout = { ...send };
+  let clicks = 0;
+  for (const week of weeks || []) {
+    const sets = { grill: new Set(week.grill || []), lookback: new Set(week.lookback || []), tap: new Set(week.tap || []) };
+    send = add(send, armRow(week.send || [], sets));
+    holdout = add(holdout, armRow(week.holdout || [], sets));
+    clicks += Number(week.clicks) || 0;
+  }
+  const recipients = Number(totals?.recipients) || 0;
+  const sends = Number(totals?.sends) || 0;
+  const unsubscribes = Number(totals?.unsubscribes) || 0;
+  const reached = recipients >= IMPACT_DECISION.recipients && sends >= IMPACT_DECISION.sends;
+  const settleFrom = reached && totals?.lastSendWeek ? totals.lastSendWeek : reached ? null : IMPACT_PILOT_LAST;
+  const ready = Boolean(settleFrom) && now >= Date.parse(`${settleFrom}T14:00:00Z`) + 7 * DAY_MS;
+  const guardrail = recipients > 0 && unsubscribes / recipients > IMPACT_DECISION.unsubscribeShare ? "pause" : "ok";
+  return { ready, reached, recipients, sends, unsubscribes, clicks, send, holdout, guardrail };
+}
+
+/** Every pilot Monday key up to now. */
+export function pilotWeeksSoFar(now = Date.now()) {
+  const keys = [];
+  for (let at = Date.parse(`${IMPACT_PILOT_START}T14:00:00Z`); at <= now && isoDay(at) <= IMPACT_PILOT_LAST; at += 7 * DAY_MS) keys.push(isoDay(at));
+  return keys;
+}
+
+/** Reads the test sets through a Redis command function, then the pre-set readout. Ids stay in memory. */
+export async function readEmailExperiment(command, now = Date.now()) {
+  const weeks = [];
+  let lastSendWeek = null;
+  const seen = new Set();
+  let sends = 0;
+  let reachedAt = null;
+  for (const key of pilotWeeksSoFar(now)) {
+    const list = async (part) => {
+      const got = await command(["SMEMBERS", impactExpKey(key, part)]);
+      return Array.isArray(got) ? got.map(String) : [];
+    };
+    const week = { key, send: await list("send"), holdout: await list("holdout"), grill: await list("grill"), lookback: await list("lookback"), tap: await list("tap") };
+    week.clicks = Number(await command(["GET", impactExpKey(key, "clicks")])) || 0;
+    weeks.push(week);
+    for (const id of week.send) seen.add(id);
+    sends += week.send.length;
+    if (week.send.length) lastSendWeek = key;
+    if (!reachedAt && seen.size >= IMPACT_DECISION.recipients && sends >= IMPACT_DECISION.sends) reachedAt = key;
+  }
+  const unsubscribes = Number(await command(["GET", IMPACT_UNSUB_KEY])) || 0;
+  return experimentReadout(weeks, { recipients: seen.size, sends, unsubscribes, lastSendWeek: reachedAt || lastSendWeek }, now);
 }
