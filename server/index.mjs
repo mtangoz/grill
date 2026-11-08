@@ -677,6 +677,10 @@ async function handle(msg) {
 }
 
 function runningAsMain() {
+  // node --test imports this module for its helpers. The stdio reader would
+  // keep that process open until the file timeout. A spawned server gets a
+  // clean env and does not set NODE_TEST_CONTEXT.
+  if (process.env.NODE_TEST_CONTEXT) return false;
   const entry = process.argv[1];
   if (!entry) return false;
   const self = fileURLToPath(import.meta.url);

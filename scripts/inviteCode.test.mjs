@@ -3,8 +3,8 @@
 // early-tester access: free, the existing $5 a month per person, and the $20 service cap stays.
 // Codes come from GRILL_INVITE_CODES or the codes store. Unset and empty, the feature is off.
 // Made-up fixtures only. Open sign-up stays off.
-import { createHash, createSign, generateKeyPairSync, randomBytes } from "node:crypto";
-import { describe, it } from "node:test";
+import { createHash, createSign, randomBytes } from "node:crypto";
+import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -24,11 +24,15 @@ import {
   storedInviteKey,
   userMonthlyCapUsd,
 } from "./hostedCore.mjs";
+import { testSigningKey } from "./testSigningKey.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RESOURCE = "https://mcp.example/mcp";
-const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const jwk = { ...publicKey.export({ format: "jwk" }), kid: "test-key", alg: "RS256", use: "sig" };
+let privateKey;
+let jwk;
+before(async () => {
+  ({ privateKey, jwk } = await testSigningKey());
+});
 
 const EMAILS = {
   user_friend: "friend@example.com",

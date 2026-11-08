@@ -1,6 +1,6 @@
 // Hosted Grill, behind GRILL_HOSTED. No network: Clerk, Redis and OpenRouter are faked.
-import { createHash, createSign, generateKeyPairSync, randomBytes } from "node:crypto";
-import { beforeEach, describe, it } from "node:test";
+import { createHash, createSign, randomBytes } from "node:crypto";
+import { before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -45,6 +45,7 @@ import {
 } from "./hostedCore.mjs";
 import { countWords } from "./judgeCore.mjs";
 import { ONCE_DISCLOSURE as LOCAL_DISCLOSURE } from "../server/index.mjs";
+import { testSigningKey } from "./testSigningKey.mjs";
 import { parseRecords, recordBlock, sourceAppLabel } from "./reflection.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -54,11 +55,11 @@ const MGMT_KEY = "sk-or-v1-management-do-not-leak-9999";
 const CANARY = "CANARY-HOSTED-WRITEUP-9f3a";
 const RESOURCE = "https://mcp.example/mcp";
 
-const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const jwk = publicKey.export({ format: "jwk" });
-jwk.kid = "test-key";
-jwk.alg = "RS256";
-jwk.use = "sig";
+let privateKey;
+let jwk;
+before(async () => {
+  ({ privateKey, jwk } = await testSigningKey());
+});
 
 function signJwt(payload, { tamper = false } = {}) {
   const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: "test-key", typ: "JWT" })).toString("base64url");
