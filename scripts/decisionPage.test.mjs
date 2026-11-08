@@ -14,6 +14,7 @@ import {
   decisionType,
   decisionTypeId,
   dueForLookBack,
+  earlyRead,
   hasLookback,
   HOSTED_INSTRUCTIONS,
   lookbackOffer,
@@ -206,10 +207,10 @@ describe("the list reads as a loop, not an archive", () => {
     assert.equal(decisionGroup(row(), FEB), "due");
     assert.equal(decisionGroup(row({ review: "2026-02-15" }), FEB), "open");
     assert.equal(decisionGroup(row({ lookback: { happened: "came_true: no" } }), FEB), "closed");
-    assert.equal(outcomeLine(row(), FEB), "");
+    assert.equal(outcomeLine(row(), FEB), "Due");
     assert.equal(outcomeLine(row({ review: "2026-02-15" }), FEB), "Look back 15 Feb");
-    assert.equal(outcomeLine(row({ lookback: { happened: "came_true: yes\nhappened: It shipped." } }), FEB), "Came true");
-    assert.equal(outcomeLine(row({ lookback: { happened: "came_true: no happened: It missed." } }), FEB), "Did not come true");
+    assert.equal(outcomeLine(row({ lookback: { happened: "came_true: yes\nhappened: It shipped." } }), FEB), "Held up");
+    assert.equal(outcomeLine(row({ lookback: { happened: "came_true: no happened: It missed." } }), FEB), "Didn't");
   });
 
   it("hides the scorecard under three records, and the held-up clause under three look-backs", () => {
@@ -249,6 +250,37 @@ describe("a look-back date follows the decision when it names one", () => {
     assert.equal(reviewDateFor("Switch payroll before 15 Nov", sun), "2026-11-15");
     assert.equal(reviewDateFor("The mover comes on November 20", sun), "2026-11-20");
     assert.equal(reviewDateFor("We shipped on 2026-11-01", sun), "2026-11-22");
+  });
+});
+
+describe("an early read does not count until the look-back is due", () => {
+  const block = "version: 1\ndate: 2026-01-01\ntitle: Ship the beta\nverdict: solid\nconfidence: 60%\nreview: 2026-01-15";
+  const row = (happened, at) => ({
+    block,
+    review: "2026-01-15",
+    verdict: "solid",
+    lookback: { at, happened },
+  });
+  const before = Date.parse("2026-01-10T15:00:00Z");
+  const after = Date.parse("2026-02-01T15:00:00Z");
+
+  it("keeps an early read out of the held-up count, then counts only the latest outcome", () => {
+    const first = row("came_true: no\nhappened: It did not hold up.", "2026-01-10T12:00:00.000Z");
+    assert.equal(earlyRead(first, before), true);
+    const early = decisionTakeaways([first, first, first], { now: before });
+    assert.equal(early.looked, 0);
+    assert.equal(early.scored, 0);
+    assert.equal(early.held, 0);
+    const latest = row("came_true: yes\nhappened: Held up.", "2026-02-01T12:00:00.000Z");
+    assert.equal(earlyRead(latest, after), false);
+    const counted = decisionTakeaways([latest, latest, latest], { now: after });
+    assert.equal(counted.looked, 3);
+    assert.equal(counted.scored, 3);
+    assert.equal(counted.held, 3);
+    assert.match(scorecardLine([latest, latest, latest], {}), /verdict held up in 3 of 3/);
+    const passed = decisionTakeaways([first, first, first], { now: after });
+    assert.equal(passed.held, 0);
+    assert.equal(passed.scored, 3);
   });
 });
 

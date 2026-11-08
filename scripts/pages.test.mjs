@@ -466,14 +466,17 @@ describe("the decisions page layout", () => {
       assert.equal(html.includes('name="happened"'), false, "the page does not post a look-back");
       const detail = await getPage(ctx, `${href}#look-back`, { now: FEB });
       assert.equal(detail.res.status, 200);
-      assert.match(detail.html, /<h1 class="record-title">Hire contractor<\/h1>/);
+      assert.match(detail.html, /<h1 class="record-title[^"]*">Hire contractor<\/h1>/);
       assert.match(detail.html, /Verdict: <strong>shaky<\/strong>/);
-      assert.match(detail.html, /Choice: Hire the contractor\./);
-      assert.match(detail.html, /Confidence: 60%/);
+      assert.match(detail.html, /You chose: Hire the contractor\. 60%\./);
       assert.match(detail.html, /id="look-back"/);
       assert.match(detail.html, /What happened\?/);
+      assert.match(detail.html, />Held up</);
+      assert.match(detail.html, />Didn't</);
+      assert.match(detail.html, />Mixed</);
+      assert.match(detail.html, /name="note"/);
+      assert.match(detail.html, /No look-back/);
       assert.match(detail.html, /Due for a look-back since 15 Jan\. Not looked back\./);
-      assert.match(detail.html, /Say “look back” in your chat and say what happened/);
       assert.match(detail.html, /Share verdict/);
       assert.match(detail.html, /<a href="\/decisions">Your grills<\/a>/);
       assert.equal(detail.html.includes("<script"), false);
@@ -485,7 +488,7 @@ describe("the decisions page layout", () => {
       const looked = await send(3, "grill_look_back", { happened: "came_true: no\nhappened: The contractor left after a week." }, FEB);
       assert.equal(looked.result.isError, false, looked.result?.content?.[0]?.text || "");
       const after = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(after.html, /Did not come true/);
+      assert.match(after.html, /Didn(?:'|&#39;)t/);
       assert.equal(after.html.includes('class="happened"'), false);
       assert.equal(after.html.includes("came_true:"), false);
       const again = await getPage(ctx, href, { now: FEB });
@@ -618,7 +621,35 @@ describe("the decisions page layout", () => {
     }
   });
 
-  it("closes a due look-back in one tap, and does not replace it", async () => {
+  it("records an early read before the due date, then keeps only the later outcome", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      const early = Date.parse("2026-01-05T15:00:00Z");
+      await decide(ctx, fake, "Ship the beta", JAN);
+      const { html } = await getPage(ctx, "/decisions", { now: early });
+      const id = new URL(`https://grillyour.ai${html.match(/href="(\/decisions\?id=[^"#]+)"/)[1]}`).searchParams.get("id");
+      await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=no`, early);
+      const first = await getPage(ctx, `/decisions?id=${encodeURIComponent(id)}`, { now: early });
+      assert.match(first.html, /Early read/);
+      assert.match(first.html, /Didn't/);
+      await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=held`, early);
+      await postForm(ctx, `action=note&id=${encodeURIComponent(id)}&note=Two teams used it`, early);
+      const second = await getPage(ctx, `/decisions?id=${encodeURIComponent(id)}`, { now: early });
+      assert.match(second.html, /Held up/);
+      assert.match(second.html, /value="Two teams used it"/);
+      assert.doesNotMatch(second.html, /It did not hold up/);
+      const due = await getPage(ctx, `/decisions?id=${encodeURIComponent(id)}`, { now: FEB });
+      assert.doesNotMatch(due.html, /Early read/);
+      assert.match(due.html, /Held up/);
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksDone]) || null, null);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("closes a due look-back in one tap, and a later tap replaces it", async () => {
     const fake = await startFakeOpenRouter();
     try {
       resetHostedCaches();
@@ -641,13 +672,14 @@ describe("the decisions page layout", () => {
       const tapped = await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=no`, FEB);
       assert.equal(tapped.status, 303);
       const after = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(after.html, /Did not come true/);
+      assert.match(after.html, /Didn(?:'|&#39;)t/);
       assert.equal(after.html.includes("decision due for a look-back"), false);
-      assert.equal(after.html.includes(">Held up<"), false);
-      await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=held`, FEB);
-      const kept = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(kept.html, /Did not come true/);
-      assert.equal(kept.html.includes("Came true"), false);
+      const replaced = await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=held`, FEB);
+      assert.equal(replaced.status, 303);
+      const kept = await getPage(ctx, `/decisions?id=${encodeURIComponent(id)}`, { now: FEB });
+      assert.match(kept.html, /Held up/);
+      assert.match(kept.html, /Changed /);
+      assert.doesNotMatch(kept.html, /It did not hold up/);
       assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksDone]), "1");
     } finally {
       await fake.close();
@@ -712,7 +744,7 @@ describe("the decisions page layout", () => {
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
       const row = html.slice(html.indexOf('class="record-title"'), html.indexOf("</li>"));
-      assert.match(row, /Work · Claude · 1 Jan · <strong>shaky<\/strong> · 17 days overdue/);
+      assert.match(row, /Work · Claude · 1 Jan · <strong>shaky<\/strong> · Due · 17 days overdue/);
       assert.match(row, /What happened\?/);
       assert.equal(row.includes("unknown"), false);
       assert.equal(html.includes("2026-01-"), false);

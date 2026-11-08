@@ -81,6 +81,7 @@ import {
   daysOverdue,
   formatDay,
   dueForLookBack,
+  earlyRead,
   FUNNEL_KEYS,
   hasLookback,
   dueReminderLine,
@@ -106,6 +107,7 @@ import {
   decisionSourceLabel,
   LOOKBACK_HOW,
   outcomeLine,
+  outcomeNoteText,
   scorecardLine,
   DECISION_SOURCES,
   DECISION_TYPES,
@@ -2433,6 +2435,22 @@ function outcomeTaps(id) {
   return `<form method="post" action="/decisions" class="outcomes"><input type="hidden" name="action" value="outcome"><input type="hidden" name="id" value="${esc(id)}">${buttons}</form>`;
 }
 
+function composeOutcome(previous, value) {
+  const base = OUTCOME_NOTES[value];
+  if (!base) return "";
+  const note = outcomeNoteText(previous);
+  return note ? `${base}\nnote: ${note}` : base;
+}
+
+function composeNote(previous, note) {
+  const clean = String(note || "").replace(/\s+/g, " ").trim().slice(0, 140);
+  const lines = String(previous || "")
+    .split(/\n/)
+    .filter((line) => !/^note:/i.test(line.trim()));
+  if (clean) lines.push(`note: ${clean}`);
+  return lines.map((line) => line.trim()).filter(Boolean).join("\n");
+}
+
 function renderDueAction(rows, byId, now, query) {
   const due = dueForLookBack(rows, now);
   if (!due.length) return "";
@@ -2506,22 +2524,42 @@ function renderDecision(row, byId, extra = {}) {
   const when = row.date ? showDay(row.date) : "";
   const app = String(row.sourceApp || "").trim();
   const meta = [when, app && app !== "unknown" ? `from ${APP_LABELS[app] || app}` : ""].filter(Boolean).join(" · ");
+  const early = earlyRead(row, extra.now);
+  const changed = formatDay(String(row.lookback?.at || "").slice(0, 10));
+  const note = outcomeNoteText(row.lookback?.happened);
+  const stateLine = [
+    early ? "Early read." : "",
+    status.state === "done" || early ? status.text : status.text,
+    changed && (status.state === "done" || early) ? `Changed ${changed}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return page(
     `${row.title || "Untitled"} · Grill`,
     `${NARROW}
+    <style>
+    .decision-text { color: var(--ink); font-size: 1.35rem; line-height: 1.3; overflow-wrap: break-word; }
+    .outcomes { display: flex; flex-wrap: wrap; gap: 8px; }
+    .outcomes button { min-height: 44px; }
+    @media (max-width: 40rem) { .outcomes button { width: auto; flex: 1 1 30%; } }
+    </style>
     <p><a href="${esc(extra.back || "/decisions")}">Your grills</a></p>
-    <h1 class="record-title">${esc(row.title || "Untitled")}</h1>
+    <h1 class="record-title decision-text">${esc(row.title || "Untitled")}</h1>
     ${meta ? `<p class="record-meta">${esc(meta)}</p>` : ""}
     ${chain ? `<p>${esc(chain)}</p>` : ""}
-    <p>Type: ${esc(decisionTypeLabel(decisionType(row)))}</p>
-    <p>Source: ${esc(decisionSourceLabel(decisionSource(row)))}</p>
+    <p>You chose: ${choice ? esc(choice) : "Not logged."}${confidence ? ` ${esc(confidence)}.` : ""}</p>
     <p>Verdict: ${verdict ? `<strong>${esc(verdict)}</strong>` : "Not stored."}</p>
-    <p>Choice: ${choice ? esc(choice) : "Not logged."}</p>
-    <p>Confidence: ${confidence ? esc(confidence) : "Not said."}</p>
     <section id="look-back">
       <p class="action"><strong>What happened?</strong></p>
-      <p>${esc(status.text)}</p>
-      ${status.state === "done" ? "" : "<p>Say “look back” in your chat and say what happened. Grill saves it on this decision.</p>"}
+      <p>${esc(stateLine)}</p>
+      ${outcomeTaps(row.id)}
+      <form method="post" action="/decisions">
+        <input type="hidden" name="action" value="note">
+        <input type="hidden" name="id" value="${esc(row.id)}">
+        <label for="note">Note</label>
+        <input id="note" type="text" name="note" maxlength="140" value="${esc(note)}" aria-label="Note">
+        <p class="row"><button type="submit">Save note</button></p>
+      </form>
     </section>
     ${reviewForm(row)}
     ${sharing}
@@ -3234,13 +3272,28 @@ export async function handleDecisions(request, deps) {
         if (note && recordId) {
           const rows = await loadRecords(session.account, deps);
           const row = rows.find((item) => item.id === recordId);
-          if (row && !hasLookback(row)) {
+          if (row) {
             const now = typeof deps.now === "number" ? deps.now : Date.now();
-            row.lookback = { at: new Date(now).toISOString(), happened: note };
+            const finished = hasLookback(row) && !earlyRead(row, now);
+            const happened = composeOutcome(row.lookback?.happened, form.get("value") || "");
+            row.lookback = { at: new Date(now).toISOString(), happened };
             await writeRecord(session.account, deps, row);
-            await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
+            if (!finished && !earlyRead(row, now)) await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
           }
         }
+        if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
+      } else if (action === "note") {
+        const recordId = form.get("id") || "";
+        const rows = await loadRecords(session.account, deps);
+        const row = rows.find((item) => item.id === recordId);
+        if (row) {
+          const now = typeof deps.now === "number" ? deps.now : Date.now();
+          const happened = composeNote(row.lookback?.happened, form.get("note"));
+          if (happened) row.lookback = { at: row.lookback?.at || new Date(now).toISOString(), happened };
+          else row.lookback = null;
+          await writeRecord(session.account, deps, row);
+        }
+        if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
       } else if (action === "review") {
         const recordId = form.get("id") || "";
         const rows = await loadRecords(session.account, deps);
