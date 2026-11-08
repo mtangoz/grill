@@ -79,7 +79,7 @@ Account and key pages do not load Vercel Analytics. The raw key can be on those 
 
 ## Reports
 
-Grill does not email a verdict or a weekly note. A grill stays in the assistant that ran it. The weekly review stays in the user's chat, or in an email their own mail connector sends if they ask it to. The only email this server sends is the sign-in link.
+Grill does not email a verdict from this page. A grill stays in the assistant that ran it. A signed-in Grill account can get a separate Monday note for four weeks. That note is not a saved report, and it does not include the verdict. The only email this Pro server sends on its own is the sign-in link.
 
 `/pro/reports` is the history page for when a report does exist. Saving is off until the signed-in user turns it on. A copy is kept on their account only, and they can delete any one or all of them. Turning saving off stops new copies and leaves the ones already there until they delete them. Report text is never written onto a Stripe customer. If the account store is the Stripe customer itself, saving stays off.
 

@@ -14,6 +14,10 @@ Enforced by: [api/_hosted.mjs](../api/_hosted.mjs) (`renderImpact`, `renderDueAc
 
 The records switch and the calendar switch stay under the list.
 
+On `/account`, under the calendar switch, the Monday email is on. The button turns it off or back on. The email's unsubscribe link turns it off in one click, with no second page. Outcome links in that email open a confirm page on `/decisions`. The page does not record the outcome. The button does, and only when you are signed in.
+
+Enforced by: test "does not email someone who turned it off, and one click from the email turns it off" and test "opens a confirm page from an outcome link and records only on an authenticated POST" in [scripts/impactDigest.test.mjs](../scripts/impactDigest.test.mjs).
+
 Enforced by: test "puts records before the settings, export and calendar, with settings at the bottom under Manage" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
 
 ## A record's title

@@ -6,6 +6,7 @@ A change may add one optional line when someone has agreed to be named. Leave th
 
 ## Unreleased
 
+- A signed-in Grill account gets a Monday email for four weeks (9 Nov 2026 through 30 Nov 2026), unless you turn it off. The note says how many of that week's grills changed the call, and lists a look-back only when it came due that week. A quiet week sends nothing. Unsubscribe is one click in the email. Email settings are on /account. An outcome link opens a confirm page, and only a signed-in button records it.
 - The homepage button says "Connect Grill (2 minutes)" and links to /start. /start asks whether you use ChatGPT or Claude, then shows that tool's short steps and one prompt to copy. Pro stays on /pricing.
 - The grill tool asks for the decision as stated, plus a brief summary of the essential context (at most a few sentences). It tells the assistant not to include the full conversation, chat history, transcripts, memories or unrelated personal data. The other tools do not ask for the chat.
 - ChatGPT can verify this domain. `GET /.well-known/openai-apps-challenge` returns OpenAI's public token as `text/plain`, with no extra bytes.

@@ -310,6 +310,19 @@ async function resend(env, fetchImpl, path, { method = "POST", body } = {}) {
   return parsed;
 }
 
+/** One transactional email through the same Resend call as the launch list. The caller supplies the template. */
+export async function sendResendEmail(env, fetchImpl, { to, subject, text, headers }) {
+  const from = trimmed(env, "GRILL_PRO_EMAIL_FROM");
+  if (!trimmed(env, "RESEND_API_KEY") || !from || !to || !subject || !text) {
+    const err = new Error("unconfigured");
+    err.code = "unconfigured";
+    throw err;
+  }
+  const body = { from, to, subject, text };
+  if (headers && typeof headers === "object") body.headers = headers;
+  return resend(env, fetchImpl, "/emails", { body });
+}
+
 export async function handleNotify(request, deps) {
   const env = deps.env ?? {};
   const fetchImpl = deps.fetch;

@@ -1297,6 +1297,19 @@ export function createMemoryRedis() {
           return sets.get(key)?.size || 0;
         case "SMEMBERS":
           return [...(sets.get(key) || [])];
+        case "SCAN": {
+          const cursor = String(args[1] ?? "0");
+          if (cursor !== "0") return ["0", []];
+          const matchAt = args.findIndex((value, index) => index > 1 && String(value).toUpperCase() === "MATCH");
+          const match = matchAt >= 0 ? String(args[matchAt + 1]) : "*";
+          const pattern = new RegExp(`^${match.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
+          const keys = [];
+          for (const name of strings.keys()) {
+            if (!live(name)) continue;
+            if (pattern.test(name)) keys.push(name);
+          }
+          return ["0", keys];
+        }
         case "SISMEMBER":
           return sets.get(key)?.has(String(args[2])) ? 1 : 0;
         case "ZADD": {
