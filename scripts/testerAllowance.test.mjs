@@ -137,7 +137,7 @@ describe("the early-tester monthly allowance", () => {
     }
   });
 
-  it("says free for life, $5 a month, resets on the 1st on /decisions and /account, from this month's use", async () => {
+  it("says free for life, $5 a month, resets on the 1st on /account, from this month's use", async () => {
     const fake = await startFakeOpenRouter();
     try {
       resetHostedCaches();
@@ -146,11 +146,10 @@ describe("the early-tester monthly allowance", () => {
       resetHostedCaches();
       const decisions = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: cookie() } }), ctx)).text();
       const account = await (await handleAccount(new Request("https://grillyour.ai/account", { headers: { cookie: cookie() } }), ctx)).text();
-      for (const html of [decisions, account]) {
-        assert.ok(html.includes(ALLOWANCE_LINE), "the allowance line is shown");
-        assert.match(html, /\$4\.97 left this month\./, "worked out from this month's use, not the lifetime total");
-        assert.doesNotMatch(html, /grills of credit left/);
-      }
+      assert.ok(account.includes(ALLOWANCE_LINE), "the allowance line is shown");
+      assert.match(account, /\$4\.97 left this month\./, "worked out from this month's use, not the lifetime total");
+      assert.doesNotMatch(account, /grills of credit left/);
+      assert.doesNotMatch(decisions, /of use each month|left this month|grills of credit/);
     } finally {
       await fake.close();
     }

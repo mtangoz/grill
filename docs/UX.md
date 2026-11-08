@@ -2,23 +2,23 @@
 
 Each page has one job. `/decisions` gets a due look-back done. `/account` shows who you are, what Grill holds, and how to leave. A section earns its place by helping that job.
 
-The order on a page is: what needs you now, how your judgement is doing, your records, manage, leave. Settings do not sit above the thing the page is for. Danger sits behind a confirm page.
+The order on a page is: what needs you now, how your judgement is doing, your records, then the small ways to leave. Settings do not sit above the thing the page is for. Danger sits behind a confirm page.
 
 The pages run no JavaScript. A disclosure is a `<details>` element. A confirm is its own page.
 
 ## What needs you now
 
-On `/decisions` a short takeaways block sits under the title: how many decisions, how many were looked back, and how often the verdict matched what happened. One or two nudges follow. Type chips come next. The due list is the next section, before credit, the records switch and the export links. A chip keeps the takeaways, the due list and the records on that type. A second row filters by the client the grill came from: Claude, ChatGPT, Cursor, Grok Bot, other, or unknown. The two filters combine. The type is worked out from the words already stored. The title is read first. The client is the one already stored on the record.
+On `/decisions` the first thing is the due list, when there is one: "N decisions due for a look-back", each row ending in What happened? That link opens the record. The page does not post a look-back. Saying "look back" in chat is what saves what happened. With three or more decisions in view, one scorecard line follows: how many decisions, the percent looked back, and, once three have been looked back, how often the verdict held up. With fewer than three, that line is absent and one sentence says a look-back is due 14 days after the choice. Type and source chips sit in one row. A filter with only one value is hidden. The list is grouped Due, then Open, then Closed. A row is the title, then type, source, date, verdict, and outcome. One nudge follows, and only when it would change what you do. Export and Delete all are small links at the bottom. Share, delete, and delete this chain are on the record, not the list. The page does not show a dollar cost.
 
-Enforced by: [api/_hosted.mjs](../api/_hosted.mjs) (`renderDue`), test "puts what needs you now above credit, the records switch and export" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
+Enforced by: [api/_hosted.mjs](../api/_hosted.mjs) (`renderDueAction`, `renderDecisions`), test "puts what needs you now above the records switch and export" and test "filters the list by a type taken from the stored words" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
 
-How your judgement is doing, then the records, then the controls, then leaving, is the order to keep. The records switch, the calendar switch and the export links still sit above the habit counts and the cards.
+The records switch and the calendar switch stay under the list.
 
-Enforced by: prompt text + review.
+Enforced by: test "puts records before the settings, export and calendar, with settings at the bottom under Manage" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
 
 ## A record's title
 
-A saved decision's title is the person's own words, in the case they wrote. It is not a section heading, and it is not forced into uppercase. "iPhone launch" stays "iPhone launch". On the list, and in the due list, the title is a link to that one record. The record page shows the verdict, the choice, the confidence, and whether the look-back is done. A look-back note is shown in plain words. A link for a record that is not on this account goes back to the list. The page stays signed in.
+A saved decision's title is the person's own words, in the case they wrote. It is not a section heading, and it is not forced into uppercase. "iPhone launch" stays "iPhone launch". On the list, and in the due list, the title is a link to that one record. What happened? on a due row opens that record at the look-back. The record page shows the verdict, the choice, the confidence, and whether the look-back is done. A look-back note is shown in plain words. Share verdict and delete are on that page. A link for a record that is not on this account goes back to the list. The page stays signed in.
 
 Enforced by: [api/_pro.mjs](../api/_pro.mjs) (`.record-title`), [api/_hosted.mjs](../api/_hosted.mjs) (`renderDecision`), test "does not uppercase a record title" and test "opens a grill from its title, with the verdict, choice, confidence and look-back" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
 
@@ -62,7 +62,7 @@ Enforced by: test "asks on a page before deleting every record or the account" i
 
 ## Share a verdict
 
-`/decisions` offers Share verdict on each saved record. That opens a confirm page. The page shows the exact words the public page will show, and nothing else from the record. The button POSTs, and the decisions page then shows the link. Stop sharing is a POST. Deleting the record stops the link too. The public page, `/share/<token>`, needs no sign-in. It shows the verdict, one challenge, and a link to grillyour.ai. It is `noindex` and runs no script.
+The record page offers Share verdict. That opens a confirm page. The list does not. The page shows the exact words the public page will show, and nothing else from the record. The button POSTs, and the decisions page then shows the link. Stop sharing is a POST. Deleting the record stops the link too. The public page, `/share/<token>`, needs no sign-in. It shows the verdict, one challenge, and a link to grillyour.ai. It is `noindex` and runs no script.
 
 Enforced by: [api/_hosted.mjs](../api/_hosted.mjs) (`handleShare`), tests in [scripts/shareVerdict.test.mjs](../scripts/shareVerdict.test.mjs).
 

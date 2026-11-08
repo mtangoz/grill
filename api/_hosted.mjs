@@ -95,6 +95,7 @@ import {
   runLockKey,
   chainIds,
   decisionHabits,
+  decisionGroup,
   decisionType,
   decisionTypeId,
   decisionTypeLabel,
@@ -102,6 +103,9 @@ import {
   decisionSource,
   decisionSourceId,
   decisionSourceLabel,
+  LOOKBACK_HOW,
+  outcomeLine,
+  scorecardLine,
   DECISION_SOURCES,
   DECISION_TYPES,
   decryptString,
@@ -2332,21 +2336,15 @@ function chainNote(row, byId) {
   return parts.join(" ");
 }
 
-function renderTakeaways(rows, { waiting = 0, now, type = "", source = "" } = {}) {
-  if (!rows.length) return "";
-  const summary = decisionTakeaways(rows, { waiting, now, filtered: Boolean(type || source) });
-  const scope = type && source ? `${decisionTypeLabel(type)} from ${decisionSourceLabel(source)}.` : type ? `${decisionTypeLabel(type)}.` : source ? `${decisionSourceLabel(source)}.` : "";
-  const held = summary.scored
-    ? `The verdict matched what happened in ${summary.held} of ${summary.scored} scored look-backs.`
-    : "No look-back says whether it came true yet.";
-  const nudges = summary.nudges.map((line) => `<p>${esc(line)}</p>`).join("\n    ");
-  return `<section class="banner" id="takeaways">
-    <h2>Takeaways</h2>
-    ${scope ? `<p>${esc(scope)}</p>` : ""}
-    <p>${summary.count} ${summary.count === 1 ? "decision" : "decisions"}. ${summary.looked} of ${summary.count} looked back.</p>
-    <p>${esc(held)}</p>
-    ${nudges}
-  </section>`;
+function renderScorecard(rows, type, source) {
+  const line = scorecardLine(rows, { type, source });
+  return line ? `<p class="scorecard">${esc(line)}</p>` : "";
+}
+
+function renderNudge(rows, { waiting = 0, now, type = "", source = "" } = {}) {
+  if (rows.length < 3) return "";
+  const line = decisionTakeaways(rows, { waiting, now, filtered: Boolean(type || source) }).nudges[0];
+  return line ? `<p class="takeaway">${esc(line)}</p>` : "";
 }
 
 function inlineBold(text) {
@@ -2367,23 +2365,48 @@ export function renderChanges(rows) {
   </section>`;
 }
 
-/** Records waiting for a look-back, oldest first. Titles are shown: this page is the person's own. */
-function renderDue(rows, now, { type = "", source = "" } = {}) {
+/** One compact row. Share, delete and export live on the record, not here. */
+function renderListRow(row, byId, now, { type = "", source = "" } = {}) {
+  const href = listHref({ id: row.id, type, source });
+  const group = decisionGroup(row, now);
+  const happened = group === "due" ? `<a class="happened" href="${esc(href)}#look-back">What happened?</a>` : "";
+  const bits = [esc(decisionTypeLabel(decisionType(row)))];
+  const sourceId = decisionSource(row);
+  if (sourceId !== "unknown") bits.push(esc(decisionSourceLabel(sourceId)));
+  if (row.date) bits.push(esc(showDay(row.date)));
+  const parsed = parseRecords(row.block || "")[0] || {};
+  const verdict = String(row.verdict || parsed.verdict || "").trim();
+  if (verdict && verdict.toLowerCase() !== "unknown") bits.push(`<strong>${esc(verdict)}</strong>`);
+  const outcome = outcomeLine(row, now);
+  if (outcome) bits.push(esc(outcome));
+  if (group === "due") {
+    const late = daysOverdue(row.review, now);
+    bits.push(esc(late === 0 ? "due today" : `${late} day${late === 1 ? "" : "s"} overdue`));
+  }
+  const chain = chainNote(row, byId);
+  return `<li class="decision">
+      <a class="record-title" href="${esc(href)}">${esc(row.title || "Untitled")}</a>
+      ${happened}
+      <p class="meta">${bits.join(" · ")}</p>
+      ${chain ? `<p class="meta">${esc(chain)}</p>` : ""}
+    </li>`;
+}
+
+function renderDueAction(rows, byId, now, query) {
   const due = dueForLookBack(rows, now);
   if (!due.length) return "";
-  const items = due
-    .map((row) => {
-      const late = daysOverdue(row.review, now);
-      const when = late === 0 ? "due today" : `${late} day${late === 1 ? "" : "s"} overdue`;
-      const href = listHref({ id: row.id, type, source });
-      return `<li><a href="${esc(href)}">${esc(row.title || "Untitled")}</a> · review ${esc(showDay(row.review))} · ${esc(when)}</li>`;
-    })
-    .join("");
-  return `<section class="banner">
-    <h2>Due for a look-back</h2>
-    <ul>${items}</ul>
-    <p>Say "look back" in your chat. Grill reads these for you, so there is nothing to paste.</p>
+  const noun = due.length === 1 ? "decision" : "decisions";
+  const items = due.map((row) => renderListRow(row, byId, now, query)).join("");
+  return `<section id="due">
+    <p class="action"><strong>${due.length} ${noun} due for a look-back</strong></p>
+    <ul class="decisions">${items}</ul>
   </section>`;
+}
+
+function renderNamedGroup(id, label, rows, byId, now, query) {
+  if (!rows.length) return "";
+  const items = rows.map((row) => renderListRow(row, byId, now, query)).join("");
+  return `<section id="${id}"><h2>${label}</h2><ul class="decisions">${items}</ul></section>`;
 }
 
 function calendarUrl(origin, token) {
@@ -2417,17 +2440,6 @@ function renderCalendar(action, calendar, freshUrl) {
 }
 
 const APP_LABELS = { claude: "Claude", "claude-code": "Claude Code", chatgpt: "ChatGPT", cursor: "Cursor", grok: "Grok Bot", gemini: "Gemini", meta: "Meta AI", muse: "Meta AI" };
-
-/** One short line: the verdict in bold, the day, the app if known, and the look-back date in words. */
-function recordMeta(row) {
-  const parts = [];
-  if (row.verdict) parts.push(`<strong>${esc(row.verdict)}</strong>`);
-  if (row.date) parts.push(esc(showDay(row.date)));
-  const app = String(row.sourceApp || "").trim();
-  if (app && app !== "unknown") parts.push(`from ${esc(APP_LABELS[app] || app)}`);
-  if (row.review) parts.push(`Look back on ${esc(showDay(row.review))}`);
-  return `<p class="record-meta">${parts.join(" · ")}</p>`;
-}
 
 const EMPTY_DECISIONS = "<p><strong>No decisions saved yet.</strong></p>\n    <p>Say “grill this: …” in your AI. When you tell it your call, it’s saved here.</p>";
 
@@ -2465,7 +2477,11 @@ function renderDecision(row, byId, extra = {}) {
     <p>Verdict: ${verdict ? `<strong>${esc(verdict)}</strong>` : "Not stored."}</p>
     <p>Choice: ${choice ? esc(choice) : "Not logged."}</p>
     <p>Confidence: ${confidence ? esc(confidence) : "Not said."}</p>
-    <p>Look-back: ${esc(status.text)}</p>
+    <section id="look-back">
+      <p class="action"><strong>What happened?</strong></p>
+      <p>${esc(status.text)}</p>
+      ${status.state === "done" ? "" : "<p>Say “look back” in your chat and say what happened. Grill saves it on this decision.</p>"}
+    </section>
     ${sharing}
     <p class="row">${shareLink}<a class="button" href="/decisions?confirm=delete&amp;id=${esc(id)}">Delete this record</a>${chainLink}</p>`,
   );
@@ -2481,10 +2497,10 @@ function listHref({ id = "", type = "", source = "" } = {}) {
 }
 
 function filterChips(rows, kind, selected, keep) {
-  if (!rows.length) return "";
   const catalog = kind === "source" ? DECISION_SOURCES : DECISION_TYPES;
   const valueOf = kind === "source" ? decisionSource : decisionType;
   const present = new Set(rows.map((row) => valueOf(row)));
+  if (present.size < 2 && (!selected || present.has(selected))) return "";
   const items = catalog.filter((item) => present.has(item.id) || item.id === selected);
   const allHref = listHref(keep);
   const all = `<a class="chip" href="${esc(allHref)}"${selected ? "" : ' aria-current="page"'}>All</a>`;
@@ -2494,7 +2510,14 @@ function filterChips(rows, kind, selected, keep) {
     return `<a class="chip" href="${esc(href)}"${current}>${esc(item.label)}</a>`;
   });
   const name = kind === "source" ? "Source" : "Type";
-  return `<p class="filters"><span class="small">${name}</span> ${all} ${chips.join(" ")}</p>`;
+  return `<span class="filter"><span class="small">${name}</span> ${all} ${chips.join(" ")}</span>`;
+}
+
+function filterRow(rows, type, source) {
+  const types = filterChips(rows, "type", type, { source });
+  const sources = filterChips(rows, "source", source, { type });
+  if (!types && !sources) return "";
+  return `<p class="filters">${types}${sources}</p>`;
 }
 
 function emptyInView(type, source) {
@@ -2504,67 +2527,70 @@ function emptyInView(type, source) {
   return "";
 }
 
-function renderDecisions(account, rows, credit, habits, extra = {}) {
+const LIST_STYLE = `<style>
+    @media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}
+    .chip { display: inline-block; min-height: 44px; padding: 8px 12px; margin: 0; border: 1px solid var(--rule); border-radius: 999px; text-decoration: none; color: var(--ink); background: transparent; box-sizing: border-box; }
+    .chip[aria-current="page"] { background: var(--ink); color: var(--paper); }
+    .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0.6rem 0 0.2rem; }
+    .filter { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .action { color: var(--ink); margin: 1.1rem 0 0.2rem; }
+    .scorecard { color: var(--ink); margin: 0.9rem 0 0.2rem; }
+    ul.decisions { list-style: none; padding: 0; margin: 0.2rem 0 0.6rem; }
+    .decision { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.1rem 0.75rem; align-items: baseline; padding: 0.7rem 0; border-bottom: 1px solid var(--rule); }
+    .decision .record-title { margin: 0; font-size: 1.02rem; }
+    .decision .meta { grid-column: 1 / -1; margin: 0; color: var(--quiet); font-size: 0.9rem; }
+    a.happened { color: var(--ink); font-weight: 650; min-height: 44px; display: inline-flex; align-items: center; }
+    .footer { margin-top: 1.5rem; }
+    @media (max-width: 390px) {
+      .decision { grid-template-columns: minmax(0, 1fr); }
+      a.happened { justify-self: start; }
+    }
+    </style>`;
+
+function renderFooter(total, filtered) {
+  if (!total) return `<p class="small footer"><a href="/account">Account</a></p>`;
+  const remove = filtered ? "" : ` · <a href="/decisions?confirm=delete-all">Delete all</a>`;
+  return `<p class="small footer"><a href="/decisions?export=text">Export</a> · <a href="/decisions?export=json">JSON</a>${remove} · <a href="/account">Account</a></p>`;
+}
+
+function renderDecisions(account, rows, _credit, habits, extra = {}) {
   const type = decisionTypeId(extra.type);
   const source = decisionSourceId(extra.source);
+  const now = extra.now;
   const linked = linkChains(rows);
   const byId = new Map(linked.map((row) => [row.id, row]));
   const shown = linked.filter((row) => (!type || decisionType(row) === type) && (!source || decisionSource(row) === source));
-  const cards = [...shown].reverse().map((row) => {
-    const look = row.lookback?.happened ? `<p>Look-back: ${esc(lookbackStatus(row, extra.now).text)}</p>` : "";
-    const chain = chainNote(row, byId);
-    const chained = Boolean(row.replacesId || row.replacedByIds?.length);
-    const id = encodeURIComponent(row.id);
-    const chainLink = chained ? ` <a class="button" href="/decisions?confirm=delete-chain&amp;id=${esc(id)}">Delete this chain</a>` : "";
-    const shared = extra.shares?.get(row.id) || "";
-    const sharing = shared
-      ? `<p><input readonly style="width:100%;box-sizing:border-box" value="${esc(shared)}" aria-label="Share link"></p>
-      <form method="post" action="/decisions"><input type="hidden" name="action" value="unshare"><input type="hidden" name="id" value="${esc(row.id)}"><p class="row"><button type="submit">Stop sharing</button></p></form>`
-      : "";
-    const shareLink = shared ? "" : `<a class="button" href="/decisions?confirm=share&amp;id=${esc(id)}">Share verdict</a> `;
-    const href = listHref({ id: row.id, type, source });
-    return `<article class="banner">
-      <a class="record-title" href="${esc(href)}">${esc(row.title || "Untitled")}</a>
-      <p class="small">${esc(decisionTypeLabel(decisionType(row)))}</p>
-      ${recordMeta(row)}
-      ${chain ? `<p>${esc(chain)}</p>` : ""}
-      ${look}
-      ${sharing}
-      <p class="row">${shareLink}<a class="button" href="/decisions?confirm=delete&amp;id=${esc(id)}">Delete this record</a>${chainLink}</p>
-    </article>`;
-  });
-  const keeping = account.records === "keep";
+  const query = { type, source };
+  const open = shown
+    .filter((row) => decisionGroup(row, now) === "open")
+    .sort((a, b) => String(a.review || "9999").localeCompare(String(b.review || "9999")));
+  const closed = shown
+    .filter((row) => decisionGroup(row, now) === "closed")
+    .sort((a, b) => String(b.lookback?.at || b.createdAt || b.date || "").localeCompare(String(a.lookback?.at || a.createdAt || a.date || "")));
   const narrowed = Boolean(type || source);
-  const records = cards.length
-    ? `${cards.join("\n")}
-    ${narrowed ? "" : `<p><a class="button" href="/decisions?confirm=delete-all">Delete all records</a></p>`}`
-    : narrowed
-      ? `<p>${esc(emptyInView(type, source))}</p>`
-      : EMPTY_DECISIONS;
+  const empty = shown.length ? "" : narrowed ? `<p>${esc(emptyInView(type, source))}</p>` : EMPTY_DECISIONS;
+  const how = shown.length < 3 && !(narrowed && !shown.length) ? `<p class="small">${LOOKBACK_HOW}</p>` : "";
+  const keeping = account.records === "keep";
   return page(
     "Your grills",
-    `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}
-    .chip { display: inline-block; min-height: 44px; padding: 10px 14px; margin: 0 6px 6px 0; border: 1px solid var(--rule); border-radius: 999px; text-decoration: none; color: var(--ink); background: transparent; box-sizing: border-box; }
-    .chip[aria-current="page"] { background: var(--ink); color: var(--paper); }
-    .filters { margin: 0.4rem 0 0; }</style>
+    `${LIST_STYLE}
     <h1>Your grills</h1>
-    <p>Saved decisions from Grill in chat.</p>
-    ${renderTakeaways(shown, { waiting: habits?.waiting || 0, now: extra.now, type, source })}
-    ${filterChips(linked, "type", type, { source })}
-    ${filterChips(linked, "source", source, { type })}
-    ${renderDue(shown, extra.now, { type, source })}
+    ${renderDueAction(shown, byId, now, query)}
+    ${renderScorecard(shown, type, source)}
+    ${filterRow(linked, type, source)}
+    ${renderNamedGroup("open", "Open", open, byId, now, query)}
+    ${renderNamedGroup("closed", "Closed", closed, byId, now, query)}
+    ${empty}
+    ${how}
+    ${renderNudge(shown, { waiting: habits?.waiting || 0, now, type, source })}
     ${renderChanges(shown)}
-    ${records}
-    <h2>Manage</h2>
-    <p>${credit?.out ? esc(OUT_OF_CREDIT) : esc(allowanceLine(credit?.remaining, extra.env))}</p>
-    <p>${esc(checksLine(extra.checks))}</p>
+    ${renderFooter(linked.length, narrowed)}
     <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them.</p>
     <form method="post" action="/decisions" class="row">
       <input type="hidden" name="action" value="records">
       <button type="submit" name="value" value="keep">Keep my decision records</button>
       <button type="submit" name="value" value="off">Don't keep records</button>
     </form>
-    <p class="row"><a class="button" href="/decisions?export=text">Export as text</a> <a class="button" href="/decisions?export=json">Export as JSON</a> <a href="/account">Account</a></p>
     ${renderCalendar("/decisions", extra.calendar, extra.freshUrl || "")}`,
   );
 }
@@ -3107,6 +3133,7 @@ export async function handleDecisions(request, deps) {
     if (request.method === "POST") {
       const form = new URLSearchParams(await request.text());
       const action = form.get("action") || "";
+      let next = `${publicOrigin(request)}/decisions`;
       if (action === "records") {
         const value = form.get("value");
         if (value === "keep" || value === "off") {
@@ -3122,14 +3149,18 @@ export async function handleDecisions(request, deps) {
         const rows = await loadRecords(session.account, deps);
         await deleteRecordIds(session.account, deps, rows.map((row) => row.id));
       } else if (action === "share" && form.get("confirm") === "share") {
-        await createShare(session.account, deps, form.get("id") || "");
+        const recordId = form.get("id") || "";
+        await createShare(session.account, deps, recordId);
+        if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
       } else if (action === "unshare") {
-        await revokeShare(session.account, deps, form.get("id") || "");
+        const recordId = form.get("id") || "";
+        await revokeShare(session.account, deps, recordId);
+        if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
       } else if (action === "calendar") {
         fresh = await calendarAction(session.account, deps, form.get("value") || "");
       }
       const cookies = fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), fresh))] : [];
-      return seeOther(`${publicOrigin(request)}/decisions`, cookies);
+      return seeOther(next, cookies);
     }
     if (request.method === "GET" && !url.searchParams.get("confirm") && url.searchParams.get("id")) {
       const recordId = url.searchParams.get("id") || "";

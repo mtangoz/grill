@@ -310,7 +310,7 @@ describe("invite codes", { concurrency: false }, () => {
     const decisions = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: cookie() } }), ctx);
     const html = await decisions.text();
     assert.match(html, /<h1>Your grills<\/h1>/);
-    assert.match(html, /Free for life: \$5 of use each month/);
+    assert.doesNotMatch(html, /Free for life: \$5 of use each month/);
     assert.equal(ctx.router.creates[0].limit, 5);
     assert.ok(ctx.router.patches.some((row) => row.limit_reset === "monthly"));
   });
