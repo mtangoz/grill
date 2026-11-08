@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-08 | Your grills can be filtered by decision type. The type is read from the stored words, with no extra question. |
 | 2026-11-08 | New grills from Cursor are stored as from Cursor. Older records stay unknown. The judge still excludes nobody for Cursor. |
 | 2026-11-08 | A grill title on Your grills opens that record: the verdict, the choice, the confidence, and the look-back. |
 | 2026-11-08 | The homepage header links to Your grills at /decisions, as plain text, the same way the inner pages do. The Connect Grill button stays the only button. |

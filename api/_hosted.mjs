@@ -95,6 +95,10 @@ import {
   runLockKey,
   chainIds,
   decisionHabits,
+  decisionType,
+  decisionTypeId,
+  decisionTypeLabel,
+  DECISION_TYPES,
   decryptString,
   encryptString,
   hostedEnabled,
@@ -2353,14 +2357,14 @@ export function renderChanges(rows) {
 }
 
 /** Records waiting for a look-back, oldest first. Titles are shown: this page is the person's own. */
-function renderDue(rows, now) {
+function renderDue(rows, now, type = "") {
   const due = dueForLookBack(rows, now);
   if (!due.length) return "";
   const items = due
     .map((row) => {
       const late = daysOverdue(row.review, now);
       const when = late === 0 ? "due today" : `${late} day${late === 1 ? "" : "s"} overdue`;
-      const href = `/decisions?id=${encodeURIComponent(row.id)}`;
+      const href = type ? `/decisions?id=${encodeURIComponent(row.id)}&type=${type}` : `/decisions?id=${encodeURIComponent(row.id)}`;
       return `<li><a href="${esc(href)}">${esc(row.title || "Untitled")}</a> · review ${esc(showDay(row.review))} · ${esc(when)}</li>`;
     })
     .join("");
@@ -2441,10 +2445,11 @@ function renderDecision(row, byId, extra = {}) {
   return page(
     `${row.title || "Untitled"} · Grill`,
     `${NARROW}
-    <p><a href="/decisions">Your grills</a></p>
+    <p><a href="${esc(extra.back || "/decisions")}">Your grills</a></p>
     <h1 class="record-title">${esc(row.title || "Untitled")}</h1>
     ${meta ? `<p class="record-meta">${esc(meta)}</p>` : ""}
     ${chain ? `<p>${esc(chain)}</p>` : ""}
+    <p>Type: ${esc(decisionTypeLabel(decisionType(row)))}</p>
     <p>Verdict: ${verdict ? `<strong>${esc(verdict)}</strong>` : "Not stored."}</p>
     <p>Choice: ${choice ? esc(choice) : "Not logged."}</p>
     <p>Confidence: ${confidence ? esc(confidence) : "Not said."}</p>
@@ -2454,10 +2459,24 @@ function renderDecision(row, byId, extra = {}) {
   );
 }
 
+function typeChips(rows, selected) {
+  if (!rows.length) return "";
+  const present = new Set(rows.map((row) => decisionType(row)));
+  const types = DECISION_TYPES.filter((item) => present.has(item.id) || item.id === selected);
+  const all = `<a class="chip" href="/decisions"${selected ? "" : ' aria-current="page"'}>All</a>`;
+  const chips = types.map((item) => {
+    const current = item.id === selected ? ' aria-current="page"' : "";
+    return `<a class="chip" href="/decisions?type=${item.id}"${current}>${esc(item.label)}</a>`;
+  });
+  return `<p class="filters"><span class="small">Type</span> ${all} ${chips.join(" ")}</p>`;
+}
+
 function renderDecisions(account, rows, credit, habits, extra = {}) {
+  const type = decisionTypeId(extra.type);
   const linked = linkChains(rows);
   const byId = new Map(linked.map((row) => [row.id, row]));
-  const cards = [...linked].reverse().map((row) => {
+  const shown = type ? linked.filter((row) => decisionType(row) === type) : linked;
+  const cards = [...shown].reverse().map((row) => {
     const look = row.lookback?.happened ? `<p>Look-back: ${esc(lookbackStatus(row, extra.now).text)}</p>` : "";
     const chain = chainNote(row, byId);
     const chained = Boolean(row.replacesId || row.replacedByIds?.length);
@@ -2469,9 +2488,10 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
       <form method="post" action="/decisions"><input type="hidden" name="action" value="unshare"><input type="hidden" name="id" value="${esc(row.id)}"><p class="row"><button type="submit">Stop sharing</button></p></form>`
       : "";
     const shareLink = shared ? "" : `<a class="button" href="/decisions?confirm=share&amp;id=${esc(id)}">Share verdict</a> `;
-    const href = `/decisions?id=${encodeURIComponent(row.id)}`;
+    const href = type ? `/decisions?id=${encodeURIComponent(row.id)}&type=${type}` : `/decisions?id=${encodeURIComponent(row.id)}`;
     return `<article class="banner">
       <a class="record-title" href="${esc(href)}">${esc(row.title || "Untitled")}</a>
+      <p class="small">${esc(decisionTypeLabel(decisionType(row)))}</p>
       ${recordMeta(row)}
       ${chain ? `<p>${esc(chain)}</p>` : ""}
       ${look}
@@ -2480,18 +2500,25 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
     </article>`;
   });
   const keeping = account.records === "keep";
+  const label = decisionTypeLabel(type);
   const records = cards.length
     ? `${cards.join("\n")}
-    <p><a class="button" href="/decisions?confirm=delete-all">Delete all records</a></p>`
-    : EMPTY_DECISIONS;
+    ${type ? "" : `<p><a class="button" href="/decisions?confirm=delete-all">Delete all records</a></p>`}`
+    : type
+      ? `<p>No ${esc(label.toLowerCase())} decisions yet.</p>`
+      : EMPTY_DECISIONS;
   return page(
     "Your grills",
-    `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
+    `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}
+    .chip { display: inline-block; min-height: 44px; padding: 10px 14px; margin: 0 6px 6px 0; border: 1px solid var(--rule); border-radius: 999px; text-decoration: none; color: var(--ink); background: transparent; box-sizing: border-box; }
+    .chip[aria-current="page"] { background: var(--ink); color: var(--paper); }
+    .filters { margin: 0.4rem 0 0; }</style>
     <h1>Your grills</h1>
     <p>Saved decisions from Grill in chat.</p>
-    ${renderDue(rows, extra.now)}
-    ${renderHabits(habits)}
-    ${renderChanges(rows)}
+    ${typeChips(linked, type)}
+    ${renderDue(shown, extra.now, type)}
+    ${renderHabits(type ? decisionHabits({ records: shown, waiting: 0, now: extra.now }) : habits)}
+    ${renderChanges(shown)}
     ${records}
     <h2>Manage</h2>
     <p>${credit?.out ? esc(OUT_OF_CREDIT) : esc(allowanceLine(credit?.remaining, extra.env))}</p>
@@ -3079,7 +3106,9 @@ export async function handleDecisions(request, deps) {
       const token = await readShareToken(session.account, deps, row.id);
       const now = typeof deps.now === "number" ? deps.now : Date.now();
       const shared = token ? shareUrl(origin, token) : "";
-      return htmlPage(renderDecision(row, byId, { now, shareUrl: shared }));
+      const type = decisionTypeId(url.searchParams.get("type"));
+      const back = type ? `/decisions?type=${type}` : "/decisions";
+      return htmlPage(renderDecision(row, byId, { now, shareUrl: shared, back }));
     }
     const flashed = readFlashLink(request);
     const rows = await loadRecords(session.account, deps);
@@ -3095,7 +3124,8 @@ export async function handleDecisions(request, deps) {
       const token = await readShareToken(session.account, deps, row.id);
       if (token) shares.set(row.id, shareUrl(origin, token));
     }
-    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed, env: deps.env, shares, checks }), { clearFlash: Boolean(flashed) });
+    const type = decisionTypeId(url.searchParams.get("type"));
+    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed, env: deps.env, shares, checks, type }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
