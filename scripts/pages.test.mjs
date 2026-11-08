@@ -580,6 +580,44 @@ describe("the decisions page layout", () => {
     }
   });
 
+  it("offers a look-back after the verdict for a dated ship, and not for a hire with no date", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      const sunday = Date.parse("2026-11-08T15:00:00Z");
+      const token = signJwt({
+        iss: "https://clerk.example.test",
+        sub: "user_invitee",
+        aud: RESOURCE,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        redirect_uri: CLAUDE_WEB_REDIRECT,
+      });
+      const send = async (id, name, args) => {
+        const res = await handleMcp(
+          new Request(RESOURCE, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+            body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }),
+          }),
+          { ...ctx, judgeOpenRouterUrl: fake.env.JUDGE_OPENROUTER_URL, judgeDecisionsUrl: fake.env.JUDGE_DECISIONS_URL, now: sunday },
+        );
+        return res.json();
+      };
+      const ship = await send(1, "grill", { subject: "Decision: Ship the beta Friday\nI'm 60% sure.", keep_records: true, quality_check: false });
+      const shipText = ship.result?.content?.[0]?.text || "";
+      assert.equal(ship.result.isError, false, shipText);
+      assert.match(shipText, /Look back on 13 Nov\. One tap when it is due\./);
+      assert.ok(shipText.indexOf("**") < shipText.indexOf("Look back on 13 Nov"), shipText);
+      const hire = await send(2, "grill", { subject: "Decision: Hire a contractor\nI'm 60% sure.", keep_records: true, quality_check: false });
+      const hireText = hire.result?.content?.[0]?.text || "";
+      assert.equal(hire.result.isError, false, hireText);
+      assert.doesNotMatch(hireText, /Look back on/);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("closes a due look-back in one tap, and does not replace it", async () => {
     const fake = await startFakeOpenRouter();
     try {

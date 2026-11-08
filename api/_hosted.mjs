@@ -121,6 +121,7 @@ import {
   judgeFailureText,
   keyFromEnv,
   linkChains,
+  lookbackOffer,
   lookbackStatus,
   mcpResource,
   negotiateProtocol,
@@ -1394,12 +1395,18 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
   }
   const now = typeof deps.now === "number" ? new Date(deps.now) : new Date();
   const layers = renderLayers(parsed || {}, { subject, big: big === true, deepenTest: deepenTestEnabled(deps.env) });
+  const offer = lookbackOffer(subject, {
+    thin: isThinGrill(parsed, subject),
+    burst: (await dailyChecksUsed(account, deps)) >= 2,
+    now,
+  });
   layers.provenance = provenanceLine(parsed, now);
   if (depthJob) {
     const depthOutcome = await depthJob.promise;
     if (big === true && deepenTestEnabled(deps.env)) layers.deepen = renderDeepen(depthOutcome?.parsed?.depth) || "";
   }
   const keep = account.records === "keep";
+  if (keep && offer) layers.brief = `${layers.brief.trim()}\n\n${offer}`;
   if (keep) {
     await writePending(
       account,

@@ -1,6 +1,9 @@
 // How one saved grill reads on Your grills. No network. Made-up records only.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { addDays, isoDate, REVIEW_DAYS, reviewDateFor } from "./reflection.mjs";
 import {
   calendarFeed,
@@ -12,6 +15,8 @@ import {
   decisionTypeId,
   dueForLookBack,
   hasLookback,
+  HOSTED_INSTRUCTIONS,
+  lookbackOffer,
   lookbackStatus,
   outcomeLine,
   recordsForLookBack,
@@ -244,5 +249,34 @@ describe("a look-back date follows the decision when it names one", () => {
     assert.equal(reviewDateFor("Switch payroll before 15 Nov", sun), "2026-11-15");
     assert.equal(reviewDateFor("The mover comes on November 20", sun), "2026-11-20");
     assert.equal(reviewDateFor("We shipped on 2026-11-01", sun), "2026-11-22");
+  });
+});
+
+describe("the look-back offer stays after the verdict, and only for a call worth one", () => {
+  const sun = new Date("2026-11-08T15:00:00Z");
+
+  it("offers a ship, a price, a near forecast, a slate, and a hire with a date", () => {
+    assert.equal(lookbackOffer("Ship the beta Friday", { now: sun }), "Look back on 13 Nov. One tap when it is due.");
+    assert.equal(lookbackOffer("Price the workshop at $180", { now: sun }), "Look back on 22 Nov. One tap when it is due.");
+    assert.equal(lookbackOffer("Forecast seats sold by Friday", { now: sun }), "Look back on 13 Nov. One tap when it is due.");
+    assert.equal(lookbackOffer("Captain Ja'Marr this Sunday", { now: sun }), "Look back on 9 Nov. One tap when it is due.");
+    assert.equal(lookbackOffer("Switch payroll before 15 Nov", { now: sun }), "Look back on 15 Nov. One tap when it is due.");
+  });
+
+  it("stays quiet for a hire with no date, a life choice, a check, a quick take, and a burst", () => {
+    assert.equal(lookbackOffer("Hire a contractor", { now: sun }), "");
+    assert.equal(lookbackOffer("Renew the apartment lease", { now: sun }), "");
+    assert.equal(lookbackOffer("Forecast 400 signups in March", { now: sun }), "");
+    assert.equal(lookbackOffer("Is this migration SQL safe", { now: sun }), "");
+    assert.equal(lookbackOffer("Ship the beta Friday", { now: sun, thin: true }), "");
+    assert.equal(lookbackOffer("Ship the beta Friday", { now: sun, burst: true }), "");
+  });
+
+  it("tells the assistant to show the line, and does not put it in the judge prompt", () => {
+    assert.match(HOSTED_INSTRUCTIONS, /When the note has a line that starts with Look back on/);
+    assert.match(HOSTED_INSTRUCTIONS, /It is optional/);
+    const judge = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../prompts/grill.md"), "utf8");
+    assert.doesNotMatch(judge, /Look back on/);
+    assert.doesNotMatch(judge, /One tap when it is due/);
   });
 });

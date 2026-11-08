@@ -3,7 +3,7 @@
  * The installed local tool does not import this file.
  */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
-import { confidenceValue, parseOutcomes, parseRecords, plainVerdict } from "./reflection.mjs";
+import { addDays, confidenceValue, isoDate, parseOutcomes, parseRecords, plainVerdict, REVIEW_DAYS, reviewDateFor } from "./reflection.mjs";
 import { SCOPE_GUARD, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
 import { buildGrillTools } from "../server/index.mjs";
 
@@ -571,6 +571,30 @@ export function grillsLeft(remainingUsd) {
   return Math.floor(Number(remainingUsd) / TYPICAL_GRILL_USD);
 }
 
+/**
+ * One optional line after the verdict, only for a call worth looking back on.
+ * A quick take, a burst, a check, and a one-off life choice get nothing.
+ */
+export function lookbackOffer(text, { thin = false, burst = false, now = new Date() } = {}) {
+  if (thin || burst) return "";
+  const source = String(text || "");
+  if (/\b(is this|review this|rewrite this|what is the|who has the higher)\b/i.test(source)) return "";
+  const anchor = now instanceof Date ? now : new Date(now);
+  const today = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate()));
+  const named = reviewDateFor(source, anchor);
+  const fallback = isoDate(addDays(today, REVIEW_DAYS));
+  const ship = /\b(ship|shipping|launch|deploy|beta)\b/i.test(source);
+  const money = /\b(price|prices|pricing|spend|budget|invoice)\b/i.test(source) || /\$\d/.test(source);
+  const forecast = /\bforecast\b|\bpredict\b/i.test(source);
+  const weekly = /\b(captain|gameweek|game week|waiver|slate|start\/sit)\b/i.test(source);
+  const hire = /\b(hire|hiring|vendor|contractor|payroll)\b/i.test(source);
+  const life = /\b(apartment|lease|wedding|sabbatical|doctor|medical)\b/i.test(source);
+  const encouraged = ship || money || weekly || ((forecast || hire) && named !== fallback);
+  if (!encouraged || (life && !ship && !money && !weekly)) return "";
+  const day = formatDay(named);
+  return day ? `Look back on ${day}. One tap when it is due.` : "";
+}
+
 export function formatDay(iso) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
   if (!match) return "";
@@ -1059,6 +1083,7 @@ export const HOSTED_INSTRUCTIONS = [
   "If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the note arrives. Do not ask the person to check, and do not ask them for a job id.",
   "If three grills are still running, wait about 2 minutes and call grill again yourself. Do not ask the person for a job id.",
   "Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question, a fact list, a confidence question, or a line of your own. It already ends with the next-step line.",
+  "When the note has a line that starts with Look back on, show that one line after the verdict. It is optional. Do not add one when it is not there. Never on a quick or bulk grill.",
   "When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Pass job_id if you have one. A follow: line is a job id for you. Never show it. Do not write a layer yourself.",
   "Do not add a model name of your own, and do not show a record, a Jev score, a credit balance, a quote check, format rules, or a disclaimer.",
   "Call grill_result with detail provenance only when you are writing a lasting record of the grill, such as an audit log. Put that one line in the record, not in your reply, unless the person asks which model judged.",
