@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FUNNEL_KEYS as HOSTED_FUNNEL_KEYS } from "./hostedCore.mjs";
-import { FOUNDING_COUNT_KEY, FREE_TO_PAID_KEY, FUNNEL_KEYS, PAID_INTENT_KEYS, WAITLIST_SIGNUPS_KEY, readWeeklyMetrics, weeklyMetricLines } from "./weeklyMetricsCore.mjs";
+import { IMPACT_LOOKBACKS_KEY, IMPACT_UNSUB_KEY } from "./impactDigest.mjs";
+import { FOUNDING_COUNT_KEY, FREE_TO_PAID_KEY, FUNNEL_KEYS, IMPACT_EMAIL_KEYS, PAID_INTENT_KEYS, WAITLIST_SIGNUPS_KEY, readWeeklyMetrics, weeklyMetricLines } from "./weeklyMetricsCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV = {
@@ -37,6 +38,8 @@ describe("weekly metrics", () => {
         [FUNNEL_KEYS.choices]: "6",
         [FUNNEL_KEYS.lookbacksSet]: "5",
         [FUNNEL_KEYS.lookbacksDone]: "2",
+        [IMPACT_EMAIL_KEYS.lookbacks]: "4",
+        [IMPACT_EMAIL_KEYS.unsubscribes]: "1",
       }),
     );
     assert.equal(report.label, "Weekly metrics");
@@ -51,7 +54,9 @@ describe("weekly metrics", () => {
     ]);
     assert.equal(lines[4], "waitlist: 3");
     assert.equal(lines[5], "founding members: 7/100");
-    assert.deepEqual(lines.slice(6, 10), ["grills: 11", "choices logged: 6", "look-backs set: 5", "look-backs done: 2"]);
+    assert.deepEqual(lines.slice(6, 12), ["grills: 11", "choices logged: 6", "look-backs set: 5", "look-backs done: 2", "email look-backs: 4", "email unsubscribes: 1"]);
+    assert.equal(IMPACT_EMAIL_KEYS.lookbacks, IMPACT_LOOKBACKS_KEY);
+    assert.equal(IMPACT_EMAIL_KEYS.unsubscribes, IMPACT_UNSUB_KEY);
     assert.equal(JSON.parse(lines.at(-1)).lookbacksDone, 2);
     assert.doesNotMatch(lines.at(-1), /decision|title|verdict/);
     assert.deepEqual(HOSTED_FUNNEL_KEYS, FUNNEL_KEYS);

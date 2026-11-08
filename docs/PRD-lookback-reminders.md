@@ -1,6 +1,6 @@
 # PRD: Look-back reminders for saved decisions
 
-Status: approved by the owner for their own use, 2026-10-16. Builds on Grill in your chat ([HOSTED.md](HOSTED.md)). That route was invite-only when this was written. Open sign-up has been on since 2026-11-03.
+Status: approved by the owner for their own use, 2026-10-16. Builds on Grill in your chat ([HOSTED.md](HOSTED.md)). That route was invite-only when this was written. Open sign-up has been on since 2026-11-03. The "no email" line below is the calendar decision. A later owner decision, 2026-11-08, adds a four-week Monday impact email for signed-in accounts. It is on unless they turn it off. The calendar feed and the in-chat line stay.
 
 ## 0. Why, in one line
 

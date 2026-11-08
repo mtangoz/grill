@@ -1495,7 +1495,7 @@ function reportKindLabel(kind) {
 }
 
 function reportsIntro(account, stripe) {
-  const facts = `<p>Grill does not email you a verdict or a weekly note. A grill stays in the assistant you ran it in. The weekly review stays in your chat, or in an email your own mail connector sends if you ask it to. This page is where a copy would be, if you choose to keep one.</p>
+  const facts = `<p>Grill does not email you a verdict. A grill stays in the assistant you ran it in. A Monday note for a signed-in Grill account is separate from this page, and it does not include the verdict. This page is where a copy would be, if you choose to keep one.</p>
 <p>Saving is off until you turn it on. A saved copy is the text of the report, kept with this account, and only while you are signed in as ${esc(account.email)}. You can delete any copy, or all of them. Turning saving off stops new copies. It does not delete the ones already here. Report text is never written onto a Stripe customer.</p>`;
   if (stripe) {
     return `${facts}<p class="banner">This account is stored on your Stripe customer. Report text does not fit there, so saving stays off until the account store is set.</p>`;
