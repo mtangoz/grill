@@ -467,6 +467,40 @@ describe("the decisions page layout", () => {
     }
   });
 
+  it("filters the list by a type taken from the stored words", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Hire a contractor", JAN);
+      await decide(ctx, fake, "Price the workshop at $180", JAN);
+      const all = await getPage(ctx, "/decisions", { now: FEB });
+      assert.match(all.html, /aria-current="page">All</);
+      assert.match(all.html, /href="\/decisions\?type=work">Work</);
+      assert.match(all.html, /href="\/decisions\?type=money">Money</);
+      assert.equal(all.html.includes("Fantasy sports"), false);
+      assert.match(all.html, /\.chip \{[^}]*min-height:\s*44px/);
+      assert.equal(all.html.includes("<script"), false);
+      const money = await getPage(ctx, "/decisions?type=money", { now: FEB });
+      assert.match(money.html, /Price the workshop at \$180/);
+      assert.equal(money.html.includes("Hire a contractor"), false);
+      assert.match(money.html, /aria-current="page">Money</);
+      assert.equal(money.html.includes("Delete all records"), false);
+      const work = await getPage(ctx, "/decisions?type=work", { now: FEB });
+      assert.match(work.html, /Hire a contractor/);
+      assert.equal(work.html.includes("Price the workshop"), false);
+      const junk = await getPage(ctx, "/decisions?type=%3Cscript%3E", { now: FEB });
+      assert.match(junk.html, /Hire a contractor/);
+      assert.match(junk.html, /Price the workshop at \$180/);
+      assert.equal(junk.html.includes("<script"), false);
+      const none = await getPage(ctx, "/decisions?type=personal", { now: FEB });
+      assert.match(none.html, /No personal decisions yet\./);
+      assert.match(none.html, /href="\/decisions\?type=work">Work</);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("does not show a record to someone who is signed out", async () => {
     resetHostedCaches();
     const ctx = world();

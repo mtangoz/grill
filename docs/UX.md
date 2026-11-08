@@ -8,7 +8,7 @@ The pages run no JavaScript. A disclosure is a `<details>` element. A confirm is
 
 ## What needs you now
 
-On `/decisions` the due list is the first section under the title, before credit, the records switch and the export links.
+On `/decisions` the type chips sit under the title. The due list is the next section, before credit, the records switch and the export links. A chip keeps only the decisions of that type. The type is worked out from the words already stored. The title is read first.
 
 Enforced by: [api/_hosted.mjs](../api/_hosted.mjs) (`renderDue`), test "puts what needs you now above credit, the records switch and export" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
 

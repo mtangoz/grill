@@ -640,6 +640,54 @@ export function lookbackStatus(row, now = Date.now()) {
   return { state: "none", text: "No look-back date." };
 }
 
+/** Categories a person can filter. Order is the keyword order: first match wins. */
+export const DECISION_TYPES = Object.freeze([
+  { id: "fantasy", label: "Fantasy sports" },
+  { id: "product", label: "Product/code" },
+  { id: "money", label: "Money" },
+  { id: "work", label: "Work" },
+  { id: "personal", label: "Personal" },
+  { id: "other", label: "Other" },
+]);
+
+const DECISION_TYPE_RULES = Object.freeze([
+  ["fantasy", [/\bfantasy\b/i, /\bwaiver wire\b/i, /\bsleeper\b/i, /\bdynasty league\b/i, /\bredraft\b/i, /\bppr\b/i, /\bstart\/sit\b/i]],
+  ["product", [/\b(ship|shipping|launch|feature|bug|api|deploy|repo|roadmap|beta|refactor|codebase|github)\b/i, /\bpull request\b/i, /\bproduct\b/i, /\bcode\b/i]],
+  ["money", [/\$\d/, /\b(budget|salary|invoice|mortgage|rent|invest|investment|revenue|fundraising|fundraise|equity|pricing|price|profit|wage|tuition|debt|loan|runway)\b/i, /\bseed round\b/i]],
+  ["work", [/\b(hire|hiring|contractor|employee|manager|promotion|resign|resignation|layoff|career|coworker|boss|office)\b/i, /\bjob\b/i]],
+  ["personal", [/\b(family|health|doctor|wedding|relationship|vacation|apartment|marriage|therapy)\b/i, /\b(kid|kids|child|children|friend)\b/i]],
+]);
+
+function textType(text) {
+  const value = String(text || "");
+  for (const [id, patterns] of DECISION_TYPE_RULES) {
+    if (patterns.some((pattern) => pattern.test(value))) return id;
+  }
+  return "other";
+}
+
+/**
+ * A category for one saved record, from the words already stored.
+ * The title wins. The rest of the record is used only when the title matches nothing.
+ * No model call, and nothing is stored.
+ */
+export function decisionType(row) {
+  const parsed = parseRecords(row?.block || "")[0] || {};
+  const fromTitle = textType(`${row?.title || ""}\n${parsed.title || ""}`);
+  if (fromTitle !== "other") return fromTitle;
+  return textType([row?.decided, parsed.decided, parsed.prediction, parsed.goal, parsed.guardrails, row?.block].join("\n"));
+}
+
+export function decisionTypeLabel(id) {
+  return DECISION_TYPES.find((item) => item.id === id)?.label || "Other";
+}
+
+/** A type query, or "" when it is not one of the categories. */
+export function decisionTypeId(value) {
+  const id = String(value || "").trim().toLowerCase();
+  return DECISION_TYPES.some((item) => item.id === id) ? id : "";
+}
+
 export function encryptString(plain, key) {
   if (!Buffer.isBuffer(key) || key.length !== 32) throw new Error("key");
   const iv = randomBytes(12);
