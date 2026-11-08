@@ -1,7 +1,7 @@
 // How one saved grill reads on Your grills. No network. Made-up records only.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { decisionTakeaways, decisionType, decisionTypeId, lookbackStatus } from "./hostedCore.mjs";
+import { decisionSource, decisionSourceId, decisionTakeaways, decisionType, decisionTypeId, lookbackStatus } from "./hostedCore.mjs";
 
 const FEB = Date.parse("2026-02-01T15:00:00Z");
 
@@ -52,6 +52,21 @@ describe("decision type", () => {
     assert.equal(decisionTypeId("Work"), "work");
     assert.equal(decisionTypeId("<script>"), "");
     assert.equal(decisionTypeId("sports"), "");
+  });
+});
+
+describe("decision source", () => {
+  it("groups the stored client, and leaves a missing one unknown", () => {
+    assert.equal(decisionSource({ sourceApp: "claude" }), "claude");
+    assert.equal(decisionSource({ sourceApp: "claude-code" }), "claude");
+    assert.equal(decisionSource({ sourceApp: "chatgpt" }), "chatgpt");
+    assert.equal(decisionSource({ sourceApp: "cursor" }), "cursor");
+    assert.equal(decisionSource({ sourceApp: "grok" }), "grok");
+    assert.equal(decisionSource({ sourceApp: "gemini" }), "other");
+    assert.equal(decisionSource({ sourceApp: "unknown" }), "unknown");
+    assert.equal(decisionSource({}), "unknown");
+    assert.equal(decisionSourceId("Grok"), "grok");
+    assert.equal(decisionSourceId("<script>"), "");
   });
 });
 

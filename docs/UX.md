@@ -8,7 +8,7 @@ The pages run no JavaScript. A disclosure is a `<details>` element. A confirm is
 
 ## What needs you now
 
-On `/decisions` a short takeaways block sits under the title: how many decisions, how many were looked back, and how often the verdict matched what happened. One or two nudges follow. Type chips come next. The due list is the next section, before credit, the records switch and the export links. A chip keeps the takeaways, the due list and the records on that type. The type is worked out from the words already stored. The title is read first.
+On `/decisions` a short takeaways block sits under the title: how many decisions, how many were looked back, and how often the verdict matched what happened. One or two nudges follow. Type chips come next. The due list is the next section, before credit, the records switch and the export links. A chip keeps the takeaways, the due list and the records on that type. A second row filters by the client the grill came from: Claude, ChatGPT, Cursor, Grok Bot, other, or unknown. The two filters combine. The type is worked out from the words already stored. The title is read first. The client is the one already stored on the record.
 
 Enforced by: [api/_hosted.mjs](../api/_hosted.mjs) (`renderDue`), test "puts what needs you now above credit, the records switch and export" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
 
