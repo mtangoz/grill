@@ -428,3 +428,13 @@ describe("grill impact", () => {
     assert.doesNotMatch(HOSTED_INSTRUCTIONS, /Did this grill change your call/);
   });
 });
+
+describe("the Your grills list row", () => {
+  it("shows the whole title, never cut short", async () => {
+    const { renderDecisionsForTest } = await import("../api/_hosted.mjs");
+    const title = "Switch onboarding to a single-question flow before the verdict is shown to new users on mobile, and keep the old flow for desktop for two weeks";
+    const html = renderDecisionsForTest({ records: "keep" }, [{ id: "a1", title, block: `version: 1\ndate: 2026-10-01\ntitle: ${title}\nverdict: solid\nreview: 2026-12-01` }], { now: Date.parse("2026-11-08T12:00:00Z") });
+    assert.ok(html.includes(`>${title}</a>`), "full title in the list");
+    assert.equal(html.includes("…</a>"), false);
+  });
+});
