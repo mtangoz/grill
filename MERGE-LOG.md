@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-08 | A grill title on Your grills opens that record: the verdict, the choice, the confidence, and the look-back. |
 | 2026-11-08 | The homepage header links to Your grills at /decisions, as plain text, the same way the inner pages do. The Connect Grill button stays the only button. |
 | 2026-11-07 | Tony approved on 2026-11-07: npm test and CI no longer use --test-force-exit, so the passing total stays stable. Supersedes #145. |
 | 2026-11-07 | Tony approved on 2026-11-07: only a completed grill counts as a check. Retries, errors and follow-ups do not. A per-account monthly counter is what support and usage read. The dollar spend caps stay the safety limit. |

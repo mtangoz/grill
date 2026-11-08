@@ -2341,7 +2341,7 @@ describe("look-back reminders", { concurrency: false }, () => {
       // The due list names only what waits for a look-back.
       let html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
       assert.match(html, /Due for a look-back/);
-      assert.match(html, /Hire contractor · review 15 Jan · 17 days overdue/);
+      assert.match(html, /<a href="\/decisions\?id=[^"]+">Hire contractor<\/a> · review 15 Jan · 17 days overdue/);
       assert.equal(html.includes("2026-01-15"), false);
       assert.doesNotMatch(html, /<li>Move office/);
       assert.match(html, /Get a calendar link/);
@@ -2473,7 +2473,7 @@ describe("look-back reminders", { concurrency: false }, () => {
       const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
       await decide(ctx, fake, token, "iPhone launch", JAN);
       const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
-      assert.match(html, /<p class="record-title">iPhone launch<\/p>/);
+      assert.match(html, /<a class="record-title" href="\/decisions\?id=[^"]+">iPhone launch<\/a>/);
       assert.equal(html.includes("<h2>iPhone launch</h2>"), false);
       assert.match(html, /\.record-title \{[^}]*text-transform:\s*none/);
       assert.match(html, /\.record-title \{[^}]*color:\s*var\(--ink\)/);
