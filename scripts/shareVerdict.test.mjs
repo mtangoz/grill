@@ -136,6 +136,10 @@ function tokenFrom(html) {
   return html.match(/https:\/\/grillyour\.ai\/share\/([A-Za-z0-9_-]{43})/)?.[1] || "";
 }
 
+async function recordPage(ctx, id) {
+  return getDecisions(ctx, `/decisions?id=${encodeURIComponent(id)}`);
+}
+
 async function getDecisions(ctx, path = "/decisions", { cookieHeader = cookie() } = {}) {
   const res = await handleDecisions(new Request(`https://grillyour.ai${path}`, { headers: cookieHeader ? { cookie: cookieHeader } : {} }), ctx);
   return { res, html: await res.text() };
@@ -217,8 +221,10 @@ describe("share this verdict", { concurrency: false }, () => {
   it("keeps every record private until the owner shares it", async () => {
     const ctx = world();
     const planted = await plant(ctx);
-    const { html } = await getDecisions(ctx);
-    assert.match(html, /Saturday kiln workshop price/);
+    const list = await getDecisions(ctx);
+    assert.match(list.html, /Saturday kiln workshop price/);
+    assert.equal(list.html.includes("Share verdict"), false, "share lives on the record, not the list");
+    const { html } = await recordPage(ctx, planted.id);
     assert.match(html, /href="\/decisions\?confirm=share&amp;id=workshop01">Share verdict/);
     assert.equal(html.includes("/share/"), false);
     assert.equal(ctx.shareSets.length, 0);
@@ -252,9 +258,9 @@ describe("share this verdict", { concurrency: false }, () => {
 
     const posted = await postDecisions(ctx, `action=share&id=${encodeURIComponent(planted.id)}&confirm=share`);
     assert.equal(posted.status, 303);
-    assert.equal(posted.headers.get("location"), "https://grillyour.ai/decisions");
+    assert.equal(posted.headers.get("location"), `https://grillyour.ai/decisions?id=${planted.id}`);
     assert.equal(await posted.text(), "");
-    const shown = await getDecisions(ctx);
+    const shown = await recordPage(ctx, planted.id);
     const token = tokenFrom(shown.html);
     assert.match(token, /^[A-Za-z0-9_-]{43}$/);
     assert.equal(token.includes(planted.id), false);
@@ -274,7 +280,7 @@ describe("share this verdict", { concurrency: false }, () => {
     const ctx = world();
     const planted = await plant(ctx);
     await postDecisions(ctx, `action=share&id=${planted.id}&confirm=share`);
-    const token = tokenFrom((await getDecisions(ctx)).html);
+    const token = tokenFrom((await recordPage(ctx, planted.id)).html);
     const pub = await publicPage(ctx, token);
     assert.equal(pub.res.status, 200);
     assert.equal(pub.res.headers.get("content-type"), "text/html; charset=utf-8");
@@ -306,7 +312,7 @@ describe("share this verdict", { concurrency: false }, () => {
     assert.match(ask.html, /unsold seats/);
     assert.equal(ask.html.includes("clay invoice"), false);
     await postDecisions(ctx, `action=share&id=${planted.id}&confirm=share`);
-    const token = tokenFrom((await getDecisions(ctx)).html);
+    const token = tokenFrom((await recordPage(ctx, planted.id)).html);
     const raw = ctx.memory.command(["GET", `grill:hosted:share:${token}`]);
     assert.equal(JSON.parse(raw).challenge, falsifier);
     assert.equal(raw.includes("clay invoice"), false);
@@ -319,7 +325,7 @@ describe("share this verdict", { concurrency: false }, () => {
     const ctx = world();
     const planted = await plant(ctx);
     await postDecisions(ctx, `action=share&id=${planted.id}&confirm=share`);
-    const token = tokenFrom((await getDecisions(ctx)).html);
+    const token = tokenFrom((await recordPage(ctx, planted.id)).html);
     assert.equal(token.length, 43);
     const key = `grill:hosted:share:${token}`;
     assert.deepEqual(ctx.shareSets, [key]);
@@ -352,13 +358,13 @@ describe("share this verdict", { concurrency: false }, () => {
 
     const again = await postDecisions(ctx, `action=share&id=${planted.id}&confirm=share`);
     assert.equal(again.status, 303);
-    assert.equal(tokenFrom((await getDecisions(ctx)).html), token, "sharing again keeps the original snapshot");
+    assert.equal(tokenFrom((await recordPage(ctx, planted.id)).html), token, "sharing again keeps the original snapshot");
     assert.equal(ctx.memory.command(["GET", key]), raw);
 
     await postDecisions(ctx, `action=unshare&id=${planted.id}`);
     assert.equal((await publicPage(ctx, token)).res.status, 404);
     await postDecisions(ctx, `action=share&id=${planted.id}&confirm=share`);
-    const next = tokenFrom((await getDecisions(ctx)).html);
+    const next = tokenFrom((await recordPage(ctx, planted.id)).html);
     assert.notEqual(next, token);
     assert.equal(JSON.parse(ctx.memory.command(["GET", `grill:hosted:share:${next}`])).verdict, revisedVerdict);
     assert.match((await publicPage(ctx, next)).html, /weekday class/);
@@ -372,7 +378,7 @@ describe("share this verdict", { concurrency: false }, () => {
     assert.equal((await publicPage(ctx, "not-a-token")).res.status, 404);
     assert.equal((await publicPage(ctx, `${"c".repeat(43)}extra`)).res.status, 404);
     await postDecisions(ctx, `action=share&id=${planted.id}&confirm=share`);
-    const token = tokenFrom((await getDecisions(ctx)).html);
+    const token = tokenFrom((await recordPage(ctx, planted.id)).html);
     assert.equal((await publicPage(ctx, token)).res.status, 200);
     const stopped = await postDecisions(ctx, `action=unshare&id=${planted.id}`);
     assert.equal(stopped.status, 303);
@@ -384,10 +390,12 @@ describe("share this verdict", { concurrency: false }, () => {
     assert.equal(gone.html.includes("Shaky"), false);
     const list = await getDecisions(ctx);
     assert.equal(list.html.includes(token), false);
-    assert.match(list.html, /Share verdict/);
+    assert.equal(list.html.includes("Share verdict"), false);
+    const restored = await recordPage(ctx, planted.id);
+    assert.match(restored.html, /Share verdict/);
 
     await postDecisions(ctx, `action=share&id=${planted.id}&confirm=share`);
-    const live = tokenFrom((await getDecisions(ctx)).html);
+    const live = tokenFrom((await recordPage(ctx, planted.id)).html);
     assert.equal((await publicPage(ctx, live)).res.status, 200);
     const deleted = await postDecisions(ctx, `action=delete&id=${planted.id}&confirm=delete`);
     assert.equal(deleted.status, 303);
@@ -408,7 +416,7 @@ describe("share this verdict", { concurrency: false }, () => {
     assert.equal((await publicPage(ctx, "d".repeat(43))).res.status, 404);
 
     await postDecisions(ctx, `action=share&id=${planted.id}&confirm=share`);
-    const token = tokenFrom((await getDecisions(ctx)).html);
+    const token = tokenFrom((await recordPage(ctx, planted.id)).html);
     const revoked = await postDecisions(ctx, `action=unshare&id=${planted.id}`, { cookieHeader: "" });
     assert.equal(revoked.status, 303);
     assert.equal((await publicPage(ctx, token)).res.status, 200);

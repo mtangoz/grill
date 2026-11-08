@@ -6,13 +6,16 @@ import {
   calendarFeed,
   decisionSource,
   decisionSourceId,
+  decisionGroup,
   decisionTakeaways,
   decisionType,
   decisionTypeId,
   dueForLookBack,
   hasLookback,
   lookbackStatus,
+  outcomeLine,
   recordsForLookBack,
+  scorecardLine,
 } from "./hostedCore.mjs";
 
 const FEB = Date.parse("2026-02-01T15:00:00Z");
@@ -171,10 +174,53 @@ describe("takeaways", () => {
     assert.deepEqual(summary.nudges, ["Log your choice after a grill so it counts."]);
   });
 
-  it("nudges a due look-back, and skips the choice nudge on a filtered set", () => {
+  it("nudges only when it would change what you do, and never repeats a due look-back", () => {
     const due = decisionTakeaways([{ block: block("shaky"), review: "2026-01-15" }], { now: FEB });
-    assert.deepEqual(due.nudges, ["1 decision is due for a look-back."]);
+    assert.deepEqual(due.nudges, []);
     const filtered = decisionTakeaways([{ block: block("shaky", ""), review: "2026-03-01" }], { waiting: 4, now: FEB, filtered: true });
     assert.deepEqual(filtered.nudges, ["Add how sure you were. A rough percent is enough."]);
+    const both = decisionTakeaways([{ block: block("shaky", "") }], { waiting: 2, now: FEB });
+    assert.deepEqual(both.nudges, ["Log your choice after a grill so it counts."]);
+  });
+});
+
+describe("the list reads as a loop, not an archive", () => {
+  const block = (verdict, confidence = "60%") =>
+    `version: 1\ndate: 2026-01-01\ntitle: T\nverdict: ${verdict}\nconfidence: ${confidence}\nreview: 2026-01-15`;
+  const row = (over = {}) => ({
+    title: over.title || "Hire a contractor",
+    date: over.date || "2026-01-01",
+    review: over.review || "2026-01-15",
+    verdict: over.verdict || "shaky",
+    block: over.block || block(over.verdict || "shaky"),
+    lookback: over.lookback || null,
+    sourceApp: over.sourceApp || "claude",
+  });
+
+  it("groups a record as due, open, or closed", () => {
+    assert.equal(decisionGroup(row(), FEB), "due");
+    assert.equal(decisionGroup(row({ review: "2026-02-15" }), FEB), "open");
+    assert.equal(decisionGroup(row({ lookback: { happened: "came_true: no" } }), FEB), "closed");
+    assert.equal(outcomeLine(row(), FEB), "");
+    assert.equal(outcomeLine(row({ review: "2026-02-15" }), FEB), "Look back 15 Feb");
+    assert.equal(outcomeLine(row({ lookback: { happened: "came_true: yes\nhappened: It shipped." } }), FEB), "Came true");
+    assert.equal(outcomeLine(row({ lookback: { happened: "came_true: no happened: It missed." } }), FEB), "Did not come true");
+  });
+
+  it("hides the scorecard under three records, and the held-up clause under three look-backs", () => {
+    const open = row({ review: "2026-03-01" });
+    assert.equal(scorecardLine([open, open]), "");
+    assert.equal(scorecardLine([open, open, open]), "3 decisions · 0% looked back");
+    const held = (verdict, came) =>
+      row({
+        verdict,
+        block: block(verdict),
+        lookback: { happened: `came_true: ${came}\nhappened: Noted.` },
+      });
+    const three = [held("shaky", "no"), held("solid", "yes"), held("solid", "no")];
+    assert.equal(scorecardLine(three), "3 decisions · 100% looked back · verdict held up in 2 of 3");
+    assert.equal(scorecardLine(three, { type: "work" }), "Work · 3 decisions · 100% looked back · verdict held up in 2 of 3");
+    const two = [held("shaky", "no"), held("solid", "yes"), open];
+    assert.equal(scorecardLine(two), "3 decisions · 67% looked back");
   });
 });
