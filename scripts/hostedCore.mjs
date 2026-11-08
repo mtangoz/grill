@@ -725,6 +725,36 @@ export function decisionTakeaways(rows, { waiting = 0, now = Date.now(), filtere
   return { count, looked, dueOpen, scored, held, nudges: nudges.slice(0, 2) };
 }
 
+/** Where a saved grill came from. Claude Code sits with Claude. Anything else known is Other. */
+export const DECISION_SOURCES = Object.freeze([
+  { id: "claude", label: "Claude" },
+  { id: "chatgpt", label: "ChatGPT" },
+  { id: "cursor", label: "Cursor" },
+  { id: "grok", label: "Grok Bot" },
+  { id: "other", label: "Other" },
+  { id: "unknown", label: "Unknown" },
+]);
+
+export function decisionSource(row) {
+  const parsed = parseRecords(row?.block || "")[0] || {};
+  const raw = String(row?.sourceApp || parsed.source_app || "").trim().toLowerCase();
+  if (!raw || raw === "unknown") return "unknown";
+  if (raw === "claude" || raw === "claude-code") return "claude";
+  if (raw === "chatgpt") return "chatgpt";
+  if (raw === "cursor") return "cursor";
+  if (raw === "grok") return "grok";
+  return "other";
+}
+
+export function decisionSourceId(value) {
+  const id = String(value || "").trim().toLowerCase();
+  return DECISION_SOURCES.some((item) => item.id === id) ? id : "";
+}
+
+export function decisionSourceLabel(id) {
+  return DECISION_SOURCES.find((item) => item.id === id)?.label || "Unknown";
+}
+
 export function encryptString(plain, key) {
   if (!Buffer.isBuffer(key) || key.length !== 32) throw new Error("key");
   const iv = randomBytes(12);

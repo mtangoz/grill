@@ -503,6 +503,21 @@ describe("the decisions page layout", () => {
       const none = await getPage(ctx, "/decisions?type=personal", { now: FEB });
       assert.match(none.html, /No personal decisions yet\./);
       assert.match(none.html, /href="\/decisions\?type=work">Work</);
+      assert.match(all.html, /href="\/decisions\?source=claude">Claude</);
+      assert.equal(all.html.includes(">ChatGPT<"), false);
+      const fromClaude = await getPage(ctx, "/decisions?source=claude", { now: FEB });
+      assert.match(fromClaude.html, /<p>Claude\.<\/p>/);
+      assert.match(fromClaude.html, /Hire a contractor/);
+      assert.match(fromClaude.html, /2 decisions\. 0 of 2 looked back\./);
+      const otherClient = await getPage(ctx, "/decisions?source=chatgpt", { now: FEB });
+      assert.match(otherClient.html, /No decisions from ChatGPT yet\./);
+      assert.equal(otherClient.html.includes("Hire a contractor"), false);
+      const both = await getPage(ctx, "/decisions?type=money&source=claude", { now: FEB });
+      assert.match(both.html, /Price the workshop at \$180/);
+      assert.equal(both.html.includes("Hire a contractor"), false);
+      assert.match(both.html, /Money from Claude\./);
+      const crossed = await getPage(ctx, "/decisions?type=work&source=chatgpt", { now: FEB });
+      assert.match(crossed.html, /No work decisions from ChatGPT yet\./);
     } finally {
       await fake.close();
     }

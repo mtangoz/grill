@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-08 | Your grills can be filtered by the client the grill came from. Takeaways follow that filter. Unknown stays unknown. |
 | 2026-11-08 | Your grills opens with takeaways: counts, look-backs, whether the verdict matched what happened, and one or two nudges. |
 | 2026-11-08 | Your grills can be filtered by decision type. The type is read from the stored words, with no extra question. |
 | 2026-11-08 | New grills from Cursor are stored as from Cursor. Older records stay unknown. The judge still excludes nobody for Cursor. |
