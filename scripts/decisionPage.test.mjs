@@ -1,7 +1,7 @@
 // How one saved grill reads on Your grills. No network. Made-up records only.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { addDays, isoDate, REVIEW_DAYS } from "./reflection.mjs";
+import { addDays, isoDate, REVIEW_DAYS, reviewDateFor } from "./reflection.mjs";
 import {
   calendarFeed,
   decisionSource,
@@ -222,5 +222,27 @@ describe("the list reads as a loop, not an archive", () => {
     assert.equal(scorecardLine(three, { type: "work" }), "Work · 3 decisions · 100% looked back · verdict held up in 2 of 3");
     const two = [held("shaky", "no"), held("solid", "yes"), open];
     assert.equal(scorecardLine(two), "3 decisions · 67% looked back");
+  });
+});
+
+describe("a look-back date follows the decision when it names one", () => {
+  const sun = new Date("2026-11-08T15:00:00Z");
+
+  it("uses 14 days when the words name no day", () => {
+    assert.equal(reviewDateFor("Hire a contractor", sun), "2026-11-22");
+    assert.equal(reviewDateFor("", sun), "2026-11-22");
+  });
+
+  it("uses a named weekday, and the morning after a slate", () => {
+    assert.equal(reviewDateFor("Ship the billing rewrite Friday", sun), "2026-11-13");
+    assert.equal(reviewDateFor("Look after Friday's launch", sun), "2026-11-14");
+    assert.equal(reviewDateFor("Captain Ja'Marr this Sunday", sun), "2026-11-09");
+    assert.equal(reviewDateFor("Waiver add this gameweek", sun), "2026-11-10");
+  });
+
+  it("uses a calendar date when it is still ahead, and ignores one that has passed", () => {
+    assert.equal(reviewDateFor("Switch payroll before 15 Nov", sun), "2026-11-15");
+    assert.equal(reviewDateFor("The mover comes on November 20", sun), "2026-11-20");
+    assert.equal(reviewDateFor("We shipped on 2026-11-01", sun), "2026-11-22");
   });
 });
