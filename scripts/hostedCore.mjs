@@ -3,7 +3,7 @@
  * The installed local tool does not import this file.
  */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
-import { confidenceValue, parseRecords } from "./reflection.mjs";
+import { confidenceValue, parseOutcomes, parseRecords } from "./reflection.mjs";
 import { SCOPE_GUARD, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
 import { buildGrillTools } from "../server/index.mjs";
 
@@ -598,6 +598,41 @@ export function isoDay(ms = Date.now()) {
   const m = String(date.getUTCMonth() + 1).padStart(2, "0");
   const d = String(date.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+/**
+ * A stored look-back note, including one that was saved as a single line
+ * (`came_true: no happened: ...`). Display only. Nothing here is stored.
+ */
+function readStoredOutcome(note) {
+  const lined = parseOutcomes(note)[0];
+  if (lined?.happened || (lined?.cameTrue && note.includes("\n"))) return lined;
+  const came = note.match(/\bcame_true:\s*(\S+)/i)?.[1] || "";
+  const happened = note.match(/\bhappened:\s*(.+)$/i)?.[1]?.trim() || "";
+  if (!came && !happened) return lined || null;
+  return parseOutcomes(`came_true: ${came}\nhappened: ${happened}`)[0] || lined || null;
+}
+
+/** Plain look-back status for one saved record. Worked out when the page renders. */
+export function lookbackStatus(row, now = Date.now()) {
+  const note = String(row?.lookback?.happened || "").replace(/\s+/g, " ").trim();
+  if (note) {
+    const outcome = readStoredOutcome(note);
+    if (outcome?.cameTrue === "yes" || outcome?.cameTrue === "no") {
+      const head = outcome.cameTrue === "yes" ? "It came true." : "It did not come true.";
+      return { state: "done", text: outcome.happened ? `${head} ${outcome.happened}` : head };
+    }
+    return { state: "done", text: note };
+  }
+  const review = String(row?.review || "");
+  const today = isoDay(now);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(review) && review <= today) {
+    return { state: "due", text: `Due for a look-back since ${formatDay(review)}. Not looked back.` };
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(review)) {
+    return { state: "waiting", text: `Look back on ${formatDay(review)}. Not yet.` };
+  }
+  return { state: "none", text: "No look-back date." };
 }
 
 export function encryptString(plain, key) {

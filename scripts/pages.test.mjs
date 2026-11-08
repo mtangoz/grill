@@ -133,7 +133,8 @@ describe("pages a person sees", () => {
       const ctx = world();
       await decide(ctx, fake, "iPhone launch", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(html, /<p class="record-title">iPhone launch<\/p>/);
+      assert.match(html, /<a class="record-title" href="\/decisions\?id=[^"]+">iPhone launch<\/a>/);
+      assert.match(html, /\.record-title \{[^}]*display:\s*block/);
       assert.match(html, /\.record-title \{[^}]*text-transform:\s*none/);
       assert.equal(html.includes("<h2>iPhone launch</h2>"), false);
       assert.equal(html.includes("IPHONE LAUNCH"), false);
@@ -409,6 +410,69 @@ describe("the decisions page layout", () => {
     const ctx = world();
     const { res } = await getPage(ctx, "/decisions?confirm=delete&id=not-a-record", { now: FEB });
     assert.equal(res.status, 303);
+  });
+
+  it("opens a grill from its title, with the verdict, choice, confidence and look-back", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      const token = signJwt({
+        iss: "https://clerk.example.test",
+        sub: "user_invitee",
+        aud: RESOURCE,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        redirect_uri: CLAUDE_WEB_REDIRECT,
+      });
+      const deps = { judgeOpenRouterUrl: fake.env.JUDGE_OPENROUTER_URL, judgeDecisionsUrl: fake.env.JUDGE_DECISIONS_URL, now: JAN };
+      const send = async (id, name, args, now = JAN) => {
+        const res = await handleMcp(
+          new Request(RESOURCE, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+            body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }),
+          }),
+          { ...ctx, ...deps, now },
+        );
+        return res.json();
+      };
+      await send(1, "grill", { subject: "Decision: Hire contractor\nI'm 60% sure.", keep_records: true, quality_check: false });
+      await send(2, "grill_decided", { decided: "Hire the contractor.", confidence: "60%" });
+      const { html } = await getPage(ctx, "/decisions", { now: FEB });
+      const href = html.match(/href="(\/decisions\?id=[^"]+)"/)?.[1];
+      assert.ok(href, "the title links to the record");
+      assert.ok(html.includes(`<a class="record-title" href="${href}">Hire contractor</a>`));
+      assert.ok(html.includes(`<a href="${href}">Hire contractor</a>`), "the due list links to the same record");
+      const detail = await getPage(ctx, href, { now: FEB });
+      assert.equal(detail.res.status, 200);
+      assert.match(detail.html, /<h1 class="record-title">Hire contractor<\/h1>/);
+      assert.match(detail.html, /Verdict: <strong>shaky<\/strong>/);
+      assert.match(detail.html, /Choice: Hire the contractor\./);
+      assert.match(detail.html, /Confidence: 60%/);
+      assert.match(detail.html, /Look-back: Due for a look-back since 15 Jan\. Not looked back\./);
+      assert.match(detail.html, /<a href="\/decisions">Your grills<\/a>/);
+      assert.equal(detail.html.includes("<script"), false);
+      assert.equal(detail.html.includes("came_true:"), false);
+      const missing = await getPage(ctx, "/decisions?id=not-a-record", { now: FEB });
+      assert.equal(missing.res.status, 303);
+      const looked = await send(3, "grill_look_back", { happened: "came_true: no\nhappened: The contractor left after a week." }, FEB);
+      assert.equal(looked.result.isError, false, looked.result?.content?.[0]?.text || "");
+      const after = await getPage(ctx, "/decisions", { now: FEB });
+      assert.match(after.html, /Look-back: It did not come true\. The contractor left after a week\./);
+      assert.equal(after.html.includes("came_true:"), false);
+      const again = await getPage(ctx, href, { now: FEB });
+      assert.match(again.html, /Look-back: It did not come true\. The contractor left after a week\./);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("does not show a record to someone who is signed out", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const res = await handleDecisions(new Request("https://grillyour.ai/decisions?id=any-record"), ctx);
+    assert.equal(res.status, 302);
+    assert.match(res.headers.get("location") || "", /sign-in/);
   });
 
   it("says what to do when there are no records yet", async () => {

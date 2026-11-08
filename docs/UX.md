@@ -18,9 +18,9 @@ Enforced by: prompt text + review.
 
 ## A record's title
 
-A saved decision's title is the person's own words, in the case they wrote. It is not a section heading, and it is not forced into uppercase. "iPhone launch" stays "iPhone launch".
+A saved decision's title is the person's own words, in the case they wrote. It is not a section heading, and it is not forced into uppercase. "iPhone launch" stays "iPhone launch". On the list, and in the due list, the title is a link to that one record. The record page shows the verdict, the choice, the confidence, and whether the look-back is done. A look-back note is shown in plain words. A link for a record that is not on this account goes back to the list. The page stays signed in.
 
-Enforced by: [api/_pro.mjs](../api/_pro.mjs) (`.record-title`), test "does not uppercase a record title" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
+Enforced by: [api/_pro.mjs](../api/_pro.mjs) (`.record-title`), [api/_hosted.mjs](../api/_hosted.mjs) (`renderDecision`), test "does not uppercase a record title" and test "opens a grill from its title, with the verdict, choice, confidence and look-back" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
 
 A long title with no space wraps inside the card, including at a phone width.
 

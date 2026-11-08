@@ -39,6 +39,7 @@ import {
   changesView,
   decidedLine,
   decisionTitle,
+  parseDecided,
   goalFromSubject,
   guardrailsFromSubject,
   isoDate,
@@ -108,6 +109,7 @@ import {
   judgeFailureText,
   keyFromEnv,
   linkChains,
+  lookbackStatus,
   mcpResource,
   negotiateProtocol,
   newJobCredential,
@@ -2358,7 +2360,8 @@ function renderDue(rows, now) {
     .map((row) => {
       const late = daysOverdue(row.review, now);
       const when = late === 0 ? "due today" : `${late} day${late === 1 ? "" : "s"} overdue`;
-      return `<li>${esc(row.title || "Untitled")} · review ${esc(showDay(row.review))} · ${esc(when)}</li>`;
+      const href = `/decisions?id=${encodeURIComponent(row.id)}`;
+      return `<li><a href="${esc(href)}">${esc(row.title || "Untitled")}</a> · review ${esc(showDay(row.review))} · ${esc(when)}</li>`;
     })
     .join("");
   return `<section class="banner">
@@ -2413,11 +2416,49 @@ function recordMeta(row) {
 
 const EMPTY_DECISIONS = "<p><strong>No decisions saved yet.</strong></p>\n    <p>Say “grill this: …” in your AI. When you tell it your call, it’s saved here.</p>";
 
+const NARROW = `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>`;
+
+/** One saved grill. Verdict, choice, confidence, and whether the look-back is done. */
+function renderDecision(row, byId, extra = {}) {
+  const parsed = parseRecords(row.block || "")[0] || {};
+  const choice = parseDecided(parsed.decided || row.decided || "").text;
+  const confidence = String(parsed.confidence || "").trim();
+  const verdict = String(row.verdict || parsed.verdict || "").trim();
+  const status = lookbackStatus(row, extra.now);
+  const chain = chainNote(row, byId);
+  const id = encodeURIComponent(row.id);
+  const chained = Boolean(row.replacesId || row.replacedByIds?.length);
+  const chainLink = chained ? ` <a class="button" href="/decisions?confirm=delete-chain&amp;id=${esc(id)}">Delete this chain</a>` : "";
+  const shared = extra.shareUrl || "";
+  const sharing = shared
+    ? `<p><input readonly style="width:100%;box-sizing:border-box" value="${esc(shared)}" aria-label="Share link"></p>
+      <form method="post" action="/decisions"><input type="hidden" name="action" value="unshare"><input type="hidden" name="id" value="${esc(row.id)}"><p class="row"><button type="submit">Stop sharing</button></p></form>`
+    : "";
+  const shareLink = shared ? "" : `<a class="button" href="/decisions?confirm=share&amp;id=${esc(id)}">Share verdict</a> `;
+  const when = row.date ? showDay(row.date) : "";
+  const app = String(row.sourceApp || "").trim();
+  const meta = [when, app && app !== "unknown" ? `from ${APP_LABELS[app] || app}` : ""].filter(Boolean).join(" · ");
+  return page(
+    `${row.title || "Untitled"} · Grill`,
+    `${NARROW}
+    <p><a href="/decisions">Your grills</a></p>
+    <h1 class="record-title">${esc(row.title || "Untitled")}</h1>
+    ${meta ? `<p class="record-meta">${esc(meta)}</p>` : ""}
+    ${chain ? `<p>${esc(chain)}</p>` : ""}
+    <p>Verdict: ${verdict ? `<strong>${esc(verdict)}</strong>` : "Not stored."}</p>
+    <p>Choice: ${choice ? esc(choice) : "Not logged."}</p>
+    <p>Confidence: ${confidence ? esc(confidence) : "Not said."}</p>
+    <p>Look-back: ${esc(status.text)}</p>
+    ${sharing}
+    <p class="row">${shareLink}<a class="button" href="/decisions?confirm=delete&amp;id=${esc(id)}">Delete this record</a>${chainLink}</p>`,
+  );
+}
+
 function renderDecisions(account, rows, credit, habits, extra = {}) {
   const linked = linkChains(rows);
   const byId = new Map(linked.map((row) => [row.id, row]));
   const cards = [...linked].reverse().map((row) => {
-    const look = row.lookback?.happened ? `<p>Look-back: ${esc(row.lookback.happened)}</p>` : "";
+    const look = row.lookback?.happened ? `<p>Look-back: ${esc(lookbackStatus(row, extra.now).text)}</p>` : "";
     const chain = chainNote(row, byId);
     const chained = Boolean(row.replacesId || row.replacedByIds?.length);
     const id = encodeURIComponent(row.id);
@@ -2428,8 +2469,9 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
       <form method="post" action="/decisions"><input type="hidden" name="action" value="unshare"><input type="hidden" name="id" value="${esc(row.id)}"><p class="row"><button type="submit">Stop sharing</button></p></form>`
       : "";
     const shareLink = shared ? "" : `<a class="button" href="/decisions?confirm=share&amp;id=${esc(id)}">Share verdict</a> `;
+    const href = `/decisions?id=${encodeURIComponent(row.id)}`;
     return `<article class="banner">
-      <p class="record-title">${esc(row.title || "Untitled")}</p>
+      <a class="record-title" href="${esc(href)}">${esc(row.title || "Untitled")}</a>
       ${recordMeta(row)}
       ${chain ? `<p>${esc(chain)}</p>` : ""}
       ${look}
@@ -3026,6 +3068,18 @@ export async function handleDecisions(request, deps) {
       }
       const cookies = fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), fresh))] : [];
       return seeOther(`${publicOrigin(request)}/decisions`, cookies);
+    }
+    if (request.method === "GET" && !url.searchParams.get("confirm") && url.searchParams.get("id")) {
+      const recordId = url.searchParams.get("id") || "";
+      const loaded = linkChains(await loadRecords(session.account, deps));
+      const row = loaded.find((item) => item.id === recordId);
+      if (!row) return seeOther(`${publicOrigin(request)}/decisions`);
+      const byId = new Map(loaded.map((item) => [item.id, item]));
+      const origin = publicOrigin(request);
+      const token = await readShareToken(session.account, deps, row.id);
+      const now = typeof deps.now === "number" ? deps.now : Date.now();
+      const shared = token ? shareUrl(origin, token) : "";
+      return htmlPage(renderDecision(row, byId, { now, shareUrl: shared }));
     }
     const flashed = readFlashLink(request);
     const rows = await loadRecords(session.account, deps);
