@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-08 | A dated ship, price, forecast, weekly bet, or hire gets one optional look-back line after the verdict. A quick take, a burst, a check, and a life choice do not. |
 | 2026-11-08 | A simulated look-back against the ICP. Encourage dated ship calls, pricing and spend with a readout, near forecasts, weekly bets on their own date, and a vendor or hire with a check inside four weeks. Do not nudge one-off life choices or bulk quick checks. A fixed 14 days is the wrong day when the decision names its own. |
 | 2026-11-08 | A due decision can be closed in one tap: Held up, Didn't, or Mixed. A second tap does not replace it. |
 | 2026-11-08 | A look-back lands on the day the decision named, when it named one, and 14 days out otherwise. The record page can change that date, drop the look-back, or add one. |
