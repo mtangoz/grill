@@ -157,7 +157,7 @@ function clip(text, max = 80) {
   return (space > max / 2 ? cut.slice(0, space) : cut).replace(/[,:;.\s]+$/, "");
 }
 
-/** A title for the record. Prefer a line the write-up already labels as the decision. */
+/** A title for the record. Prefer a line the write-up already labels as the decision. The full line is kept. The list shortens it when it draws. */
 export function decisionTitle(subject) {
   const lines = String(subject || "")
     .split(/\r?\n/)
@@ -165,9 +165,21 @@ export function decisionTitle(subject) {
     .filter(Boolean);
   for (const line of lines) {
     const labeled = line.match(/^(?:#{1,6}\s*)?(?:\*\*)?(?:the )?decision(?:\*\*)?\s*:\s*(.+)$/i);
-    if (labeled) return clip(labeled[1]);
+    if (labeled) return clip(labeled[1], 2000);
   }
-  return lines.length ? clip(lines[0]) : "this decision";
+  return lines.length ? clip(lines[0], 2000) : "this decision";
+}
+
+/** The list line. The first sentence, cut on a word only past about 90 characters. */
+export function shortDecision(text, max = 90) {
+  const clean = oneLine(text);
+  if (!clean) return "Untitled";
+  const sentence = clean.split(/(?<=[.!?])\s+/)[0];
+  if (sentence.length <= max) return sentence;
+  const window = sentence.slice(0, max + 1);
+  const space = window.lastIndexOf(" ");
+  const word = (space > 40 ? window.slice(0, space) : sentence.slice(0, max)).replace(/[,:;.\s]+$/, "");
+  return `${word}…`;
 }
 
 /**

@@ -120,7 +120,7 @@ describe("pages a person sees", () => {
       const exported = html.indexOf(">Export<");
       assert.ok(due > html.indexOf("<h1>"), "due list is missing");
       assert.ok(due < records && due < exported);
-      assert.match(html, /What happened\?/);
+      assert.match(html, /Chose: Go with Hire contractor\. · <strong>shaky<\/strong> · Due/);
       assert.doesNotMatch(html, /of use each month|left this month|judge spend/);
     } finally {
       await fake.close();
@@ -286,8 +286,7 @@ describe("pages a person sees", () => {
       const ctx = world();
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(html, /1 Jan/);
-      assert.match(html, /17 days overdue/);
+      assert.match(html, /Chose: Go with Hire contractor\./);
       assert.equal(html.includes("2026-01-15"), false);
       const href = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
       const detail = await getPage(ctx, href, { now: FEB });
@@ -462,7 +461,7 @@ describe("the decisions page layout", () => {
       const href = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
       assert.ok(href, "the title links to the record");
       assert.ok(html.includes(`<a class="record-title" href="${href}">Hire contractor</a>`));
-      assert.ok(html.includes(`href="${href}#look-back">What happened?</a>`), "a due row asks what happened");
+      assert.match(html, /Chose: Hire the contractor\. · <strong>shaky<\/strong> · Due/);
       assert.equal(html.includes('name="happened"'), false, "the page does not post a look-back");
       const detail = await getPage(ctx, `${href}#look-back`, { now: FEB });
       assert.equal(detail.res.status, 200);
@@ -656,10 +655,11 @@ describe("the decisions page layout", () => {
       const ctx = world();
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(html, /Held up/);
-      assert.match(html, /Didn't/);
-      assert.match(html, /Mixed/);
       const id = new URL(`https://grillyour.ai${html.match(/href="(\/decisions\?id=[^"#]+)"/)[1]}`).searchParams.get("id");
+      const detail = await getPage(ctx, `/decisions?id=${encodeURIComponent(id)}`, { now: FEB });
+      assert.match(detail.html, /Held up/);
+      assert.match(detail.html, /Didn't/);
+      assert.match(detail.html, /Mixed/);
       const junk = await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=maybe`, FEB);
       assert.equal(junk.status, 303);
       const still = await getPage(ctx, "/decisions", { now: FEB });
@@ -744,8 +744,7 @@ describe("the decisions page layout", () => {
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
       const row = html.slice(html.indexOf('class="record-title"'), html.indexOf("</li>"));
-      assert.match(row, /Work · Claude · 1 Jan · <strong>shaky<\/strong> · Due · 17 days overdue/);
-      assert.match(row, /What happened\?/);
+      assert.match(row, /Chose: Go with Hire contractor\. · <strong>shaky<\/strong> · Due/);
       assert.equal(row.includes("unknown"), false);
       assert.equal(html.includes("2026-01-"), false);
     } finally {

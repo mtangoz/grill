@@ -48,6 +48,7 @@ import {
   plainVerdict,
   predictionFromSubject,
   recordBlock,
+  shortDecision,
 } from "../scripts/reflection.mjs";
 import {
   CAP_RETRY_TEXT,
@@ -78,7 +79,6 @@ import {
   calendarFeed,
   calendarTokenHash,
   calendarTokenShape,
-  daysOverdue,
   formatDay,
   dueForLookBack,
   earlyRead,
@@ -2392,29 +2392,15 @@ export function renderChanges(rows) {
 /** One compact row. Share, delete and export live on the record, not here. */
 function renderListRow(row, byId, now, { type = "", source = "" } = {}) {
   const href = listHref({ id: row.id, type, source });
-  const group = decisionGroup(row, now);
-  const happened = group === "due" ? `<a class="happened" href="${esc(href)}#look-back">What happened?</a>` : "";
-  const taps = group === "due" ? outcomeTaps(row.id) : "";
-  const bits = [esc(decisionTypeLabel(decisionType(row)))];
-  const sourceId = decisionSource(row);
-  if (sourceId !== "unknown") bits.push(esc(decisionSourceLabel(sourceId)));
-  if (row.date) bits.push(esc(showDay(row.date)));
   const parsed = parseRecords(row.block || "")[0] || {};
+  const choice = parseDecided(parsed.decided || row.decided || "").text || "Not logged";
   const verdict = String(row.verdict || parsed.verdict || "").trim();
-  if (verdict && verdict.toLowerCase() !== "unknown") bits.push(`<strong>${esc(verdict)}</strong>`);
-  const outcome = outcomeLine(row, now);
-  if (outcome) bits.push(esc(outcome));
-  if (group === "due") {
-    const late = daysOverdue(row.review, now);
-    bits.push(esc(late === 0 ? "due today" : `${late} day${late === 1 ? "" : "s"} overdue`));
-  }
-  const chain = chainNote(row, byId);
+  const verdictBit = verdict && verdict.toLowerCase() !== "unknown" ? `<strong>${esc(verdict)}</strong>` : "No verdict";
+  const outcome = outcomeLine(row, now) || "Not yet";
+  const title = shortDecision(row.title || parsed.title || "");
   return `<li class="decision">
-      <a class="record-title" href="${esc(href)}">${esc(row.title || "Untitled")}</a>
-      ${happened}
-      <p class="meta">${bits.join(" · ")}</p>
-      ${chain ? `<p class="meta">${esc(chain)}</p>` : ""}
-      ${taps}
+      <a class="record-title" href="${esc(href)}">${esc(title)}</a>
+      <p class="meta">Chose: ${esc(choice)} · ${verdictBit} · ${esc(outcome)}</p>
     </li>`;
 }
 
@@ -2641,10 +2627,9 @@ const LIST_STYLE = `<style>
     .action { color: var(--ink); margin: 1.1rem 0 0.2rem; }
     .scorecard { color: var(--ink); margin: 0.9rem 0 0.2rem; }
     ul.decisions { list-style: none; padding: 0; margin: 0.2rem 0 0.6rem; }
-    .decision { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.1rem 0.75rem; align-items: baseline; padding: 0.7rem 0; border-bottom: 1px solid var(--rule); }
-    .decision .record-title { margin: 0; font-size: 1.02rem; }
-    .decision .meta { grid-column: 1 / -1; margin: 0; color: var(--quiet); font-size: 0.9rem; }
-    a.happened { color: var(--ink); font-weight: 650; min-height: 44px; display: inline-flex; align-items: center; }
+    .decision { display: block; padding: 0.75rem 0; border-bottom: 1px solid var(--rule); }
+    .decision .record-title { display: block; margin: 0; font-size: 1.02rem; overflow-wrap: break-word; }
+    .decision .meta { margin: 0.15rem 0 0; color: var(--quiet); font-size: 0.9rem; }
     .footer { margin-top: 1.5rem; }
     .outcomes { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; margin: 0.35rem 0 0; }
     .outcomes button { min-height: 44px; }
@@ -2652,8 +2637,7 @@ const LIST_STYLE = `<style>
       .outcomes button { width: auto; flex: 1 1 auto; }
     }
     @media (max-width: 390px) {
-      .decision { grid-template-columns: minmax(0, 1fr); }
-      a.happened { justify-self: start; }
+      .decision .record-title, .decision .meta { overflow-wrap: break-word; }
     }
     </style>`;
 
