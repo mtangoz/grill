@@ -642,6 +642,13 @@ export function hasLookback(row) {
   return Boolean(String(row?.lookback?.happened || "").trim());
 }
 
+/** Recorded before the review day. It does not count until that day. */
+export function earlyRead(row, now = Date.now()) {
+  if (!hasLookback(row)) return false;
+  const review = String(row?.review || "");
+  return /^\d{4}-\d{2}-\d{2}$/.test(review) && review > isoDay(now);
+}
+
 /**
  * A stored look-back note, including one that was saved as a single line
  * (`came_true: no happened: ...`). Display only. Nothing here is stored.
@@ -733,7 +740,7 @@ export function decisionTypeId(value) {
 export function decisionTakeaways(rows, { waiting = 0, now = Date.now(), filtered = false } = {}) {
   const list = Array.isArray(rows) ? rows : [];
   const count = list.length;
-  const looked = list.filter(hasLookback).length;
+  const looked = list.filter((row) => hasLookback(row) && !earlyRead(row, now)).length;
   const today = isoDay(now);
   const dueOpen = list.filter((row) => {
     const review = String(row?.review || "");
@@ -742,6 +749,7 @@ export function decisionTakeaways(rows, { waiting = 0, now = Date.now(), filtere
   let scored = 0;
   let held = 0;
   for (const row of list) {
+    if (earlyRead(row, now)) continue;
     const note = String(row?.lookback?.happened || "").replace(/\s+/g, " ").trim();
     if (!note) continue;
     const outcome = readStoredOutcome(note);
@@ -791,28 +799,38 @@ export function decisionSourceLabel(id) {
   return DECISION_SOURCES.find((item) => item.id === id)?.label || "Unknown";
 }
 
-/** due when the review day has come and there is no look-back. closed when there is one. Otherwise open. */
+/** due when the review day has come and there is no look-back. closed when a look-back counts. An early read stays open. */
 export function decisionGroup(row, now = Date.now()) {
-  if (hasLookback(row)) return "closed";
+  if (hasLookback(row) && !earlyRead(row, now)) return "closed";
   const review = String(row?.review || "");
   if (/^\d{4}-\d{2}-\d{2}$/.test(review) && review <= isoDay(now)) return "due";
   return "open";
 }
 
-/** Short outcome for a list row. A due row leaves this blank: the page links What happened? instead. */
+function tappedOutcome(row) {
+  const status = lookbackStatus(row);
+  if (status.text.startsWith("It came true.")) return "Held up";
+  if (status.text.startsWith("It did not come true.")) return "Didn't";
+  if (/^Mixed\b/i.test(status.text)) return "Mixed";
+  return status.state === "done" ? status.text : "";
+}
+
+/** Short outcome for a list row. */
 export function outcomeLine(row, now = Date.now()) {
-  if (decisionGroup(row, now) === "due") return "";
-  const status = lookbackStatus(row, now);
-  if (status.state === "done") {
-    if (status.text.startsWith("It came true.")) return "Came true";
-    if (status.text.startsWith("It did not come true.")) return "Did not come true";
-    return status.text;
-  }
-  if (status.state === "waiting") {
+  const tapped = tappedOutcome(row);
+  if (earlyRead(row, now) && tapped) return `Early: ${tapped}`;
+  if (decisionGroup(row, now) === "due") return "Due";
+  if (tapped) return tapped;
+  if (lookbackStatus(row, now).state === "waiting") {
     const day = formatDay(row?.review);
     return day ? `Look back ${day}` : "Not yet";
   }
   return "";
+}
+
+export function outcomeNoteText(happened) {
+  const match = String(happened || "").match(/^note:\s*(.+)$/im);
+  return match ? match[1].replace(/\s+/g, " ").trim() : "";
 }
 
 /** One line for three or more decisions in view. The held-up clause waits for three looked-back records. */
