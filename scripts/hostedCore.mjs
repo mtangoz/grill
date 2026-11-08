@@ -3,8 +3,8 @@
  * The installed local tool does not import this file.
  */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
-import { addDays, confidenceValue, isoDate, parseOutcomes, parseRecords, plainVerdict, REVIEW_DAYS, reviewDateFor } from "./reflection.mjs";
-import { SCOPE_GUARD, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
+import { addDays, confidenceValue, isoDate, parseDecided, parseOutcomes, parseRecords, plainVerdict, REVIEW_DAYS, reviewDateFor } from "./reflection.mjs";
+import { CHALLENGE_KINDS, SCOPE_GUARD, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
 import { buildGrillTools } from "../server/index.mjs";
 
 export { SCOPE_GUARD };
@@ -854,6 +854,73 @@ export function scorecardLine(rows, { type = "", source = "" } = {}) {
 
 export const LOOKBACK_HOW =
   "A look-back is due 14 days after you choose. Say “look back” in your chat and say what happened.";
+
+/** A judge kind that flags a source, a fact, or a figure. The flag is not proof it was wrong. */
+export const FLAG_KINDS = Object.freeze(["unsupported-claim", "evidence-mismatch", "wrong-cost-model"]);
+
+/** Up to two kinds, in the same order as the stored challenge lines. An unknown kind is blank. */
+export function challengeKindList(challenges) {
+  const list = Array.isArray(challenges) ? challenges.slice(0, 2) : [];
+  return list.map((row) => {
+    const kind = String(row && typeof row === "object" ? row.kind : "").trim().toLowerCase();
+    return CHALLENGE_KINDS.includes(kind) ? kind : "";
+  });
+}
+
+function impactTap(row) {
+  return row?.impact === "changed" || row?.impact === "kept" ? row.impact : "";
+}
+
+function statedChange(row) {
+  const parsed = parseRecords(row?.block || "")[0] || {};
+  const decided = parseDecided(parsed.decided || row?.decided || "");
+  const supersedes = String(parsed.supersedes || row?.supersedes || "").trim();
+  return Boolean(decided.after) || Boolean(supersedes);
+}
+
+function flaggedKind(row) {
+  const list = Array.isArray(row?.challengeKinds) ? row.challengeKinds : [];
+  return list.some((kind) => FLAG_KINDS.includes(String(kind || "").trim().toLowerCase()));
+}
+
+/**
+ * How often a grill changed the call. A Yes tap, an after mark, or a supersedes line counts.
+ * A doesn't-hold verdict counts only after Yes. A No tap is kept, and stays out of the lines.
+ * A source, fact, or figure kind is flagged, and is never a change.
+ */
+export function grillImpact(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const summary = { count: list.length, changed: 0, doubted: 0, unknown: 0, kept: 0, flagged: 0 };
+  for (const row of list) {
+    const tap = impactTap(row);
+    const parsed = parseRecords(row?.block || "")[0] || {};
+    const verdict = plainVerdict(parsed.verdict || row?.verdict || "");
+    if (tap === "kept") summary.kept += 1;
+    else if (tap === "changed" || statedChange(row)) summary.changed += 1;
+    else if (verdict === "doesn't hold up") summary.doubted += 1;
+    else summary.unknown += 1;
+    if (flaggedKind(row)) summary.flagged += 1;
+  }
+  return summary;
+}
+
+/** The impact block. Empty when there is no saved grill. A No tap adds no line. */
+export function impactLines(rows) {
+  const summary = grillImpact(rows);
+  if (!summary.count) return [];
+  const lines = [
+    summary.changed
+      ? `${summary.changed} of ${summary.count} ${summary.count === 1 ? "grill" : "grills"} changed the call.`
+      : "No grill is marked as changing a call yet.",
+  ];
+  if (summary.doubted === 1) lines.push("1 plan was called out as not holding up. That counts only if you say the call moved.");
+  else if (summary.doubted > 1) lines.push(`${summary.doubted} plans were called out as not holding up. That counts only if you say the call moved.`);
+  if (summary.unknown === 1) lines.push("1 is still unknown. On a decision, one tap says whether the call moved.");
+  else if (summary.unknown > 1) lines.push(`${summary.unknown} are still unknown. On a decision, one tap says whether the call moved.`);
+  if (summary.flagged === 1) lines.push("1 flagged a source, fact or figure. A flag is not proof.");
+  else if (summary.flagged > 1) lines.push(`${summary.flagged} flagged a source, fact or figure. A flag is not proof.`);
+  return lines;
+}
 
 export function encryptString(plain, key) {
   if (!Buffer.isBuffer(key) || key.length !== 32) throw new Error("key");

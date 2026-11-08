@@ -81,7 +81,7 @@ Look-back uses a goal when the line is present and is not `not stated`. It asks 
 - Changed and kept calls are compared as rates only when each side has at least 10 calls back, and then the reading says it compares calls, not causes. Below that, examples only.
 - No savings figure, no "would have" claim, no trend over time, and no score. The calls are yours: Grill argued the other side.
 
-In-chat Grill's decisions page shows the same reading as "Where your calls changed": the count line and at most three examples, worked out from the saved records each time you open it.
+In-chat Grill's decisions page leads with how many grills changed the call. Below that, it shows the same reading as "Where your calls changed": the count line and at most three examples, worked out from the saved records each time you open it.
 
 ## What can be added later, without changing this block
 

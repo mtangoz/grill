@@ -571,9 +571,10 @@ describe("the decisions page layout", () => {
       await decide(ctx, fake, "Ship the beta", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
       const due = html.indexOf("3 decisions due for a look-back");
+      const impact = html.indexOf("What Grill changed");
       const score = html.indexOf("3 decisions · 0% looked back");
       const filters = html.indexOf('class="filters"');
-      assert.ok(due > 0 && score > due && filters > score);
+      assert.ok(impact > 0 && due > impact && score > due && filters > score);
       assert.doesNotMatch(html, /verdict held up/);
       assert.doesNotMatch(html, /A look-back is due 14 days/);
       assert.equal((html.match(/class="filters"/g) || []).length, 1);
@@ -733,7 +734,71 @@ describe("the decisions page layout", () => {
     assert.match(html, /Say “grill this: …” in your AI\. When you tell it your call, it’s saved here\./);
     assert.match(html, /A look-back is due 14 days after you choose/);
     assert.doesNotMatch(html, /\d+ decisions · \d+% looked back/);
+    assert.equal(html.includes("What Grill changed"), false);
     assert.equal(html.includes("Delete all"), false, "nothing to delete on an empty page");
+  });
+
+  it("leads with grill impact from the first saved grill, and the Yes or No tap stays on the record", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Hire contractor", JAN);
+      const { html } = await getPage(ctx, "/decisions", { now: FEB });
+      const impact = html.indexOf("What Grill changed");
+      const due = html.indexOf("decision due for a look-back");
+      const records = html.indexOf("Keep my decision records");
+      assert.ok(impact > html.indexOf("<h1>") && impact < due && due < records);
+      assert.match(html, /No grill is marked as changing a call yet/);
+      assert.match(html, /1 is still unknown\. On a decision, one tap says whether the call moved\./);
+      assert.match(html, /1 flagged a source, fact or figure\. A flag is not proof\./);
+      assert.doesNotMatch(html, /not holding up/);
+      assert.doesNotMatch(html, /Did this grill change your call/);
+      assert.doesNotMatch(html, /of use each month|left this month|judge spend/);
+      const href = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
+      const detail = await getPage(ctx, href, { now: FEB });
+      const verdictAt = detail.html.indexOf("Verdict:");
+      const ask = detail.html.indexOf("Did this grill change your call?");
+      const happened = detail.html.indexOf("What happened?");
+      const held = detail.html.indexOf(">Held up<");
+      assert.ok(verdictAt > 0 && verdictAt < ask && ask < happened && happened < held);
+      assert.match(detail.html, /<h1 class="record-title[^"]*">Hire contractor<\/h1>/);
+      assert.match(detail.html, /name="action" value="impact"/);
+      assert.match(detail.html, />Yes</);
+      assert.match(detail.html, />No</);
+      assert.match(detail.html, />Didn't</);
+      assert.match(detail.html, />Mixed</);
+      assert.equal(detail.html.includes("<script"), false);
+      const id = new URL(`https://grillyour.ai${href}`).searchParams.get("id");
+      const exported = await getPage(ctx, "/decisions?export=json", { now: FEB });
+      const saved = JSON.parse(exported.html);
+      assert.equal(saved[0].challenge_kinds[0], "unsupported-claim");
+      const yes = await postForm(ctx, `action=impact&id=${encodeURIComponent(id)}&value=changed`, FEB);
+      assert.equal(yes.status, 303);
+      assert.match(yes.headers.get("location") || "", /id=/);
+      const said = await getPage(ctx, href, { now: FEB });
+      assert.match(said.html, /You said this one changed the call\./);
+      assert.match(said.html, />Held up</);
+      const counted = await getPage(ctx, "/decisions", { now: FEB });
+      assert.match(counted.html, /1 of 1 grill changed the call\./);
+      assert.doesNotMatch(counted.html, /still unknown/);
+      assert.match(counted.html, /1 flagged a source, fact or figure\. A flag is not proof\./);
+      const no = await postForm(ctx, `action=impact&id=${encodeURIComponent(id)}&value=kept`, FEB);
+      assert.equal(no.status, 303);
+      const quiet = await getPage(ctx, "/decisions", { now: FEB });
+      assert.match(quiet.html, /No grill is marked as changing a call yet/);
+      assert.doesNotMatch(quiet.html, /kept/);
+      assert.doesNotMatch(quiet.html, /still unknown/);
+      const record = await getPage(ctx, href, { now: FEB });
+      assert.match(record.html, /You said you kept the call\./);
+      assert.match(record.html, />Held up</);
+      const junk = await postForm(ctx, `action=impact&id=${encodeURIComponent(id)}&value=maybe`, FEB);
+      assert.equal(junk.status, 303);
+      const unchanged = await getPage(ctx, href, { now: FEB });
+      assert.match(unchanged.html, /You said you kept the call\./);
+    } finally {
+      await fake.close();
+    }
   });
 
   it("shows a short details line: the verdict in bold, the look-back date in words, no unknown app", async () => {

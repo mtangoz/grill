@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-08 | Your grills leads with whether a grill changed the call. A Yes on the record counts, and so does a supersedes line. A doesn't-hold verdict counts only after that Yes. A saved challenge kind shows as flagged, not as proof. |
 | 2026-11-08 | A list row is two lines. The decision is the first sentence, cut on a word past about 90 characters. The second line is what you chose, the verdict, and the outcome. The full text stays on the decision. |
 | 2026-11-08 | The decision page shows the full text, what you chose, the verdict, and outcome taps. A tap before the date is an early read. A later tap overwrites it. Early reads do not count toward held-up until the date. |
 | 2026-11-08 | The weekly counts include the look-back funnel: grills, choices logged, look-backs set, look-backs done. Counts only. No decision text. |

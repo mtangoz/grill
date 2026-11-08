@@ -21,6 +21,9 @@ import {
   lookbackStatus,
   outcomeLine,
   recordsForLookBack,
+  challengeKindList,
+  grillImpact,
+  impactLines,
   scorecardLine,
 } from "./hostedCore.mjs";
 
@@ -324,5 +327,104 @@ describe("the look-back offer stays after the verdict, and only for a call worth
     const judge = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../prompts/grill.md"), "utf8");
     assert.doesNotMatch(judge, /Look back on/);
     assert.doesNotMatch(judge, /One tap when it is due/);
+  });
+});
+
+describe("grill impact", () => {
+  const block = (over = {}) =>
+    [
+      "version: 1",
+      "date: 2026-01-01",
+      `title: ${over.title || "Ship the beta"}`,
+      `verdict: ${over.verdict || "shaky"}`,
+      over.decided ? `decided: ${over.decided}` : "",
+      over.supersedes ? `supersedes: ${over.supersedes}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  const row = (over = {}) => ({
+    title: over.title || "Ship the beta",
+    verdict: over.verdict || "shaky",
+    decided: over.decided || "",
+    supersedes: over.supersedes || "",
+    impact: over.impact || "",
+    challengeKinds: over.challengeKinds || [],
+    block: over.block || block(over),
+  });
+
+  it("keeps the judge's kind, and drops one it does not know", () => {
+    assert.deepEqual(
+      challengeKindList([
+        { kind: "Unsupported-Claim" },
+        { kind: "nope" },
+        { kind: "evidence-mismatch" },
+      ]),
+      ["unsupported-claim", ""],
+    );
+    assert.deepEqual(challengeKindList(["1. A line"]), [""]);
+    assert.deepEqual(challengeKindList(null), []);
+  });
+
+  it("counts a stated change, and leaves a bare verdict out of that count", () => {
+    const changed = row({ decided: "Trial two weeks first. | after challenge 1" });
+    const replaced = row({ supersedes: "2026-01-01 Ship the beta", decided: "Delay the ship." });
+    const doubted = row({ verdict: "doesn't hold up" });
+    const shaky = row({ verdict: "shaky" });
+    const solid = row({ verdict: "solid" });
+    const summary = grillImpact([changed, replaced, doubted, shaky, solid]);
+    assert.equal(summary.count, 5);
+    assert.equal(summary.changed, 2);
+    assert.equal(summary.doubted, 1);
+    assert.equal(summary.unknown, 2);
+    assert.equal(summary.kept, 0);
+    assert.equal(summary.flagged, 0);
+    const lines = impactLines([changed, replaced, doubted, shaky, solid]);
+    assert.equal(lines[0], "2 of 5 grills changed the call.");
+    assert.equal(lines[1], "1 plan was called out as not holding up. That counts only if you say the call moved.");
+    assert.equal(lines[2], "2 are still unknown. On a decision, one tap says whether the call moved.");
+    assert.equal(lines.includes("Wrong sources or figures: not counted. Nothing saved marks those."), false);
+    assert.equal(lines.some((line) => /kept/i.test(line)), false);
+  });
+
+  it("counts a doesn't-hold verdict only after Yes, and stays silent on No", () => {
+    const yes = row({ verdict: "doesn't hold up", impact: "changed" });
+    const no = row({ verdict: "doesn't hold up", impact: "kept", decided: "Go. | after challenge 1", supersedes: "2026-01-01 Old call" });
+    const open = row({ verdict: "doesn't hold up" });
+    assert.equal(grillImpact([yes]).changed, 1);
+    assert.equal(grillImpact([yes]).doubted, 0);
+    assert.equal(grillImpact([no]).changed, 0);
+    assert.equal(grillImpact([no]).doubted, 0);
+    assert.equal(grillImpact([no]).unknown, 0);
+    assert.equal(grillImpact([no]).kept, 1);
+    assert.equal(impactLines([no])[0], "No grill is marked as changing a call yet.");
+    assert.equal(impactLines([no]).length, 1);
+    assert.equal(impactLines([open])[0], "No grill is marked as changing a call yet.");
+    assert.match(impactLines([open])[1], /1 plan was called out as not holding up/);
+    assert.equal(impactLines([yes])[0], "1 of 1 grill changed the call.");
+    assert.equal(impactLines([]).length, 0);
+  });
+
+  it("shows a source, fact or figure kind as flagged, never as a change", () => {
+    const flagged = row({ challengeKinds: ["unsupported-claim", "hidden-assumption"] });
+    const figure = row({ verdict: "solid", challengeKinds: ["evidence-mismatch"] });
+    const cost = row({ challengeKinds: ["wrong-cost-model"] });
+    const other = row({ challengeKinds: ["loaded-framing", "not-a-kind"] });
+    const summary = grillImpact([flagged, figure, cost, other]);
+    assert.equal(summary.flagged, 3);
+    assert.equal(summary.changed, 0);
+    const lines = impactLines([flagged, figure, cost, other]);
+    assert.equal(lines[0], "No grill is marked as changing a call yet.");
+    assert.equal(lines.at(-1), "3 flagged a source, fact or figure. A flag is not proof.");
+    assert.equal(lines.some((line) => /wrong|incorrect|proven/i.test(line)), false);
+    assert.equal(impactLines([flagged]).at(-1), "1 flagged a source, fact or figure. A flag is not proof.");
+  });
+
+  it("does not ask the judge whether the call changed", () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    for (const file of ["prompts/grill.md", "skills/grill/paste-prompt.md", "scripts/judgeCore.mjs"]) {
+      const text = readFileSync(join(root, file), "utf8");
+      assert.doesNotMatch(text, /Did this grill change your call/, file);
+    }
+    assert.doesNotMatch(HOSTED_INSTRUCTIONS, /Did this grill change your call/);
   });
 });
