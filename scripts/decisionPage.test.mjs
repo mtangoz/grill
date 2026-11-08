@@ -23,6 +23,7 @@ import {
   recordsForLookBack,
   challengeKindList,
   grillImpact,
+  impactDetailLine,
   impactLines,
   scorecardLine,
 } from "./hostedCore.mjs";
@@ -380,8 +381,11 @@ describe("grill impact", () => {
     assert.equal(summary.flagged, 0);
     const lines = impactLines([changed, replaced, doubted, shaky, solid]);
     assert.equal(lines[0], "2 of 5 grills changed the call.");
-    assert.equal(lines[1], "1 plan was called out as not holding up. That counts only if you say the call moved.");
-    assert.equal(lines[2], "2 are still unknown. On a decision, one tap says whether the call moved.");
+    assert.equal(lines[1], "2 unknown (impact not confirmed) · 1 called out (not a confirmed change)");
+    assert.equal(lines.length, 2);
+    assert.equal(impactDetailLine({ unknown: 1, doubted: 0, flagged: 0 }), "1 unknown (impact not confirmed)");
+    assert.equal(impactDetailLine({ unknown: 3, doubted: 1, flagged: 2 }), "3 unknown (impact not confirmed) · 1 called out (not a confirmed change) · 2 flagged (not proof)");
+    assert.equal(impactDetailLine({ unknown: 0, doubted: 0, flagged: 0 }), "");
     assert.equal(lines.includes("Wrong sources or figures: not counted. Nothing saved marks those."), false);
     assert.equal(lines.some((line) => /kept/i.test(line)), false);
   });
@@ -399,7 +403,7 @@ describe("grill impact", () => {
     assert.equal(impactLines([no])[0], "No grill is marked as changing a call yet.");
     assert.equal(impactLines([no]).length, 1);
     assert.equal(impactLines([open])[0], "No grill is marked as changing a call yet.");
-    assert.match(impactLines([open])[1], /1 plan was called out as not holding up/);
+    assert.equal(impactLines([open])[1], "1 called out (not a confirmed change)");
     assert.equal(impactLines([yes])[0], "1 of 1 grill changed the call.");
     assert.equal(impactLines([]).length, 0);
   });
@@ -414,9 +418,9 @@ describe("grill impact", () => {
     assert.equal(summary.changed, 0);
     const lines = impactLines([flagged, figure, cost, other]);
     assert.equal(lines[0], "No grill is marked as changing a call yet.");
-    assert.equal(lines.at(-1), "3 flagged a source, fact or figure. A flag is not proof.");
+    assert.equal(lines.at(-1), "4 unknown (impact not confirmed) · 3 flagged (not proof)");
     assert.equal(lines.some((line) => /wrong|incorrect|proven/i.test(line)), false);
-    assert.equal(impactLines([flagged]).at(-1), "1 flagged a source, fact or figure. A flag is not proof.");
+    assert.equal(impactLines([flagged]).at(-1), "1 unknown (impact not confirmed) · 1 flagged (not proof)");
   });
 
   it("does not ask the judge whether the call changed", () => {
@@ -436,5 +440,29 @@ describe("the Your grills list row", () => {
     const html = renderDecisionsForTest({ records: "keep" }, [{ id: "a1", title, block: `version: 1\ndate: 2026-10-01\ntitle: ${title}\nverdict: solid\nreview: 2026-12-01` }], { now: Date.parse("2026-11-08T12:00:00Z") });
     assert.ok(html.includes(`>${title}</a>`), "full title in the list");
     assert.equal(html.includes("…</a>"), false);
+  });
+
+  it("keeps the learning line inside the impact block, under the short count", async () => {
+    const { renderDecisionsForTest } = await import("../api/_hosted.mjs");
+    const title = "Keep the full decision title on the list even when the impact block also shows the learning line";
+    const block = (name, verdict) => `version: 1\ndate: 2026-10-01\ntitle: ${name}\nverdict: ${verdict}\nreview: 2026-12-01`;
+    const rows = [
+      { id: "a1", title, verdict: "shaky", block: block(title, "shaky") },
+      { id: "a2", title: "Called out plan", verdict: "doesn't hold up", block: block("Called out plan", "doesn't hold up") },
+      { id: "a3", title: "Flagged source", verdict: "solid", challengeKinds: ["unsupported-claim"], block: block("Flagged source", "solid") },
+    ];
+    const html = renderDecisionsForTest({ records: "keep" }, rows, { now: Date.parse("2026-11-08T12:00:00Z") });
+    const impactStart = html.indexOf('<section id="impact">');
+    const impactEnd = html.indexOf("</section>", impactStart);
+    const impact = html.slice(impactStart, impactEnd);
+    assert.match(impact, /2 unknown \(impact not confirmed\) · 1 called out \(not a confirmed change\) · 1 flagged \(not proof\)/);
+    assert.match(impact, /3 decisions · 0% looked back/);
+    assert.ok(impact.indexOf("2 unknown") < impact.indexOf("3 decisions · 0% looked back"), "the learning line is under the impact count");
+    assert.equal((html.match(/3 decisions · 0% looked back/g) || []).length, 1);
+    assert.ok(html.includes(`>${title}</a>`));
+    assert.equal(html.includes(">Held up<"), false, "outcome taps stay on the record, not the list");
+    const empty = renderDecisionsForTest({ records: "keep" }, [], { now: Date.parse("2026-11-08T12:00:00Z") });
+    assert.equal(empty.includes("What Grill changed"), false);
+    assert.equal(empty.includes("looked back"), false);
   });
 });

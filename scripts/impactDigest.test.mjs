@@ -74,6 +74,7 @@ describe("weekly impact email copy", () => {
     const text = impactDigestText({
       changed: summary.changed,
       count: summary.count,
+      unknown: summary.unknown,
       doubted: summary.doubted,
       flagged: summary.flagged,
       lookbacks: [{ label: "Hire the contractor", held: "https://grillyour.ai/decisions?confirm=outcome&id=due&value=held&from=email", no: "https://grillyour.ai/decisions?confirm=outcome&id=due&value=no&from=email", mixed: "https://grillyour.ai/decisions?confirm=outcome&id=due&value=mixed&from=email" }],
@@ -83,7 +84,7 @@ describe("weekly impact email copy", () => {
     });
     assert.equal(IMPACT_EMAIL_SUBJECT, "Did Grill change your call?");
     assert.match(text, /^This week: 2 of 5 grills changed your call\./);
-    assert.match(text, /1 plan flagged as not holding up · 1 grill with sources flagged/);
+    assert.match(text, /1 unknown \(impact not confirmed\) · 1 called out \(not a confirmed change\) · 1 flagged \(not proof\)/);
     assert.match(text, /Look-back due: Hire the contractor\nHeld up: https:\/\/grillyour\.ai\/decisions\?confirm=outcome&id=due&value=held&from=email\nDidn't: /);
     assert.match(text, /Mixed: https:\/\/grillyour\.ai\/decisions\?confirm=outcome&id=due&value=mixed&from=email/);
     assert.match(text, /Your grills → https:\/\/grillyour\.ai\/decisions/);
@@ -96,12 +97,13 @@ describe("weekly impact email copy", () => {
   it("drops a zero plan count and a zero source count, and a week with neither line", () => {
     const plans = impactDigestText({ changed: 0, count: 2, doubted: 2, flagged: 0, lookbacks: [], decisionsUrl: "https://grillyour.ai/decisions", unsubscribeUrl: "https://grillyour.ai/u", settingsUrl: "https://grillyour.ai/account" });
     assert.match(plans, /This week: 0 of 2 grills changed your call\./);
-    assert.match(plans, /2 plans flagged as not holding up/);
-    assert.doesNotMatch(plans, /sources flagged/);
+    assert.match(plans, /2 called out \(not a confirmed change\)/);
+    assert.doesNotMatch(plans, /flagged \(not proof\)/);
+    assert.doesNotMatch(plans, /unknown/);
     const sources = impactDigestText({ changed: 1, count: 1, doubted: 0, flagged: 3, lookbacks: [], decisionsUrl: "https://grillyour.ai/decisions", unsubscribeUrl: "https://grillyour.ai/u", settingsUrl: "https://grillyour.ai/account" });
     assert.match(sources, /This week: 1 of 1 grills changed your call\./);
-    assert.match(sources, /3 grills with sources flagged/);
-    assert.doesNotMatch(sources, /plans flagged/);
+    assert.match(sources, /3 flagged \(not proof\)/);
+    assert.doesNotMatch(sources, /called out/);
     const neither = impactDigestText({ changed: 0, count: 0, doubted: 0, flagged: 0, lookbacks: [{ label: "Ship Friday", held: "https://h", no: "https://n", mixed: "https://m" }], decisionsUrl: "https://grillyour.ai/decisions", unsubscribeUrl: "https://grillyour.ai/u", settingsUrl: "https://grillyour.ai/account" });
     assert.doesNotMatch(neither, /This week:/);
     assert.doesNotMatch(neither, /flagged/);
@@ -125,7 +127,7 @@ describe("weekly impact email copy", () => {
       settings: "https://grillyour.ai/account",
     });
     assert.match(digest.text, /This week: 0 of 1 grills changed your call\./);
-    assert.match(digest.text, /1 plan flagged as not holding up/);
+    assert.match(digest.text, /1 called out \(not a confirmed change\)/);
     assert.match(digest.text, /Look-back due: Price the seats/);
     assert.doesNotMatch(digest.text, /Old overdue|Already read|Next week|New plan/);
     assert.equal(digestForAccount([row({ id: "quiet", createdAt: "2026-10-01T00:00:00.000Z", review: "2026-10-20" })], WINDOW, { outcome: () => "", decisions: "", unsubscribe: "", settings: "" }), null);

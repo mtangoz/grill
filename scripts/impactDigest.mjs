@@ -3,7 +3,7 @@
  * Counting matches grillImpact: a Yes, an after mark, or a supersedes line. A verdict is not a change.
  */
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { grillImpact, hasLookback, isoDay } from "./hostedCore.mjs";
+import { grillImpact, hasLookback, impactDetailLine, isoDay } from "./hostedCore.mjs";
 import { shortDecision } from "./reflection.mjs";
 
 export const IMPACT_EMAIL_SUBJECT = "Did Grill change your call?";
@@ -77,21 +77,12 @@ export function outcomeConfirmUrl(origin, id, value) {
   return url.toString();
 }
 
-function planLine(doubted, flagged) {
-  const parts = [];
-  if (doubted === 1) parts.push("1 plan flagged as not holding up");
-  else if (doubted > 1) parts.push(`${doubted} plans flagged as not holding up`);
-  if (flagged === 1) parts.push("1 grill with sources flagged");
-  else if (flagged > 1) parts.push(`${flagged} grills with sources flagged`);
-  return parts.join(" · ");
-}
-
-/** The note body. A zero plan count or a zero source count is left out. No verdict text. */
-export function impactDigestText({ changed, count, doubted, flagged, lookbacks, decisionsUrl, unsubscribeUrl, settingsUrl }) {
+/** The note body. A zero count is left out. No verdict text. The detail line matches Your grills. */
+export function impactDigestText({ changed, count, unknown = 0, doubted, flagged, lookbacks, decisionsUrl, unsubscribeUrl, settingsUrl }) {
   const lines = [];
   if (count > 0) lines.push(`This week: ${changed} of ${count} grills changed your call.`);
-  const plans = planLine(Number(doubted) || 0, Number(flagged) || 0);
-  if (plans) lines.push(plans);
+  const detail = impactDetailLine({ unknown: Number(unknown) || 0, doubted: Number(doubted) || 0, flagged: Number(flagged) || 0 });
+  if (detail) lines.push(detail);
   for (const item of lookbacks || []) {
     if (lines.length) lines.push("");
     lines.push(`Look-back due: ${item.label}`);
@@ -119,6 +110,7 @@ export function digestForAccount(rows, window, urls) {
   const text = impactDigestText({
     changed: summary.changed,
     count: summary.count,
+    unknown: summary.unknown,
     doubted: summary.doubted,
     flagged: summary.flagged,
     lookbacks: due.map((item) => ({

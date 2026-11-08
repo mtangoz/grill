@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-08 | Tony approved on 2026-11-08: the impact detail is one short count, on Your grills and in the Monday email. Unknown means impact not confirmed, called out is not a confirmed change, and flagged is not proof. A zero count is left out. The learning line (how many decisions, and the percent looked back) sits inside the impact block, under that count, and is not repeated under the due list. |
 | 2026-11-08 | Tony approved on 2026-11-08: when a decision is cheap and easy to undo, lack of data alone is never grounds for shaky or doesn't hold up. The judge names the risk and the cheapest measurement, and may say solid if. Challenges are framed as experiments. |
 | 2026-11-08 | A signed-in account gets a Monday email for four weeks, on unless they turn it off. It counts changed calls the same way Your grills does, skips a quiet week, and records a look-back only after a signed-in confirm. |
 | 2026-11-08 | Your grills leads with whether a grill changed the call. A Yes on the record counts, and so does a supersedes line. A doesn't-hold verdict counts only after that Yes. A saved challenge kind shows as flagged, not as proof. |
