@@ -94,8 +94,8 @@ describe("founding members", () => {
     const icp = readFileSync(join(ROOT, "docs/ICP.md"), "utf8");
     assert.match(icp, /First 100 users get Grill free for life/);
     const report = { paidIntentPricing: 0, paidIntentCheckout: 0, paidIntentNotify: 0, freeToPaid: 0, waitlist: 0, founding: 7 };
-    assert.equal(weeklyMetricLines(report).at(-2), "founding members: 7/100");
-    assert.equal(weeklyMetricLines({ ...report, founding: 140 }).at(-2), "founding members: 100/100");
+    assert.ok(weeklyMetricLines(report).includes("founding members: 7/100"));
+    assert.ok(weeklyMetricLines({ ...report, founding: 140 }).includes("founding members: 100/100"));
     assert.equal(WEEKLY_KEY, FOUNDING_COUNT_KEY);
   });
 

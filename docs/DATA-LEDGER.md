@@ -46,6 +46,7 @@ The decision, as you stated it, passes through Grill's server in memory. It is n
 
 - The write-up is not logged, and not stored. The optional deepen test does not store it either. On the installed tool, asking to deepen sends it to the same judge again. In chat, that second call happens during the grill, and only the answers are kept in the layer slot above.
 - A token in the query string is rejected. Grill reads a bearer token from the header only.
+- The look-back funnel is four integers, `grill:metric:funnel_grills`, `grill:metric:funnel_choices`, `grill:metric:funnel_lookbacks_set`, and `grill:metric:funnel_lookbacks_done`. Each is an `INCR`. None stores a decision, a title, or a verdict. The weekly report reads them.
 - The look-back reminder in chat is a count only ("2 earlier calls are due"). It names no decision. The due list on `/decisions` is worked out from that person's records when the page loads and is not stored. A blank look-back note does not count as done.
 - The scorecard and the one nudge on `/decisions` are worked out from that person's own records and drafts each time the page loads. They are not stored, not logged and not counted, and only that person sees them.
 - Account pages load no analytics script. The website's visit counter is not on `/decisions`, `/account` or `/judge`.

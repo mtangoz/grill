@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FOUNDING_COUNT_KEY, FREE_TO_PAID_KEY, PAID_INTENT_KEYS, WAITLIST_SIGNUPS_KEY, readWeeklyMetrics, weeklyMetricLines } from "./weeklyMetricsCore.mjs";
+import { FUNNEL_KEYS as HOSTED_FUNNEL_KEYS } from "./hostedCore.mjs";
+import { FOUNDING_COUNT_KEY, FREE_TO_PAID_KEY, FUNNEL_KEYS, PAID_INTENT_KEYS, WAITLIST_SIGNUPS_KEY, readWeeklyMetrics, weeklyMetricLines } from "./weeklyMetricsCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV = {
@@ -32,6 +33,10 @@ describe("weekly metrics", () => {
         [FREE_TO_PAID_KEY]: "1",
         [WAITLIST_SIGNUPS_KEY]: "3",
         [FOUNDING_COUNT_KEY]: "7",
+        [FUNNEL_KEYS.grills]: "11",
+        [FUNNEL_KEYS.choices]: "6",
+        [FUNNEL_KEYS.lookbacksSet]: "5",
+        [FUNNEL_KEYS.lookbacksDone]: "2",
       }),
     );
     assert.equal(report.label, "Weekly metrics");
@@ -46,6 +51,10 @@ describe("weekly metrics", () => {
     ]);
     assert.equal(lines[4], "waitlist: 3");
     assert.equal(lines[5], "founding members: 7/100");
+    assert.deepEqual(lines.slice(6, 10), ["grills: 11", "choices logged: 6", "look-backs set: 5", "look-backs done: 2"]);
+    assert.equal(JSON.parse(lines.at(-1)).lookbacksDone, 2);
+    assert.doesNotMatch(lines.at(-1), /decision|title|verdict/);
+    assert.deepEqual(HOSTED_FUNNEL_KEYS, FUNNEL_KEYS);
     assert.equal(JSON.parse(lines.at(-1)).freeToPaid, 1);
     assert.equal(JSON.parse(lines.at(-1)).waitlist, 3);
     assert.equal(JSON.parse(lines.at(-1)).founding, 7);
