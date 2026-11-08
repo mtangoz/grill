@@ -73,6 +73,7 @@ Grill maps the OAuth client, not the chat's own guess:
 | ChatGPT | Redirect host `chatgpt.com` or `chat.openai.com` | openai | `chatgpt` |
 | Grok | Redirect host `grok.com` or `grok.x.ai` | x-ai | `grok` |
 | Gemini | Redirect host `gemini.google.com` or `aistudio.google.com` | google | `gemini` |
+| Cursor | `clientInfo` name or User-Agent contains Cursor, and no OAuth client already matched | nothing. Cursor is not one model company | `cursor` |
 | Unknown | No match | nothing, unless the call names an author | `unknown` |
 
 An explicit `author` argument wins. A client name is only a hint when the OAuth client is unknown, and it never overrides the row above.
