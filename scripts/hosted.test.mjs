@@ -1292,8 +1292,13 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.equal(parsed.proposed_by, "ai");
       assert.equal(parsed.decided, "Trial two weeks first. | after challenge 1");
       const html = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${session}` } }), ctx)).text();
+      assert.match(html, /1 of 1 grill changed the call/);
       assert.match(html, /Where your calls changed/);
       assert.match(html, /<strong>Switch vendor now<\/strong> \(AI suggestion\)/);
+      const href = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
+      const detail = await (await handleDecisions(new Request(`https://grillyour.ai${href}`, { headers: { cookie: `__session=${session}` } }), ctx)).text();
+      assert.match(detail, /You marked this as changed after a challenge/);
+      assert.match(detail, />Held up</);
       assert.doesNotMatch(html, /saved you|streak/i);
     } finally {
       await fake.close();

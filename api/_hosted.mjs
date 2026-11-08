@@ -106,6 +106,8 @@ import {
   decisionSourceId,
   decisionSourceLabel,
   LOOKBACK_HOW,
+  challengeKindList,
+  impactLines,
   outcomeLine,
   outcomeNoteText,
   scorecardLine,
@@ -1330,6 +1332,7 @@ function draftFromGrill({ subject, parsed, sourceApp, supersedes, changed, now, 
       const line = `${index + 1}. ${oneLine(row.challenge)} — ${oneLine(row.falsifier)}`;
       return line.length > 400 ? `${line.slice(0, 399)}…` : line;
     }),
+    challengeKinds: challengeKindList(challenges),
     layers: layers || null,
   };
 }
@@ -1761,6 +1764,7 @@ async function callDecided(args, account, deps) {
     block,
     sourceApp: pending.sourceApp || "unknown",
     challenges: pending.challenges || [],
+    challengeKinds: pending.challengeKinds || [],
     lookback: null,
     date: fields.date,
     title: fields.title,
@@ -2365,6 +2369,35 @@ function renderScorecard(rows, type, source) {
   return line ? `<p class="scorecard">${esc(line)}</p>` : "";
 }
 
+function renderImpact(rows) {
+  const lines = impactLines(rows);
+  if (!lines.length) return "";
+  const rest = lines.slice(1).map((line) => `<p>${esc(line)}</p>`).join("\n    ");
+  return `<section id="impact">
+    <h2>What Grill changed</h2>
+    <p class="scorecard">${esc(lines[0])}</p>
+    ${rest}
+  </section>`;
+}
+
+function impactTaps(id) {
+  const buttons = [
+    ["changed", "Yes"],
+    ["kept", "No"],
+  ]
+    .map(([value, label]) => `<button type="submit" name="value" value="${value}">${label}</button>`)
+    .join(" ");
+  return `<form method="post" action="/decisions" class="outcomes"><input type="hidden" name="action" value="impact"><input type="hidden" name="id" value="${esc(id)}">${buttons}</form>`;
+}
+
+function impactNote(row) {
+  if (row?.impact === "changed") return "You said this one changed the call.";
+  if (row?.impact === "kept") return "You said you kept the call.";
+  const parsed = parseRecords(row?.block || "")[0] || {};
+  if (parseDecided(parsed.decided || "").after) return "You marked this as changed after a challenge.";
+  return "";
+}
+
 function renderNudge(rows, { waiting = 0, now, type = "", source = "" } = {}) {
   if (rows.length < 3) return "";
   const line = decisionTakeaways(rows, { waiting, now, filtered: Boolean(type || source) }).nudges[0];
@@ -2511,6 +2544,7 @@ function renderDecision(row, byId, extra = {}) {
   const app = String(row.sourceApp || "").trim();
   const meta = [when, app && app !== "unknown" ? `from ${APP_LABELS[app] || app}` : ""].filter(Boolean).join(" · ");
   const early = earlyRead(row, extra.now);
+  const changedCall = impactNote(row);
   const changed = formatDay(String(row.lookback?.at || "").slice(0, 10));
   const note = outcomeNoteText(row.lookback?.happened);
   const stateLine = [
@@ -2535,6 +2569,11 @@ function renderDecision(row, byId, extra = {}) {
     ${chain ? `<p>${esc(chain)}</p>` : ""}
     <p>You chose: ${choice ? esc(choice) : "Not logged."}${confidence ? ` ${esc(confidence)}.` : ""}</p>
     <p>Verdict: ${verdict ? `<strong>${esc(verdict)}</strong>` : "Not stored."}</p>
+    <section id="changed-call">
+      <p>Did this grill change your call?</p>
+      ${changedCall ? `<p>${esc(changedCall)}</p>` : ""}
+      ${impactTaps(row.id)}
+    </section>
     <section id="look-back">
       <p class="action"><strong>What happened?</strong></p>
       <p>${esc(stateLine)}</p>
@@ -2669,6 +2708,7 @@ function renderDecisions(account, rows, _credit, habits, extra = {}) {
     "Your grills",
     `${LIST_STYLE}
     <h1>Your grills</h1>
+    ${renderImpact(shown)}
     ${renderDueAction(shown, byId, now, query)}
     ${renderScorecard(shown, type, source)}
     ${filterRow(linked, type, source)}
@@ -2793,6 +2833,8 @@ async function exportRecords(account, deps, kind) {
         createdAt: row.createdAt,
         source_app: row.sourceApp,
         challenges: row.challenges || [],
+        challenge_kinds: row.challengeKinds || [],
+        impact: row.impact === "changed" || row.impact === "kept" ? row.impact : "",
         lookback: row.lookback || null,
         block: row.block,
       })),
@@ -3263,6 +3305,18 @@ export async function handleDecisions(request, deps) {
             row.lookback = { at: new Date(now).toISOString(), happened };
             await writeRecord(session.account, deps, row);
             if (!finished && !earlyRead(row, now)) await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
+          }
+        }
+        if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
+      } else if (action === "impact") {
+        const recordId = form.get("id") || "";
+        const value = form.get("value") || "";
+        if ((value === "changed" || value === "kept") && recordId) {
+          const rows = await loadRecords(session.account, deps);
+          const row = rows.find((item) => item.id === recordId);
+          if (row) {
+            row.impact = value;
+            await writeRecord(session.account, deps, row);
           }
         }
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
