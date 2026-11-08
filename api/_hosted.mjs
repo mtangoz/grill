@@ -81,6 +81,8 @@ import {
   daysOverdue,
   formatDay,
   dueForLookBack,
+  FUNNEL_KEYS,
+  hasLookback,
   dueReminderLine,
   newCalendarToken,
   capBlock,
@@ -454,6 +456,16 @@ async function countCompletedCheck(account, deps, runId) {
   await redis(deps, ["EXPIRE", monthKey, String(CAP_COUNTER_TTL_SECONDS)]);
   await redis(deps, ["INCR", dayKey]);
   await redis(deps, ["EXPIRE", dayKey, String(2 * 24 * 60 * 60)]);
+  await countFunnel(deps, FUNNEL_KEYS.grills);
+}
+
+/** A funnel step. The value is 1. The key is a fixed name. A missed count does not fail the grill. */
+async function countFunnel(deps, key) {
+  try {
+    await redis(deps, ["INCR", key]);
+  } catch {
+    // ignored on purpose
+  }
 }
 
 async function dailyChecksUsed(account, deps) {
@@ -1651,11 +1663,13 @@ async function callLookBack(args, account, deps) {
     for (const row of saved) {
       const hit = scored.some((item) => item.date === row.date && item.title === row.title);
       if (!hit) continue;
+      const firstLook = !hasLookback(row);
       row.lookback = {
         at: new Date(now).toISOString(),
         happened: happened.replace(/\s+/g, " ").trim().slice(0, 2000),
       };
       await writeRecord(account, deps, row);
+      if (firstLook) await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
       savedAny = true;
     }
   }
@@ -1714,6 +1728,7 @@ async function callDecided(args, account, deps) {
     });
     saved.decided = decided;
     await writeRecord(account, deps, saved);
+    await countFunnel(deps, FUNNEL_KEYS.choices);
     return toolText(withReminder(savedConfirmation(parsed.review), await reminderLine(account, deps, rows, saved.id)));
   }
   const pendings = await loadPendings(account, deps);
@@ -1753,6 +1768,8 @@ async function callDecided(args, account, deps) {
     decided,
   });
   await deletePending(account, deps, pending.id);
+  await countFunnel(deps, FUNNEL_KEYS.choices);
+  if (review) await countFunnel(deps, FUNNEL_KEYS.lookbacksSet);
   return toolText(withReminder(savedConfirmation(review), await reminderLine(account, deps, rows, pending.id)));
 }
 
@@ -3217,10 +3234,11 @@ export async function handleDecisions(request, deps) {
         if (note && recordId) {
           const rows = await loadRecords(session.account, deps);
           const row = rows.find((item) => item.id === recordId);
-          if (row && !String(row.lookback?.happened || "").trim()) {
+          if (row && !hasLookback(row)) {
             const now = typeof deps.now === "number" ? deps.now : Date.now();
             row.lookback = { at: new Date(now).toISOString(), happened: note };
             await writeRecord(session.account, deps, row);
+            await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
           }
         }
       } else if (action === "review") {
@@ -3232,6 +3250,7 @@ export async function handleDecisions(request, deps) {
           if (parsed) {
             const value = form.get("value") || "";
             const now = typeof deps.now === "number" ? new Date(deps.now) : new Date();
+            const hadReview = /^\d{4}-\d{2}-\d{2}$/.test(String(row.review || ""));
             let review = String(row.review || "");
             if (value === "off") review = "";
             else if (value === "on") review = reviewDateFor([row.title, row.decided, parsed.prediction, parsed.goal].filter(Boolean).join("\n"), now);
@@ -3242,6 +3261,7 @@ export async function handleDecisions(request, deps) {
             row.block = recordBlock({ ...parsed, review });
             row.review = review;
             await writeRecord(session.account, deps, row);
+            if (!hadReview && /^\d{4}-\d{2}-\d{2}$/.test(review)) await countFunnel(deps, FUNNEL_KEYS.lookbacksSet);
           }
         }
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;

@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAccount, handleCalendar, handleDecisions, handleMcp, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
-import { CLAUDE_WEB_REDIRECT, createMemoryRedis } from "./hostedCore.mjs";
+import { CLAUDE_WEB_REDIRECT, createMemoryRedis, FUNNEL_KEYS } from "./hostedCore.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -633,6 +633,11 @@ describe("the decisions page layout", () => {
       assert.equal(junk.status, 303);
       const still = await getPage(ctx, "/decisions", { now: FEB });
       assert.match(still.html, /decision due for a look-back/);
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.grills]), "1");
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.choices]), "1");
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksSet]), "1");
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksDone]) || null, null);
+      assert.equal(Object.values(FUNNEL_KEYS).some((key) => key.includes("Hire")), false);
       const tapped = await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=no`, FEB);
       assert.equal(tapped.status, 303);
       const after = await getPage(ctx, "/decisions", { now: FEB });
@@ -643,6 +648,7 @@ describe("the decisions page layout", () => {
       const kept = await getPage(ctx, "/decisions", { now: FEB });
       assert.match(kept.html, /Did not come true/);
       assert.equal(kept.html.includes("Came true"), false);
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksDone]), "1");
     } finally {
       await fake.close();
     }

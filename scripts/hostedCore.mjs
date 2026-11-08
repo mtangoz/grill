@@ -606,6 +606,14 @@ export function formatDay(iso) {
 /** Public site for links a person can open. There is no separate host setting; this is the default. */
 export const PUBLIC_SITE_ORIGIN = "https://grillyour.ai";
 
+/** Funnel counts. Integers only. The weekly report reads the same strings. No decision text. */
+export const FUNNEL_KEYS = Object.freeze({
+  grills: "grill:metric:funnel_grills",
+  choices: "grill:metric:funnel_choices",
+  lookbacksSet: "grill:metric:funnel_lookbacks_set",
+  lookbacksDone: "grill:metric:funnel_lookbacks_done",
+});
+
 /** Saved line in chat. Points at Your grills. No confidence nag and no credit line. */
 export function savedConfirmation(review) {
   const day = formatDay(review);

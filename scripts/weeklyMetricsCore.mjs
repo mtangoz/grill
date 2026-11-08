@@ -15,6 +15,12 @@ export const PAID_INTENT_KEYS = Object.freeze({
 export const FREE_TO_PAID_KEY = "grill:metric:free_to_paid";
 export const WAITLIST_SIGNUPS_KEY = "grill:metric:waitlist_signup";
 export const FOUNDING_COUNT_KEY = "grill:hosted:founding:count";
+export const FUNNEL_KEYS = Object.freeze({
+  grills: "grill:metric:funnel_grills",
+  choices: "grill:metric:funnel_choices",
+  lookbacksSet: "grill:metric:funnel_lookbacks_set",
+  lookbacksDone: "grill:metric:funnel_lookbacks_done",
+});
 
 export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) {
   const url = typeof env.UPSTASH_REDIS_REST_URL === "string" ? env.UPSTASH_REDIS_REST_URL.trim() : "";
@@ -35,6 +41,10 @@ export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) 
     freeToPaid: await n(FREE_TO_PAID_KEY),
     waitlist: await n(WAITLIST_SIGNUPS_KEY),
     founding: await n(FOUNDING_COUNT_KEY),
+    grills: await n(FUNNEL_KEYS.grills),
+    choices: await n(FUNNEL_KEYS.choices),
+    lookbacksSet: await n(FUNNEL_KEYS.lookbacksSet),
+    lookbacksDone: await n(FUNNEL_KEYS.lookbacksDone),
   };
 }
 
@@ -53,6 +63,10 @@ export function weeklyMetricLines(report) {
     `free-to-paid: ${report.freeToPaid}`,
     `waitlist: ${report.waitlist ?? 0}`,
     `founding members: ${foundingShown(report)}/100`,
+    `grills: ${report.grills ?? 0}`,
+    `choices logged: ${report.choices ?? 0}`,
+    `look-backs set: ${report.lookbacksSet ?? 0}`,
+    `look-backs done: ${report.lookbacksDone ?? 0}`,
     JSON.stringify(report),
   ];
 }
