@@ -458,11 +458,11 @@ writePage("look-back.html", {
   blurb: "For the copy-and-paste route. Turn the judge's answer into a decision record, then come back and say what happened. Nothing is sent and nothing is stored.",
 });
 writePage("start.html", {
-  description: "Pick ChatGPT or Claude, then connect Grill and paste one message.",
+  description: "Pick your AI, then connect Grill and paste one message.",
   url: `${SITE_URL}start/`,
   outDir: "start",
   name: "Start",
-  blurb: "Pick ChatGPT or Claude, then connect.",
+  blurb: "Pick your AI, then connect.",
 });
 writePage("privacy.html", {
   description: "What Grill sends, what it counts, and what it never keeps.",

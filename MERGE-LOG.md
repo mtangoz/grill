@@ -3,6 +3,7 @@
 | Date | Change |
 | --- | --- |
 | 2026-11-08 | A saved decision is due for a look-back on its review day, 14 days after the choice unless a date was named. A blank look-back note does not count as done. |
+| 2026-11-08 | /start also offers Grok Bot, Cursor / VS Code, and Other AI. Grok Bot uses its verified connector line. Cursor and VS Code use the documented npx setup. Other AI is copy and paste for Copilot, Gemini, Muse, Grok and more. |
 | 2026-11-08 | Your grills can be filtered by the client the grill came from. Takeaways follow that filter. Unknown stays unknown. |
 | 2026-11-08 | Your grills opens with takeaways: counts, look-backs, whether the verdict matched what happened, and one or two nudges. |
 | 2026-11-08 | Your grills can be filtered by decision type. The type is read from the stored words, with no extra question. |
