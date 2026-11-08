@@ -605,6 +605,11 @@ export function isoDay(ms = Date.now()) {
   return `${y}-${m}-${d}`;
 }
 
+/** A look-back is done only when the note has words. A blank note is not a look-back. */
+export function hasLookback(row) {
+  return Boolean(String(row?.lookback?.happened || "").trim());
+}
+
 /**
  * A stored look-back note, including one that was saved as a single line
  * (`came_true: no happened: ...`). Display only. Nothing here is stored.
@@ -696,11 +701,11 @@ export function decisionTypeId(value) {
 export function decisionTakeaways(rows, { waiting = 0, now = Date.now(), filtered = false } = {}) {
   const list = Array.isArray(rows) ? rows : [];
   const count = list.length;
-  const looked = list.filter((row) => String(row?.lookback?.happened || "").trim()).length;
+  const looked = list.filter(hasLookback).length;
   const today = isoDay(now);
   const dueOpen = list.filter((row) => {
     const review = String(row?.review || "");
-    return /^\d{4}-\d{2}-\d{2}$/.test(review) && review <= today && !String(row?.lookback?.happened || "").trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(review) && review <= today && !hasLookback(row);
   }).length;
   let scored = 0;
   let held = 0;
@@ -1168,7 +1173,7 @@ export function decisionHabits({ records = [], waiting = 0, now = Date.now() } =
   }).length;
   const changedCourse = records.filter((row) => String(row.supersedes || "").trim()).length;
   const due = records.filter((row) => row.review && row.review <= today).length;
-  const lookedBack = records.filter((row) => row.lookback?.happened).length;
+  const lookedBack = records.filter(hasLookback).length;
   let prompt = "";
   if (waiting > decided) prompt = "Most of your grills end without a choice. One line saying what you chose, after the verdict, is what makes a look-back possible.";
   else if (decided && withConfidence * 2 < decided) prompt = "You rarely say how sure you are. A rough percent makes a look-back show whether your confidence matches what happens.";
@@ -1183,7 +1188,7 @@ export function decisionHabits({ records = [], waiting = 0, now = Date.now() } =
 export function dueForLookBack(rows, now = Date.now()) {
   const today = isoDay(now);
   return (rows || [])
-    .filter((row) => /^\d{4}-\d{2}-\d{2}$/.test(String(row?.review || "")) && row.review <= today && !row.lookback?.happened)
+    .filter((row) => /^\d{4}-\d{2}-\d{2}$/.test(String(row?.review || "")) && row.review <= today && !hasLookback(row))
     .sort((a, b) => (a.review < b.review ? -1 : a.review > b.review ? 1 : 0));
 }
 
@@ -1275,7 +1280,7 @@ export function calendarFeed({ rows = [], origin = "https://grillyour.ai", title
     "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
   ];
   const waiting = (rows || []).filter(
-    (row) => /^\d{4}-\d{2}-\d{2}$/.test(String(row?.review || "")) && !row.lookback?.happened && row.id,
+    (row) => /^\d{4}-\d{2}-\d{2}$/.test(String(row?.review || "")) && !hasLookback(row) && row.id,
   );
   for (const row of waiting) {
     const end = new Date(Date.parse(`${row.review}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
