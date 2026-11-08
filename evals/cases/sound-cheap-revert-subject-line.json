@@ -1,0 +1,11 @@
+{
+  "id": "sound-cheap-revert-subject-line",
+  "kind": "sound",
+  "subject": "Lumen Post, a three-person weekly newsletter with 1,400 subscribers, is deciding whether to try a shorter subject line on its next two Tuesday sends, or to keep the current long style until it has a year of split tests. The team recommends trying the shorter line now. They have no past test of short lines on this list, no benchmark they trust, and no sample large enough to know the effect in advance. Two sends cost nothing beyond the usual writing hour, and putting the old line back is one edit in the same tool, on the same day. The plan: use the short line on the next two Tuesdays, compare the open rate with the last four Tuesdays of the long line, and switch back the following week if opens fall by more than two points. Prediction, offered at 40% confidence: the short line might help a little or might do nothing, and it is unlikely to do lasting harm because it is gone after two sends. They are not claiming the short line works. They are claiming only that trying it is worth two sends. The strongest case against: two sends is a tiny sample, so a dip could be the subject line or an ordinary quiet week, and the team will not be able to say which. They are choosing the try anyway, because waiting a year for a clean test teaches them nothing this quarter, and the cost of being wrong is one week of putting the old line back.",
+  "question": "Should Lumen Post try a shorter subject line on the next two sends before it has any data?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "A reversible, near-zero-cost try with no prior data. A small sample is normal this early. Lack of data is a measurement to run on the two sends, not grounds for shaky or doesn't hold up."
+}

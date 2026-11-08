@@ -309,13 +309,27 @@ describe("renderSummary — never subject text beyond the case id", () => {
 describe("every committed case under evals/cases/ parses and has the fields its kind requires", () => {
   const files = readdirSync(CASES_DIR).filter((f) => f.endsWith(".json")).sort();
 
-  it("finds the full committed set: 13 flawed, 5 sound, 4 loaded", () => {
+  it("finds the full committed set: 13 flawed, 6 sound, 4 loaded", () => {
     const byKind = { flawed: 0, sound: 0, loaded: 0 };
     for (const f of files) {
       const c = JSON.parse(readFileSync(join(CASES_DIR, f), "utf8"));
       byKind[c.kind] = (byKind[c.kind] ?? 0) + 1;
     }
-    assert.deepEqual(byKind, { flawed: 13, sound: 5, loaded: 4 });
+    assert.deepEqual(byKind, { flawed: 13, sound: 6, loaded: 4 });
+  });
+
+  it("a cheap reversible try with no data must not be shaky just for lack of data", () => {
+    const id = "sound-cheap-revert-subject-line";
+    const c = JSON.parse(readFileSync(join(CASES_DIR, `${id}.json`), "utf8"));
+    assert.equal(c.kind, "sound");
+    assert.deepEqual(c.expect.verdict_in, ["holds", "holds-with-conditions"]);
+    assert.equal(c.expect.max_severity, "moderate");
+    for (const banned of ["weak", "refuted"]) assert.equal(c.expect.verdict_in.includes(banned), false);
+    assert.match(c.subject, /no past test/);
+    assert.match(c.subject, /switch back/);
+    assert.match(c.subject, /not claiming the short line works/);
+    assert.match(c.why, /not grounds for shaky/);
+    assert.deepEqual(caseProblems(c, `${id}.json`), []);
   });
 
   // An earlier turn names a hard limit. The later plan does the thing that limit rules out,

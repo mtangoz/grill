@@ -525,7 +525,7 @@ export const SEVERITIES = Object.freeze(["fatal", "serious", "moderate", "minor"
 
 export const SEVERITY_DESCRIPTIONS = Object.freeze({
   fatal: "the conclusion does not survive this. If it stands, the subject is wrong, not merely weaker.",
-  serious: "if the challenge is right, the case no longer shows that the chosen option beats the ones it was weighed against, or the chosen option needs a different scope, cost or approach before anyone acts on it. That includes a test the decision depends on that cannot answer its question and cannot be fixed in place. A flaw in the chosen plan's test, threshold, sample size, comparison, date or monitoring that can be fixed in place, and that makes no rejected option look better, is moderate.",
+  serious: "if the challenge is right, the case no longer shows that the chosen option beats the ones it was weighed against, or the chosen option needs a different scope, cost or approach before anyone acts on it. That includes a test the decision depends on that cannot answer its question and cannot be fixed in place. A flaw in the chosen plan's test, threshold, sample size, comparison, date or monitoring that can be fixed in place, and that makes no rejected option look better, is moderate. Lack of data or evidence alone, on a decision that is cheap and easy to undo, is not serious.",
   moderate: "a real weakness that needs an answer, and that a named condition, an added check, or a fix to the plan's details would close while the choice between the options stands. The conditions behind a \"holds-with-conditions\" verdict are usually this.",
   minor: "worth knowing, changes nothing.",
 });
@@ -543,7 +543,7 @@ export const VERDICTS = Object.freeze(["holds", "holds-with-conditions", "weak",
 export const VERDICT_DESCRIPTIONS = Object.freeze({
   holds: "you tried to break it and could not: no serious or fatal challenge survived. Say so plainly — this is a real, expected outcome, not a failure to find something.",
   "holds-with-conditions": "sound if specific named conditions are met. Name them.",
-  weak: "the conclusion may well be right, but the case made for it does not establish it: a serious challenge stands against a premise the choice rests on. When every surviving challenge is moderate or milder, the verdict is \"holds\" or \"holds-with-conditions\".",
+  weak: "the conclusion may well be right, but the case made for it does not establish it: a serious challenge stands against a premise the choice rests on. When every surviving challenge is moderate or milder, the verdict is \"holds\" or \"holds-with-conditions\". Lack of data or evidence alone, on a decision that is cheap and easy to undo, is not this verdict.",
   refuted: "at least one fatal challenge stands and the conclusion does not survive it.",
 });
 
@@ -816,7 +816,11 @@ export const JUDGE_TOOL = Object.freeze({
               description:
                 "MANDATORY. The exact words you are attacking, quoted — from the subject, or for a loaded-framing challenge, from the question put to you. If you cannot quote it, you are attacking something that was not said — drop the challenge.",
             },
-            challenge: { type: "string", description: "The attack itself, in one or two complete sentences." },
+            challenge: {
+              type: "string",
+              description:
+                "The attack itself, in one or two complete sentences. Frame it as an experiment and a way to learn (try X, watch Y), not as a reason to stop. Stay honest and direct.",
+            },
             what_would_have_to_be_true: {
               type: "string",
               description:
@@ -1228,6 +1232,8 @@ export function buildJudgeMessages({ subject, question = "", contextBlocks = [],
     "8. Finish every sentence. A challenge, its falsifier, the verdict reason, the strongest objection, a missing option, and a fact that would flip the call are each one or two complete sentences. Do not stop mid-sentence.",
     "",
     "Grade severity against the decision, not the finish of the plan. Every plan can be tightened, so a way to improve it is not, by itself, a reason to doubt the choice. Serious means that, if the challenge is right, the case no longer shows the chosen option beats the alternatives, or the chosen option must become a different plan; an unsupported claim or an overreach is serious when, without it, a rejected option looks as good or better, and moderate when the choice still stands without it. Moderate means the choice stands once a condition is met, a check is added, or a detail is fixed in place, including a test, threshold or sample size that needs fixing and makes no rejected option look better. A risk the subject names, with a test that would reveal it or a way back, is not a hidden one: judge whether the test and the way back work, not whether the risk exists. A test or a way back that needs fixing is a moderate challenge that says how to fix it; only one that cannot be made to work at all is serious. The scale, on an unrelated decision (renewing a support contract for a year rather than going month to month): fatal, the contract's own terms exclude the system it is meant to cover; serious, the annual price assumes last year's usage, usage has already doubled, and the comparison with month to month has to be redone before the choice can be made; moderate, the write-up reviews response times each quarter, and a monthly look would catch a slide sooner; minor, a figure is quoted without its date.",
+    "",
+    "When a decision is cheap and easy to undo, lack of data or evidence alone is never grounds for weak or refuted. Early on, a small sample is normal. Name the concrete risk and the cheapest, fastest way to measure it, and you may return holds-with-conditions when that measurement is in place. An expensive or hard-to-undo decision can still be challenged for missing evidence. A claim that overreads a small sample is still a challenge. Frame a challenge as an experiment and a way to learn (try X, watch Y), not as a reason to stop. Stay honest and direct.",
     "",
     'Finding nothing is a real result. "holds" with an empty challenge list is a legitimate answer and you should return it when the subject withstands you — when it withstands you, not when it merely sounds sure of itself. Both errors cost the reader: a fabricated objection teaches them to stop reading you, and an unearned "holds" sends them into the decision with its flaw intact and a stamp saying it was checked. Do not pad, do not hedge, do not soften a fatal or serious problem into a milder one to seem balanced or to keep a kinder verdict, do not raise a moderate one to serious to seem rigorous, and do not round a verdict up to match the write-up\'s confidence.',
     "",
