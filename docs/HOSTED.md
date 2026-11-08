@@ -23,7 +23,7 @@ Decisions you chose to keep are at `/decisions`. The page opens on what is due f
 
 ## What the owner sets
 
-On the preview environment only, until the spike in [hosted-spike.md](hosted-spike.md) passes.
+These are set in production at grillyour.ai, and on any preview you test with. The gate this route went through is recorded in [hosted-spike.md](hosted-spike.md).
 
 | Variable | What it is |
 |---|---|
@@ -126,6 +126,6 @@ node scripts/founding-backfill.mjs --file people.json --exclude person@example.c
 
 `people.json` is an array of `{ "email", "at" }`. Without `--apply` the script prints the order and writes nothing. `--apply` needs the existing Upstash env and assigns the numbers. Do not commit the file if it holds real addresses.
 
-## Still to do before this is on
+## Changing this route
 
-The pull request lists these. Do them on the preview, then run [hosted-spike.md](hosted-spike.md). Do not point `grillyour.ai` or `mcp.grillyour.ai` at this until that spike passes.
+Grill in your chat is live at `grillyour.ai/mcp`. Try a change that touches sign-in, the judge call or `grill_result` on a preview first, and re-run the Claude web check in [hosted-spike.md](hosted-spike.md) before it reaches production. `mcp.grillyour.ai` is not set up yet.

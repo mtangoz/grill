@@ -1,6 +1,6 @@
-# Hosted Grill spike (not live yet)
+# Hosted Grill spike
 
-This is the gate for Grill inside a chat. It is off until you turn it on, and only on a **preview**. Do not point `grillyour.ai` or `mcp.grillyour.ai` at it yet. Do not merge this for production until the pass rule below holds.
+Grill in your chat is now live at grillyour.ai, with open sign-up since 2026-11-03 ([HOSTED.md](HOSTED.md)). This page is the gate it went through. Keep it as the check to re-run on a **preview** before a change to sign-in, the judge call or `grill_result` reaches production. The steps below are written for that preview.
 
 You are checking one thing: after sign-in, a grill that takes about two minutes comes back in the chat **with no extra word from you**. The assistant has to call `grill_result` on its own.
 
@@ -30,7 +30,7 @@ That URL is what you paste below. It will not be `https://mcp.grillyour.ai/mcp` 
 1. Open [claude.ai](https://claude.ai) in a desktop browser, signed in as an allowlisted email.
 2. Go to **Customize → Connectors → Add custom connector**. Asking Claude in a chat to connect it does not work.
 3. Paste the preview URL ending in `/mcp`. Add it.
-4. Click **Connect**. A Grill sign-in popup opens. Continue with Google, or use an email code. Do not paste a key. There is no card.
+4. Click **Connect**. A Grill sign-in popup opens. Use an email code. Google sign-in is off in production. Do not paste a key. There is no card.
 5. The first time you grill, Grill asks, before anything is sent: keep a record of your decisions, yes or no. Answer once.
 6. In a new chat, say: `Grill this: we will slip the launch by two weeks. I'm 60% sure that buys a cleaner release.`
 7. When Claude shows the write-up, say `go`.

@@ -59,7 +59,7 @@ For Grill: recognition and product-native rewards fit what the evidence supports
 
 ## Loops that fit Grill
 
-1. **Registry placement.** Grill is already on the MCP Registry (`server.json`), Smithery and Glama (`glama.json`). Glama scores tool definitions, and awesome-mcp-servers requires a Glama badge ([Glama](https://glama.ai/mcp/servers/cpcc/moa/score)). This costs nothing and reaches people choosing between similar MCPs.
+1. **Registry placement.** Grill is already on the MCP Registry (`server.json`) and Glama (`glama.json`). It was on Smithery until Smithery shut down its MCP proxy on 2026-10-31. Glama scores tool definitions, and awesome-mcp-servers requires a Glama badge ([Glama](https://glama.ai/mcp/servers/cpcc/moa/score)). This costs nothing and reaches people choosing between similar MCPs.
 2. **Credit people can see.** A contributors page, credit in release notes, and a named credit on the eval case or prompt line someone wrote. PostHog's merch-for-merged-PRs scheme is a working example ([PostHog](https://posthog.com/docs/contribute/recognizing-contributions.md)).
 3. **Grill credit, not cash.** Grill already gives early testers $5 of use a month. Months of credit for merged work, and two-sided judge credit for referrals, are rewards that bring people back to the product and carry no profit right.
 4. **Contributions Grill uses for its own work.** Eval cases, judge-prompt fixes and new client routes improve the thing every user gets. That is the kind of contribution worth asking for, not raw pull-request volume.

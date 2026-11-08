@@ -1,6 +1,13 @@
 # PRD: Grill Pro, hosted. One key everywhere, including ChatGPT and claude.ai in a browser
 
-Status: proposed. Owner: founder. Written 2026-10-03.
+Status: partly superseded. Owner: founder. Written 2026-10-03. Updated 2026-11-08.
+
+What changed after this was written:
+
+- **Price.** The owner set Pro at **$9 a month or $90 a year** on 2026-11-07 ([MERGE-LOG.md](../MERGE-LOG.md)). The $3 / $30 recommendation in section 5 and decision 1 in section 8 are kept as the original analysis. They are not the price.
+- **Paid allowance.** A paid key has a monthly cap of `GRILL_PRO_KEY_LIMIT`, default $3 of judge spend ([PRO.md](PRO.md)), not $1.50. Public copy states checks, not dollars.
+- **Hosted route for free users.** Section 9 put this out of scope. It shipped anyway: Grill in your chat is free with a monthly allowance and open sign-up ([HOSTED.md](HOSTED.md)). Pro billing stays off (`GRILL_PRO_BILLING`).
+- **Margin at $9.** Stripe takes about $0.56 a month (2.9% + 30¢). A user who spends the full $3 cap costs about $3.17 with the router fee, which leaves about **$5.27 (59%)**. A typical user at about $0.50 of spend leaves about **$7.91 (88%)**. On the $90 year, about 55% at worst and 90% typical. Hosting is not in these numbers.
 
 ## 0. Why, in one line
 

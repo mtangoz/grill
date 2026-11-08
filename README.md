@@ -32,7 +32,7 @@ Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/s
 - **ChatGPT**. On chatgpt.com on a computer, then it works in the phone app too: Plugins → + → Add custom MCP server. If that option is missing, turn on Developer mode in Settings → Security and login. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Tick I understand and want to continue, then Create, then Install, and sign in.
 - **Grok Bot**, verified working. Tell the bot `Add this MCP server: https://grillyour.ai/mcp`, then sign in when asked.
 - **Gemini**: Should work, testing now. US only, a personal Google account, Keep Activity on. On gemini.google.com: Settings, Connected Apps, Add a custom app, paste `https://grillyour.ai/mcp`, Next, then sign in.
-- **Meta AI**, coming soon.
+- **Meta AI (Muse)**: setup steps are [below](#meta-ai-muse). Not yet verified end to end, so the site still lists it as coming soon.
 
 Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
 
@@ -118,7 +118,6 @@ Leave them off and the tool does not call Grill. To opt in:
 
 - **Claude Desktop:** in the install dialog, switch on "Send anonymous usage stats (optional)".
 - **Claude Code:** `/plugin` → Configure options, the same switch.
-- **Smithery:** the install form, the same switch.
 - **stdio, npx or Docker:** set `GRILL_USAGE_STATS=on`.
 
 Turn them off in the same place, or set `GRILL_PING=off`. `DO_NOT_TRACK=1` also disables the ping. The paste route does not send it.
