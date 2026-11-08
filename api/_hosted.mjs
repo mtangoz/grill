@@ -19,6 +19,18 @@ import { createCappedKey, esc, page, readManagedKey, removeManagedKey, setMonthl
 import { assignFoundingMember, foundingMemberLine, foundingSpotsLine, readFoundingCount, readFoundingNumber } from "./_founding.mjs";
 import { refFromCookie } from "./_start.mjs";
 import { waitlistFormHtml } from "./_waitlist.mjs";
+import { sendResendEmail } from "./_notify.mjs";
+import {
+  IMPACT_LOOKBACKS_KEY,
+  IMPACT_UNSUB_KEY,
+  digestForAccount,
+  impactDigestWeek,
+  impactEmailOn,
+  impactSentKey,
+  openImpactToken,
+  outcomeConfirmUrl,
+  sealImpactToken,
+} from "../scripts/impactDigest.mjs";
 import {
   DEEPEN_OFF,
   DEEPEN_ONLY_BIG,
@@ -472,6 +484,16 @@ async function countFunnel(deps, key) {
   }
 }
 
+/** A pilot count. The number only: no address, no title, no cost. */
+async function countImpactMetric(deps, key, label) {
+  try {
+    const n = Number(await redis(deps, ["INCR", key])) || 0;
+    console.log(`[grill-impact] ${label} ${n}`);
+  } catch {
+    // A missed count does not block the page or the send.
+  }
+}
+
 async function dailyChecksUsed(account, deps) {
   const now = typeof deps.now === "number" ? deps.now : Date.now();
   return Number(await redis(deps, ["GET", dailyCheckKey(account.id, isoDay(now))])) || 0;
@@ -806,6 +828,8 @@ async function saveAccount(account, deps) {
   if (account.human && account.human !== account.email) copy.human = account.human;
   // Set when this sign-in spends a key minted for someone else. Deleting it must not revoke that key.
   if (account.capFrom) copy.capFrom = account.capFrom;
+  // Absent means the Monday note is on. Only an explicit off is stored.
+  if (account.impactEmail === false) copy.impactEmail = false;
   await redis(deps, ["SET", acctKey(account.id), JSON.stringify(copy)]);
 }
 
@@ -2259,6 +2283,16 @@ function returnTo(request) {
     if (hint) back.searchParams.append("from", hint.name);
     return back.toString();
   }
+  // An outcome link in the Monday note has to survive sign-in, and still must not record on the way in.
+  if (url.pathname === "/decisions" && url.searchParams.get("confirm") === "outcome") {
+    const id = url.searchParams.get("id") || "";
+    const value = url.searchParams.get("value") || "";
+    if (id.length > 0 && id.length <= 80 && /^[A-Za-z0-9_-]+$/.test(id) && /^(held|no|mixed)$/.test(value)) {
+      back.searchParams.set("confirm", "outcome");
+      back.searchParams.set("id", id);
+      back.searchParams.set("value", value);
+    }
+  }
   back.searchParams.set("from", "signin");
   return back.toString();
 }
@@ -2805,8 +2839,64 @@ function renderAccount(account, credit, extra = {}) {
     </form>
     <p><a href="/decisions">Your grills</a></p>
     ${renderCalendar("/account", extra.calendar, extra.freshUrl || "")}
+    ${renderImpactEmail(account)}
     <p><a class="button" href="/account?confirm=delete">Delete this account</a></p>
     <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
+  );
+}
+
+function renderImpactEmail(account) {
+  const on = account?.impactEmail !== false;
+  const button = on
+    ? `<button type="submit" name="value" value="off">Turn off weekly email</button>`
+    : `<button type="submit" name="value" value="on">Turn on weekly email</button>`;
+  const state = on
+    ? "Weekly email: On. A Monday note when a grill changed your call, or a look-back comes due. A quiet week sends nothing."
+    : "Weekly email: Off.";
+  return `<section id="weekly-email">
+    <h2>Weekly email</h2>
+    <p>${state}</p>
+    <form method="post" action="/account"><input type="hidden" name="action" value="impact-email">${button}</form>
+  </section>`;
+}
+
+function renderUnsubscribed() {
+  return page(
+    "Weekly email is off · Grill",
+    `<h1>Weekly email is off.</h1>
+    <p>You won't get the Monday note. You can turn it back on from your account.</p>
+    <p><a href="/account">Email settings</a></p>`,
+  );
+}
+
+function renderUnsubscribeBad() {
+  return page(
+    "Unsubscribe link · Grill",
+    `<h1>That unsubscribe link doesn't work.</h1>
+    <p>Turn the Monday note off from your account.</p>
+    <p><a href="/account">Email settings</a></p>`,
+  );
+}
+
+const OUTCOME_LABELS = { held: "Held up", no: "Didn't", mixed: "Mixed" };
+
+function renderOutcomeConfirm(row, value) {
+  const label = OUTCOME_LABELS[value];
+  if (!label) return "";
+  return page(
+    "Record this look-back? · Grill",
+    `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
+    <h1>Record this look-back?</h1>
+    <p>Look-back due: ${esc(shortDecision(row.title || ""))}</p>
+    <p>This records it as ${label}.</p>
+    <form method="post" action="/decisions">
+      <input type="hidden" name="action" value="outcome">
+      <input type="hidden" name="id" value="${esc(row.id)}">
+      <input type="hidden" name="value" value="${value}">
+      <input type="hidden" name="from" value="email">
+      <button type="submit" name="confirm" value="record">${label}</button>
+    </form>
+    <p><a href="/decisions">Your grills</a></p>`,
   );
 }
 
@@ -3266,6 +3356,15 @@ export async function handleDecisions(request, deps) {
       if (!snapshot) return seeOther(`${publicOrigin(request)}/decisions`);
       return html(200, renderShareConfirm(recordId, snapshot));
     }
+    if (request.method === "GET" && confirmOne === "outcome") {
+      const recordId = url.searchParams.get("id") || "";
+      const value = url.searchParams.get("value") || "";
+      const rows = await loadRecords(session.account, deps);
+      const row = rows.find((item) => item.id === recordId);
+      const body = row ? renderOutcomeConfirm(row, value) : "";
+      if (!body) return seeOther(`${publicOrigin(request)}/decisions`);
+      return html(200, body);
+    }
     if (request.method === "POST") {
       const form = new URLSearchParams(await request.text());
       const action = form.get("action") || "";
@@ -3294,8 +3393,10 @@ export async function handleDecisions(request, deps) {
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
       } else if (action === "outcome") {
         const recordId = form.get("id") || "";
+        const fromEmail = form.get("from") === "email";
         const note = OUTCOME_NOTES[form.get("value") || ""];
-        if (note && recordId) {
+        // The email link only opens the confirm page. Recording needs the confirm button, and a signed-in POST.
+        if (note && recordId && (!fromEmail || form.get("confirm") === "record")) {
           const rows = await loadRecords(session.account, deps);
           const row = rows.find((item) => item.id === recordId);
           if (row) {
@@ -3304,7 +3405,10 @@ export async function handleDecisions(request, deps) {
             const happened = composeOutcome(row.lookback?.happened, form.get("value") || "");
             row.lookback = { at: new Date(now).toISOString(), happened };
             await writeRecord(session.account, deps, row);
-            if (!finished && !earlyRead(row, now)) await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
+            if (!finished && !earlyRead(row, now)) {
+              await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
+              if (fromEmail) await countImpactMetric(deps, IMPACT_LOOKBACKS_KEY, "lookbacks");
+            }
           }
         }
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
@@ -3410,6 +3514,17 @@ export async function handleAccount(request, deps) {
   if (request.method === "GET" && pageUrl(request).searchParams.get("deleted") === "1") {
     return html(200, terminal("Account deleted · Grill", "<h1>Your Grill account is deleted.</h1><p>The records and the model-router key are gone.</p>"));
   }
+  const unsubscribe = pageUrl(request).searchParams.get("unsubscribe") || "";
+  if (unsubscribe && (request.method === "GET" || request.method === "POST")) {
+    try {
+      return await impactUnsubscribe(unsubscribe, deps);
+    } catch (error) {
+      const code = error instanceof Coded ? error.code : "";
+      if (code) logHosted(id, code);
+      else logHosted(id, `error ${describeError(error)}`);
+      return fixedError(id, 500, code);
+    }
+  }
   try {
     const session = await pageUser(request, deps);
     if (session.redirect) return session.redirect;
@@ -3424,6 +3539,17 @@ export async function handleAccount(request, deps) {
         const value = form.get("value");
         if (value === "keep" || value === "off") {
           session.account.records = value;
+          await saveAccount(session.account, deps);
+        }
+      }
+      if (form.get("action") === "impact-email") {
+        const value = form.get("value");
+        if (value === "off" && session.account.impactEmail !== false) {
+          session.account.impactEmail = false;
+          await saveAccount(session.account, deps);
+          await countImpactMetric(deps, IMPACT_UNSUB_KEY, "unsubscribes");
+        } else if (value === "on" && session.account.impactEmail === false) {
+          delete session.account.impactEmail;
           await saveAccount(session.account, deps);
         }
       }
@@ -3448,6 +3574,110 @@ export async function handleAccount(request, deps) {
   }
 }
 
+function digestOrigin(env) {
+  const set = typeof env?.GRILL_PRO_ORIGIN === "string" ? env.GRILL_PRO_ORIGIN.trim().replace(/\/$/, "") : "";
+  if (/^https:\/\/[A-Za-z0-9.-]+$/.test(set)) return set;
+  return SHARE_HOME.replace(/\/$/, "");
+}
+
+async function listAccountIds(deps) {
+  const ids = [];
+  const prefix = "grill:hosted:acct:";
+  let cursor = "0";
+  for (let i = 0; i < 1000; i += 1) {
+    const result = await redis(deps, ["SCAN", cursor, "MATCH", `${prefix}*`, "COUNT", "100"]);
+    const next = Array.isArray(result) ? String(result[0] ?? "0") : "0";
+    const keys = Array.isArray(result?.[1]) ? result[1] : [];
+    for (const key of keys) {
+      const id = String(key).startsWith(prefix) ? String(key).slice(prefix.length) : "";
+      if (id) ids.push(id);
+    }
+    cursor = next;
+    if (cursor === "0") break;
+  }
+  return ids;
+}
+
+/** One click from the Monday note. No sign-in. A second click does not count again. */
+async function impactUnsubscribe(token, deps) {
+  const now = typeof deps.now === "number" ? deps.now : Date.now();
+  const key = keyFromEnv(deps.env, "GRILL_RECORD_KEY");
+  const opened = key ? openImpactToken(token, key, now) : null;
+  if (!opened) return html(200, renderUnsubscribeBad());
+  const account = await loadAccount(opened.id, deps);
+  if (account && account.impactEmail !== false) {
+    account.impactEmail = false;
+    await saveAccount(account, deps);
+    await countImpactMetric(deps, IMPACT_UNSUB_KEY, "unsubscribes");
+  }
+  return html(200, renderUnsubscribed());
+}
+
+/**
+ * The Monday batch. Opt-out: every signed-in account is included until they turn it off.
+ * A week with no new grill and no newly due look-back sends nothing. One send per address per week.
+ */
+export async function runImpactDigest(deps) {
+  if (!hostedEnabled(deps.env)) return { sent: 0, skipped: 0, reason: "off" };
+  const now = typeof deps.now === "number" ? deps.now : Date.now();
+  const week = impactDigestWeek(now);
+  if (!week) return { sent: 0, skipped: 0, reason: "not-scheduled" };
+  const from = typeof deps.env.GRILL_PRO_EMAIL_FROM === "string" ? deps.env.GRILL_PRO_EMAIL_FROM.trim() : "";
+  const apiKey = typeof deps.env.RESEND_API_KEY === "string" ? deps.env.RESEND_API_KEY.trim() : "";
+  const recordKey = keyFromEnv(deps.env, "GRILL_RECORD_KEY");
+  if (!from || !apiKey || !recordKey) return { sent: 0, skipped: 0, reason: "unconfigured" };
+  const origin = digestOrigin(deps.env);
+  const ids = await listAccountIds(deps);
+  let sent = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (const id of ids) {
+    const account = await loadAccount(id, deps);
+    if (!impactEmailOn(account)) {
+      skipped += 1;
+      continue;
+    }
+    const email = String(account.email).trim().toLowerCase();
+    const rows = await loadRecords(account, deps);
+    const token = sealImpactToken(account.id, recordKey, now + 60 * 24 * 60 * 60 * 1000);
+    const unsubscribe = `${origin}/account?unsubscribe=${encodeURIComponent(token)}`;
+    const packed = digestForAccount(rows, week, {
+      outcome: (recordId, value) => outcomeConfirmUrl(origin, recordId, value),
+      decisions: `${origin}/decisions`,
+      unsubscribe,
+      settings: `${origin}/account`,
+    });
+    if (!packed) {
+      skipped += 1;
+      continue;
+    }
+    const marker = impactSentKey(email, week.key);
+    const claimed = await redis(deps, ["SET", marker, "1", "NX", "EX", String(14 * 24 * 60 * 60)]);
+    if (claimed !== "OK") {
+      skipped += 1;
+      continue;
+    }
+    try {
+      await sendResendEmail(deps.env, deps.fetch, {
+        to: email,
+        subject: packed.subject,
+        text: packed.text,
+        headers: {
+          "List-Unsubscribe": `<${unsubscribe}>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
+      });
+      sent += 1;
+    } catch {
+      await redis(deps, ["DEL", marker]).catch(() => {});
+      failed += 1;
+      console.error("[grill-impact] resend failed");
+    }
+  }
+  console.log(`[grill-impact] sent ${sent} skipped ${skipped}`);
+  if (failed) throw new Error("resend");
+  return { sent, skipped, week: week.key };
+}
 
 function calendarResponse(body) {
   return new Response(body, {

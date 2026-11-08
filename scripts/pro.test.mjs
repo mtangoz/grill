@@ -531,6 +531,7 @@ describe("the endpoints", () => {
           headers: { "Content-Type": "text/markdown; charset=utf-8", Vary: "Accept" },
         },
       ],
+      crons: [{ path: "/api/hosted?__route=digest", schedule: "0 14 * * *" }],
       functions: {
         "api/hosted.js": { maxDuration: 300, includeFiles: "{scripts/{apiKey,checkCore,judge,judgeCore,reflection,usageStats}.mjs,site/start.html,site/page.html}" },
       },

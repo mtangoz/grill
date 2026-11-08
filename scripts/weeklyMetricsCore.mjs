@@ -21,6 +21,10 @@ export const FUNNEL_KEYS = Object.freeze({
   lookbacksSet: "grill:metric:funnel_lookbacks_set",
   lookbacksDone: "grill:metric:funnel_lookbacks_done",
 });
+export const IMPACT_EMAIL_KEYS = Object.freeze({
+  lookbacks: "grill:metric:impact_email_lookbacks",
+  unsubscribes: "grill:metric:impact_email_unsubscribes",
+});
 
 export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) {
   const url = typeof env.UPSTASH_REDIS_REST_URL === "string" ? env.UPSTASH_REDIS_REST_URL.trim() : "";
@@ -45,6 +49,8 @@ export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) 
     choices: await n(FUNNEL_KEYS.choices),
     lookbacksSet: await n(FUNNEL_KEYS.lookbacksSet),
     lookbacksDone: await n(FUNNEL_KEYS.lookbacksDone),
+    emailLookbacks: await n(IMPACT_EMAIL_KEYS.lookbacks),
+    emailUnsubscribes: await n(IMPACT_EMAIL_KEYS.unsubscribes),
   };
 }
 
@@ -67,6 +73,8 @@ export function weeklyMetricLines(report) {
     `choices logged: ${report.choices ?? 0}`,
     `look-backs set: ${report.lookbacksSet ?? 0}`,
     `look-backs done: ${report.lookbacksDone ?? 0}`,
+    `email look-backs: ${report.emailLookbacks ?? 0}`,
+    `email unsubscribes: ${report.emailUnsubscribes ?? 0}`,
     JSON.stringify(report),
   ];
 }
