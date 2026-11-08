@@ -1190,9 +1190,9 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.match(html, /Hire in house/);
       assert.match(html, /Replaces 10 Jan Hire contractor/);
       assert.doesNotMatch(html, /flip-flop|consistency score/i);
-      assert.match(html, /Your habits/);
-      assert.match(html, /Grills you answered with a choice: 2\./);
-      assert.match(html, /Changed course on an earlier call: 1\./);
+      assert.match(html, /<h2>Takeaways<\/h2>/);
+      assert.match(html, /2 decisions\. 0 of 2 looked back\./);
+      assert.doesNotMatch(html, /Your habits/);
       assert.doesNotMatch(html, new RegExp(USER_KEY));
       const exported = await handleDecisions(
         new Request("https://grillyour.ai/decisions?export=text&__route=decisions", { headers: { cookie: `__session=${session}` } }),

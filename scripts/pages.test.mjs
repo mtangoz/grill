@@ -475,6 +475,11 @@ describe("the decisions page layout", () => {
       await decide(ctx, fake, "Hire a contractor", JAN);
       await decide(ctx, fake, "Price the workshop at $180", JAN);
       const all = await getPage(ctx, "/decisions", { now: FEB });
+      assert.match(all.html, /<h2>Takeaways<\/h2>/);
+      assert.match(all.html, /2 decisions\. 0 of 2 looked back\./);
+      assert.match(all.html, /2 decisions are due for a look-back\./);
+      const takeaways = all.html.slice(all.html.indexOf('id="takeaways"'), all.html.indexOf("</section>", all.html.indexOf('id="takeaways"')));
+      assert.equal(takeaways.includes("$"), false);
       assert.match(all.html, /aria-current="page">All</);
       assert.match(all.html, /href="\/decisions\?type=work">Work</);
       assert.match(all.html, /href="\/decisions\?type=money">Money</);
@@ -485,6 +490,8 @@ describe("the decisions page layout", () => {
       assert.match(money.html, /Price the workshop at \$180/);
       assert.equal(money.html.includes("Hire a contractor"), false);
       assert.match(money.html, /aria-current="page">Money</);
+      assert.match(money.html, /<p>Money\.<\/p>/);
+      assert.match(money.html, /1 decision\. 0 of 1 looked back\./);
       assert.equal(money.html.includes("Delete all records"), false);
       const work = await getPage(ctx, "/decisions?type=work", { now: FEB });
       assert.match(work.html, /Hire a contractor/);

@@ -98,6 +98,7 @@ import {
   decisionType,
   decisionTypeId,
   decisionTypeLabel,
+  decisionTakeaways,
   DECISION_TYPES,
   decryptString,
   encryptString,
@@ -2327,14 +2328,20 @@ function chainNote(row, byId) {
   return parts.join(" ");
 }
 
-function renderHabits(habits) {
-  if (!habits || habits.decided + habits.waiting === 0) return "";
-  const h = habits;
-  return `<section class="banner">
-    <h2>Your habits</h2>
-    <p>Only you see this. It is worked out from the records on this page each time you open it, and is not stored.</p>
-    <p>Grills you answered with a choice: ${h.decided}. Waiting for your choice: ${h.waiting} (these expire after 14 days). Said how sure you were: ${h.withConfidence} of ${h.decided}. Changed course on an earlier call: ${h.changedCourse}. Look-backs done: ${h.lookedBack} of ${h.due} due.</p>
-    ${h.prompt ? `<p>${esc(h.prompt)}</p>` : ""}
+function renderTakeaways(rows, { waiting = 0, now, type = "" } = {}) {
+  if (!rows.length) return "";
+  const summary = decisionTakeaways(rows, { waiting, now, filtered: Boolean(type) });
+  const scope = type ? `${decisionTypeLabel(type)}.` : "";
+  const held = summary.scored
+    ? `The verdict matched what happened in ${summary.held} of ${summary.scored} scored look-backs.`
+    : "No look-back says whether it came true yet.";
+  const nudges = summary.nudges.map((line) => `<p>${esc(line)}</p>`).join("\n    ");
+  return `<section class="banner" id="takeaways">
+    <h2>Takeaways</h2>
+    ${scope ? `<p>${esc(scope)}</p>` : ""}
+    <p>${summary.count} ${summary.count === 1 ? "decision" : "decisions"}. ${summary.looked} of ${summary.count} looked back.</p>
+    <p>${esc(held)}</p>
+    ${nudges}
   </section>`;
 }
 
@@ -2515,9 +2522,9 @@ function renderDecisions(account, rows, credit, habits, extra = {}) {
     .filters { margin: 0.4rem 0 0; }</style>
     <h1>Your grills</h1>
     <p>Saved decisions from Grill in chat.</p>
+    ${renderTakeaways(shown, { waiting: habits?.waiting || 0, now: extra.now, type })}
     ${typeChips(linked, type)}
     ${renderDue(shown, extra.now, type)}
-    ${renderHabits(type ? decisionHabits({ records: shown, waiting: 0, now: extra.now }) : habits)}
     ${renderChanges(shown)}
     ${records}
     <h2>Manage</h2>
