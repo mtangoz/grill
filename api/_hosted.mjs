@@ -45,7 +45,6 @@ import {
   renderRunDisclosure,
 } from "../scripts/judgeCore.mjs";
 import {
-  changeCountLines,
   changeExample,
   changeSummary,
   changesText,
@@ -2434,14 +2433,14 @@ function renderScorecard(rows, type, source) {
   return line ? `<p class="scorecard">${esc(line)}</p>` : "";
 }
 
+/** One headline, one quiet detail line, then up to three examples of calls that moved. */
 function renderImpact(rows) {
   const lines = impactLines(rows);
   if (!lines.length) return "";
-  const rest = lines.slice(1).map((line) => `<p>${esc(line)}</p>`).join("\n    ");
+  const rest = lines.length > 1 ? `\n    <p class="small">${esc(lines.slice(1).join(" "))}</p>` : "";
   return `<section id="impact">
     <h2>What Grill changed</h2>
-    <p class="scorecard">${esc(lines[0])}</p>
-    ${rest}
+    <p class="scorecard">${esc(lines[0])}</p>${rest}${changeExamples(rows)}
   </section>`;
 }
 
@@ -2473,18 +2472,13 @@ function inlineBold(text) {
   return esc(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
 }
 
-/** Where your calls changed: one count line and at most three examples, worked out on each visit. */
-export function renderChanges(rows) {
+/** Up to three calls that moved, read on each visit. These are the person's calls; Grill argued the other side. */
+export function changeExamples(rows) {
   const parsed = (rows || []).map((row) => parseRecords(row.block || "")[0]).filter(Boolean);
   const summary = changeSummary({ records: parsed, outcomes: outcomesForSaved(rows || []) });
   if (!summary.changed.length) return "";
   const examples = summary.changed.slice(0, 3).map((item) => `<li>${inlineBold(changeExample(item))}</li>`).join("");
-  return `<section class="banner">
-    <h2>Where your calls changed</h2>
-    <p>${esc(changeCountLines(summary).join(" "))}</p>
-    <ul>${examples}</ul>
-    <p>These are your calls. Grill argued the other side; you chose.</p>
-  </section>`;
+  return `\n    <ul class="changes">${examples}</ul>`;
 }
 
 /** One compact row. Share, delete and export live on the record, not here. */
@@ -2782,7 +2776,6 @@ function renderDecisions(account, rows, _credit, habits, extra = {}) {
     ${empty}
     ${how}
     ${renderNudge(shown, { waiting: habits?.waiting || 0, now, type, source })}
-    ${renderChanges(shown)}
     ${renderFooter(linked.length, narrowed)}
     <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them.</p>
     <form method="post" action="/decisions" class="row">

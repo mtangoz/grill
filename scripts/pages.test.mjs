@@ -753,6 +753,8 @@ describe("the decisions page layout", () => {
       assert.match(html, /1 is still unknown\. On a decision, one tap says whether the call moved\./);
       assert.match(html, /1 flagged a source, fact or figure\. A flag is not proof\./);
       assert.doesNotMatch(html, /not holding up/);
+      const impactSection = html.slice(html.indexOf('<section id="impact">'), html.indexOf("</section>", html.indexOf('<section id="impact">')));
+      assert.equal((impactSection.match(/<p/g) || []).length, 2, "impact is one headline and one detail line");
       assert.doesNotMatch(html, /Did this grill change your call/);
       assert.doesNotMatch(html, /of use each month|left this month|judge spend/);
       const href = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
