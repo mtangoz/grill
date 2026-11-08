@@ -108,19 +108,20 @@ async function decide(ctx, fake, title, now, extra = {}) {
 }
 
 describe("pages a person sees", () => {
-  it("puts what needs you now above credit, the records switch and export", async () => {
+  it("puts what needs you now above the records switch and export", async () => {
     const fake = await startFakeOpenRouter();
     try {
       resetHostedCaches();
       const ctx = world();
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
-      const due = html.indexOf("Due for a look-back");
-      const credit = html.indexOf("Free for life");
+      const due = html.indexOf("decision due for a look-back");
       const records = html.indexOf("Keep my decision records");
-      const exported = html.indexOf("Export as text");
+      const exported = html.indexOf(">Export<");
       assert.ok(due > html.indexOf("<h1>"), "due list is missing");
-      assert.ok(due < credit && due < records && due < exported);
+      assert.ok(due < records && due < exported);
+      assert.match(html, /What happened\?/);
+      assert.doesNotMatch(html, /of use each month|left this month|judge spend/);
     } finally {
       await fake.close();
     }
@@ -285,8 +286,12 @@ describe("pages a person sees", () => {
       const ctx = world();
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(html, /Look back on 15 Jan/);
+      assert.match(html, /1 Jan/);
+      assert.match(html, /17 days overdue/);
       assert.equal(html.includes("2026-01-15"), false);
+      const href = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
+      const detail = await getPage(ctx, href, { now: FEB });
+      assert.match(detail.html, /15 Jan/);
     } finally {
       await fake.close();
     }
@@ -322,7 +327,11 @@ describe("pages a person sees", () => {
       await send(1, "grill", { subject: "Decision: Delay the beta\nI'm 60% sure.", keep_records: true, quality_check: false, supersedes: "2026-01-01 Hire contractor", changed: "evidence the trial slipped" });
       await send(2, "grill_decided", { decided: "Delay it." });
       const html = (await getPage(ctx, "/decisions", { now: FEB })).html;
-      assert.equal((html.match(/Delete this chain/g) || []).length, 2);
+      assert.equal(html.includes("Delete this chain"), false, "the list does not delete");
+      const ids = [...new Set([...html.matchAll(/href="(\/decisions\?id=[^"#]+)"/g)].map((match) => match[1]))];
+      let chains = 0;
+      for (const href of ids) chains += ((await getPage(ctx, href, { now: FEB })).html.match(/Delete this chain/g) || []).length;
+      assert.equal(chains, 2);
     } finally {
       await fake.close();
     }
@@ -341,14 +350,17 @@ describe("the decisions page layout", () => {
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
       const record = html.indexOf('class="record-title"');
-      const manage = html.indexOf("<h2>Manage</h2>");
-      assert.ok(record > 0, "a record card is shown");
-      assert.ok(manage > record, "Manage comes after the records");
-      for (const marker of ["Keep my decision records", "Export as text", "Look-back reminders in your calendar", "Free for life"]) {
-        assert.ok(html.indexOf(marker) > manage, `${marker} sits under Manage`);
-      }
-      assert.ok(html.indexOf("Delete all records") > record, "delete all follows the records");
-      assert.match(html, /href="\/decisions\?confirm=delete-all"/);
+      const exported = html.indexOf(">Export<");
+      const recordsSwitch = html.indexOf("Keep my decision records");
+      const calendar = html.indexOf("Look-back reminders in your calendar");
+      assert.ok(record > 0, "a record row is shown");
+      assert.ok(exported > record, "export follows the records");
+      assert.ok(recordsSwitch > exported && calendar > recordsSwitch, "settings sit under the list");
+      assert.match(html, /href="\/decisions\?confirm=delete-all">Delete all</);
+      assert.equal(html.includes("<h2>Manage</h2>"), false);
+      assert.equal(html.includes("Share verdict"), false);
+      assert.equal(html.includes("Delete this record"), false);
+      assert.doesNotMatch(html, /of use each month|left this month/);
       assert.equal(html.includes('type="hidden" name="confirm"'), false);
     } finally {
       await fake.close();
@@ -362,8 +374,11 @@ describe("the decisions page layout", () => {
       const ctx = world();
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
-      assert.equal(/<input type="hidden" name="action" value="delete">/.test(html), false, "no one-tap delete form on the list");
-      const href = html.match(/href="(\/decisions\?confirm=delete&amp;id=[^"]+)"/)?.[1];
+      assert.equal(html.includes("Delete this record"), false, "the list does not delete");
+      const open = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
+      const detail = await getPage(ctx, open, { now: FEB });
+      assert.equal(/<input type="hidden" name="action" value="delete">/.test(detail.html), false, "no one-tap delete form");
+      const href = detail.html.match(/href="(\/decisions\?confirm=delete&amp;id=[^"]+)"/)?.[1];
       assert.ok(href, "a delete link to a confirm page");
       const id = decodeURIComponent(href.split("id=")[1]);
       const ask = await getPage(ctx, href.replace(/&amp;/g, "&"), { now: FEB });
@@ -393,9 +408,14 @@ describe("the decisions page layout", () => {
       await decide(ctx, fake, "Hire contractor", JAN);
       await decide(ctx, fake, "Delay the beta", FEB, { supersedes: "2026-01-01 Hire contractor", changed: "evidence the trial slipped" });
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
-      assert.equal(/name="action" value="delete-chain"/.test(html), false, "no one-tap chain delete on the list");
-      const href = html.match(/href="(\/decisions\?confirm=delete-chain&amp;id=[^"]+)"/)?.[1];
-      assert.ok(href, "a chain delete link to a confirm page");
+      assert.equal(html.includes("Delete this chain"), false, "the list does not delete a chain");
+      const ids = [...new Set([...html.matchAll(/href="(\/decisions\?id=[^"#]+)"/g)].map((match) => match[1]))];
+      let href = "";
+      for (const id of ids) {
+        const found = (await getPage(ctx, id, { now: FEB })).html.match(/href="(\/decisions\?confirm=delete-chain&amp;id=[^"]+)"/)?.[1];
+        if (found) href = found;
+      }
+      assert.ok(href, "a chain delete link on the record");
       const ask = await getPage(ctx, href.replace(/&amp;/g, "&"), { now: FEB });
       assert.match(ask.html, /<h1>Delete this chain\?<\/h1>/);
       assert.match(ask.html, /2 records/);
@@ -439,29 +459,37 @@ describe("the decisions page layout", () => {
       await send(1, "grill", { subject: "Decision: Hire contractor\nI'm 60% sure.", keep_records: true, quality_check: false });
       await send(2, "grill_decided", { decided: "Hire the contractor.", confidence: "60%" });
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
-      const href = html.match(/href="(\/decisions\?id=[^"]+)"/)?.[1];
+      const href = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
       assert.ok(href, "the title links to the record");
       assert.ok(html.includes(`<a class="record-title" href="${href}">Hire contractor</a>`));
-      assert.ok(html.includes(`<a href="${href}">Hire contractor</a>`), "the due list links to the same record");
-      const detail = await getPage(ctx, href, { now: FEB });
+      assert.ok(html.includes(`href="${href}#look-back">What happened?</a>`), "a due row asks what happened");
+      assert.equal(html.includes('name="happened"'), false, "the page does not post a look-back");
+      const detail = await getPage(ctx, `${href}#look-back`, { now: FEB });
       assert.equal(detail.res.status, 200);
       assert.match(detail.html, /<h1 class="record-title">Hire contractor<\/h1>/);
       assert.match(detail.html, /Verdict: <strong>shaky<\/strong>/);
       assert.match(detail.html, /Choice: Hire the contractor\./);
       assert.match(detail.html, /Confidence: 60%/);
-      assert.match(detail.html, /Look-back: Due for a look-back since 15 Jan\. Not looked back\./);
+      assert.match(detail.html, /id="look-back"/);
+      assert.match(detail.html, /What happened\?/);
+      assert.match(detail.html, /Due for a look-back since 15 Jan\. Not looked back\./);
+      assert.match(detail.html, /Say “look back” in your chat and say what happened/);
+      assert.match(detail.html, /Share verdict/);
       assert.match(detail.html, /<a href="\/decisions">Your grills<\/a>/);
       assert.equal(detail.html.includes("<script"), false);
+      assert.equal(detail.html.includes("<textarea"), false);
+      assert.equal(detail.html.includes('name="happened"'), false);
       assert.equal(detail.html.includes("came_true:"), false);
       const missing = await getPage(ctx, "/decisions?id=not-a-record", { now: FEB });
       assert.equal(missing.res.status, 303);
       const looked = await send(3, "grill_look_back", { happened: "came_true: no\nhappened: The contractor left after a week." }, FEB);
       assert.equal(looked.result.isError, false, looked.result?.content?.[0]?.text || "");
       const after = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(after.html, /Look-back: It did not come true\. The contractor left after a week\./);
+      assert.match(after.html, /Did not come true/);
+      assert.equal(after.html.includes('class="happened"'), false);
       assert.equal(after.html.includes("came_true:"), false);
       const again = await getPage(ctx, href, { now: FEB });
-      assert.match(again.html, /Look-back: It did not come true\. The contractor left after a week\./);
+      assert.match(again.html, /It did not come true\. The contractor left after a week\./);
     } finally {
       await fake.close();
     }
@@ -475,24 +503,27 @@ describe("the decisions page layout", () => {
       await decide(ctx, fake, "Hire a contractor", JAN);
       await decide(ctx, fake, "Price the workshop at $180", JAN);
       const all = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(all.html, /<h2>Takeaways<\/h2>/);
-      assert.match(all.html, /2 decisions\. 0 of 2 looked back\./);
-      assert.match(all.html, /2 decisions are due for a look-back\./);
-      const takeaways = all.html.slice(all.html.indexOf('id="takeaways"'), all.html.indexOf("</section>", all.html.indexOf('id="takeaways"')));
-      assert.equal(takeaways.includes("$"), false);
+      assert.match(all.html, /2 decisions due for a look-back/);
+      assert.match(all.html, /A look-back is due 14 days after you choose/);
+      assert.doesNotMatch(all.html, /\d+ decisions · \d+% looked back/);
+      assert.equal((all.html.match(/class="filters"/g) || []).length, 1);
       assert.match(all.html, /aria-current="page">All</);
       assert.match(all.html, /href="\/decisions\?type=work">Work</);
       assert.match(all.html, /href="\/decisions\?type=money">Money</);
       assert.equal(all.html.includes("Fantasy sports"), false);
+      assert.equal(all.html.includes(">Claude<"), false, "a source filter with one value stays hidden");
       assert.match(all.html, /\.chip \{[^}]*min-height:\s*44px/);
+      assert.match(all.html, /@media \(max-width: 390px\)/);
+      assert.match(all.html, /--ink:#1c1b19/);
+      assert.match(all.html, /--paper:#f7f4ef/);
+      assert.match(all.html, /prefers-color-scheme: dark/);
       assert.equal(all.html.includes("<script"), false);
+      assert.doesNotMatch(all.html, /of use each month|left this month|judge spend/);
       const money = await getPage(ctx, "/decisions?type=money", { now: FEB });
       assert.match(money.html, /Price the workshop at \$180/);
       assert.equal(money.html.includes("Hire a contractor"), false);
       assert.match(money.html, /aria-current="page">Money</);
-      assert.match(money.html, /<p>Money\.<\/p>/);
-      assert.match(money.html, /1 decision\. 0 of 1 looked back\./);
-      assert.equal(money.html.includes("Delete all records"), false);
+      assert.equal(money.html.includes("Delete all"), false);
       const work = await getPage(ctx, "/decisions?type=work", { now: FEB });
       assert.match(work.html, /Hire a contractor/);
       assert.equal(work.html.includes("Price the workshop"), false);
@@ -503,19 +534,16 @@ describe("the decisions page layout", () => {
       const none = await getPage(ctx, "/decisions?type=personal", { now: FEB });
       assert.match(none.html, /No personal decisions yet\./);
       assert.match(none.html, /href="\/decisions\?type=work">Work</);
-      assert.match(all.html, /href="\/decisions\?source=claude">Claude</);
       assert.equal(all.html.includes(">ChatGPT<"), false);
       const fromClaude = await getPage(ctx, "/decisions?source=claude", { now: FEB });
-      assert.match(fromClaude.html, /<p>Claude\.<\/p>/);
       assert.match(fromClaude.html, /Hire a contractor/);
-      assert.match(fromClaude.html, /2 decisions\. 0 of 2 looked back\./);
+      assert.doesNotMatch(fromClaude.html, /\d+ decisions · \d+% looked back/);
       const otherClient = await getPage(ctx, "/decisions?source=chatgpt", { now: FEB });
       assert.match(otherClient.html, /No decisions from ChatGPT yet\./);
       assert.equal(otherClient.html.includes("Hire a contractor"), false);
       const both = await getPage(ctx, "/decisions?type=money&source=claude", { now: FEB });
       assert.match(both.html, /Price the workshop at \$180/);
       assert.equal(both.html.includes("Hire a contractor"), false);
-      assert.match(both.html, /Money from Claude\./);
       const crossed = await getPage(ctx, "/decisions?type=work&source=chatgpt", { now: FEB });
       assert.match(crossed.html, /No work decisions from ChatGPT yet\./);
     } finally {
@@ -531,13 +559,36 @@ describe("the decisions page layout", () => {
     assert.match(res.headers.get("location") || "", /sign-in/);
   });
 
+  it("shows one scorecard line once three decisions are saved, without a held-up clause yet", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Hire a contractor", JAN);
+      await decide(ctx, fake, "Price the workshop at $180", JAN);
+      await decide(ctx, fake, "Ship the beta", JAN);
+      const { html } = await getPage(ctx, "/decisions", { now: FEB });
+      const due = html.indexOf("3 decisions due for a look-back");
+      const score = html.indexOf("3 decisions · 0% looked back");
+      const filters = html.indexOf('class="filters"');
+      assert.ok(due > 0 && score > due && filters > score);
+      assert.doesNotMatch(html, /verdict held up/);
+      assert.doesNotMatch(html, /A look-back is due 14 days/);
+      assert.equal((html.match(/class="filters"/g) || []).length, 1);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("says what to do when there are no records yet", async () => {
     resetHostedCaches();
     const ctx = world();
     const { html } = await getPage(ctx, "/decisions", { now: FEB });
     assert.match(html, /No decisions saved yet\./);
     assert.match(html, /Say “grill this: …” in your AI\. When you tell it your call, it’s saved here\./);
-    assert.equal(html.includes("Delete all records"), false, "nothing to delete on an empty page");
+    assert.match(html, /A look-back is due 14 days after you choose/);
+    assert.doesNotMatch(html, /\d+ decisions · \d+% looked back/);
+    assert.equal(html.includes("Delete all"), false, "nothing to delete on an empty page");
   });
 
   it("shows a short details line: the verdict in bold, the look-back date in words, no unknown app", async () => {
@@ -547,10 +598,11 @@ describe("the decisions page layout", () => {
       const ctx = world();
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
-      const card = html.slice(html.indexOf('class="record-title"'), html.indexOf("</article>"));
-      assert.match(card, /<p class="record-meta"><strong>[^<]+<\/strong> · 1 Jan · (from [A-Za-z. ]+ · )?Look back on 15 Jan<\/p>/);
-      assert.equal(card.includes("unknown"), false);
-      assert.equal(card.includes("Look-back: not yet."), false);
+      const row = html.slice(html.indexOf('class="record-title"'), html.indexOf("</li>"));
+      assert.match(row, /Work · Claude · 1 Jan · <strong>shaky<\/strong> · 17 days overdue/);
+      assert.match(row, /What happened\?/);
+      assert.equal(row.includes("unknown"), false);
+      assert.equal(html.includes("2026-01-"), false);
     } finally {
       await fake.close();
     }

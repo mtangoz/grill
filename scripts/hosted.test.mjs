@@ -1190,8 +1190,8 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.match(html, /Hire in house/);
       assert.match(html, /Replaces 10 Jan Hire contractor/);
       assert.doesNotMatch(html, /flip-flop|consistency score/i);
-      assert.match(html, /<h2>Takeaways<\/h2>/);
-      assert.match(html, /2 decisions\. 0 of 2 looked back\./);
+      assert.match(html, /A look-back is due 14 days after you choose/);
+      assert.doesNotMatch(html, /\d+ decisions · \d+% looked back/);
       assert.doesNotMatch(html, /Your habits/);
       assert.doesNotMatch(html, new RegExp(USER_KEY));
       const exported = await handleDecisions(
@@ -2343,10 +2343,14 @@ describe("look-back reminders", { concurrency: false }, () => {
 
       // The due list names only what waits for a look-back.
       let html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
-      assert.match(html, /Due for a look-back/);
-      assert.match(html, /<a href="\/decisions\?id=[^"]+">Hire contractor<\/a> · review 15 Jan · 17 days overdue/);
+      assert.match(html, /1 decision due for a look-back/);
+      assert.match(html, /Hire contractor/);
+      assert.match(html, /What happened\?/);
+      assert.match(html, /17 days overdue/);
       assert.equal(html.includes("2026-01-15"), false);
-      assert.doesNotMatch(html, /<li>Move office/);
+      const due = html.slice(html.indexOf('id="due"'), html.indexOf('id="open"'));
+      assert.match(due, /Hire contractor/);
+      assert.doesNotMatch(due, /Move office/);
       assert.match(html, /Get a calendar link/);
 
       // Off by default: there is no link to fetch.
@@ -2387,7 +2391,7 @@ describe("look-back reminders", { concurrency: false }, () => {
       assert.ok(!ics.includes("Hire contractor"));
       const again = await postMcp(ctx, call(4, "grill_look_back", {}), { token, deps: { now: FEB } });
       assert.match(textOf(again.json), /No saved decision is due/);
-      assert.doesNotMatch(await page(ctx, handleDecisions, "/decisions", { now: FEB }), /Due for a look-back/);
+      assert.doesNotMatch(await page(ctx, handleDecisions, "/decisions", { now: FEB }), /due for a look-back/);
 
       // Reset: the old link stops working, the new one keeps the titles choice.
       html = await page(ctx, handleAccount, "/account", { body: "action=calendar&value=reset" });
@@ -2432,8 +2436,18 @@ describe("look-back reminders", { concurrency: false }, () => {
       await postMcp(ctx, call(2, "grill_decided", { decided: "Delay it." }), { token, deps });
       await decide(ctx, fake, token, "Cut prices", FEB);
       const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
-      assert.equal((html.match(/Delete this chain/g) || []).length, 2);
-      assert.equal((html.match(/Delete this record/g) || []).length, 3);
+      assert.equal(html.includes("Delete this chain"), false);
+      assert.equal(html.includes("Delete this record"), false);
+      const ids = [...new Set([...html.matchAll(/href="(\/decisions\?id=[^"#]+)"/g)].map((match) => match[1]))];
+      let chains = 0;
+      let deletes = 0;
+      for (const href of ids) {
+        const detail = await page(ctx, handleDecisions, href, { now: FEB });
+        chains += (detail.match(/Delete this chain/g) || []).length;
+        deletes += (detail.match(/Delete this record/g) || []).length;
+      }
+      assert.equal(chains, 2);
+      assert.equal(deletes, 3);
     } finally {
       await fake.close();
     }
@@ -2492,12 +2506,12 @@ describe("look-back reminders", { concurrency: false }, () => {
       const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
       await decide(ctx, fake, token, "Hire contractor", JAN);
       const html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
-      const due = html.indexOf("Due for a look-back");
-      const credit = html.indexOf("Free for life");
+      const due = html.indexOf("due for a look-back");
       const records = html.indexOf("Records are");
-      const exported = html.indexOf("Export as text");
+      const exported = html.indexOf(">Export<");
       assert.ok(due > 0, "due list is missing");
-      assert.ok(due < credit && due < records && due < exported, `due at ${due}, credit ${credit}, records ${records}, export ${exported}`);
+      assert.ok(due < records && due < exported, `due at ${due}, records ${records}, export ${exported}`);
+      assert.equal(html.includes("Free for life"), false);
     } finally {
       await fake.close();
     }
@@ -2646,7 +2660,7 @@ describe("page sign-in through Clerk's handshake", { concurrency: false }, () =>
     const laterHtml = await later.text();
     assert.match(laterHtml, /<title>Your grills<\/title>/);
     assert.match(laterHtml, /<h1>Your grills<\/h1>/);
-    assert.match(laterHtml, /Saved decisions from Grill in chat\./);
+    assert.match(laterHtml, /A look-back is due 14 days after you choose/);
     const form = await handleAccount(
       new Request("https://grillyour.ai/account", {
         method: "POST",
@@ -2842,10 +2856,10 @@ describe("fair check counting", () => {
       const session = signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 });
       const account = await handleAccount(new Request("https://grillyour.ai/account", { headers: { cookie: `__session=${session}` } }), { ...ctx, now: NOW });
       const decisions = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${session}` } }), { ...ctx, now: NOW });
-      for (const html of [await account.text(), await decisions.text()]) {
-        assert.match(html, /1 check this month\./);
-        assert.match(html, /Free for life: \$5 of use each month/);
-      }
+      const accountHtml = await account.text();
+      assert.match(accountHtml, /1 check this month\./);
+      assert.match(accountHtml, /Free for life: \$5 of use each month/);
+      assert.doesNotMatch(await decisions.text(), /of use each month|left this month|checks this month|judge spend/);
     } finally {
       await fake.close();
     }
