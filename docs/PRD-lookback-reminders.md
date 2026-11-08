@@ -1,6 +1,6 @@
 # PRD: Look-back reminders for saved decisions
 
-Status: approved by the owner for their own use, 2026-10-16. Builds on Grill in your chat ([HOSTED.md](HOSTED.md)). Invite-only, like the rest of that route.
+Status: approved by the owner for their own use, 2026-10-16. Builds on Grill in your chat ([HOSTED.md](HOSTED.md)). That route was invite-only when this was written. Open sign-up has been on since 2026-11-03.
 
 ## 0. Why, in one line
 

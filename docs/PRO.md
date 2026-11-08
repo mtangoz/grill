@@ -1,10 +1,10 @@
 # Grill Pro accounts
 
-The free tool has no account, no sign-in and no server of its own. A proposed hosted route for ChatGPT and claude.ai, and the pricing that goes with it, are in [PRD-hosted-pro.md](PRD-hosted-pro.md). Bring your own key and checks stay free and unlimited on your own credit. This file is about a key Grill manages: a free starter allowance, and the optional paid subscription for when billing is turned on.
+The installed free tool has no account, no sign-in and no server of its own. Grill in your chat (the hosted connector for ChatGPT, claude.ai and others) is live, with open sign-up, and is described in [HOSTED.md](HOSTED.md). The original hosted Pro proposal is [PRD-hosted-pro.md](PRD-hosted-pro.md). Its price recommendation was superseded: Pro is $9 a month or $90 a year (owner decision, 2026-11-07, in [MERGE-LOG.md](../MERGE-LOG.md)). Bring your own key and checks stay free and unlimited on your own credit. This file is about a key Grill manages: a free starter allowance, and the optional paid subscription for when billing is turned on.
 
 ## Why Clerk
 
-The in-chat account needs a sign-in the chats already know how to open: OAuth, with Google and an emailed code, and a verified email. Clerk does that. Grill does not store a password.
+The in-chat account needs a sign-in the chats already know how to open: OAuth, with an emailed code and a verified email. Google sign-in is off in production. Clerk does that. Grill does not store a password.
 
 The trade-off is a sign-in company. Clerk sees the email address and the sign-in. It does not see the write-up. Grill checks the token itself (signature, issuer, audience, expiry) and does not send the decision to Clerk.
 
