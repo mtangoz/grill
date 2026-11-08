@@ -388,13 +388,16 @@ describe("weekly impact email batch", () => {
 
   it("schedules the batch with the existing Vercel project and no new secret", () => {
     const config = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
-    assert.deepEqual(config.crons, [{ path: "/api/impact-digest", schedule: "0 14 * * *" }]);
+    assert.deepEqual(config.crons, [{ path: "/api/hosted?__route=digest", schedule: "0 14 * * *" }]);
+    assert.equal(config.functions["api/impact-digest.js"], undefined);
     const workflows = readdirSync(join(ROOT, ".github/workflows")).filter((name) => name.endsWith(".yml"));
     for (const name of workflows) {
       assert.doesNotMatch(readFileSync(join(ROOT, ".github/workflows", name), "utf8"), /impact-digest|impact_email/);
     }
-    const source = readFileSync(join(ROOT, "api/impact-digest.js"), "utf8");
-    assert.doesNotMatch(source, /CRON_SECRET|GITHUB|process\.env\.[A-Z0-9_]+/);
+    const hostedJs = readFileSync(join(ROOT, "api/hosted.js"), "utf8");
+    assert.match(hostedJs, /r === "digest"/);
+    assert.doesNotMatch(hostedJs, /CRON_SECRET/);
+    assert.equal(readdirSync(join(ROOT, "api")).includes("impact-digest.js"), false);
     assert.match(readFileSync(join(ROOT, "api/_hosted.mjs"), "utf8"), /sendResendEmail/);
     assert.doesNotMatch(readFileSync(join(ROOT, "scripts/impactDigest.mjs"), "utf8"), /clerk/i);
   });
