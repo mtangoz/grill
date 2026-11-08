@@ -577,7 +577,9 @@ describe("the decisions page layout", () => {
       const impact = html.indexOf("What Grill changed");
       const score = html.indexOf("3 decisions · 0% looked back");
       const filters = html.indexOf('class="filters"');
-      assert.ok(impact > 0 && due > impact && score > due && filters > score);
+      const impactEnd = html.indexOf("</section>", impact);
+      assert.ok(impact > 0 && score > impact && score < impactEnd && due > impactEnd && filters > due, "the learning line sits inside the impact block, once");
+      assert.equal((html.match(/3 decisions · 0% looked back/g) || []).length, 1);
       assert.doesNotMatch(html, /verdict held up/);
       assert.doesNotMatch(html, /A look-back is due 14 days/);
       assert.equal((html.match(/class="filters"/g) || []).length, 1);
@@ -753,8 +755,7 @@ describe("the decisions page layout", () => {
       const records = html.indexOf("Keep my decision records");
       assert.ok(impact > html.indexOf("<h1>") && impact < due && due < records);
       assert.match(html, /No grill is marked as changing a call yet/);
-      assert.match(html, /1 is still unknown\. On a decision, one tap says whether the call moved\./);
-      assert.match(html, /1 flagged a source, fact or figure\. A flag is not proof\./);
+      assert.match(html, /1 unknown \(impact not confirmed\) · 1 flagged \(not proof\)/);
       assert.doesNotMatch(html, /not holding up/);
       const impactSection = html.slice(html.indexOf('<section id="impact">'), html.indexOf("</section>", html.indexOf('<section id="impact">')));
       assert.equal((impactSection.match(/<p/g) || []).length, 2, "impact is one headline and one detail line");
@@ -787,7 +788,8 @@ describe("the decisions page layout", () => {
       const counted = await getPage(ctx, "/decisions", { now: FEB });
       assert.match(counted.html, /1 of 1 grill changed the call\./);
       assert.doesNotMatch(counted.html, /still unknown/);
-      assert.match(counted.html, /1 flagged a source, fact or figure\. A flag is not proof\./);
+      assert.match(counted.html, /1 flagged \(not proof\)/);
+      assert.doesNotMatch(counted.html, /called out/);
       const no = await postForm(ctx, `action=impact&id=${encodeURIComponent(id)}&value=kept`, FEB);
       assert.equal(no.status, 303);
       const quiet = await getPage(ctx, "/decisions", { now: FEB });

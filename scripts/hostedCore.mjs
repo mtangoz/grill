@@ -904,6 +904,19 @@ export function grillImpact(rows) {
   return summary;
 }
 
+/**
+ * One quiet line under the impact headline. A zero count is left out.
+ * Unknown means the impact tap is still unconfirmed. Called out is a doesn't-hold verdict
+ * that is not yet a confirmed change. Flagged is a source, fact, or figure kind, and is not proof.
+ */
+export function impactDetailLine({ unknown = 0, doubted = 0, flagged = 0 } = {}) {
+  const parts = [];
+  if (unknown) parts.push(`${unknown} unknown (impact not confirmed)`);
+  if (doubted) parts.push(`${doubted} called out (not a confirmed change)`);
+  if (flagged) parts.push(`${flagged} flagged (not proof)`);
+  return parts.join(" · ");
+}
+
 /** The impact block. Empty when there is no saved grill. A No tap adds no line. */
 export function impactLines(rows) {
   const summary = grillImpact(rows);
@@ -913,12 +926,8 @@ export function impactLines(rows) {
       ? `${summary.changed} of ${summary.count} ${summary.count === 1 ? "grill" : "grills"} changed the call.`
       : "No grill is marked as changing a call yet.",
   ];
-  if (summary.doubted === 1) lines.push("1 plan was called out as not holding up. That counts only if you say the call moved.");
-  else if (summary.doubted > 1) lines.push(`${summary.doubted} plans were called out as not holding up. That counts only if you say the call moved.`);
-  if (summary.unknown === 1) lines.push("1 is still unknown. On a decision, one tap says whether the call moved.");
-  else if (summary.unknown > 1) lines.push(`${summary.unknown} are still unknown. On a decision, one tap says whether the call moved.`);
-  if (summary.flagged === 1) lines.push("1 flagged a source, fact or figure. A flag is not proof.");
-  else if (summary.flagged > 1) lines.push(`${summary.flagged} flagged a source, fact or figure. A flag is not proof.`);
+  const detail = impactDetailLine(summary);
+  if (detail) lines.push(detail);
   return lines;
 }
 

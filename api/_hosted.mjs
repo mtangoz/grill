@@ -2428,19 +2428,16 @@ function chainNote(row, byId) {
   return parts.join(" ");
 }
 
-function renderScorecard(rows, type, source) {
-  const line = scorecardLine(rows, { type, source });
-  return line ? `<p class="scorecard">${esc(line)}</p>` : "";
-}
-
-/** One headline, one quiet detail line, then up to three examples of calls that moved. */
-function renderImpact(rows) {
+/** One headline, one quiet detail line, the learning line under that, then up to three examples. */
+function renderImpact(rows, type, source) {
   const lines = impactLines(rows);
   if (!lines.length) return "";
-  const rest = lines.length > 1 ? `\n    <p class="small">${esc(lines.slice(1).join(" "))}</p>` : "";
+  const detail = lines.length > 1 ? `\n    <p class="small">${esc(lines.slice(1).join(" "))}</p>` : "";
+  const learningLine = scorecardLine(rows, { type, source });
+  const learning = learningLine ? `\n    <p class="small">${esc(learningLine)}</p>` : "";
   return `<section id="impact">
     <h2>What Grill changed</h2>
-    <p class="scorecard">${esc(lines[0])}</p>${rest}${changeExamples(rows)}
+    <p class="scorecard">${esc(lines[0])}</p>${detail}${learning}${changeExamples(rows)}
   </section>`;
 }
 
@@ -2768,9 +2765,8 @@ function renderDecisions(account, rows, _credit, habits, extra = {}) {
     "Your grills",
     `${LIST_STYLE}
     <h1>Your grills</h1>
-    ${renderImpact(shown)}
+    ${renderImpact(shown, type, source)}
     ${renderDueAction(shown, byId, now, query)}
-    ${renderScorecard(shown, type, source)}
     ${filterRow(linked, type, source)}
     ${renderNamedGroup("open", "Open", open, byId, now, query)}
     ${renderNamedGroup("closed", "Closed", closed, byId, now, query)}
