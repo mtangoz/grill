@@ -16,6 +16,7 @@
 import { createHash } from "node:crypto";
 
 export const TRACKED_EVENTS = [
+  "cta_connect",
   "download_mcpb",
   "download_skill",
   "copy_prompt",

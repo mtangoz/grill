@@ -1,7 +1,7 @@
 /**
  * Weekly counts that are not users. Paid-intent is views and Notify me clicks while paid
  * plans are off. Free-to-paid is accounts that reached a paid checkout, once each.
- * Waitlist is sign-ups. Founding members are how many of the 100 numbers are assigned.
+ * Waitlist is sign-ups. Founding members are how many of the 100 numbers are assigned. Start views and tagged /start?ref= counts are top-of-funnel, not users.
  * The keys are the same strings the writers use. This file does not
  * import those writers, so the report can ship on its own.
  */
@@ -26,6 +26,9 @@ export const IMPACT_EMAIL_KEYS = Object.freeze({
   lookbacks: "grill:metric:impact_email_lookbacks",
   unsubscribes: "grill:metric:impact_email_unsubscribes",
 });
+export const START_VIEWS_KEY = "grill:metric:start_views";
+/** Fixed channel labels for /start?ref=. No SCAN. Unknown tags stay unread. */
+export const START_REF_LABELS = Object.freeze(["home", "askgrill", "hn", "smithery", "demo", "x"]);
 
 /** The weekly email test in two lines. Counts only. */
 export function emailTestLines(test) {
@@ -47,6 +50,10 @@ export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) 
   }
   const command = redisCommand(env, fetchImpl);
   const n = async (key) => Number(await command(["GET", key])) || 0;
+  const startRefs = {};
+  for (const label of START_REF_LABELS) {
+    startRefs[label] = await n(`grill:metric:start_ref:${label}`);
+  }
   return {
     label: "Weekly metrics",
     countsAsUsers: false,
@@ -56,6 +63,8 @@ export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) 
     freeToPaid: await n(FREE_TO_PAID_KEY),
     waitlist: await n(WAITLIST_SIGNUPS_KEY),
     founding: await n(FOUNDING_COUNT_KEY),
+    startViews: await n(START_VIEWS_KEY),
+    startRefs,
     grills: await n(FUNNEL_KEYS.grills),
     choices: await n(FUNNEL_KEYS.choices),
     lookbacksSet: await n(FUNNEL_KEYS.lookbacksSet),
@@ -72,6 +81,16 @@ function foundingShown(report) {
   return Math.min(100, n);
 }
 
+/** Channel tags with a non-zero count, for the weekly line. */
+export function startRefLine(startRefs) {
+  const parts = [];
+  for (const label of START_REF_LABELS) {
+    const n = Math.floor(Number(startRefs?.[label]) || 0);
+    if (n > 0) parts.push(`${label} ${n}`);
+  }
+  return parts.length ? `start refs: ${parts.join(" · ")}` : "start refs: none";
+}
+
 /** The lines a person reads. The JSON line is the same numbers, for metrics.jsonl. */
 export function weeklyMetricLines(report) {
   return [
@@ -81,6 +100,8 @@ export function weeklyMetricLines(report) {
     `free-to-paid: ${report.freeToPaid}`,
     `waitlist: ${report.waitlist ?? 0}`,
     `founding members: ${foundingShown(report)}/100`,
+    `start views: ${report.startViews ?? 0}`,
+    startRefLine(report.startRefs),
     `grills: ${report.grills ?? 0}`,
     `choices logged: ${report.choices ?? 0}`,
     `look-backs set: ${report.lookbacksSet ?? 0}`,

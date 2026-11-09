@@ -25,7 +25,7 @@ describe("site/page.html", () => {
   });
 
   it("links /start, and the README keeps the other setup routes", () => {
-    assert.match(page, /<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     for (const needle of ["releases/latest/download/grill.mcpb", "releases/latest/download/grill-skill.zip", "/plugin install grill@grill", "openrouter.ai/keys", "prompts/grill.md"]) {
       assert.ok(readme.includes(needle), `missing ${needle}`);
@@ -56,7 +56,7 @@ describe("site/page.html", () => {
   it("is open: the homepage sends people to connect, and the invite wall is gone", () => {
     assert.doesNotMatch(page, /prerelease|Ask for an invite|Opening to everyone|only-pre|only-public/);
     assert.match(page, /<main id="top">/);
-    assert.match(page, /href="\/start\/"/);
+    assert.match(page, /href="\/start\/\?ref=home"/);
     assert.equal(page.indexOf('id="pro"'), -1);
     assert.equal(page.indexOf('id="setup"'), -1);
   });
@@ -168,7 +168,7 @@ describe("site/page.html", () => {
   it("is one pitch, one sentence, one Connect Grill button, and the privacy line", () => {
     assert.equal((page.match(/<h1>/g) || []).length, 1);
     assert.equal((page.match(/<a class="button"/g) || []).length, 1);
-    assert.match(page, /<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
     assert.match(page, /Grill only uses your decisions to give you a verdict and your later look-backs\. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us\./);
     assert.doesNotMatch(page, /id="how"|id="examples"|id="setup"|class="chat"|class="routes"/);
     assert.equal((page.match(/<script\b/gi) || []).length, 0);
@@ -286,7 +286,7 @@ describe("the site build", () => {
     assert.match(head, /<meta name="theme-color" content="#f7f4ef" media="\(prefers-color-scheme: light\)">/);
     assert.match(head, /<meta name="theme-color" content="#161513" media="\(prefers-color-scheme: dark\)">/);
     assert.match(head, /--paper:/);
-    assert.match(rest, /<body>[\s\S]*<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(rest, /<body>[\s\S]*<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
     const terms = readFileSync(join(ROOT, "_site/terms/index.html"), "utf8");
     assert.match(terms, /<title>Grill terms<\/title>/);
     assert.match(terms, /<link rel="canonical" href="https:\/\/grillyour\.ai\/terms\/">/);
@@ -772,7 +772,9 @@ describe("the /start page", () => {
     assert.match(log, /Connect Grill \(2 minutes\)/);
     assert.match(log, /\/start/);
     assert.match(log, /\| 2026-11-08 \| \/start also offers Grok Bot, Cursor \/ VS Code, and Other AI\. Grok Bot uses its verified connector line\. Cursor and VS Code use the documented npx setup\. Other AI is copy and paste for Copilot, Gemini, Muse, Grok and more\. \|/);
+    assert.match(log, /\| 2026-11-09 \| Muse setup copy matches Meta's current custom-connector flow: ask Muse in chat, URL https:\/\/grillyour\.ai\/mcp, Client ID only if Muse asks\. Not yet verified end to end\. \|/);
     assert.match(log, /\| 2026-11-09 \| Tony approved on 2026-11-09: Other AI and the paste route list DeepSeek\. DeepSeek is copy-and-paste only; its consumer chat cannot add a remote connector\. The prompt pairs DeepSeek with Claude, ChatGPT, Gemini or Grok\. \|/);
+    assert.match(log, /\| 2026-11-09 \| Homepage Connect links to \/start\/\?ref=home\. Every \/start view increments grill:metric:start_views\. Weekly metrics print start views and start refs\. cta_connect is on the event allowlist\. The \/start API page sends no client analytics\. Plan: docs\/experiments\/analytics-loop\.md\. \|/);
     const ux = readFileSync(join(ROOT, "docs/UX.md"), "utf8");
     assert.match(ux, /ChatGPT shows four short steps/);
     assert.match(ux, /Claude shows a pre-filled add-connector link/);
@@ -783,7 +785,7 @@ describe("the /start page", () => {
   });
 
   it("the homepage button is the only way in, and the README keeps the other setups", () => {
-    assert.match(page, /<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
     assert.equal((page.match(/<a class="button"/g) || []).length, 1);
     assert.doesNotMatch(page, /id="pro"|Get Pro|checkout\?plan|Notify me|Get a starter key/);
     assert.doesNotMatch(page, /Settings → Connectors/);
@@ -1217,11 +1219,11 @@ describe("anyone can sign up", () => {
   };
 
   it("points the homepage Connect Grill button at /start", () => {
-    assert.match(page, /<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
     assert.doesNotMatch(page, /Settings → Connectors/);
     build();
     const html = readFileSync(join(ROOT, "_site/index.html"), "utf8");
-    assert.match(html, /<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(html, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
     const md = readFileSync(join(ROOT, "_site/index.md"), "utf8");
     assert.match(md, /\[Connect Grill \(2 minutes\)\]\(https:\/\/grillyour\.ai\/start\/\)/);
   });
@@ -1697,7 +1699,7 @@ describe("where saved grills are", () => {
     const header = html.match(/<div class="top">[\s\S]*?<\/div>/)?.[0] ?? "";
     assert.match(header, /<nav aria-label="Sections">[\s\S]*<a href="\/decisions">Your grills<\/a>[\s\S]*<\/nav>/);
     assert.equal((html.match(/<a class="button"/g) || []).length, 1);
-    assert.match(html, /<a class="button" href="\/start\/">Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(html, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
   });
 
   it("keeps Your grills on the about page for someone already using Grill", () => {
