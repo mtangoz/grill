@@ -5,6 +5,7 @@ node_modules/
 .env.*
 dist/
 evals/results/
+evals/verdict-quality/out/
 _site/
 .grill-pro-dev.json
 grill-pro-dev.json

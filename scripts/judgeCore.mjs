@@ -1211,9 +1211,24 @@ export function sourcesLine(sources) {
   return `Not checked: the ${n} sources this cites. Open each and confirm it says this.`;
 }
 
+/**
+ * Off unless this is exactly 1, true, on, or yes. Unset, empty, and an unfilled
+ * install placeholder stay off, so production keeps today's judge instructions.
+ */
+export const JUDGE_COMMIT_OPTION = "GRILL_JUDGE_COMMIT";
+
+export const JUDGE_COMMIT_RULE =
+  "When the outcome depends on someone else's opinion or can't be known yet, judge the work against that person's stated criteria and give a call. Never answer that the subject can't settle it. The cheap test names the person, the exact thing to show them, and what counts as a pass.";
+
+export function judgeCommitEnabled(env = process.env) {
+  const raw = typeof env?.GRILL_JUDGE_COMMIT === "string" ? env.GRILL_JUDGE_COMMIT.trim().toLowerCase() : "";
+  if (!raw || raw.startsWith("${")) return false;
+  return raw === "1" || raw === "true" || raw === "on" || raw === "yes";
+}
+
 /** The messages array sent as the chat request. */
-export function buildJudgeMessages({ subject, question = "", contextBlocks = [], subjectLabel = "the subject" } = {}) {
-  const system = [
+export function buildJudgeMessages({ subject, question = "", contextBlocks = [], subjectLabel = "the subject", env = process.env } = {}) {
+  const lines = [
     "You are an independent adversarial judge. You did not write the material you are about to read and you have no stake in whether it is right.",
     "",
     "Your job is to try to BREAK it, and then to report honestly on whether you could.",
@@ -1238,7 +1253,10 @@ export function buildJudgeMessages({ subject, question = "", contextBlocks = [],
     'Finding nothing is a real result. "holds" with an empty challenge list is a legitimate answer and you should return it when the subject withstands you — when it withstands you, not when it merely sounds sure of itself. Both errors cost the reader: a fabricated objection teaches them to stop reading you, and an unearned "holds" sends them into the decision with its flaw intact and a stamp saying it was checked. Do not pad, do not hedge, do not soften a fatal or serious problem into a milder one to seem balanced or to keep a kinder verdict, do not raise a moderate one to serious to seem rigorous, and do not round a verdict up to match the write-up\'s confidence.',
     "",
     "You are not being asked to be agreeable, and you are not being asked to be harsh. You are being asked to be right.",
-  ].join("\n");
+  ];
+  // One appended rule, and nothing else. Off, the joined text is the previous prompt.
+  if (judgeCommitEnabled(env)) lines.push("", JUDGE_COMMIT_RULE);
+  const system = lines.join("\n");
 
   const parts = [];
 

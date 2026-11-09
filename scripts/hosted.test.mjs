@@ -2111,6 +2111,7 @@ describe("hosted mappings and ledger pins", () => {
     assert.doesNotMatch(hosted, /fetch\([^)]*GOOGLE_CALENDAR_SUBSCRIBE/);
     const childEnv = hosted.slice(hosted.indexOf("function judgeChildEnv"), hosted.indexOf("function startJudge"));
     assert.doesNotMatch(childEnv, /JUDGE_MODEL/);
+    assert.match(childEnv, /if \(judgeCommitEnabled\(deps\.env\)\) env\.GRILL_JUDGE_COMMIT = "1";/);
     assert.match(hosted, /OPENROUTER_API_KEY: apiKey/);
     const server = readFileSync(join(ROOT, "server/index.mjs"), "utf8");
     assert.doesNotMatch(server, /api\.clerk\.com|upstash|GRILL_HOSTED/);

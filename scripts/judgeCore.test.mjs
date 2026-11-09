@@ -5,6 +5,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,6 +40,9 @@ import {
   MIN_LINK_TIMEOUT_MS,
   buildDeepenMessages,
   buildJudgeMessages,
+  JUDGE_COMMIT_OPTION,
+  JUDGE_COMMIT_RULE,
+  judgeCommitEnabled,
   closingAsk,
   deepenTestEnabled,
   readDepth,
@@ -568,6 +572,56 @@ describe("buildJudgeMessages", () => {
     assert.ok(at("Check the question") < at("Attack what is actually there"));
     assert.ok(system.content.includes("which way to fail"));
     assert.ok(user.content.includes("if it is loaded, say so"));
+  });
+});
+
+// The prompt as it stood before GRILL_JUDGE_COMMIT existed. Flag off must match these bytes.
+const PROMPT_SHA256_FLAG_OFF = "c64ab4e87817fc37103eacd16ae5cf85073682265572a743f3553e95448c8e24";
+const USER_SHA256_FLAG_OFF = "d4abf1f587ada0cc1880a621928359d3a15a968a0aa4445f251888c65993a2e1";
+const COMMIT_RULE =
+  "When the outcome depends on someone else's opinion or can't be known yet, judge the work against that person's stated criteria and give a call. Never answer that the subject can't settle it. The cheap test names the person, the exact thing to show them, and what counts as a pass.";
+
+function sha256(text) {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+describe("GRILL_JUDGE_COMMIT", () => {
+  const sample = {
+    subject: "x",
+    question: "does this move the metric that matters?",
+    contextBlocks: [{ label: "notes.md", text: "engineering time is not the scarce input" }],
+  };
+
+  it("is off unless the value is exactly 1, true, on, or yes", () => {
+    assert.equal(JUDGE_COMMIT_OPTION, "GRILL_JUDGE_COMMIT");
+    assert.equal(JUDGE_COMMIT_RULE, COMMIT_RULE);
+    for (const value of [undefined, "", "  ", "0", "false", "off", "no", "2", "${GRILL_JUDGE_COMMIT}", "maybe"]) {
+      assert.equal(judgeCommitEnabled({ GRILL_JUDGE_COMMIT: value }), false, JSON.stringify(value));
+    }
+    assert.equal(judgeCommitEnabled({}), false);
+    assert.equal(judgeCommitEnabled({ GRILL_JUDGE_COMMIT: 1 }), false);
+    for (const value of ["1", "true", "on", "yes", " YES ", "On"]) {
+      assert.equal(judgeCommitEnabled({ GRILL_JUDGE_COMMIT: value }), true, JSON.stringify(value));
+    }
+  });
+
+  it("leaves the prompt byte-identical when the flag is off", () => {
+    const [system, user] = buildJudgeMessages({ subject: "x", env: {} });
+    assert.equal(sha256(system.content), PROMPT_SHA256_FLAG_OFF);
+    assert.equal(sha256(user.content), USER_SHA256_FLAG_OFF);
+    assert.equal(system.content.includes(COMMIT_RULE), false);
+    const withQuestion = buildJudgeMessages({ ...sample, env: { GRILL_JUDGE_COMMIT: "" } });
+    assert.equal(sha256(withQuestion[0].content), PROMPT_SHA256_FLAG_OFF);
+    assert.equal(withQuestion[1].content.includes("If the subject cannot settle it, say that is your finding."), true);
+  });
+
+  it("adds exactly the rule when the flag is on, and changes nothing else", () => {
+    const off = buildJudgeMessages({ ...sample, env: {} });
+    const on = buildJudgeMessages({ ...sample, env: { GRILL_JUDGE_COMMIT: "1" } });
+    assert.equal(on[0].content, `${off[0].content}\n\n${COMMIT_RULE}`);
+    assert.equal(on[0].content.split(COMMIT_RULE).length, 2);
+    assert.equal(on[1].content, off[1].content);
+    assert.equal(sha256(off[0].content), PROMPT_SHA256_FLAG_OFF);
   });
 });
 
