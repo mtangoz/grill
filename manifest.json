@@ -48,6 +48,10 @@
     {
       "name": "grill_look_back",
       "description": "Score pasted decision records against what happened. Stores nothing and needs no key."
+    },
+    {
+      "name": "grill_feedback",
+      "description": "Tell Grill a grill helped or was meh. The grill text is sent only if you say yes."
     }
   ],
   "keywords": [

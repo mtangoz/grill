@@ -1,10 +1,12 @@
 # Data ledger: Grill in your chat
 
-Update this file in the same pull request whenever the hosted data flow changes. The installed tool is not this table. Its privacy stance is unchanged and is the comparison column on the right.
+Update this file in the same pull request whenever the hosted data flow changes. The installed tool is the comparison column on the right. A reaction is the one new call it can make, and only when you use `grill_feedback`.
 
 Hosted mode is off unless `GRILL_HOSTED=on`. When it is on, anyone with a verified email can sign up if `GRILL_OPEN_SIGNUP=on`. Otherwise it is invite-only.
 
-The decision, as you stated it, passes through Grill's server in memory. It is never logged or stored.
+The decision, as you stated it, passes through Grill's server in memory. It is never logged. An encrypted copy is held for 15 minutes so a reaction can include it, and for 180 days only if you send that grill.
+
+Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us. Sending a grill after a reaction is that case.
 
 ## What leaves the machine
 
@@ -42,10 +44,12 @@ The decision, as you stated it, passes through Grill's server in memory. It is n
 | Active-user counts | Upstash HyperLogLog keys, one per UTC day, ISO week and month. Each holds an approximate count of distinct people who made a tool call. The member added is a keyed hash (HMAC-SHA256, salted with a server secret) of the person the starter credit belongs to: not the email, not the account id, and not matchable to an email without the secret. A HyperLogLog cannot list its members back. No text, no model, no time of day. | Day keys about 120 days, week keys about 400 days, month keys about 800 days, then they expire. | They expire on their own. Deleting the account does not remove the hash from a count, and nothing in a count can be traced back to the account. | None. |
 | Waitlist | Upstash. The email address you typed, the `?ref=` source if there was one, and the time. A count of sign-ups. Approving writes a one-way hash of a single-use invite code onto that row. The code itself is not stored, and no email is sent. Joining does not let you in. | Until the row is removed. | An operator can remove the row. Deleting a Grill account does not remove it, because joining did not create one. | None. |
 | Founding member number | Upstash. A one-way hash of the email, holding that email's number, and a count of how many numbers have been given, up to 100. Not the email, and not a decision. | Until the row is removed. | An operator can remove the row. Deleting the account does not remove the number, so the same email keeps it. | None. |
+| Latest grill, so a reaction can name it | Upstash `grill:hosted:react:<account id>:latest`, plus one key for the job id and one for the draft id. Encrypted with `GRILL_RECORD_KEY` (AES-256-GCM, the same cipher as a record). The subject as sent, the layer-1 note, the judge model and the verdict label. This is not the 180-day reaction below. | 15 minutes. | It expires. Deleting the account removes it. | The installed tool keeps this in memory for that process. It is sent only if you say yes on `grill_feedback`. |
+| Reaction to a grill (`helped` or `meh`) | Upstash `grill:hosted:feedback:<id>`, encrypted with `GRILL_RECORD_KEY`. Always: the rating, the reason (one line, which may be empty), the time, the judge model, the verdict label (`solid`, `solid if`, `shaky`, `doesn't hold up`, `quick take`, or `unknown`), and a SHA-256 of the account id. The subject as sent and the layer-1 note are stored only when you say yes to sending that grill. `grill:hosted:feedbackof:<account hash>` lists those ids so the account can be deleted. No email. | 180 days. | You, by deleting the account. They also expire. An operator reads the grills you chose to send with `scripts/feedback-export.mjs`. | The installed tool POSTs the same fields to `https://grillyour.ai/api/feedback` only when you call `grill_feedback`. There is no account, so the hash is of a random id for that process. The subject and layer 1 are included only if you say yes. A grill you do not react to is not sent. |
 
 ## What does not leave
 
-- The write-up is not logged, and not stored. The optional deepen test does not store it either. On the installed tool, asking to deepen sends it to the same judge again. In chat, that second call happens during the grill, and only the answers are kept in the layer slot above.
+- The write-up is not logged. It is not stored, except the 15-minute reaction copy and a grill you chose to send, both in the table above. The optional deepen test does not store it either. On the installed tool, asking to deepen sends it to the same judge again. In chat, that second call happens during the grill, and only the answers are kept in the layer slot above.
 - A token in the query string is rejected. Grill reads a bearer token from the header only.
 - The look-back funnel is four integers, `grill:metric:funnel_grills`, `grill:metric:funnel_choices`, `grill:metric:funnel_lookbacks_set`, and `grill:metric:funnel_lookbacks_done`. Each is an `INCR`. None stores a decision, a title, or a verdict. The weekly report reads them.
 - The impact-email pilot adds two more integers, `grill:metric:impact_email_lookbacks` and `grill:metric:impact_email_unsubscribes`. Each is an `INCR`. A look-back counts only when the confirm page's signed-in POST records it. An unsubscribe counts once per time it is turned off. Neither stores a decision, a title, a verdict, or a cost.
@@ -62,7 +66,7 @@ The decision, as you stated it, passes through Grill's server in memory. It is n
 
 The installed tool has no account. The only thing that leaves your machine is the decision as you stated it, and it goes to the model router (and to Jev, if the quality check is on). Grill does not see it. There is no look-back database.
 
-The in-chat account adds a server in the middle, a sign-in company (Clerk), a store (Upstash), and a key Grill holds. It adds those so a chat can grill without a key on your computer, and so you can keep records if you say yes. It does not add a copy of the write-up. That sentence is the line that must stay true: the decision, as you stated it, passes through Grill's server in memory. It is never logged or stored.
+The in-chat account adds a server in the middle, a sign-in company (Clerk), a store (Upstash), and a key Grill holds. It adds those so a chat can grill without a key on your computer, and so you can keep records if you say yes. The decision, as you stated it, passes through Grill's server in memory. It is never logged. A copy is held encrypted for 15 minutes so a reaction can include it, and for 180 days only if you send that grill. A decision record is a separate copy, and only if you choose to keep records.
 
 ## Miss cards (grillyour.ai/miss/)
 

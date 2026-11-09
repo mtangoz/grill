@@ -17,7 +17,10 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 export const PING_URL = "https://grillyour.ai/api/ping";
+export const FEEDBACK_URL = "https://grillyour.ai/api/feedback";
 export const PING_TIMEOUT_MS = 2000;
+export const FEEDBACK_TIMEOUT_MS = 4000;
+const FEEDBACK_MAX_BYTES = 250_000;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 const ON_VALUES = new Set(["true", "1", "on", "yes"]);
 const KILL_VALUES = new Set(["false", "0", "off", "no"]);
@@ -48,16 +51,25 @@ export function usageStatsEnabled(env = process.env) {
  * The production URL, unless a test points GRILL_PING_URL at loopback. Any other override
  * is ignored, so the install id cannot be redirected at a host the code did not name.
  */
-export function resolvePingUrl(raw) {
+function resolveLoopback(raw, fallback) {
   const override = typeof raw === "string" ? raw.trim() : "";
-  if (!override || override.startsWith("${")) return PING_URL;
+  if (!override || override.startsWith("${")) return fallback;
   try {
     const host = new URL(override).hostname;
     if (LOOPBACK_HOSTS.has(host)) return override;
   } catch {
     // not a URL: keep the real endpoint
   }
-  return PING_URL;
+  return fallback;
+}
+
+export function resolvePingUrl(raw) {
+  return resolveLoopback(raw, PING_URL);
+}
+
+/** Production, unless a test points GRILL_FEEDBACK_URL at loopback. Any other host is ignored. */
+export function resolveFeedbackUrl(raw) {
+  return resolveLoopback(raw, FEEDBACK_URL);
 }
 
 export function defaultStateFile() {
@@ -116,9 +128,9 @@ function writeState(file, state) {
   chmodSync(file, 0o600);
 }
 
-async function postPing(url, body, fetchImpl, timeoutMs) {
+async function postJson(url, body, fetchImpl, timeoutMs, maxBytes) {
   const payload = JSON.stringify(body);
-  if (Buffer.byteLength(payload) > 512) return false;
+  if (Buffer.byteLength(payload) > maxBytes) return false;
   const once = async () => {
     const res = await fetchImpl(url, {
       method: "POST",
@@ -195,7 +207,21 @@ export async function sendUsagePing({
     ms: bucketMs(ms),
     ts,
   };
-  return postPing(resolvePingUrl(env.GRILL_PING_URL), body, fetchImpl, timeoutMs);
+  return postJson(resolvePingUrl(env.GRILL_PING_URL), body, fetchImpl, timeoutMs, 512);
+}
+
+/**
+ * POST one reaction. The caller decides the body. This does not add the write-up.
+ * A failure returns false and logs nothing.
+ */
+export async function sendGrillFeedback({
+  body,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = FEEDBACK_TIMEOUT_MS,
+} = {}) {
+  if (!body || typeof body !== "object") return false;
+  return postJson(resolveFeedbackUrl(env.GRILL_FEEDBACK_URL), body, fetchImpl, timeoutMs, FEEDBACK_MAX_BYTES);
 }
 
 /** Fire the ping without waiting. A slow endpoint must not hold the report. */

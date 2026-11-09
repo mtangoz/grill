@@ -160,6 +160,14 @@ import {
   toMicros,
   wwwAuthenticate,
 } from "../scripts/hostedCore.mjs";
+import {
+  buildFeedbackRecord,
+  decryptJson,
+  deleteFeedbackForAccount,
+  encryptJson,
+  reactionKey,
+  storeFeedback,
+} from "../scripts/feedbackCore.mjs";
 
 const JUDGE = fileURLToPath(new URL("../scripts/judge.mjs", import.meta.url));
 const CLERK_API = "https://api.clerk.com";
@@ -1474,24 +1482,29 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
     if (big === true && deepenTestEnabled(deps.env)) layers.deepen = renderDeepen(depthOutcome?.parsed?.depth) || "";
   }
   const keep = account.records === "keep";
+  const thin = isThinGrill(parsed, subject);
   if (keep && offer) layers.brief = `${layers.brief.trim()}\n\n${offer}`;
+  let pendingId = "";
+  let title = "";
+  let date = "";
   if (keep) {
-    await writePending(
-      account,
-      deps,
-      draftFromGrill({
-        subject,
-        parsed,
-        sourceApp,
-        supersedes: typeof supersedes === "string" ? supersedes : "",
-        changed: typeof changed === "string" ? changed : "",
-        now,
-        layers,
-      }),
-    );
+    const draft = draftFromGrill({
+      subject,
+      parsed,
+      sourceApp,
+      supersedes: typeof supersedes === "string" ? supersedes : "",
+      changed: typeof changed === "string" ? changed : "",
+      now,
+      layers,
+    });
+    pendingId = draft.id;
+    title = draft.title;
+    date = draft.date;
+    await writePending(account, deps, draft);
   }
   const cost = Number(parsed?.costUsd) || 0;
   const model = typeof parsed?.servedModel === "string" ? parsed.servedModel : "";
+  const verdict = thin ? "quick take" : plainVerdict(parsed?.verdict);
   // Atomic appends and counters only. The account record itself is not rewritten
   // here, so a grill finishing in the background can't undo another one's changes.
   await redis(deps, ["RPUSH", spendLogKey(account.id), JSON.stringify({ at: new Date().toISOString(), costUsd: cost, model })]);
@@ -1501,7 +1514,36 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
   let text = appendRunNote(layers.brief, parsed || {}, Number(outcome.ms));
   if (await firstDisclosure(account, deps)) text = `${ONCE_DISCLOSURE}\n\n${text}`;
   creditCache.delete(account.id);
-  return { text: `${text.trim()}\n`, layers, isError: false };
+  return {
+    text: `${text.trim()}\n`,
+    layers,
+    isError: false,
+    grill: {
+      subject,
+      model,
+      verdict: verdict || "unknown",
+      layer1: String(layers.brief || ""),
+      pendingId,
+      title,
+      date,
+    },
+  };
+}
+
+/** Encrypted for 15 minutes so a later reaction can include this grill if they say yes. */
+async function rememberGrill(account, deps, grill, jobHex) {
+  if (!grill) return;
+  const key = keyFromEnv(deps.env, "GRILL_RECORD_KEY");
+  if (!key) return;
+  try {
+    const blob = encryptJson(grill, key);
+    const ttl = String(JOB_TTL_SECONDS);
+    await redis(deps, ["SET", reactionKey(account.id, "latest"), blob, "EX", ttl]);
+    if (jobHex) await redis(deps, ["SET", reactionKey(account.id, `jid:${jobHex}`), blob, "EX", ttl]);
+    if (grill.pendingId) await redis(deps, ["SET", reactionKey(account.id, `pending:${grill.pendingId}`), blob, "EX", ttl]);
+  } catch {
+    logHosted(deps.requestId, "react");
+  }
 }
 
 async function storeJobResult(credential, result, deps) {
@@ -1606,11 +1648,13 @@ async function callGrill(args, account, payload, params, deps) {
       big: wantDeepen,
       runId,
     });
-    if (account.records !== "keep" && !result.isError) {
-      const credential = newJobCredential();
-      await storeJobResult(credential, result, deps);
-      return toolText(`${result.text.trim()}\n\nfollow: ${credential.jobId}\n`, false);
+    if (!result.isError && account.records !== "keep") {
+      const stored = newJobCredential();
+      await storeJobResult(stored, result, deps);
+      await rememberGrill(account, deps, result.grill, stored.id);
+      return toolText(`${result.text.trim()}\n\nfollow: ${stored.jobId}\n`, false);
     }
+    if (!result.isError) await rememberGrill(account, deps, result.grill, "");
     return toolText(result.text, result.isError);
   }
   const pending = job.promise.then(async (outcome) => {
@@ -1636,6 +1680,7 @@ async function callGrill(args, account, payload, params, deps) {
         result = { text: `${serviceFailureText("store", deps.requestId)}\n`, layers: null, isError: true };
       }
       await storeJobResult(credential, result, deps);
+      if (!result.isError) await rememberGrill(account, deps, result.grill, credential.id);
     } finally {
       await release();
     }
@@ -1692,6 +1737,73 @@ async function callResult(args, account, deps) {
   const layer = layerFromStored(stored, detail);
   if (!layer.trim()) return toolText("That layer is not stored for this grill.", true);
   return toolText(layer.endsWith("\n") ? layer : `${layer}\n`, Boolean(stored.isError));
+}
+
+async function loadReaction(account, deps, slot) {
+  const key = keyFromEnv(deps.env, "GRILL_RECORD_KEY");
+  if (!key) return null;
+  const blob = await redis(deps, ["GET", reactionKey(account.id, slot)]);
+  if (typeof blob !== "string" || !blob) return null;
+  try {
+    return decryptJson(blob, key);
+  } catch {
+    return null;
+  }
+}
+
+function feedbackReply(share, record) {
+  if (share && (record.subject || record.layer1)) return "Noted. This grill was sent so Grill can learn from it.";
+  if (share) return "Noted. The rating was stored. That grill's text was no longer available to send.";
+  return "Noted.";
+}
+
+async function callFeedback(args, account, deps) {
+  const rating = typeof args.rating === "string" ? args.rating.trim() : "";
+  if (rating !== "helped" && rating !== "meh") return toolText("rating is helped or meh.", true);
+  const key = keyFromEnv(deps.env, "GRILL_RECORD_KEY");
+  if (!key) return toolText("Grill couldn't store that reaction.", true);
+  const jobRaw = typeof args.job_id === "string" ? args.job_id.trim() : "";
+  const ref = typeof args.record_ref === "string" ? args.record_ref.trim() : "";
+  let ctx = null;
+  if (jobRaw) {
+    const parsed = parseJobCredential(jobRaw);
+    if (!parsed) return toolText("No grill to attach that to.", true);
+    ctx = await loadReaction(account, deps, `jid:${parsed.id}`);
+  } else if (ref) {
+    ctx = await loadReaction(account, deps, `pending:${ref}`);
+    if (!ctx) {
+      const latest = await loadReaction(account, deps, "latest");
+      if (latest && matchesRef({ id: latest.pendingId, date: latest.date, title: latest.title }, ref)) ctx = latest;
+    }
+    if (!ctx && account.records === "keep") {
+      const rows = await loadRecords(account, deps);
+      const saved = rows.find((item) => matchesRef(item, ref));
+      if (saved) ctx = { model: "", verdict: saved.verdict || "unknown", subject: "", layer1: "" };
+    }
+  } else {
+    ctx = await loadReaction(account, deps, "latest");
+  }
+  if (!ctx) return toolText("No grill to attach that to.", true);
+  const share = args.share_grill === true;
+  const built = buildFeedbackRecord({
+    rating,
+    reason: args.reason,
+    at: new Date(typeof deps.now === "number" ? deps.now : Date.now()).toISOString(),
+    model: ctx.model,
+    verdict: ctx.verdict,
+    accountId: account.id,
+    share,
+    subject: ctx.subject,
+    layer1: ctx.layer1,
+  });
+  if (built.error) return toolText("Grill couldn't store that reaction.", true);
+  try {
+    await storeFeedback((command) => redis(deps, command), key, built.record);
+  } catch {
+    logHosted(deps.requestId, "feedback");
+    return toolText("Grill couldn't store that reaction.", true);
+  }
+  return toolText(feedbackReply(share, built.record));
 }
 
 async function callLookBack(args, account, deps) {
@@ -2087,6 +2199,61 @@ function rpcResponse(id, result, request) {
   });
 }
 
+const FEEDBACK_RATE_PER_MINUTE = 60;
+
+async function feedbackLimited(deps) {
+  const now = typeof deps.now === "number" ? deps.now : Date.now();
+  const minute = Math.floor(now / 60000);
+  const key = `grill:hosted:feedbackrate:${minute}`;
+  const n = Number(await redis(deps, ["INCR", key])) || 0;
+  await redis(deps, ["EXPIRE", key, "120"]);
+  return n > FEEDBACK_RATE_PER_MINUTE;
+}
+
+/** The installed tool posts here. The body is not logged. Hosted chat uses the tool instead. */
+export async function handleFeedback(request, deps) {
+  if (!hostedEnabled(deps.env)) return notFound();
+  const headers = { "Cache-Control": "no-store" };
+  if (request.method !== "POST") return new Response("That request isn't supported.", { status: 405, headers: { ...headers, Allow: "POST" } });
+  const raw = await request.text();
+  if (Buffer.byteLength(raw) > 250_000) return new Response("no", { status: 413, headers });
+  let body;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return new Response("no", { status: 400, headers });
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return new Response("no", { status: 400, headers });
+  const key = keyFromEnv(deps.env, "GRILL_RECORD_KEY");
+  if (!key) return new Response("no", { status: 503, headers });
+  try {
+    if (await feedbackLimited(deps)) return new Response("no", { status: 429, headers });
+  } catch {
+    return new Response("no", { status: 503, headers });
+  }
+  const accountId = typeof body.account_id === "string" ? body.account_id.trim() : "";
+  if (!accountId || accountId.length > 200) return new Response("no", { status: 400, headers });
+  const built = buildFeedbackRecord({
+    rating: body.rating,
+    reason: body.reason,
+    at: new Date(typeof deps.now === "number" ? deps.now : Date.now()).toISOString(),
+    model: body.model,
+    verdict: body.verdict,
+    accountId,
+    share: body.share_grill === true,
+    subject: body.subject,
+    layer1: body.layer1,
+  });
+  if (built.error) return new Response("no", { status: 400, headers });
+  try {
+    await storeFeedback((command) => redis(deps, command), key, built.record);
+  } catch {
+    logHosted(deps.requestId || "feedback", "feedback");
+    return new Response("no", { status: 503, headers });
+  }
+  return new Response(null, { status: 204, headers });
+}
+
 export async function handleMcp(request, deps) {
   const id = requestId();
   const userAgent = String(request.headers.get("user-agent") || "").replace(/[\r\n]+/g, " ").slice(0, 300);
@@ -2159,7 +2326,8 @@ export async function handleMcp(request, deps) {
       else if (name === "grill_result") result = await callResult(args, account, deps);
       else if (name === "grill_look_back") result = await callLookBack(args, account, deps);
       else if (name === "grill_decided") result = await callDecided(args, account, deps);
-      else result = toolText(`Grill has no tool called ${JSON.stringify(String(name ?? ""))}. The tools are grill, grill_result, grill_look_back and grill_decided.`, true);
+      else if (name === "grill_feedback") result = await callFeedback(args, account, deps);
+      else result = toolText(`Grill has no tool called ${JSON.stringify(String(name ?? ""))}. The tools are grill, grill_result, grill_look_back, grill_decided and grill_feedback.`, true);
       return rpcResponse(rpcId, result, request);
     }
     return new Response(JSON.stringify({ jsonrpc: "2.0", id: rpcId, error: { code: -32601, message: `Method not found: ${msg.method}` } }), {
@@ -3001,6 +3169,7 @@ async function deleteAccount(account, deps, sub) {
   await redis(deps, ["DEL", spendLogKey(account.id)]);
   await redis(deps, ["DEL", disclosedKey(account.id)]);
   await redis(deps, ["DEL", recordKeyRedisKey(account.id)]);
+  await deleteFeedbackForAccount((command) => redis(deps, command), account.id);
   await calendarOff(account, deps);
   // A borrowing agent does not hold the cap, so their delete leaves the shared key and its index.
   if (!account.capFrom) {

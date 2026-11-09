@@ -69,14 +69,19 @@ import {
   normalizeDetail,
   appendRunNote,
   renderDeepen,
+  isThinGrill,
   renderLayers,
 } from "../scripts/judgeCore.mjs";
 
 /** First use only. One line. The privacy page holds the rest. Same words as the hosted connector. */
 export const ONCE_DISCLOSURE =
   "This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/#privacy";
-import { changesView, lookBack } from "../scripts/reflection.mjs";
-import { scheduleUsagePing } from "../scripts/usageStats.mjs";
+import { changesView, lookBack, plainVerdict } from "../scripts/reflection.mjs";
+import { FEEDBACK_POINTER, FEEDBACK_TOOL_DESCRIPTION, buildFeedbackRecord } from "../scripts/feedbackCore.mjs";
+import { scheduleUsagePing, sendGrillFeedback } from "../scripts/usageStats.mjs";
+
+/** Not an account. The installed tool has none. Hashed before it is stored. */
+const LOCAL_FEEDBACK_ID = `local:${randomUUID()}`;
 
 const VERSION = "0.1.1";
 const JUDGE = fileURLToPath(new URL("../scripts/judge.mjs", import.meta.url));
@@ -281,6 +286,7 @@ export function buildGrillTools({ checkOn }) {
     SCOPE_GUARD,
     "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default.",
     "If the result is a job id, call grill_result with it before you reply. Do not ask the user for a job id, and do not tell them how long it takes.",
+    FEEDBACK_POINTER,
   ].join(" ");
   return [
     {
@@ -368,6 +374,41 @@ export function buildGrillTools({ checkOn }) {
         additionalProperties: false,
       },
       annotations: { title: "Look back", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    },
+    {
+      name: "grill_feedback",
+      title: "Tell Grill how this grill was",
+      description: FEEDBACK_TOOL_DESCRIPTION,
+      inputSchema: {
+        type: "object",
+        properties: {
+          rating: {
+            type: "string",
+            enum: ["helped", "meh"],
+            description: "helped or meh, from their reaction.",
+          },
+          reason: {
+            type: "string",
+            description: "Optional. One line in their words. Omit it if they gave none.",
+          },
+          job_id: {
+            type: "string",
+            description: "Optional. The job id from grill. Omit it to use the latest grill in this session.",
+          },
+          record_ref: {
+            type: "string",
+            description: "Optional. A saved record's date and title, or its id. Omit it to use the latest grill.",
+          },
+          share_grill: {
+            type: "boolean",
+            description:
+              "true only after they say yes to sending this grill. Default false. Never set it because they gave a reason.",
+          },
+        },
+        required: ["rating"],
+        additionalProperties: false,
+      },
+      annotations: { title: "Tell Grill how this grill was", readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
   ];
 }
@@ -619,7 +660,55 @@ async function callTool(name, args = {}, onTick) {
     }
     return text(args.view === "changes" ? changesView({ records, happened }) : lookBack({ records, happened }));
   }
+  if (name === "grill_feedback") return feedbackTool(args);
   return text(`Unknown tool: ${name}`, true);
+}
+
+function feedbackReply(share, record) {
+  if (share && (record.subject || record.layer1)) return "Noted. This grill was sent so Grill can learn from it.";
+  if (share) return "Noted. The rating was stored. That grill's text was no longer available to send.";
+  return "Noted.";
+}
+
+async function feedbackTool(args) {
+  const rating = typeof args.rating === "string" ? args.rating.trim() : "";
+  if (rating !== "helped" && rating !== "meh") return text("rating is helped or meh.", true);
+  const id = typeof args.job_id === "string" ? args.job_id.trim() : "";
+  const job = id ? jobs.get(id) : latestJob();
+  if (!job || !job.done || !job.outcome?.parsed) return text("No grill to attach that to.", true);
+  const parsed = job.outcome.parsed;
+  const layers = rememberLayers(job);
+  const share = args.share_grill === true;
+  const built = buildFeedbackRecord({
+    rating,
+    reason: args.reason,
+    at: new Date().toISOString(),
+    model: typeof parsed.servedModel === "string" ? parsed.servedModel : "",
+    verdict: isThinGrill(parsed, job.subject) ? "quick take" : plainVerdict(parsed.verdict),
+    accountId: LOCAL_FEEDBACK_ID,
+    share,
+    subject: job.subject || "",
+    layer1: layers.brief || "",
+  });
+  if (built.error) return text("rating is helped or meh.", true);
+  const body = {
+    rating: built.record.rating,
+    reason: built.record.reason,
+    model: built.record.model,
+    verdict: built.record.verdict,
+    account_id: LOCAL_FEEDBACK_ID,
+    share_grill: share,
+  };
+  if (share && built.record.subject) body.subject = built.record.subject;
+  if (share && built.record.layer1) body.layer1 = built.record.layer1;
+  let ok = false;
+  try {
+    ok = await sendGrillFeedback({ body });
+  } catch {
+    ok = false;
+  }
+  if (!ok) return text("Grill couldn't store that reaction.", true);
+  return text(feedbackReply(share, built.record));
 }
 
 // ── JSON-RPC over stdio ──────────────────────────────────────────────────────
@@ -643,6 +732,7 @@ async function handle(msg) {
           serverInfo: { name: "grill", title: "Grill", version: VERSION },
           instructions:
             "Grill sends the decision as the user stated it to an outside judge from a different company. Do not rewrite it, do not add your own case against, and do not wait for an OK. Ask at most one short question, and only if the decision is truly unclear. The first time, say the outside-judge disclosure once, as one line, then never again. If grill returns a job id, call grill_result before you reply. Do not ask the user for a job id. Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question, a fact list, or a confidence question. When the user says more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Do not write a layer yourself. Each result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. Do not add a model name of your own, and do not show a record, a score, a balance, a quote check, or a disclaimer. The verdict never becomes the decision. If the user asks 'so should I do it?', hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If the same decision is grilled again in the chat, ask what changed. Nothing changed is a re-run: show the earlier verdict beside the new one, and do not add a supersedes line. A changed choice names the earlier record and what changed. Never send the earlier verdict to the judge. Write a decision record only after the user states a choice, including a quick take. Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask. If they never answer, write no record and set no look-back. When they say look back, call grill_look_back and relay its one line. It stores nothing. If the report includes a 'Grill news' line, show it once, word for word, after the verdict and before the next-step line. The run note comes after that line. The tool adds the news line only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it. " +
+              `${FEEDBACK_POINTER} ` +
               SCOPE_GUARD,
         },
       });

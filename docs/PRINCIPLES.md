@@ -42,7 +42,7 @@ The website counts visits without cookies. It never counts the words of a decisi
 
 Enforced by: test "says the website counts visits anonymously, and the tool's usage ping is opt-in" in [scripts/site.test.mjs](../scripts/site.test.mjs).
 
-Grill never collects decision text, notes, reflections, or keys. It does not collect anything that identifies you unless you opt in to anonymous usage stats, and then only a random install ID. With a Grill account in chat, the decision, as you stated it, passes through Grill's server in memory. It is never logged or stored. Decision records are kept only if you choose, and you can export or delete them.
+Grill never collects decision text, notes, reflections, or keys, except a grill you send after a reaction so we can learn what is working. It does not collect anything that identifies you unless you opt in to anonymous usage stats, and then only a random install ID. With a Grill account in chat, the decision, as you stated it, passes through Grill's server in memory. It is never logged. It is stored for 180 days only when you send that grill after a reaction. Decision records are kept only if you choose, and you can export or delete them.
 
 Enforced by: [scripts/usageStats.mjs](../scripts/usageStats.mjs), test "posts exactly the allowed keys to the ping URL, with no decision text" in [scripts/usageStats.test.mjs](../scripts/usageStats.test.mjs), and test "secrets never leave" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs).
 
@@ -50,7 +50,7 @@ Contribute the miss, never the decision. A miss card shared at grillyour.ai/miss
 
 Enforced by: [scripts/missCore.mjs](../scripts/missCore.mjs) and [api/_miss.mjs](../api/_miss.mjs), test "blocks real names, real numbers and real phrases when the real text is given", test "stores only the card's fields and the UTC day: no IP, no account, no time of day", and test "is built only with GRILL_MISS=1, from the same module, and the real-text box is never sent" in [scripts/miss.test.mjs](../scripts/miss.test.mjs).
 
-The free tool has no account. It stores nothing about a decision. The opt-in usage-stats file on your computer holds only that random ID and when a ping was sent, and only if you turned the setting on.
+The free tool has no account. It stores nothing about a decision unless you send that grill after a reaction. The opt-in usage-stats file on your computer holds only that random ID and when a ping was sent, and only if you turned the setting on.
 
 Enforced by: [scripts/usageStats.mjs](../scripts/usageStats.mjs), test "sends on the first success and never again, including on a later day" in [scripts/usageStats.test.mjs](../scripts/usageStats.test.mjs).
 
@@ -58,7 +58,7 @@ Any telemetry is opt-in. It is off by default. It is disclosed in [docs/PRIVACY.
 
 Enforced by: [scripts/usageStats.mjs](../scripts/usageStats.mjs), test "defaults to off in every install config" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs). The disclosure is [docs/PRIVACY.md](PRIVACY.md).
 
-A Grill account is opt-in. Anyone can sign up. It can keep your decision records if you choose, encrypted, with export and delete. It stores your sign-in, your credit, and the cost, time and model of each grill. It never stores the write-up, and it never keeps the short note for more than 15 minutes. You never see the model-router key; Grill holds it for you. Details: [docs/PRIVACY.md](PRIVACY.md) and [docs/DATA-LEDGER.md](DATA-LEDGER.md).
+A Grill account is opt-in. Anyone can sign up. It can keep your decision records if you choose, encrypted, with export and delete. It stores your sign-in, your credit, and the cost, time and model of each grill. It stores the write-up only when you send that grill after a reaction, for 180 days. The short note is kept for at most 15 minutes. You never see the model-router key; Grill holds it for you. Details: [docs/PRIVACY.md](PRIVACY.md) and [docs/DATA-LEDGER.md](DATA-LEDGER.md).
 
 Grill Pro is accounts and stored history. It is not live. It will be disclosed in [docs/PRIVACY.md](PRIVACY.md) and on the site before launch. It will be opt-in.
 

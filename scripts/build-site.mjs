@@ -469,7 +469,7 @@ writePage("privacy.html", {
   url: `${SITE_URL}privacy/`,
   outDir: "privacy",
   name: "Privacy",
-  blurb: "The free tool has no account and keeps nothing. Grill in chat keeps only what you choose, encrypted, and you can delete it.",
+  blurb: "The free tool has no account. Grill keeps a grill from it only when you send that one. Grill in chat keeps only what you choose, encrypted, and you can delete it.",
 });
 writePage("about.html", {
   description: "Hear the strongest case against your plan, then decide for yourself. Grill is made by Hold.",

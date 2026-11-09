@@ -21,6 +21,7 @@
     "scripts/checkCore.mjs",
     "scripts/reflection.mjs",
     "scripts/usageStats.mjs",
+    "scripts/feedbackCore.mjs",
     "docs/PRIVACY.md",
     "docs/ANY-APP.md"
   ],

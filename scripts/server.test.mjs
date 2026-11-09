@@ -126,11 +126,12 @@ describe("the MCP handshake", () => {
     const c = await initialized({});
     const res = await c.request("tools/list", {});
     const names = res.result.tools.map((t) => t.name);
-    assert.deepEqual(names, ["grill", "grill_result", "grill_look_back"]);
+    assert.deepEqual(names, ["grill", "grill_result", "grill_look_back", "grill_feedback"]);
     const annotations = {
       grill: { title: "Grill a decision", readOnlyHint: true, destructiveHint: false },
       grill_result: { title: "Collect a grill", readOnlyHint: true, destructiveHint: false },
       grill_look_back: { title: "Look back", readOnlyHint: true, destructiveHint: false },
+      grill_feedback: { title: "Tell Grill how this grill was", readOnlyHint: false, destructiveHint: false },
     };
     for (const tool of res.result.tools) {
       const want = annotations[tool.name];
@@ -840,6 +841,57 @@ describe("the server as a command (npx -y grillyour …)", () => {
     assert.equal(fake.seen.chat[0].headers.authorization, `Bearer ${KEY}`);
     await c.close();
     await fake.close();
+  });
+
+  it("posts a reaction without the subject unless share_grill is true, and a grill alone posts nothing", async () => {
+    const seen = [];
+    const sink = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (chunk) => {
+        raw += chunk;
+      });
+      req.on("end", () => {
+        seen.push(raw);
+        res.writeHead(204);
+        res.end();
+      });
+    });
+    await new Promise((resolve) => sink.listen(0, "127.0.0.1", resolve));
+    const fake = await startFakeOpenRouter();
+    const subject = "Decision: ship CANARY-FEEDBACK-SUBJECT-9f3a next week because paid users cover support.";
+    const c = await initialized({
+      GRILL_API_KEY: KEY,
+      GRILL_CHECK: "false",
+      GRILL_NEWS: "off",
+      GRILL_FEEDBACK_URL: `http://127.0.0.1:${sink.address().port}/api/feedback`,
+      ...fake.env,
+    });
+    try {
+      const grilled = await c.request("tools/call", { name: "grill", arguments: { subject } });
+      assert.equal(grilled.result.isError, false, textOf(grilled));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(seen.length, 0);
+      const quiet = await c.request("tools/call", { name: "grill_feedback", arguments: { rating: "meh", reason: "too vague" } });
+      assert.equal(quiet.result.isError, false, textOf(quiet));
+      assert.equal(textOf(quiet).trim(), "Noted.");
+      assert.equal(seen.length, 1);
+      assert.equal(seen[0].includes("CANARY-FEEDBACK-SUBJECT-9f3a"), false);
+      assert.equal(seen[0].includes("headline number"), false);
+      const body = JSON.parse(seen[0]);
+      assert.equal(body.rating, "meh");
+      assert.equal(body.share_grill, false);
+      assert.equal(Object.hasOwn(body, "subject"), false);
+      assert.equal(Object.hasOwn(body, "layer1"), false);
+      const sent = await c.request("tools/call", { name: "grill_feedback", arguments: { rating: "helped", share_grill: true } });
+      assert.match(textOf(sent), /This grill was sent so Grill can learn from it/);
+      const shared = JSON.parse(seen[1]);
+      assert.equal(shared.subject, subject);
+      assert.match(shared.layer1, /\*\*Shaky\.\*\*/);
+    } finally {
+      await c.close();
+      await fake.close();
+      await new Promise((resolve) => sink.close(resolve));
+    }
   });
 
   it("--set-key with nothing piped exits 1; an unknown flag exits 1 with the help", async () => {

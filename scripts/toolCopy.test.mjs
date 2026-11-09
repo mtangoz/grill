@@ -98,9 +98,9 @@ describe("MCP tool copy does not ask for the conversation", () => {
 
   it("the other hosted tools do not ask for chat contents either", () => {
     const names = hosted.map((tool) => tool.name);
-    assert.deepEqual(names, ["grill", "grill_result", "grill_look_back", "grill_decided"]);
+    assert.deepEqual(names, ["grill", "grill_result", "grill_look_back", "grill_decided", "grill_feedback"]);
     const others = hosted.filter((tool) => tool.name !== "grill");
-    assert.equal(others.length, 3);
+    assert.equal(others.length, 4);
     assert.deepEqual(requestingHits(others), []);
   });
 });

@@ -29,7 +29,7 @@ describe("the /support page", () => {
     assert.match(html, /href="\/account"/);
     assert.match(html, /See, export or delete any record, or all of them/);
     assert.match(html, /Deleting your account at <a href="\/account">\/account<\/a> removes your records, your key and your sign-in/);
-    assert.match(html, /The free tool has no account and keeps nothing/);
+    assert.match(html, /The free tool has no account\. Grill keeps a grill from it only when you send that one/);
     const nav = html.match(/<nav aria-label="Sections">[\s\S]*?<\/nav>/)?.[0] || "";
     assert.match(nav, /<a href="\/decisions">Your grills<\/a>/);
   });

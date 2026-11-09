@@ -148,7 +148,7 @@ describe("the manifests agree", () => {
   });
 
   it("the extension declares exactly the tools the server serves, and a privacy policy", () => {
-    assert.deepEqual(manifest.tools.map((t) => t.name), ["grill", "grill_result", "grill_look_back"]);
+    assert.deepEqual(manifest.tools.map((t) => t.name), ["grill", "grill_result", "grill_look_back", "grill_feedback"]);
     assert.ok(manifest.privacy_policies.some((u) => u.includes("openrouter.ai")));
   });
 

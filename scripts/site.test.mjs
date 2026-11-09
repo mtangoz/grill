@@ -847,10 +847,10 @@ describe("the privacy page", () => {
     ]) {
       assert.ok(block.includes(line), line);
     }
-    const keys = "Only you see your records on the site. Grill's maintainers hold the encryption keys, so they could technically decrypt records you chose to keep. They don't read them, and they never publish them.";
+    const keys = "Only you see your records on the site. Grill's maintainers hold the encryption keys, so they could technically decrypt records you chose to keep. A grill you choose to send can be read by them, so Grill can learn what is working. They don't publish it, and they don't read a grill you did not send.";
     assert.ok(privacyPage.includes(keys), "encryption-keys line");
     assert.match(privacyPage, /<h2>Using Grill in chat \(the connector\)<\/h2>/);
-    assert.match(privacyPage, /The free tool has no account and keeps nothing\. Grill in chat keeps only what you choose, encrypted, and you can delete it\./);
+    assert.match(privacyPage, /The free tool has no account\. Grill keeps a grill from it only when you send that one\. Grill in chat keeps only what you choose, encrypted, and you can delete it\./);
     assert.match(privacyPage, /We don't keep what you decide unless you choose to keep decision records \(Grill in chat\) or saved report copies \(Pro\), and you can delete them\./);
   });
 });
@@ -1371,7 +1371,7 @@ describe("markdown for agents", () => {
     assert.doesNotMatch(md, GRILL_KEEPS_NOTHING);
     assert.equal(GRILL_KEEPS_NOTHING.test("The free tool has no account and keeps nothing."), false);
     assert.doesNotMatch(privacyPage, GRILL_KEEPS_NOTHING);
-    assert.match(privacyPage, /The free tool has no account and keeps nothing\. Grill in chat keeps only what you choose, encrypted, and you can delete it\./);
+    assert.match(privacyPage, /The free tool has no account\. Grill keeps a grill from it only when you send that one\. Grill in chat keeps only what you choose, encrypted, and you can delete it\./);
     for (const url of [
       "https://grillyour.ai/start/",
       "https://grillyour.ai/terms",
@@ -1422,6 +1422,7 @@ describe("markdown for agents", () => {
       { source: "/start", destination: "/api/hosted?__route=start" },
       { source: "/start/", destination: "/api/hosted?__route=start" },
       { source: "/waitlist", destination: "/api/hosted?__route=waitlist" },
+      { source: "/api/feedback", destination: "/api/hosted?__route=feedback" },
     ]);
     assert.ok(!config.rewrites.some((rule) => rule.source === "/" || rule.source === "/:path*" || rule.source === "/(.*)"));
 
@@ -1540,7 +1541,7 @@ describe("markdown for agents", () => {
         "No ads.",
         "We never sell your data.",
         "We never train AI on your decisions.",
-        "The free tool has no account and keeps nothing.",
+        "The free tool has no account. Grill keeps a grill from it only when you send that one.",
         "Grill in chat keeps only what you choose, encrypted, and you can delete it.",
       ]) {
         assert.ok(privacy.includes(line), `privacy markdown is missing: ${line}`);
@@ -1590,6 +1591,7 @@ describe("markdown for agents", () => {
       "/start",
       "/start/",
       "/waitlist",
+      "/api/feedback",
     ]);
     const routes = config.routes;
     const errorAt = routes.findIndex((route) => route.handle === "error");
