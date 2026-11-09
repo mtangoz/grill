@@ -40,9 +40,9 @@ import {
   deepenTestEnabled,
   isThinGrill,
   normalizeDetail,
+  appendRunNote,
   renderDeepen,
   renderLayers,
-  renderRunDisclosure,
 } from "../scripts/judgeCore.mjs";
 import {
   changeExample,
@@ -1498,7 +1498,7 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
   await redis(deps, ["LTRIM", spendLogKey(account.id), String(-SPEND_LOG_MAX), "-1"]);
   await countSpend(account, deps, cost);
   if (completedGrill(parsed)) await countCompletedCheck(account, deps, runId);
-  let text = `${renderRunDisclosure(parsed || {}, Number(outcome.ms))}\n\n${layers.brief.trim()}`;
+  let text = appendRunNote(layers.brief, parsed || {}, Number(outcome.ms));
   if (await firstDisclosure(account, deps)) text = `${ONCE_DISCLOSURE}\n\n${text}`;
   creditCache.delete(account.id);
   return { text: `${text.trim()}\n`, layers, isError: false };

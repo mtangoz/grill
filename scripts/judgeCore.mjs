@@ -1900,85 +1900,81 @@ function thinLayer(result, prefix, ask = CLOSING_ASK) {
   const room = Math.max(12, LAYER1_WORD_BUDGET - countWords(ask));
   const overhead = countWords([prefix, lead].filter(Boolean).join(" "));
   const budget = Math.max(0, room - overhead);
-  const rawQuestion = factList(result)[0] || "";
-  let question = grammaticalQuestion(rawQuestion, Math.max(0, budget - 4));
-  let take = quickTakeSentence(result, Math.max(0, budget - countWords(question)));
-  if (!take) {
-    question = grammaticalQuestion("", budget);
-    take = quickTakeSentence(result, Math.max(0, budget - countWords(question)));
-  }
-  if (!take) take = "there is not enough here for a firm call.";
-  if (!question) question = SHORT_QUESTION;
-  let body = [prefix, `${lead} ${take} ${question}`].filter(Boolean).join(" ");
+  let take = quickTakeSentence(result, budget) || "there is not enough here for a firm call.";
+  let body = [prefix, `${lead} ${take}`].filter(Boolean).join(" ");
   if (countWords(body) > room) {
-    question = SHORT_QUESTION;
-    take = quickTakeSentence(result, Math.max(0, budget - countWords(question))) || "there is not enough here for a firm call.";
-    body = [prefix, `${lead} ${take} ${question}`].filter(Boolean).join(" ");
+    take = quickTakeSentence(result, budget) || "there is not enough here for a firm call.";
+    body = [prefix, `${lead} ${take}`].filter(Boolean).join(" ");
   }
   return body;
 }
 
-/** A short span of the subject's own words, when one is there to quote. */
-function quoteFromSubject(subject) {
-  const raw = String(subject || "")
+/** The judge's own quote of the words under attack. Never the subject's opening words, and never sliced. */
+function judgeQuote(result) {
+  return String(challengeList(result)[0]?.target || "")
     .replace(/\s+/g, " ")
-    .replace(/^(?:grill this:\s*)/i, "")
-    .replace(/\bI['’]m\s+\d+%\s+sure\b.*$/i, "")
+    .trim()
+    .replace(/^["“”']+|["“”']+$/g, "")
     .trim();
-  if (!raw) return "";
-  const fit = (clause) => {
-    const words = String(clause || "")
-      .replace(/[?]+/g, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 8);
-    while (words.length > 3 && /^(and|or|because|if|the|a|an|to)$/i.test(words.at(-1))) words.pop();
-    return words.join(" ").replace(/[.,:;]+$/g, "").trim();
-  };
-  const because = raw.split(/\s+because\s+/i)[1];
-  if (because) {
-    const fromBecause = fit(because.split(/[.?!]/)[0]);
-    if (countWords(fromBecause) >= 3 && countWords(fromBecause) <= 8) return fromBecause;
-  }
-  const sized = raw
-    .split(/[.?!;]+/)
-    .map((part) => fit(part))
-    .filter((clause) => countWords(clause) >= 3 && countWords(clause) <= 8);
-  return sized.find((clause) => /\d/.test(clause)) || sized[0] || "";
 }
 
-/** Non-thin: a statement, not a question the person has to answer. */
-function flipQuestionLine(subject) {
-  const quote = quoteFromSubject(subject);
-  let words = quote ? quote.split(/\s+/) : [];
-  while (words.length >= 3) {
-    const line = `${FLIP_LINE_PREFIX} whether "${words.join(" ")}" holds.`;
-    if (countWords(line) <= FLIP_LINE_WORD_BUDGET) return line;
-    words = words.slice(0, -1);
-  }
-  return `${FLIP_LINE_PREFIX} whether one fact would flip this call.`;
+/** The judge's statement of what would flip the call. A question on a thin subject, otherwise the premise. */
+function judgeParaphrase(result) {
+  const named = (Array.isArray(result?.factsNeeded) ? result.factsNeeded : [])
+    .map((fact) => String(fact || "").replace(/\s+/g, " ").trim())
+    .find(Boolean);
+  if (named) return named;
+  return String(challengeList(result)[0]?.what_would_have_to_be_true || "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-/** Thin input already asks one question. This labels it. It does not ask a second one. */
-function thinFlipLine(question, subject) {
-  const ask = String(question || "").replace(/\s+/g, " ").trim();
-  const ready = /\?$/.test(ask) && !/,\s*\?$/.test(ask) ? ask : SHORT_QUESTION;
-  const quoted = quoteFromSubject(subject);
-  if (quoted) {
-    const line = `${FLIP_LINE_PREFIX} whether "${quoted}" holds: ${lowerFirst(ready)}`;
-    if (countWords(line) <= FLIP_LINE_WORD_BUDGET && (line.match(/\?/g) || []).length === 1) return line;
-  }
-  const plain = `${FLIP_LINE_PREFIX} ${ready}`;
-  if (countWords(plain) <= FLIP_LINE_WORD_BUDGET) return plain;
+function flipFits(line) {
+  return Boolean(line) && countWords(line) <= FLIP_LINE_WORD_BUDGET;
+}
+
+/** The paraphrase, whole or as a complete clause. Empty when nothing fits. Never a stock question. */
+function paraphraseLine(text) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return "";
   const room = FLIP_LINE_WORD_BUDGET - countWords(FLIP_LINE_PREFIX);
-  const opened = openingClause(ready.replace(/\?$/, ""), room);
-  if (opened) {
-    const asQuestion = `${FLIP_LINE_PREFIX} ${opened.replace(/\.$/, "?")}`;
-    if (countWords(asQuestion) <= FLIP_LINE_WORD_BUDGET && !/,\s*\?$/.test(asQuestion)) return asQuestion;
+  if (clean.includes("?")) {
+    const question = clean.slice(0, clean.indexOf("?") + 1).trim();
+    if (countWords(question) <= room && !/,\s*\?$/.test(question)) return `${FLIP_LINE_PREFIX} ${question}`;
+    const opened = openingClause(question.replace(/\?$/, ""), room);
+    if (opened) {
+      const asQuestion = `${FLIP_LINE_PREFIX} ${opened.replace(/\.$/, "?")}`;
+      if (flipFits(asQuestion) && !/,\s*\?$/.test(asQuestion)) return asQuestion;
+    }
+    return "";
   }
-  return `${FLIP_LINE_PREFIX} ${SHORT_QUESTION}`;
+  const kept = sentenceWithin(clean, room);
+  if (!kept) return "";
+  const line = `${FLIP_LINE_PREFIX} ${kept}`;
+  return flipFits(line) ? line : "";
+}
+
+/**
+ * The flip line, only when the judge named a crux. The quote is used whole or not at all.
+ * A quote that does not fit is dropped; the paraphrase stays when it fits. Otherwise the line is omitted.
+ */
+function flipLine(result) {
+  const quote = judgeQuote(result);
+  const paraphrase = judgeParaphrase(result);
+  if (!quote && !paraphrase) return "";
+  if (quote && paraphrase) {
+    const body = paraphrase.replace(/[.]+$/, "").trim();
+    const withQuote = /\?$/.test(paraphrase)
+      ? `${FLIP_LINE_PREFIX} whether "${quote}" holds: ${lowerFirst(paraphrase)}`
+      : `${FLIP_LINE_PREFIX} whether "${quote}" holds: ${lowerFirst(body)}.`;
+    if (flipFits(withQuote) && withQuote.includes(`"${quote}"`)) return withQuote;
+    return paraphraseLine(paraphrase);
+  }
+  if (quote) {
+    const only = `${FLIP_LINE_PREFIX} whether "${quote}" holds.`;
+    return flipFits(only) && only.includes(`"${quote}"`) ? only : "";
+  }
+  return paraphraseLine(paraphrase);
 }
 
 function briefParagraphs(paragraphs, ask) {
@@ -2003,31 +1999,20 @@ function fitBriefBody(lead, rest, sources, ask) {
   return { head, tail, source };
 }
 
-/** Pull the one thin question out of the capped paragraph and label it after the take. */
-function relocateThinQuestion(note, subject) {
-  const parts = String(note || "").split("\n\n");
-  const ask = parts.pop() || CLOSING_ASK;
-  const sentences = splitSentences(parts.join(" "));
-  const qIndex = sentences.findIndex((part) => /\?["']*$/.test(part));
-  if (qIndex === -1) return briefParagraphs([sentences.join(" "), thinFlipLine("", subject)], ask);
-  const before = sentences.slice(0, qIndex).join(" ");
-  const after = sentences.slice(qIndex + 1).join(" ");
-  return briefParagraphs([before, thinFlipLine(sentences[qIndex], subject), after], ask);
-}
-
 function renderBrief(result, subject, ask = CLOSING_ASK) {
   const degraded = Array.isArray(result?.degraded) && result.degraded.length > 0;
   const prefix = degraded ? "Not a clean review." : "";
   const sources = sourcesLine(findCitedSources(subject));
+  const flip = flipLine(result);
   if (isThinGrill(result, subject)) {
-    return relocateThinQuestion(withClosing(thinLayer(result, prefix, ask), sources, ask), subject);
+    return briefParagraphs([withClosing(thinLayer(result, prefix, ask), sources, ask).split("\n\n")[0], flip], ask);
   }
   const missing = sentenceWithin(explicitMissing(result), 16);
   const top = challengeList(result)[0];
-  const sharp = missing
-    ? `Missing: ${missing}`
-    : `Risk: ${sentenceWithin(top?.challenge || result?.strongestObjection || "", 16) || "the case does not establish the call."}`;
-  const test = sentenceWithin(top?.falsifier || "", 14) || "Name the cheapest check that would settle it.";
+  const risk = sentenceWithin(top?.challenge || result?.strongestObjection || "", 16);
+  const sharp = missing ? `Missing: ${missing}` : risk ? `Risk: ${risk}` : "";
+  const testText = sentenceWithin(top?.falsifier || "", 14);
+  const test = testText ? `Cheap test: ${sentence(testText)}` : "";
   const reason = sentenceWithin(String(result?.verdictReason || "").replace(/\?/g, ""), 20);
   const label = verdictLabel(result);
   const verdict = label
@@ -2038,9 +2023,9 @@ function renderBrief(result, subject, ask = CLOSING_ASK) {
       ? `**Quick read.** ${reason}`
       : "**No verdict.** The judge did not judge the decision.";
   const lead = [prefix, verdict].filter(Boolean).join(" ");
-  const rest = [sentence(sharp), `Cheap test: ${sentence(test)}`].join(" ");
+  const rest = [sharp ? sentence(sharp) : "", test].filter(Boolean).join(" ");
   const fitted = fitBriefBody(lead, rest, sources, ask);
-  return briefParagraphs([fitted.head, flipQuestionLine(subject), fitted.tail, fitted.source], ask);
+  return briefParagraphs([fitted.head, flip, fitted.tail, fitted.source], ask);
 }
 
 /** The post-verdict deepen layer. Empty when the judge did not answer all four. */
@@ -2199,11 +2184,19 @@ export function runModels(result) {
 }
 
 /**
- * The run note shown before every grill's brief, on every route: which models ran, how long it
+ * The run note after every grill's brief, on every route: which models ran, how long it
  * took, and one sentence on how the write-up was kept private. Two lines, no blank between.
+ * The wording is fixed. Callers append it; they do not rewrite it.
  */
 export function renderRunDisclosure(result, ms) {
   return `Models: ${runModels(result).join(", ")} · ${formatRunTime(ms)}\n${RUN_PRIVACY_LINE}`;
+}
+
+/** The brief, then the run note. The note stays word for word and comes after the closing line. */
+export function appendRunNote(brief, result, ms) {
+  const body = String(brief || "").trim();
+  const note = renderRunDisclosure(result, ms);
+  return body ? `${body}\n\n${note}` : note;
 }
 
 /**

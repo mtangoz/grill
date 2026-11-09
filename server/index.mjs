@@ -67,9 +67,9 @@ import {
   clientCompanyHint,
   deepenTestEnabled,
   normalizeDetail,
+  appendRunNote,
   renderDeepen,
   renderLayers,
-  renderRunDisclosure,
 } from "../scripts/judgeCore.mjs";
 
 /** First use only. One line. The privacy page holds the rest. Same words as the hosted connector. */
@@ -271,7 +271,7 @@ export function buildGrillTools({ checkOn }) {
     "Never add a required question before the verdict on a quick or bulk grill. Ask only what the subject strictly needs.",
     `The first time you use Grill with this person, say once, as one line, and not again: ${ONCE_DISCLOSURE}`,
     checkNote,
-    "After that, do not repeat the disclosure. Every result starts with a two-line run note: the models that ran with how long it took, then one privacy sentence. Show it as written, before the note, every time. Do not mention a score, a balance, or a quote check.",
+    "After that, do not repeat the disclosure. Every result ends with a two-line run note: the models that ran with how long it took, then one privacy sentence. It comes after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. Do not mention a score, a balance, or a quote check.",
     "Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question. It already ends with: " +
       CLOSING_ASK +
       " On a decision they marked as big, and only while the deepen test is on, that line may also name deepen. Relay whichever line came back. Do not add deepen yourself. Do not add a fact list, a confidence question, a record, or a disclaimer.",
@@ -498,8 +498,8 @@ function finishBrief(brief, job) {
   const ask = body.endsWith(CLOSING_ASK_DEEPEN) ? CLOSING_ASK_DEEPEN : CLOSING_ASK;
   const note = body.endsWith(ask) ? body.slice(0, -ask.length).trim() : body;
   const lined = withNews(note, { now: nowMs() }).trim();
-  const run = renderRunDisclosure(job?.outcome?.parsed || {}, (job?.finishedAt ?? Number.NaN) - (job?.startedAt ?? Number.NaN));
-  return `${run}\n\n${lined}\n\n${ask}\n`;
+  const ms = (job?.finishedAt ?? Number.NaN) - (job?.startedAt ?? Number.NaN);
+  return `${appendRunNote(`${lined}\n\n${ask}`, job?.outcome?.parsed || {}, ms)}\n`;
 }
 
 function runDeepen(job) {
@@ -642,7 +642,7 @@ async function handle(msg) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "grill", title: "Grill", version: VERSION },
           instructions:
-            "Grill sends the decision as the user stated it to an outside judge from a different company. Do not rewrite it, do not add your own case against, and do not wait for an OK. Ask at most one short question, and only if the decision is truly unclear. The first time, say the outside-judge disclosure once, as one line, then never again. If grill returns a job id, call grill_result before you reply. Do not ask the user for a job id. Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question, a fact list, or a confidence question. When the user says more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Do not write a layer yourself. Each result starts with a two-line run note (models and time, then privacy). Show it as written, before the note. Do not add a model name of your own, and do not show a record, a score, a balance, a quote check, or a disclaimer. The verdict never becomes the decision. If the user asks 'so should I do it?', hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If the same decision is grilled again in the chat, ask what changed. Nothing changed is a re-run: show the earlier verdict beside the new one, and do not add a supersedes line. A changed choice names the earlier record and what changed. Never send the earlier verdict to the judge. Write a decision record only after the user states a choice, including a quick take. Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask. If they never answer, write no record and set no look-back. When they say look back, call grill_look_back and relay its one line. It stores nothing. If the report ends with a 'Grill news' line, show it once, word for word, after the note and before the next-step line. The tool adds it only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it. " +
+            "Grill sends the decision as the user stated it to an outside judge from a different company. Do not rewrite it, do not add your own case against, and do not wait for an OK. Ask at most one short question, and only if the decision is truly unclear. The first time, say the outside-judge disclosure once, as one line, then never again. If grill returns a job id, call grill_result before you reply. Do not ask the user for a job id. Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question, a fact list, or a confidence question. When the user says more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Do not write a layer yourself. Each result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. Do not add a model name of your own, and do not show a record, a score, a balance, a quote check, or a disclaimer. The verdict never becomes the decision. If the user asks 'so should I do it?', hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If the same decision is grilled again in the chat, ask what changed. Nothing changed is a re-run: show the earlier verdict beside the new one, and do not add a supersedes line. A changed choice names the earlier record and what changed. Never send the earlier verdict to the judge. Write a decision record only after the user states a choice, including a quick take. Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask. If they never answer, write no record and set no look-back. When they say look back, call grill_look_back and relay its one line. It stores nothing. If the report includes a 'Grill news' line, show it once, word for word, after the verdict and before the next-step line. The run note comes after that line. The tool adds the news line only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it. " +
               SCOPE_GUARD,
         },
       });

@@ -96,13 +96,15 @@ Then point them to https://grillyour.ai/miss/ to paste it in and send it themsel
 
 ## 4. Relay the result
 
-On the paste route, the company check above is the first line you show. Then show only layer 1. The verdict line comes first. After it, and never before it, one line of at most 25 words: "The question that would change this:", naming the single open question whose answer would flip the call, quoting the user's own words where possible. That line is not a question you wait on, and you do not add a required question. Then the single sharpest point (a missing option if there is one, otherwise the biggest risk) and one cheap test. The verdict, the point and the test stay within 50 words. If the judge marked it thin, show the quick take and that one question, not a fact list. A result from the `grill` tool already enforced a different company in code. Relay that note as written, and do not look for a Judge line. Do not show the judge's model, a score, a balance, a quote check, or a disclaimer.
+On the paste route, the company check above is the first line you show. Then show only layer 1. The verdict line comes first. After it, and never before it, one line of at most 25 words: "The question that would change this:", naming the single open question whose answer would flip the call, quoting the user's own words where possible. That line is not a question you wait on, and you do not add a required question. Then the single sharpest point (a missing option if there is one, otherwise the biggest risk) and one cheap test. The verdict, the point and the test stay within 50 words. If the judge marked it thin, show the quick take and that one question, not a fact list. A result from the `grill` tool already enforced a different company in code. Relay that note as written, including the run note after the closing line, and do not look for a Judge line. Do not add a model name of your own, a score, a balance, a quote check, or a disclaimer. Never drop the run note.
 
 If layer 1 says sources were not checked, run section 3 before the user acts on the verdict or sends the work.
 
 Layer 1 already ends with this line. If it does not, add it once. Do not add a confidence question:
 
 Say 'more', 'options', or your call.
+
+The tool result ends with a two-line run note: the models that ran and how long it took, then one privacy sentence. Show that note after the closing line, word for word. Never drop the run note. Never put it before the verdict.
 
 When they say more, why, or what else, show the next challenge, its cheap test, and the one or two facts that would flip the call. About 60 to 80 words. On the tool, call `grill_result` with `detail` `more` and relay that. Do not write it yourself. When they say options, help me decide, or they are stuck, call `grill_result` with `detail` `options`, or on the paste route show the judge's options lines. About 60 to 80 words. A full report only when they say full report (`detail` `full`). On the paste route, use only the judge's lines for each layer.
 
