@@ -229,6 +229,7 @@ export function guardrailsFromSubject(subject) {
 const SOURCE_APPS = [
   ["claude-code", /\bclaude[- ]code\b/i],
   ["copilot", /\bcopilot\b/i],
+  ["deepseek", /\bdeepseek\b/i],
   ["chatgpt", /\b(?:chatgpt|openai)\b/i],
   ["claude", /\b(?:claude|anthropic)\b/i],
   ["gemini", /\b(?:gemini|google)\b/i],

@@ -338,7 +338,7 @@ describe("the any-assistant prompt", () => {
   });
 
   it("names the assistants people start from, and pairs Copilot only with a company it can't run", () => {
-    for (const name of ["Claude", "ChatGPT", "Copilot", "Gemini", "Grok", "Muse"]) {
+    for (const name of ["Claude", "ChatGPT", "Copilot", "DeepSeek", "Gemini", "Grok", "Muse"]) {
       assert.ok(prompt.includes(name), `no mention of ${name}`);
     }
     assert.match(prompt, /^\| Copilot [^\n]*\| Gemini \|$/m);

@@ -435,6 +435,7 @@ describe("look back", () => {
     assert.equal(sourceAppLabel("Claude by Anthropic"), "claude");
     assert.equal(sourceAppLabel("ChatGPT"), "chatgpt");
     assert.equal(sourceAppLabel("Copilot, which can run OpenAI"), "copilot");
+    assert.equal(sourceAppLabel("DeepSeek"), "deepseek");
     assert.equal(sourceAppLabel("Gemini"), "gemini");
     assert.equal(sourceAppLabel("Grok"), "grok");
     assert.equal(sourceAppLabel("Muse"), "muse");

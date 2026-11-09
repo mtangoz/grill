@@ -1,6 +1,6 @@
 # Grill, in any assistant
 
-For ChatGPT, Copilot, Gemini, Grok, Muse, or any other chat assistant. In Claude, the Grill skill or extension does this for you (see the README).
+For ChatGPT, Copilot, DeepSeek, Gemini, Grok, Muse, or any other chat assistant. In Claude, the Grill skill or extension does this for you (see the README).
 
 **How to use it:**
 1. Copy everything below the line into the assistant you've been thinking with, and say what you're deciding.
@@ -11,6 +11,7 @@ For ChatGPT, Copilot, Gemini, Grok, Muse, or any other chat assistant. In Claude
 |---|---|
 | ChatGPT (OpenAI) | Claude, Gemini or Grok |
 | Copilot (it can run OpenAI, Anthropic or xAI models) | Gemini |
+| DeepSeek | Claude, ChatGPT, Gemini or Grok |
 | Gemini (Google) | Claude, ChatGPT or Grok |
 | Grok or GrokBot (xAI) | Claude, ChatGPT or Gemini |
 | Muse (Meta) | Claude, ChatGPT or Gemini |
@@ -24,9 +25,9 @@ You are helping me grill a decision: get it challenged by an outside judge, a mo
 
 2. **The first time only,** say one line: First time: what you paste goes to that assistant, under its own settings. https://grillyour.ai/#privacy Do not repeat that disclosure.
 
-3. **Note your own maker, then give me the judge prompt.** Before the prompt, write one line naming your own maker, for example "Your assistant: ChatGPT by OpenAI." ChatGPT is OpenAI, Claude is Anthropic, Gemini is Google, Grok is xAI and Muse is Meta. If you are Copilot, which can run OpenAI, Anthropic or xAI models, write "Your assistant: Copilot, which can run OpenAI, Anthropic or xAI." Only Gemini counts as a different company for Copilot. Then give me the template between the markers below, with {THE APPROVED SUBJECT} filled with my words and {THE NEUTRAL QUESTION} left blank unless I asked a question, as one block I can copy. Tell me which assistants to paste it into: ChatGPT into Claude, Gemini or Grok; Copilot into Gemini; Gemini into Claude, ChatGPT or Grok; Grok into Claude, ChatGPT or Gemini; Muse into Claude, ChatGPT or Gemini; Claude into ChatGPT, Gemini or Grok.
+3. **Note your own maker, then give me the judge prompt.** Before the prompt, write one line naming your own maker, for example "Your assistant: ChatGPT by OpenAI." ChatGPT is OpenAI, Claude is Anthropic, DeepSeek is DeepSeek, Gemini is Google, Grok is xAI and Muse is Meta. If you are Copilot, which can run OpenAI, Anthropic or xAI models, write "Your assistant: Copilot, which can run OpenAI, Anthropic or xAI." Only Gemini counts as a different company for Copilot. Then give me the template between the markers below, with {THE APPROVED SUBJECT} filled with my words and {THE NEUTRAL QUESTION} left blank unless I asked a question, as one block I can copy. Tell me which assistants to paste it into: ChatGPT into Claude, Gemini or Grok; Copilot into Gemini; DeepSeek into Claude, ChatGPT, Gemini or Grok; Gemini into Claude, ChatGPT or Grok; Grok into Claude, ChatGPT or Gemini; Muse into Claude, ChatGPT or Gemini; Claude into ChatGPT, Gemini or Grok.
 
-4. **When I paste the judge's answer back,** read its first line. It should be `Judge: <model name> by <company>`. Compare that company with your own maker. Treat ChatGPT and OpenAI as one company, Claude and Anthropic as one, Gemini and Google as one, Grok and xAI as one, and Muse and Meta as one. If you are Copilot, only Gemini counts as a different company (a line that names Gemini or Google). OpenAI, Anthropic and xAI do not. If you cannot tell the company, treat the line as missing. Put one line at the top, before anything else:
+4. **When I paste the judge's answer back,** read its first line. It should be `Judge: <model name> by <company>`. Compare that company with your own maker. Treat ChatGPT and OpenAI as one company, Claude and Anthropic as one, DeepSeek as its own company, Gemini and Google as one, Grok and xAI as one, and Muse and Meta as one. If you are Copilot, only Gemini counts as a different company (a line that names Gemini or Google). OpenAI, Anthropic and xAI do not. If you cannot tell the company, treat the line as missing. Put one line at the top, before anything else:
    - if the companies differ, `Judge: X by Y. Different company from your assistant ✓`, using the model and company from the judge's line;
    - if the companies match, `Warning: this verdict is NOT independent. The judge is the same company as your assistant. Paste the judge prompt into {assistants} instead.` Fill {assistants} from the list in step 3;
    - if that Judge line is missing, `Warning: this verdict is unverified. The answer has no Judge line, so this is not a confirmed outside judge. Paste the judge prompt into {assistants} instead.`
