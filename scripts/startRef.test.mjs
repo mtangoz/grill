@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleStart, normalizeRef, refFromCookie, startRefKey } from "../api/_start.mjs";
+import { START_VIEWS_KEY, handleStart, normalizeRef, refFromCookie, startRefKey } from "../api/_start.mjs";
 import { createMemoryRedis } from "./hostedCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -38,14 +38,17 @@ describe("start attribution", () => {
     assert.match(html, /id="copy-starter"/);
     assert.match(html, /id="starter-prompt"/);
     assert.equal(html.includes("askgrill"), false);
+    assert.doesNotMatch(html, /grillTrack|posthog|phc_/i);
     assert.match(res.headers.get("set-cookie"), /grill_ref=askgrill/);
     assert.match(res.headers.get("set-cookie"), /HttpOnly/);
     assert.equal(res.headers.get("set-cookie").includes("askgrill@"), false);
     assert.equal(ctx.memory.command(["GET", startRefKey("askgrill")]), "1");
+    assert.equal(ctx.memory.command(["GET", START_VIEWS_KEY]), "1");
     const again = await handleStart(new Request("https://preview.example/start/?ref=AskGrill"), ctx);
     assert.equal(again.status, 200);
     assert.equal(again.headers.get("location"), null);
     assert.equal(ctx.memory.command(["GET", startRefKey("askgrill")]), "2");
+    assert.equal(ctx.memory.command(["GET", START_VIEWS_KEY]), "2");
     assert.equal(refFromCookie(again.headers.get("set-cookie")), "askgrill");
   });
 
@@ -57,6 +60,7 @@ describe("start attribution", () => {
     assert.match(await bad.text(), /First 100 users get Grill free for life, 100 spots left\./);
     assert.equal(bad.headers.get("set-cookie"), null);
     assert.equal(ctx.memory.command(["GET", startRefKey("askgrill")]), null);
+    assert.equal(ctx.memory.command(["GET", START_VIEWS_KEY]), "1");
 
     let called = false;
     const bare = await handleStart(new Request("https://grillyour.ai/start?ref=askgrill"), {

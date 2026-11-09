@@ -4,3 +4,4 @@
 cd "$(dirname "$0")/.." || exit 1
 node scripts/notify-interest.mjs >> metrics.jsonl
 node scripts/weekly-metrics.mjs >> metrics.jsonl
+node scripts/posthogReadout.mjs >> metrics.jsonl 2>/dev/null || true

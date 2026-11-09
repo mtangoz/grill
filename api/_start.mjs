@@ -1,5 +1,5 @@
 /**
- * Serve /start. Record ?ref= as a counter and a cookie the later form can read.
+ * Serve /start. Count every view, record ?ref= as a counter, and set a cookie the later form can read.
  * The page includes how many founding spots are left. The only script copies the starter prompt.
  * An unknown or empty ref is not stored. A missing store still shows the page.
  */
@@ -9,6 +9,9 @@ import { foundingSpotsLine, readFoundingCount } from "./_founding.mjs";
 
 export const REF_COOKIE = "grill_ref";
 const REF_MAX_AGE = 30 * 24 * 60 * 60;
+
+/** Every /start load, tagged or not. A number only. */
+export const START_VIEWS_KEY = "grill:metric:start_views";
 
 /** A source label such as askgrill. Anything else, including an email, is dropped. */
 export function normalizeRef(raw) {
@@ -100,6 +103,12 @@ async function spotsFor(deps) {
  */
 export async function handleStart(request, deps) {
   const ref = normalizeRef(new URL(request.url).searchParams.get("ref"));
+  try {
+    const command = await commandOf(deps);
+    if (command) await command(["INCR", START_VIEWS_KEY]);
+  } catch {
+    // The page still loads. A missed counter is not a blocked visit.
+  }
   if (ref) {
     try {
       await recordStartRef(deps, ref);

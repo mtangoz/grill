@@ -86,9 +86,15 @@ describe("website analytics", () => {
   it("allowlists every event the pages send", () => {
     for (const file of ["site/page.html", "site/look-back.html"]) {
       const source = readFileSync(join(ROOT, file), "utf8");
-      for (const [, name] of source.matchAll(/\b(download_mcpb|download_skill|copy_prompt|openrouter_key_click|reflection_[a-z_]+)\b/g)) {
+      for (const [, name] of source.matchAll(/\b(cta_connect|download_mcpb|download_skill|copy_prompt|openrouter_key_click|reflection_[a-z_]+)\b/g)) {
         assert.ok(TRACKED_EVENTS.includes(name), `${file} sends ${name}, which is not allowlisted`);
       }
     }
+  });
+
+  it("lists cta_connect for when PostHog is on; homepage Connect is counted via /start?ref=home", () => {
+    assert.ok(TRACKED_EVENTS.includes("cta_connect"));
+    assert.doesNotMatch(readFileSync(join(ROOT, "site/page.html"), "utf8"), /grillTrack/);
+    assert.match(readFileSync(join(ROOT, "site/page.html"), "utf8"), /href="\/start\/\?ref=home"/);
   });
 });
