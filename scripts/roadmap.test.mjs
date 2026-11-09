@@ -39,6 +39,25 @@ describe("later ideas and competitor notes", () => {
     for (const idea of ideas) assert.match(idea, /Consider when:/, idea.slice(0, 80));
   });
 
+  it("records the real-user count the user-count triggers read", () => {
+    const strategy = readFileSync(join(ROOT, "docs/STRATEGY.md"), "utf8");
+    assert.match(strategy, /As of 2026-11-09 the count is 1 real user and 0 evidenced look-backs\. Updated monthly\./);
+    assert.match(
+      strategy,
+      /A real user is a person outside the maintainers and their agents or test accounts who ran at least one successful grill \(\[PRINCIPLES\.md\]\(PRINCIPLES\.md#north-star\)\)\./,
+    );
+    assert.match(
+      roadmap,
+      /Most triggers read the real-user count in STRATEGY\.md\. That count is 1 as of 2026-11-09, so every user-count trigger below reads as not met\./,
+    );
+    assert.match(roadmap, /\| Record the real-user count \| High, enables every other trigger \| Now \| Done \|/);
+    assert.match(roadmap, /Done: recorded 2026-11-09 in STRATEGY\.md\. Monthly refresh\./);
+    assert.match(
+      roadmap,
+      /\| Public launch \(Show HN, Product Hunt\) \| High, usage, one-off \| Real-user count recorded and activation measured \| Not met \|/,
+    );
+  });
+
   it("records what we learned from Cruxes, and a threat level", () => {
     assert.match(competitors, /cruxes\.io/);
     assert.match(competitors, /finds the one question that would change a decision/);
