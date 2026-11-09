@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-09 | A Muse OAuth client whose redirect host is agent.meta.ai, and a client named Muse or Meta, map to sourceApp muse. The judge excludes meta-llama instead of treating that client as unknown. |
 | 2026-11-09 | Homepage Connect links to /start/?ref=home. Every /start view increments grill:metric:start_views. Weekly metrics print start views and start refs. cta_connect is on the event allowlist. The /start API page sends no client analytics. Plan: docs/experiments/analytics-loop.md. |
 | 2026-11-09 | Muse setup copy matches Meta's current custom-connector flow: ask Muse in chat, URL https://grillyour.ai/mcp, Client ID only if Muse asks. Not yet verified end to end. |
 | 2026-11-09 | Tony approved on 2026-11-09: Other AI and the paste route list DeepSeek. DeepSeek is copy-and-paste only; its consumer chat cannot add a remote connector. The prompt pairs DeepSeek with Claude, ChatGPT, Gemini or Grok. |
