@@ -22,7 +22,7 @@ Three inputs:
 ## Where Grill stands today
 
 - **Product:** the free tool works in Claude Desktop, Claude Code, claude.ai (skill), any MCP app (`npx -y grillyour`), and by copy and paste in ChatGPT, Copilot, Gemini, Grok and Muse. Grill in your chat, the hosted connector, is verified in claude.ai, ChatGPT and Grok Bot. Gemini is still being tested, and Meta AI has setup steps in the README but is not verified ([HOSTED.md](HOSTED.md)).
-- **North Star:** 100 real users ([PRINCIPLES.md](PRINCIPLES.md#north-star)). The current count is not recorded in this repository.
+- **North Star:** 100 real users ([PRINCIPLES.md](PRINCIPLES.md#north-star)). As of 2026-11-09 the count is 1 real user and 0 evidenced look-backs. Updated monthly. A real user is a person outside the maintainers and their agents or test accounts who ran at least one successful grill ([PRINCIPLES.md](PRINCIPLES.md#north-star)). The first one ran a grill on 2026-11-05, two days after open sign-up. Hosted accounts: 4 total, 3 of which are maintainer or test/reviewer accounts and are excluded.
 - **Retention features:** look-back reminders, "Your habits", and "Where your calls changed" are built for in-chat Grill.
 - **Money:** Pro is built and priced at $9 a month or $90 a year (confirmed by the owner on 2026-11-07). It is parked (`GRILL_PRO_BILLING` off). In-chat Grill has had open sign-up since 2026-11-03. The first 100 accounts given access are founding members, free for life ([HOSTED.md](HOSTED.md#founding-members)). The $3 price in [PRD-hosted-pro.md](PRD-hosted-pro.md) was a proposal and is not the price.
 - **Independence:** enforced in code on the Desktop, Claude Code and MCP routes. It depends on configuration on non-Claude hosts, and only warns on the paste route.
@@ -46,7 +46,7 @@ These guide choices about what to build, sell and measure. They sit under PRINCI
 
 **What is strong.** The core idea is sound, and the code backs it up: a different company is excluded and verified, not just requested. Grill gets better each time a new model ships. The privacy promises are specific and tested. Pro is built and waiting. Most of the retention loop already exists.
 
-**What is weak.** Grill doesn't yet know its own numbers. Nothing in the repository shows how close it is to 100 real users, how many people come back, or how many record a decision. The product is ahead of the evidence. A team that does this much careful work before having users risks polishing a product nobody has tested yet.
+**What is weak.** The repository shows how close Grill is to 100 real users: 1, with 0 evidenced look-backs, as of 2026-11-09. It still does not show how many people come back beyond those look-backs, or how many record a decision. The product is ahead of the evidence. A team that does this much careful work with 1 real user risks polishing a product that has barely been tested.
 
 **The biggest risk.** People try it once. "Grill this" is easy to try and easy to forget. Grill survives only if decisions are frequent and important enough that people come back.
 

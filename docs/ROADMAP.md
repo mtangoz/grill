@@ -6,13 +6,13 @@ The daily growth work reviews docs/ROADMAP.md before it asks what to build. A we
 
 Each idea has three parts. **Impact** says what it moves (usage, retention, revenue, trust, or hygiene) and roughly how much: high, medium or low. It is a guess until a measure in [STRATEGY.md](STRATEGY.md) or [PRINCIPLES.md](PRINCIPLES.md) backs it. **Consider when** is the trigger. **Status** says whether the trigger is met. Revenue ideas follow STRATEGY.md: earn the second grill before chasing the hundredth user.
 
-Most triggers read the real-user count, which is not recorded yet (STRATEGY.md rec 1). Until it is, every user-count trigger below reads as not met.
+Most triggers read the real-user count in STRATEGY.md. That count is 1 as of 2026-11-09, so every user-count trigger below reads as not met.
 
 ### At a glance
 
 | Idea | Impact | Trigger | Status |
 |---|---|---|---|
-| Record the real-user count | High, enables every other trigger | Now | Trigger met |
+| Record the real-user count | High, enables every other trigger | Now | Done |
 | Close the unknown-client judge gap | High, trust | Now | Trigger met |
 | Publish the hosted address on the MCP Registry | Medium, usage | Now | Trigger met |
 | ChatGPT and Claude connector directory listings | High, usage | Now, with the owner's approval | Trigger met, blocked |
@@ -230,6 +230,8 @@ Impact: high. Every user-count trigger in this file reads this number. Without i
 Consider when: now. STRATEGY.md rec 1 asks for it, and PRD-privacy-foundations expected it by 2026-11-01.
 
 Trigger met: the consider-when is now (2026-11-08).
+
+Done: recorded 2026-11-09 in STRATEGY.md. Monthly refresh.
 
 ## Close the unknown-client judge gap
 
