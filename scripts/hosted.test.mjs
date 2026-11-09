@@ -701,6 +701,7 @@ describe("hosted Grill", { concurrency: false }, () => {
       ["chatgpt", { redirect_uri: "https://chatgpt.com/backend-api/aip/connectors/mcp/oauth_callback" }, ["openai/*"]],
       ["grok", { redirect_uri: "https://grok.com/connectors/oauth/callback" }, ["x-ai/*"]],
       ["gemini", { redirect_uri: "https://gemini.google.com/app/oauth" }, ["google/*"]],
+      ["muse", { redirect_uri: "https://agent.meta.ai/api/hatch/oauth/callback" }, ["meta-llama/*"]],
     ];
     for (const [label, claim, excluded] of clients) {
       it(`excludes only ${label}, and pins nothing`, async () => {
@@ -2001,7 +2002,13 @@ describe("hosted mappings and ledger pins", () => {
       [{ redirectUri: "https://chatgpt.com/connector/oauth", clientInfo: { name: "Claude" } }, "openai", "chatgpt"],
       [{ redirectUri: "https://grok.com/oauth/callback" }, "x-ai", "grok"],
       [{ redirectUri: "https://gemini.google.com/oauth" }, "google", "gemini"],
+      [{ redirectUri: "https://agent.meta.ai/api/hatch/oauth/callback", clientInfo: { name: "ChatGPT" } }, "meta-llama", "muse"],
       [{ redirectUri: "https://unknown.example/cb" }, "", "unknown"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Muse" } }, "meta-llama", "muse"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { title: "Meta AI" } }, "meta-llama", "muse"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Meta" } }, "meta-llama", "muse"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "metadata" } }, "", "unknown"],
+      [{ redirectUri: CLAUDE_WEB_REDIRECT, clientInfo: { name: "Muse" } }, "anthropic", "claude"],
       [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Gemini" } }, "google", "gemini"],
       [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "gemini-cli" } }, "google", "gemini"],
       [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Antigravity" } }, "google", "gemini"],

@@ -205,11 +205,16 @@ export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInf
   ) {
     return { company: "google", sourceApp: "gemini" };
   }
+  // OpenRouter serves Meta's models under meta-llama/, so that prefix is the family to leave out.
+  if (redirectHost === "agent.meta.ai" || clientHost === "agent.meta.ai") {
+    return { company: "meta-llama", sourceApp: "muse" };
+  }
 
   // Cursor is not one model company, so the judge still excludes nobody.
   // The name is stored on new records. Older ones stay unknown.
   const named = String(clientInfo?.name || clientInfo?.title || "");
   if (/\bcursor\b/i.test(named)) return { company: "", sourceApp: "cursor" };
+  if (/\b(?:muse|meta)\b/i.test(named)) return { company: "meta-llama", sourceApp: "muse" };
   const fromName = clientCompanyHint({ clientInfo });
   if (fromName) return fromName;
   const kept = rememberedHint(remembered);
