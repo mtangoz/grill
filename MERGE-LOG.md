@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-09 | Muse setup copy matches Meta's current custom-connector flow: ask Muse in chat, URL https://grillyour.ai/mcp, Client ID only if Muse asks. Not yet verified end to end. |
 | 2026-11-09 | Tony approved on 2026-11-09: Other AI and the paste route list DeepSeek. DeepSeek is copy-and-paste only; its consumer chat cannot add a remote connector. The prompt pairs DeepSeek with Claude, ChatGPT, Gemini or Grok. |
 | 2026-11-08 | Tony approved on 2026-11-08: the impact detail is one short count, on Your grills and in the Monday email. Unknown means impact not confirmed, called out is not a confirmed change, and flagged is not proof. A zero count is left out. The learning line (how many decisions, and the percent looked back) sits inside the impact block, under that count, and is not repeated under the due list. |
 | 2026-11-08 | Tony approved on 2026-11-08: when a decision is cheap and easy to undo, lack of data alone is never grounds for shaky or doesn't hold up. The judge names the risk and the cheapest measurement, and may say solid if. Challenges are framed as experiments. |
