@@ -14,7 +14,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startFakeOpenRouter, typesafeAnswer } from "./fixtures/fake-openrouter.mjs";
-import { SUBJECT_BUDGET } from "./judgeCore.mjs";
+import { JUDGE_COMMIT_RULE, SUBJECT_BUDGET } from "./judgeCore.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = join(HERE, "judge.mjs");
@@ -60,6 +60,7 @@ function envFor(overrides = {}) {
     "JUDGE_OPENROUTER_URL",
     "JUDGE_CHECK",
     "JUDGE_DECISIONS_URL",
+    "GRILL_JUDGE_COMMIT",
   ]) {
     delete env[k];
   }
@@ -439,6 +440,21 @@ describe("--dry-run", () => {
     assert.match(stdout, /auto-router retry: up to 2 time\(s\) of `openrouter\/auto`/);
     assert.doesNotMatch(stdout, /openai\/|google\/|deepseek\/|x-ai\//);
     assert.equal(stdout.includes('"model": "openrouter/auto"'), true);
+  });
+
+  it("keeps the judge instructions unchanged unless GRILL_JUDGE_COMMIT is on", async () => {
+    const off = await runCli(["--text", "a claim", "--question", "should they ship it?", "--dry-run"], envFor({}));
+    const on = await runCli(["--text", "a claim", "--question", "should they ship it?", "--dry-run"], envFor({ GRILL_JUDGE_COMMIT: "yes" }));
+    assert.equal(off.code, 0, off.stderr);
+    assert.equal(on.code, 0, on.stderr);
+    assert.equal(off.stdout.includes(JUDGE_COMMIT_RULE), false);
+    assert.equal(on.stdout.includes(JUDGE_COMMIT_RULE), true);
+    assert.equal(off.stdout.includes("If the subject cannot settle it, say that is your finding."), true);
+    assert.equal(on.stdout.includes("If the subject cannot settle it, say that is your finding."), true);
+    const count = (stdout) => Number(stdout.match(/prompt: (\d+) chars/)[1]);
+    assert.equal(count(on.stdout) - count(off.stdout), JUDGE_COMMIT_RULE.length + 2);
+    const head = (stdout) => stdout.slice(0, stdout.indexOf("--- payload")).replace(/prompt: \d+ chars/, "prompt: N chars");
+    assert.equal(head(on.stdout), head(off.stdout));
   });
 
   it("shows the privacy fields on the payload it would send", async () => {

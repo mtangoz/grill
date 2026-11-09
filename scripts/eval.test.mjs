@@ -42,6 +42,7 @@ function envFor(overrides = {}) {
     "JUDGE_CHECK",
     "JUDGE_DECISIONS_URL",
     "GITHUB_STEP_SUMMARY",
+    "GRILL_JUDGE_COMMIT",
   ]) {
     delete env[k];
   }

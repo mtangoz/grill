@@ -38,6 +38,7 @@ import {
   DEEPEN_OFF,
   DEEPEN_ONLY_BIG,
   deepenTestEnabled,
+  judgeCommitEnabled,
   isThinGrill,
   normalizeDetail,
   appendRunNote,
@@ -1249,6 +1250,8 @@ function judgeChildEnv(apiKey, deps) {
   };
   if (deps.judgeOpenRouterUrl) env.JUDGE_OPENROUTER_URL = deps.judgeOpenRouterUrl;
   if (deps.judgeDecisionsUrl) env.JUDGE_DECISIONS_URL = deps.judgeDecisionsUrl;
+  // Unset stays off: the child then builds today's prompt. An explicit opt-in is the only copy.
+  if (judgeCommitEnabled(deps.env)) env.GRILL_JUDGE_COMMIT = "1";
   return env;
 }
 
