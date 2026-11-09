@@ -45,7 +45,7 @@ describe("site/page.html", () => {
   it("pairs Copilot only with a company it can't run, in the README", () => {
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     const table = readme.slice(readme.indexOf("| You think with |"), readme.indexOf("### Meta AI"));
-    for (const name of ["Claude", "ChatGPT", "Copilot", "Gemini", "Grok", "Muse"]) {
+    for (const name of ["Claude", "ChatGPT", "Copilot", "DeepSeek", "Gemini", "Grok", "Muse"]) {
       assert.ok(table.includes(name), `no row for ${name}`);
     }
     assert.match(table, /\| Copilot \| Gemini, because Copilot can run/);
@@ -741,12 +741,12 @@ describe("the /start page", () => {
     assert.doesNotMatch(cursor, /coming soon|verified working/i);
     assert.doesNotMatch(cursor, /eyJjb21tYW5kIjoibnB4|"command":"npx"/);
     const other = section(start, "other-steps", "try-grill");
-    assert.match(other, /Copilot, Gemini, Muse, Grok and more\. Copy and paste\. No install, no key\./);
+    assert.match(other, /Copilot, DeepSeek, Gemini, Muse, Grok and more\. Copy and paste\. No install, no key\./);
     assert.ok(other.includes(PROMPT_LINK), "the paste prompt");
     assert.match(other, /into the assistant you think with, and say what you're deciding/);
     assert.match(other, /gives you a prompt for the judge/);
     assert.match(other, /Paste that into an assistant from a different company, then paste the answer back/);
-    assert.match(other, /ChatGPT into Claude, Gemini or Grok\. Copilot into Gemini, because Copilot can run OpenAI, Anthropic or xAI models\. Gemini into Claude, ChatGPT or Grok\. Grok into Claude, ChatGPT or Gemini\. Muse into Claude, ChatGPT or Gemini\./);
+    assert.match(other, /ChatGPT into Claude, Gemini or Grok\. Copilot into Gemini, because Copilot can run OpenAI, Anthropic or xAI models\. DeepSeek into Claude, ChatGPT, Gemini or Grok\. Gemini into Claude, ChatGPT or Grok\. Grok into Claude, ChatGPT or Gemini\. Muse into Claude, ChatGPT or Gemini\./);
     assert.doesNotMatch(other, /Copilot into (Claude|ChatGPT|Grok)/);
     assert.doesNotMatch(other, /grillyour\.ai\/mcp|custom connector|Keep Activity|Connected Apps|Add a custom app|Should work|coming soon|Meta AI|RNdHSHmWCRJO40vd|US only|personal Google/i);
     assert.ok(start.includes(`<p id="starter-prompt">${STARTER}</p>`), "starter prompt");
@@ -771,12 +771,13 @@ describe("the /start page", () => {
     assert.match(log, /Connect Grill \(2 minutes\)/);
     assert.match(log, /\/start/);
     assert.match(log, /\| 2026-11-08 \| \/start also offers Grok Bot, Cursor \/ VS Code, and Other AI\. Grok Bot uses its verified connector line\. Cursor and VS Code use the documented npx setup\. Other AI is copy and paste for Copilot, Gemini, Muse, Grok and more\. \|/);
+    assert.match(log, /\| 2026-11-09 \| Tony approved on 2026-11-09: Other AI and the paste route list DeepSeek\. DeepSeek is copy-and-paste only; its consumer chat cannot add a remote connector\. The prompt pairs DeepSeek with Claude, ChatGPT, Gemini or Grok\. \|/);
     const ux = readFileSync(join(ROOT, "docs/UX.md"), "utf8");
     assert.match(ux, /ChatGPT shows four short steps/);
     assert.match(ux, /Claude shows a pre-filled add-connector link/);
     assert.match(ux, /Grok Bot shows the one line that adds `https:\/\/grillyour\.ai\/mcp`/);
     assert.match(ux, /Cursor and VS Code show the hosted connector at `https:\/\/grillyour\.ai\/mcp`, then the npx setup for your own key/);
-    assert.match(ux, /Other AI shows the copy-and-paste steps for Copilot, Gemini, Muse, Grok and more/);
+    assert.match(ux, /Other AI shows the copy-and-paste steps for Copilot, DeepSeek, Gemini, Muse, Grok and more/);
     assert.match(ux, /Then one prompt to copy\. Its only script copies that prompt/);
   });
 
@@ -1514,7 +1515,7 @@ describe("markdown for agents", () => {
       assert.ok(cursorMd.indexOf(hosted) < cursorMd.indexOf("--set-key"), "markdown twin keeps the hosted path first");
       assert.ok(cursorMd.includes("https://cursor.com/en/install-mcp?name=Grill&config=eyJ1cmwiOiJodHRwczovL2dyaWxseW91ci5haS9tY3AifQ=="));
       assert.ok(cursorMd.includes("https://insiders.vscode.dev/redirect/mcp/install?name=Grill&config=%7B%22name%22%3A%22Grill%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fgrillyour.ai%2Fmcp%22%7D"));
-      assert.ok(start.includes("Copilot, Gemini, Muse, Grok and more"));
+      assert.ok(start.includes("Copilot, DeepSeek, Gemini, Muse, Grok and more"));
       assert.ok(start.includes("Copilot into Gemini, because Copilot can run OpenAI, Anthropic or xAI models"));
       assert.equal(start.includes("Settings → Connectors"), false);
       assert.equal(start.includes("coming soon"), false);

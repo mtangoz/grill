@@ -6,7 +6,7 @@
 **No key needed:** Anyone can sign up and connect Grill to the AI they use at https://grillyour.ai/mcp.
 **See it first:** [four made-up decisions, grilled](https://grillyour.ai/demo/)
 
-Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, Gemini, Grok or Muse. It sends the decision as you said it. An outside judge, a model from a different company, comes back with a short note: one verdict line, then one short line naming the question that would change the call, then the sharpest point and one cheap test. The verdict, the point and the test stay within about 50 words. The extra line is at most about 25 words, and it never comes before the verdict. Say more, options, or your call when you want the rest. A thin line gets a quick take and one question, not a refusal. A record is written only after you answer, and a percent is optional. Grill does not store it on the installed tool.
+Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, DeepSeek, Gemini, Grok or Muse. It sends the decision as you said it. An outside judge, a model from a different company, comes back with a short note: one verdict line, then one short line naming the question that would change the call, then the sharpest point and one cheap test. The verdict, the point and the test stay within about 50 words. The extra line is at most about 25 words, and it never comes before the verdict. Say more, options, or your call when you want the rest. A thin line gets a quick take and one question, not a refusal. A record is written only after you answer, and a percent is optional. Grill does not store it on the installed tool.
 
 > **Verdict: shaky.** The plan assumes customers stay at the new price, and nothing in it tests that.
 > **Falsifier:** show the new price to one in ten new signups for two weeks, and compare how many start paying.
@@ -53,7 +53,7 @@ The extension reads `GRILL_API_KEY`. `OPENROUTER_API_KEY` works when that is uns
 
 Want it in one step? Use Claude Desktop, above.
 
-### ChatGPT, Copilot, Gemini, Grok or Muse: no install, no key
+### ChatGPT, Copilot, DeepSeek, Gemini, Grok or Muse: no install, no key
 
 1. Copy **[the Grill prompt](prompts/grill.md)** into the assistant you think with, and say what you're deciding.
 2. It writes your decision up with you, then gives you a prompt for the judge.
@@ -63,6 +63,7 @@ Want it in one step? Use Claude Desktop, above.
 |---|---|
 | ChatGPT | Claude, Gemini or Grok |
 | Copilot | Gemini, because Copilot can run OpenAI, Anthropic or xAI models |
+| DeepSeek | Claude, ChatGPT, Gemini or Grok |
 | Gemini | Claude, ChatGPT or Grok |
 | Grok or GrokBot | Claude, ChatGPT or Gemini |
 | Muse | Claude, ChatGPT or Gemini |
