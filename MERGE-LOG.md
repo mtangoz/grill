@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-09 | The Cursor / VS Code panel says to add Grill by hand as Streamable HTTP (HTTP in VS Code) and to leave the token and header fields empty. Grill asks you to sign in the first time you use it. |
 | 2026-11-09 | A Muse OAuth client whose redirect host is agent.meta.ai, and a client named Muse or Meta, map to sourceApp muse. The judge excludes meta-llama instead of treating that client as unknown. |
 | 2026-11-09 | Homepage Connect links to /start/?ref=home. Every /start view increments grill:metric:start_views. Weekly metrics print start views and start refs. cta_connect is on the event allowlist. The /start API page sends no client analytics. Plan: docs/experiments/analytics-loop.md. |
 | 2026-11-09 | Muse setup copy matches Meta's current custom-connector flow: ask Muse in chat, URL https://grillyour.ai/mcp, Client ID only if Muse asks. Not yet verified end to end. |
