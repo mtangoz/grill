@@ -653,7 +653,7 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.equal(grilled.json.result.isError, false, brief);
       assert.match(brief, /Say 'more', 'options', 'deepen', or your call\./);
       assert.doesNotMatch(brief, /Rewritten plan|top professional/);
-      const layer = brief.replace(/^This goes to an outside judge[^\n]*\n\n/, "").replace(/^Models: [^\n]* · (took \d+(m \d{2})?s|time not recorded)\nPrivate: sent only to zero-data-retention endpoints[^\n]*\n\n/, "").split(/\n\nfollow:/)[0];
+      const layer = brief.replace(/^This goes to an outside judge[^\n]*\n\n/, "").replace(/\n\nModels: [^\n]* · (took \d+(m \d{2})?s|time not recorded)\nPrivate: sent only to zero-data-retention endpoints[^\n]*/, "").split(/\n\nfollow:/)[0];
       assert.ok(countWords(layer) <= 75, `${countWords(layer)}: ${layer}`);
       assert.ok(layer.indexOf("**Shaky.**") < layer.indexOf("The question that would change this:"), layer);
       const added = fake.seen.chat.slice(before);
@@ -2787,8 +2787,9 @@ describe("hosted judge budget and provenance", { concurrency: false }, () => {
       const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse("2026-10-22T15:00:00Z") };
       const first = await postMcp(ctx, grillArgs("Decision: move the launch to March."), { token, deps });
       const firstText = textOf(first.json).replace(/^This goes to an outside judge[^\n]*\n\n/, "");
-      assert.match(firstText, /^Models: openai\/gpt-5\.6-sol \(judge\) · took \d+(m \d{2})?s\nPrivate: /);
-      assert.doesNotMatch(firstText.replace(/^Models: [^\n]* · (took \d+(m \d{2})?s|time not recorded)\nPrivate: sent only to zero-data-retention endpoints[^\n]*\n\n/, ""), /gpt-5\.6/);
+      assert.match(firstText, /^\*\*Shaky\.\*\*/);
+      assert.match(firstText, /Say 'more', 'options', or your call\.\n\nModels: openai\/gpt-5\.6-sol \(judge\) · took \d+(m \d{2})?s\nPrivate: /);
+      assert.doesNotMatch(firstText.replace(/\n\nModels: [^\n]* · (took \d+(m \d{2})?s|time not recorded)\nPrivate: sent only to zero-data-retention endpoints[^\n]*/, ""), /gpt-5\.6/);
       const jobId = textOf(first.json).match(/follow: (\S+)/)[1];
       const line = await postMcp(ctx, resultArgs({ job_id: jobId, detail: "provenance" }), { token, deps: { waitMs: 50 } });
       assert.equal(line.json.result.isError, false, textOf(line.json));

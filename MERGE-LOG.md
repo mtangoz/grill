@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-09 | Tony approved on 2026-11-09: layer 1 leaves off a flip line the judge did not name, and a cheap test the judge did not name. The run note follows the closing line. |
 | 2026-11-09 | The Cursor / VS Code panel says to add Grill by hand as Streamable HTTP (HTTP in VS Code) and to leave the token and header fields empty. Grill asks you to sign in the first time you use it. |
 | 2026-11-09 | A Muse OAuth client whose redirect host is agent.meta.ai, and a client named Muse or Meta, map to sourceApp muse. The judge excludes meta-llama instead of treating that client as unknown. |
 | 2026-11-09 | Homepage Connect links to /start/?ref=home. Every /start view increments grill:metric:start_views. Weekly metrics print start views and start refs. cta_connect is on the event allowlist. The /start API page sends no client analytics. Plan: docs/experiments/analytics-loop.md. |

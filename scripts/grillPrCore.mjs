@@ -33,7 +33,7 @@ export function alreadyGrilled(comments, sha, botLogin = "github-actions[bot]") 
   return false;
 }
 
-/** The same two-line run note every grill opens with: models and time, then privacy. */
+/** The same two-line run note every grill ends with: models and time, then privacy. */
 function runNote(state) {
   return renderRunDisclosure({ servedModel: flatten(state.servedModel) }, Number(state.ms));
 }
@@ -340,11 +340,11 @@ export function formatGrillComment(state = {}) {
       GRILL_MARKER,
       stamp,
       `**Grill CI · ${tier} risk · no review**`,
-      runNote(state),
       "The judge run was degraded, so this is not a review and no label was changed.",
       notes.length ? notes.map((line) => `- ${line}`).join("\n") : "",
       state.companyLine || "",
       `Cost: ${formatCost(state.costUsd)}.`,
+      runNote(state),
     ]);
   }
   if (state.kind === "not-decorrelated") {
@@ -352,7 +352,6 @@ export function formatGrillComment(state = {}) {
       GRILL_MARKER,
       stamp,
       `**Grill CI · ${tier} risk · ${NOT_DECORRELATED}**`,
-      runNote(state),
       state.companyLine || `Author model vendor: unknown, judge: unknown (${NOT_DECORRELATED})`,
       "The model that answered is not from a different company than the model that wrote this pull request. This is not an independent review. The job fails, and `needs-review` is added.",
       reasonBlock(state.reasons),
@@ -360,6 +359,7 @@ export function formatGrillComment(state = {}) {
       "**What could break, and the cheapest check**",
       challengeBlock(state.challenges),
       `Cost: ${formatCost(state.costUsd)}.`,
+      runNote(state),
     ]);
   }
 
@@ -368,7 +368,6 @@ export function formatGrillComment(state = {}) {
     GRILL_MARKER,
     stamp,
     `**Grill CI · ${tier} risk · ${badge}**`,
-    runNote(state),
     state.companyLine || "",
     reasonBlock(state.reasons),
     state.verdictReason ? flatten(state.verdictReason) : "",
@@ -376,5 +375,6 @@ export function formatGrillComment(state = {}) {
     challengeBlock(state.challenges),
     `Cost: ${formatCost(state.costUsd)}.`,
     "The verdict is advisory. The job fails when the served model is from an excluded company. `needs-review` blocks auto-merge. `grill-solid` does not make a pull request low risk. A solid verdict clears `needs-review`. Use `do-not-merge` when a later solid grill should still not merge.",
+    runNote(state),
   ]);
 }

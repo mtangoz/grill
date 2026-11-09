@@ -1080,7 +1080,7 @@ export function hostedTools() {
   const localDisclosure =
     /The first time you use Grill with this person, say once\b.*?Do not mention a score, a balance, or a quote check\. /;
   const hostedDisclosure =
-    "Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Every result then has a two-line run note (models and time, then privacy). Show it as written, before the note, every time. Do not mention a Jev score, a credit balance, or a quote check. ";
+    "Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Every result then ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. Do not mention a Jev score, a credit balance, or a quote check. ";
   // Hosted hints are set here, not copied from the local tools. A local look-back stores
   // nothing, and a local grill does not write an account. OpenAI's review reads all three,
   // and the MCP defaults (read-only false, destructive true, open-world true) are wrong for
@@ -1186,7 +1186,7 @@ export const HOSTED_INSTRUCTIONS = [
   "Do not rewrite the decision, do not add your own case against, and do not wait for an OK.",
   "Ask at most one short question, and only if the decision is truly unclear, such as what the goal is.",
   "The first time, grill asks whether to keep decision records before anything is sent. Relay that one question and call again with keep_records true or false only after they answer.",
-  "If the result starts with the outside-judge sentence, show that one line once. Do not add a disclosure of your own, and do not repeat it later. Every result has a two-line run note (models and time, then privacy). Show it as written, before the note.",
+  "If the result starts with the outside-judge sentence, show that one line once. Do not add a disclosure of your own, and do not repeat it later. Every result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict.",
   "If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the note arrives. Do not ask the person to check, and do not ask them for a job id.",
   "If three grills are still running, wait about 2 minutes and call grill again yourself. Do not ask the person for a job id.",
   "Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question, a fact list, a confidence question, or a line of your own. It already ends with the next-step line.",

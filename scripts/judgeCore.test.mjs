@@ -72,6 +72,7 @@ import {
   RUN_PRIVACY_LINE,
   formatRunTime,
   renderRunDisclosure,
+  appendRunNote,
   runModels,
 } from "./judgeCore.mjs";
 
@@ -1371,11 +1372,12 @@ describe("renderJudgeReport — the grounding footer and the Jev section", () =>
 function assertBriefBudget(text) {
   const paras = String(text).split("\n\n").filter(Boolean);
   const flip = paras.filter((para) => para.startsWith("The question that would change this:"));
-  assert.equal(flip.length, 1, text);
-  assert.ok(countWords(flip[0]) <= 25, `${countWords(flip[0])}: ${flip[0]}`);
-  const rest = paras.filter((para) => para !== flip[0]).join(" ");
+  assert.ok(flip.length <= 1, text);
+  if (flip.length === 1) assert.ok(countWords(flip[0]) <= 25, `${countWords(flip[0])}: ${flip[0]}`);
+  const rest = paras.filter((para) => !flip.includes(para)).join(" ");
   assert.ok(countWords(rest) <= LAYER1_WORD_BUDGET, `${countWords(rest)}: ${rest}`);
-  assert.ok(countWords(text) <= LAYER1_WORD_BUDGET + 25, `${countWords(text)}: ${text}`);
+  assert.ok(countWords(text) <= LAYER1_WORD_BUDGET + flip.length * 25, `${countWords(text)}: ${text}`);
+  assert.equal(paras[0].startsWith("The question that would change this:"), false, text);
 }
 
 describe("the note a person reads", () => {
@@ -1412,24 +1414,85 @@ describe("the note a person reads", () => {
     ],
   };
 
-  it("puts one short flip question after the verdict, never before it", () => {
+  it("puts one short flip question after the verdict, never before it, and only when the judge named a crux", () => {
     const subject = "We will raise prices 20% in Q4 because paid users cover the support cost.";
-    const brief = renderLayers(rich, { subject }).brief;
-    const paras = brief.split("\n\n");
-    const flipAt = brief.indexOf("The question that would change this:");
-    const verdictAt = brief.indexOf("**Shaky.**");
-    assert.equal((brief.match(/The question that would change this:/g) || []).length, 1);
-    assert.ok(verdictAt >= 0 && flipAt > verdictAt, brief);
-    assert.equal(paras[0].includes("The question that would change this:"), false);
+    const bare = renderLayers(rich, { subject }).brief;
+    assert.match(bare, /^\*\*Shaky\.\*\*/);
+    assert.doesNotMatch(bare, /The question that would change this:/);
+    assert.doesNotMatch(bare, /paid users cover the support cost/);
+    assert.doesNotMatch(bare, /Name the cheapest check/);
+    assert.match(bare, /Cheap test: Pull the signup curve/);
+    assert.equal(bare.split("\n\n").at(-1), CLOSING_ASK);
+
+    const quoted = renderLayers(
+      {
+        ...rich,
+        challenges: [
+          {
+            ...rich.challenges[0],
+            target: "paid users cover the support cost",
+            what_would_have_to_be_true: "Paid users cover the support cost.",
+          },
+          ...rich.challenges.slice(1),
+        ],
+      },
+      { subject },
+    ).brief;
+    const paras = quoted.split("\n\n");
     assert.match(paras[0], /^\*\*Shaky\.\*\*/);
-    assert.match(paras[1], /^The question that would change this: whether "paid users cover the support cost" holds\.$/);
+    assert.match(
+      paras[1],
+      /^The question that would change this: whether "paid users cover the support cost" holds: paid users cover the support cost\.$/,
+    );
+    assert.ok(quoted.indexOf("**Shaky.**") < quoted.indexOf("The question that would change this:"));
+    assert.ok(quoted.indexOf("The question that would change this:") < quoted.indexOf("Missing:"));
     assert.ok(countWords(paras[1]) <= 25, `${countWords(paras[1])}: ${paras[1]}`);
-    assert.doesNotMatch(paras[1], /\?/);
-    assert.ok(brief.indexOf("The question that would change this:") < brief.indexOf("Missing:"), brief);
     assert.equal(paras.at(-1), CLOSING_ASK);
-    const rest = paras.filter((para) => para !== paras[1]).join("\n\n");
-    assert.ok(countWords(rest) <= LAYER1_WORD_BUDGET, `${countWords(rest)}: ${rest}`);
-    assert.ok(countWords(brief) <= LAYER1_WORD_BUDGET + 25, `${countWords(brief)}: ${brief}`);
+    assertBriefBudget(quoted);
+
+    const longQuote =
+      "Plan, in order: (1) Move the models/privacy run note after the verdict so the person reads the call first";
+    const dropped = renderLayers(
+      {
+        verdict: "weak",
+        verdictReason: "The order of the note is the whole question.",
+        challenges: [
+          {
+            challenge: "The run note is sitting above the call.",
+            target: longQuote,
+            what_would_have_to_be_true: "The run note belongs after the verdict.",
+            falsifier: "",
+          },
+        ],
+      },
+      {
+        subject:
+          'The user\'s requirement: "i want this to be a single idea" and then a long plan that should not be quoted back.',
+      },
+    ).brief;
+    assert.match(dropped, /^\*\*Shaky\.\*\*/);
+    assert.match(dropped, /The question that would change this: The run note belongs after the verdict\./);
+    assert.doesNotMatch(dropped, /Plan, in order/);
+    assert.doesNotMatch(dropped, /i want this to be/);
+    assert.doesNotMatch(dropped, /whether "/);
+    assert.doesNotMatch(dropped, /Name the cheapest check/);
+    assert.doesNotMatch(dropped, /Cheap test:/);
+    assert.doesNotMatch(dropped, /the case does not establish the call/);
+    assertBriefBudget(dropped);
+
+    const noCrux = renderLayers(
+      {
+        verdict: "weak",
+        verdictReason: "The note does not settle the call.",
+      },
+      { subject: "Plan, in order: (1) Move the models/privacy run note after the verdict this week." },
+    ).brief;
+    assert.match(noCrux, /^\*\*Shaky\.\*\*/);
+    assert.doesNotMatch(noCrux, /The question that would change this:/);
+    assert.doesNotMatch(noCrux, /Plan, in order/);
+    assert.doesNotMatch(noCrux, /Name the cheapest check/);
+    assert.doesNotMatch(noCrux, /the case does not establish the call/);
+    assertBriefBudget(noCrux);
 
     const thin = renderUserFacing(
       {
@@ -1443,11 +1506,12 @@ describe("the note a person reads", () => {
     const thinParas = thin.split("\n\n");
     assert.match(thinParas[0], /^Quick take, on thin input:/);
     assert.equal(thinParas[0].includes("The question that would change this:"), false);
-    assert.match(thinParas[1], /^The question that would change this:/);
+    assert.match(thinParas[1], /^The question that would change this: What share of free users pay within 90 days\?$/);
     assert.ok(thin.indexOf("Quick take, on thin input:") < thin.indexOf("The question that would change this:"));
     assert.equal((thin.match(/\?/g) || []).length, 1);
     assert.ok(countWords(thinParas[1]) <= 25, `${countWords(thinParas[1])}: ${thinParas[1]}`);
-    assert.match(thin, /"drop the free tier"/);
+    assert.doesNotMatch(thin, /"drop the free tier"/);
+    assert.doesNotMatch(thin, /What single fact would change this/);
   });
 
   it("keeps layer 1 under 50 words and leaves the steelman, the model and the score out", () => {
@@ -1531,10 +1595,11 @@ describe("the note a person reads", () => {
     assert.doesNotMatch(note, /…|\.\.\./);
     const paras = note.split("\n\n");
     assert.equal(paras.at(-1), CLOSING_ASK);
-    assert.match(paras[0], /appears\.$/);
+    assert.match(paras[0], /same month\.$/);
     assert.ok(paras[0].indexOf("The question that would change this:") === -1);
     assert.match(paras[1], /^The question that would change this: What the \$20 overall and \$1 per-user caps are denominated in, over what window\?$/);
     assert.doesNotMatch(note, /,\s*\?/);
+    assert.doesNotMatch(note, /"cap it"/);
 
     const fragment = renderUserFacing(
       {
@@ -1547,7 +1612,11 @@ describe("the note a person reads", () => {
     );
     assertBriefBudget(fragment);
     assert.doesNotMatch(fragment, /…|\.\.\.|,\s*\?/);
-    assert.match(fragment, /What single fact would change this\?/);
+    assert.doesNotMatch(fragment, /What single fact would change this/);
+    assert.match(
+      fragment,
+      /The question that would change this: What the \$20 overall and \$1 per-user caps are denominated in, over what window, and whether unused credit rolls\./,
+    );
 
     const settled = renderUserFacing(
       {
@@ -1851,7 +1920,7 @@ describe("the optional deepen layer", () => {
   });
 });
 
-describe("renderRunDisclosure — the run note before every brief", () => {
+describe("renderRunDisclosure — the run note after every brief", () => {
   it("names the judge that answered, Jev when its check was usable, and the time", () => {
     const note = renderRunDisclosure({ servedModel: "google/gemini-3-pro", quality: { flags: [] } }, 102_400);
     assert.equal(
@@ -1878,5 +1947,52 @@ describe("renderRunDisclosure — the run note before every brief", () => {
     assert.equal(RUN_PRIVACY_LINE.includes("\n"), false);
     assert.equal(RUN_PRIVACY_LINE.split(/[.!?](\s|$)/).filter((x) => x && x.trim()).length, 1);
     assert.ok(RUN_PRIVACY_LINE.split(/\s+/).length <= 20);
+  });
+
+  it("puts the run note after the closing line, word for word, and the verdict first", () => {
+    const subject = "We will raise prices 20% in Q4 because paid users cover the support cost.";
+    const brief = renderLayers(
+      {
+        verdict: "weak",
+        verdictReason: "The headline number is asserted rather than supported.",
+        challenges: [{ challenge: "No baseline is cited.", falsifier: "Pull the signup curve from the last comparable launch." }],
+      },
+      { subject },
+    ).brief;
+    const shown = appendRunNote(brief, { servedModel: "google/gemini-3-pro", quality: { flags: [] } }, 102_400);
+    const note = renderRunDisclosure({ servedModel: "google/gemini-3-pro", quality: { flags: [] } }, 102_400);
+    assert.equal(note, `Models: google/gemini-3-pro (judge), typesafe/jev-1.13 (quality check) · took 1m 42s\n${RUN_PRIVACY_LINE}`);
+    assert.match(shown, /^\*\*Shaky\.\*\*/);
+    assert.ok(shown.indexOf("Say 'more', 'options', or your call.") < shown.indexOf("Models:"), shown);
+    assert.ok(shown.endsWith(note), shown);
+    assert.equal(shown.indexOf("The question that would change this:"), -1);
+  });
+});
+
+describe("hosts show the run note after the verdict", () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const files = [
+    "server/index.mjs",
+    "scripts/hostedCore.mjs",
+    "prompts/grill.md",
+    "skills/grill/SKILL.md",
+    "skills/grill/paste-prompt.md",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/PRINCIPLES.md",
+    "docs/ICP.md",
+    "docs/PRIVACY.md",
+  ];
+
+  it("tells every host the run note follows the closing line and is never dropped", () => {
+    for (const file of files) {
+      const text = readFileSync(join(root, file), "utf8");
+      assert.match(text, /[Nn]ever drop the run note/, file);
+      assert.doesNotMatch(text, /before the note/, file);
+      assert.doesNotMatch(text, /above the verdict/, file);
+      assert.doesNotMatch(text, /opens with a two-line run note/, file);
+      assert.doesNotMatch(text, /starts with a two-line run note/, file);
+      assert.doesNotMatch(text, /opens with a run note/, file);
+    }
   });
 });
