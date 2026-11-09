@@ -476,6 +476,7 @@ describe("the endpoints", () => {
         { source: "/start", destination: "/api/hosted?__route=start" },
         { source: "/start/", destination: "/api/hosted?__route=start" },
         { source: "/waitlist", destination: "/api/hosted?__route=waitlist" },
+        { source: "/api/feedback", destination: "/api/hosted?__route=feedback" },
       ],
       routes: [
         {

@@ -3,7 +3,7 @@
 // path-inserted form, which serves the same metadata as the root path, and Clerk's
 // authorization-server metadata at /.well-known/oauth-authorization-server and
 // openid-configuration, including the /mcp path-inserted forms). 404 unless GRILL_HOSTED=on.
-import { handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleJudge, handleMcp, handleProtectedResource, handleRedeem, handleShare, runImpactDigest } from "./_hosted.mjs";
+import { handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleFeedback, handleJudge, handleMcp, handleProtectedResource, handleRedeem, handleShare, runImpactDigest } from "./_hosted.mjs";
 import { handlePricing } from "./_pricing.mjs";
 import { handleStart } from "./_start.mjs";
 import { handleWaitlist } from "./_waitlist.mjs";
@@ -37,6 +37,7 @@ function pick(request) {
   if (r === "account" || p === "/account") return ["account", handleAccount];
   if (r === "redeem" || p === "/redeem") return ["redeem", handleRedeem];
   if (r === "waitlist") return ["waitlist", handleWaitlist];
+  if (r === "feedback") return ["feedback", handleFeedback];
   if (r === "digest") return ["digest", handleImpactDigest];
   if (r === "calendar" || p.startsWith("/decisions/calendar/")) return ["calendar", handleCalendar];
   if (r === "share" || p.startsWith("/share/")) return ["share", handleShare];

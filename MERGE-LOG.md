@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-09 | Tony approved on 2026-11-09: grill_feedback records a helped or meh reaction. The grill text is stored only if you agree to send that grill. Encrypted, kept 180 days. |
 | 2026-11-09 | Tony approved on 2026-11-09: layer 1 leaves off a flip line the judge did not name, and a cheap test the judge did not name. The run note follows the closing line. |
 | 2026-11-09 | The Cursor / VS Code panel says to add Grill by hand as Streamable HTTP (HTTP in VS Code) and to leave the token and header fields empty. Grill asks you to sign in the first time you use it. |
 | 2026-11-09 | A Muse OAuth client whose redirect host is agent.meta.ai, and a client named Muse or Meta, map to sourceApp muse. The judge excludes meta-llama instead of treating that client as unknown. |

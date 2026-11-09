@@ -6,6 +6,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes }
 import { addDays, confidenceValue, isoDate, parseDecided, parseOutcomes, parseRecords, plainVerdict, REVIEW_DAYS, reviewDateFor } from "./reflection.mjs";
 import { CHALLENGE_KINDS, SCOPE_GUARD, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
 import { buildGrillTools } from "../server/index.mjs";
+import { FEEDBACK_POINTER } from "./feedbackCore.mjs";
 
 export { SCOPE_GUARD };
 
@@ -1076,7 +1077,7 @@ export function hostedStillRunningText(jobId) {
 
 /** Same clerk / show-first text as the local server, plus the hosted account fields. */
 export function hostedTools() {
-  const [grill, result, look] = buildGrillTools({ checkOn: true });
+  const [grill, result, look, feedback] = buildGrillTools({ checkOn: true });
   const localDisclosure =
     /The first time you use Grill with this person, say once\b.*?Do not mention a score, a balance, or a quote check\. /;
   const hostedDisclosure =
@@ -1177,6 +1178,10 @@ export function hostedTools() {
       },
       annotations: { title: "Add what you decided", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
+    {
+      ...feedback,
+      annotations: { title: "Tell Grill how this grill was", readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
   ];
 }
 
@@ -1199,6 +1204,7 @@ export const HOSTED_INSTRUCTIONS = [
   "Add supersedes and changed only when they say the choice changed, in their words. A re-run with nothing changed leaves those off.",
   "When they say look back, call grill_look_back and relay its one line. With a Grill account it can read saved records, so they do not have to paste.",
   "When they ask what Grill has done for them, call grill_look_back with view changes and relay it as written.",
+  FEEDBACK_POINTER,
   SCOPE_GUARD,
 ].join(" ");
 

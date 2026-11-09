@@ -47,6 +47,7 @@ import { countWords } from "./judgeCore.mjs";
 import { ONCE_DISCLOSURE as LOCAL_DISCLOSURE } from "../server/index.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
 import { parseRecords, recordBlock, sourceAppLabel } from "./reflection.mjs";
+import { readFeedbackRecords } from "./feedbackCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ANTHROPIC = readFileSync(join(ROOT, "scripts/fixtures/anthropic-served-response.json"), "utf8");
@@ -530,7 +531,7 @@ describe("hosted Grill", { concurrency: false }, () => {
     assert.equal(unknown.json.result.protocolVersion, "2025-11-25");
     const listed = await postMcp(ctx, { jsonrpc: "2.0", id: 2, method: "tools/list" }, { token });
     const tools = listed.json.result.tools;
-    assert.deepEqual(tools.map((tool) => tool.name), ["grill", "grill_result", "grill_look_back", "grill_decided"]);
+    assert.deepEqual(tools.map((tool) => tool.name), ["grill", "grill_result", "grill_look_back", "grill_decided", "grill_feedback"]);
     // OpenAI's review reads title, readOnlyHint, destructiveHint and openWorldHint.
     // The MCP defaults are readOnlyHint false, destructiveHint true and openWorldHint true,
     // so a tool that only reads has to say so. destructiveHint is true only when the tool
@@ -543,6 +544,7 @@ describe("hosted Grill", { concurrency: false }, () => {
       grill_result: { title: "Collect a grill", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       grill_look_back: { title: "Look back", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       grill_decided: { title: "Add what you decided", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      grill_feedback: { title: "Tell Grill how this grill was", readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     };
     for (const tool of tools) {
       const want = annotations[tool.name];
@@ -2117,7 +2119,9 @@ describe("hosted mappings and ledger pins", () => {
     assert.match(judge, /https:\/\/openrouter\.ai\/api\/alpha\/decisions/);
     const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
     assert.match(ledger, /15 minutes/);
-    assert.match(ledger, /never logged or stored/);
+    assert.match(ledger, /It is never logged\./);
+    assert.match(ledger, /180 days only if you send that grill/);
+    assert.doesNotMatch(ledger, /never logged or stored/);
     assert.match(ledger, /Calendar link/);
     const principles = readFileSync(join(ROOT, "docs/PRINCIPLES.md"), "utf8");
     assert.match(principles, /passes through Grill's server in memory/);
@@ -3024,5 +3028,65 @@ describe("fair check counting", () => {
     assert.match(terms, /Only completed grills count as checks\. Retries, errors and follow-ups like 'more' or 'options' don't\./);
     const line = terms.match(/Only completed grills count as checks[\s\S]*?don't\./)?.[0] || "";
     assert.doesNotMatch(line, /\$/);
+  });
+
+  it("stores a reaction without the subject or the verdict text unless share_grill is true", async () => {
+    const usable = readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8");
+    const fake = await startFakeOpenRouter({ chat: () => ({ text: usable }) });
+    const canary = "CANARY-FEEDBACK-SUBJECT-9f3a";
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const subject = `Decision: ship ${canary} next week because paid users cover support.`;
+      const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse("2026-11-09T12:00:00.000Z") };
+      const grilled = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "grill", arguments: { subject, keep_records: false, quality_check: false } } },
+        { token, deps },
+      );
+      assert.equal(grilled.json.result.isError, false, textOf(grilled.json));
+      const key = Buffer.from(ctx.env.GRILL_RECORD_KEY, "base64");
+      const quiet = await postMcp(
+        ctx,
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { name: "grill_feedback", arguments: { rating: "meh", reason: "too vague", share_grill: false } },
+        },
+        { token, deps },
+      );
+      assert.equal(quiet.json.result.isError, false, textOf(quiet.json));
+      assert.equal(textOf(quiet.json).trim(), "Noted.");
+      const rows = await readFeedbackRecords((args) => ctx.memory.command(args), key);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].rating, "meh");
+      assert.equal(rows[0].reason, "too vague");
+      assert.equal(rows[0].model, "openai/gpt-5.6-sol");
+      assert.equal(rows[0].verdict, "shaky");
+      assert.equal(rows[0].account, createHash("sha256").update(personOf(ctx)).digest("hex"));
+      assert.equal(JSON.stringify(rows[0]).includes(canary), false);
+      assert.equal(JSON.stringify(rows[0]).includes("headline number"), false);
+      assert.equal(Object.hasOwn(rows[0], "subject"), false);
+      assert.equal(Object.hasOwn(rows[0], "layer1"), false);
+      for (const args of ctx.writes.filter((row) => row[0] === "SET" && String(row[1]).startsWith("grill:hosted:feedback:"))) {
+        assert.equal(args.join(" ").includes(canary), false);
+        assert.equal(args.join(" ").includes("headline number"), false);
+        assert.equal(args.join(" ").includes(personOf(ctx)), false);
+      }
+      const sent = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "grill_feedback", arguments: { rating: "helped", share_grill: true } } },
+        { token, deps },
+      );
+      assert.match(textOf(sent.json), /This grill was sent so Grill can learn from it/);
+      const both = await readFeedbackRecords((args) => ctx.memory.command(args), key);
+      const shared = both.find((row) => row.rating === "helped");
+      assert.equal(shared.subject, subject);
+      assert.match(shared.layer1, /\*\*Shaky\.\*\*/);
+      assert.match(shared.layer1, /headline number/);
+    } finally {
+      await fake.close();
+    }
   });
 });

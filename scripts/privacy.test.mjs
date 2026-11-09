@@ -130,6 +130,7 @@ describe("the judge still talks only to OpenRouter", () => {
     assert.deepEqual(shipped.sort(), [
       "scripts/apiKey.mjs",
       "scripts/checkCore.mjs",
+      "scripts/feedbackCore.mjs",
       "scripts/judge.mjs",
       "scripts/judgeCore.mjs",
       "scripts/reflection.mjs",
@@ -148,8 +149,8 @@ describe("the judge still talks only to OpenRouter", () => {
   });
 
   // The old pin was "exactly one fetch, in the judge". That was the one-destination promise.
-  // Opt-in stats add one call, and only that call: the judge's fetch stays on OpenRouter.
-  it("has no raw network modules; the judge's one fetch stays put, and the only other call is the opt-in ping", () => {
+  // Opt-in stats add one call, and a reaction can add one more: the judge's fetch stays on OpenRouter.
+  it("has no raw network modules; the judge's one fetch stays put, and Grill's own calls are the ping and a reaction", () => {
     let judgeFetches = 0;
     let pingCalls = 0;
     for (const f of shipped) {
@@ -168,8 +169,8 @@ describe("the judge still talks only to OpenRouter", () => {
     const ping = readFileSync(join(ROOT, "scripts/usageStats.mjs"), "utf8");
     assert.match(ping, /^export const PING_URL = "https:\/\/grillyour\.ai\/api\/ping";$/m);
     assert.deepEqual(
-      [...new Set([...ping.matchAll(/https?:\/\/[^\s"'`]+/g)].map((m) => m[0]))],
-      ["https://grillyour.ai/api/ping"],
+      [...new Set([...ping.matchAll(/https?:\/\/[^\s"'`]+/g)].map((m) => m[0]))].sort(),
+      ["https://grillyour.ai/api/feedback", "https://grillyour.ai/api/ping"],
     );
     const call = readFileSync(join(ROOT, "server/index.mjs"), "utf8").match(/scheduleUsagePing\(\{[\s\S]*?\}\);/);
     assert.ok(call, "the server schedules the ping");
