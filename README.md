@@ -70,9 +70,9 @@ Want it in one step? Use Claude Desktop, above.
 
 ### Meta AI (Muse)
 
-1. In the Meta AI app, open **Muse → Settings → Connectors → Add custom connector**.
-2. URL: `https://grillyour.ai/mcp`
-3. Client ID: `RNdHSHmWCRJO40vd`. Same for everyone. No secret.
+1. In Muse, ask it to add a custom connector named Grill (Meta's help: custom connectors are created in chat; Settings → Connectors is for the built-in list).
+2. URL: `https://grillyour.ai/mcp`. Transport: Streamable HTTP. Sign-in: OAuth.
+3. If Muse asks for a Client ID, use `RNdHSHmWCRJO40vd`. Same for everyone. No secret.
 4. Tap **Add**, then sign in with the same email you signed up with, every time. We email you a code; check spam if it isn't there in a minute.
 
 ### Cursor, VS Code, Codex, Gemini CLI, or any app that runs MCP servers

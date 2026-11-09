@@ -35,7 +35,8 @@ describe("site/page.html", () => {
   it("keeps Meta AI (Muse) connector setup in the README, with a public URL and client ID", () => {
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     assert.match(readme, /### Meta AI \(Muse\)/);
-    assert.match(readme, /Muse → Settings → Connectors → Add custom connector/);
+    assert.match(readme, /ask it to add a custom connector named Grill/);
+    assert.match(readme, /custom connectors are created in chat/);
     assert.match(readme, /https:\/\/grillyour\.ai\/mcp/);
     assert.match(readme, /RNdHSHmWCRJO40vd/);
     assert.match(readme, /Same for everyone\. No secret\./);
