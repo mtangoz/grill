@@ -732,7 +732,10 @@ describe("the /start page", () => {
     assert.equal(vscodeConfig.command, undefined);
     assert.match(cursor, /Add Grill to Cursor/);
     assert.match(cursor, /Add Grill to VS Code/);
-    assert.match(cursor, /Name: <code>Grill<\/code>\. Server URL: <code>https:\/\/grillyour\.ai\/mcp<\/code>\. Authentication: OAuth\./);
+    assert.match(cursor, /Or add it by hand\. Name: <code>Grill<\/code>\. Type: Streamable HTTP \(HTTP in VS Code\)\. URL: <code>https:\/\/grillyour\.ai\/mcp<\/code>\. Leave the token and header fields empty, then Save\. Grill asks you to sign in the first time you use it\./);
+    assert.match(cursor, /Streamable HTTP/);
+    assert.match(cursor, /Leave the token and header fields empty/);
+    assert.doesNotMatch(cursor, /Authentication: OAuth/);
     assert.match(cursor, /Sign in with your email\. We send you a code \(check spam\)\. No key\./);
     assert.match(cursor, /Copilot in VS Code uses the same server\./);
     assert.match(cursor, /Or use your own key\. Once: <code>npx -y grillyour --set-key<\/code>\. Paste your key, Enter, then Ctrl-D\./);
