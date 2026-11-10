@@ -1,0 +1,13 @@
+{
+  "id": "wrong-figure-market-total",
+  "kind": "flawed",
+  "subject": "North Wharf Market is deciding whether to take a corner stall for the first weekend of August. The operator wrote up the cost this morning and called the arithmetic settled. The booth hire is $1,200. The two vinyl banners are $800. Three staff days at $150 each come to $450. The write-up adds those three lines and states, at 80% confidence, that the weekend costs $2,900 all in, so the stall clears its cost if it sells about two hundred cups. Reasoning: last August a neighbouring stall sold past that cup count on the Saturday alone, the banners can be reused in September, and the three staff days are already on the rota. The write-up calls the $2,900 a checked total and does not place the three lines beside that total. Prediction, offered at 80% confidence: the corner stall covers that $2,900 from cup sales and still pays for the banners a second time in September. Goal: cover the weekend's cost from the stall itself. The strongest case against: the Saturday forecast is rain, and rain cut that neighbouring stall's cups by about a third last year.",
+  "question": "Should North Wharf Market take the August corner stall at a weekend cost of $2,900?",
+  "expect": {
+    "must_target": ["the weekend costs $2,900", "$2,900 all in", "the $2,900 a checked total"],
+    "verdict_not": ["holds"],
+    "catch_in": "checked-or-verdict",
+    "correction": ["$2,450", "2,450", "$2450", "2450"]
+  },
+  "why": "The booth, the banners and the staff days are $1,200, $800 and $450. Those three lines add to $2,450. The write-up states, at 80% confidence, that the weekend costs $2,900."
+}

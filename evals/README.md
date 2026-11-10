@@ -1,13 +1,13 @@
 # Evals
 
-A self-improvement measurement loop for the judge, built on synthetic material only: 25 fictional
+A self-improvement measurement loop for the judge, built on synthetic material only: 29 fictional
 founder/operator decisions under `cases/`, never a real user's decision. `node scripts/eval.mjs`
 runs each one through the real judge CLI and scores the result against `thresholds.json`.
 
-**These thresholds are sanity floors, not precise scores.** Twenty-five cases is not a statistically
+**These thresholds are sanity floors, not precise scores.** Twenty-nine cases is not a statistically
 powered benchmark, and the judge is a stochastic third-party model reached through OpenRouter's
 Auto Router — the same case can score differently run to run. The numbers are loose on purpose:
-`catchRate`/`loadedCatchRate` only require catching 11 of 15 / 3 of 4 cases, and `decorrelatedRate`
+`catchRate`/`loadedCatchRate` only require catching 13 of 19 / 3 of 4 cases, and `decorrelatedRate`
 (at least 1.0: every run judged outside Claude's family) and `schemaViolationRate` (at most 0.1) are strict. The goal is to
 catch a *regression* — the judge going quiet, or the output contract breaking — not to grade its
 reasoning precisely. Treat a red run as "go look," not a graded score.
@@ -45,6 +45,18 @@ past the time the classroom locks. `must-have-broken-kiln-insurance` fires stude
 the insurance rider does not cover. The clash is a consistency check, so the judge should file it
 under Checked for you. The phrase-match gate scores whether a challenge quotes the limit or the
 step that breaks it. It does not read the Checked-for-you label.
+
+**Four cases cover a confident wrong figure.** The write-up gives the inputs, then states a total,
+a percentage, or a date those inputs do not support, and it states that figure as already checked.
+`wrong-figure-market-total` adds a booth, banners and staff days to $2,900. `wrong-figure-reply-rate`
+calls a move from 10% to 15% a 25% increase. `wrong-figure-popup-dates` calls Monday 6 April 2026
+through Monday 20 April 2026 a ten-day run. `wrong-figure-cake-order` calls forty cakes at $18 a
+total of $900. The case passes only when the verdict states the corrected figure, or a challenge
+filed under Checked for you quotes the wrong claim or states the corrected figure. A challenge
+under Your call does not pass it. An agreeing verdict that only repeats the wrong figure does not
+either. The corrected figure is not in the write-up, so stating it means the judge worked the
+answer out. That is the check from arXiv 2607.05904: a verifier accepts a wrong answer it was
+asked to check unless it works the answer out itself.
 
 **The eval gates only run with a key.** CI has no OpenRouter key, so there the eval prints a notice and
 skips. A change to the judge prompt or the severity scale needs a live run on a machine with a key

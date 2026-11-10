@@ -27,6 +27,36 @@ function lower(v) {
   return typeof v === "string" ? v.toLowerCase() : "";
 }
 
+/**
+ * A case-insensitive phrase hit that does not glue onto a neighbouring digit.
+ * "50%" is not a hit inside "150%", and "720" is not a hit inside "1720".
+ * A "$" or a comma before a numeric phrase still counts: "$2,450" contains "2,450".
+ */
+function includesPhrase(hay, phrase) {
+  if (typeof hay !== "string" || typeof phrase !== "string" || phrase.length === 0) return false;
+  const h = hay.toLowerCase();
+  const p = phrase.toLowerCase();
+  let from = 0;
+  while (from < h.length) {
+    const at = h.indexOf(p, from);
+    if (at < 0) return false;
+    const before = at === 0 ? "" : h[at - 1];
+    const after = at + p.length >= h.length ? "" : h[at + p.length];
+    const gluedBefore = /[0-9]/.test(before) && /[0-9]/.test(p[0]);
+    const gluedAfter = /[0-9]/.test(after) && /[0-9%]/.test(p[p.length - 1]);
+    if (!gluedBefore && !gluedAfter) return true;
+    from = at + 1;
+  }
+  return false;
+}
+
+/** The text of one challenge, for a figure correction stated anywhere in that challenge. */
+function challengeText(c) {
+  return [c?.target, c?.challenge, c?.what_would_have_to_be_true, c?.falsifier]
+    .map((part) => (typeof part === "string" ? part : ""))
+    .join("\n");
+}
+
 function count(v) {
   return Number.isInteger(v) && v >= 0 ? v : 0;
 }
@@ -121,6 +151,24 @@ export function caseProblems(c, fileName) {
   } else if (c.kind === "loaded") {
     quotable("question");
   }
+  // A confident wrong figure. The corrected value must not already be in the write-up, or the
+  // judge can pass by quoting the prompt instead of working the figure out.
+  if (expect.catch_in !== undefined || expect.correction !== undefined) {
+    if (expect.catch_in !== "checked-or-verdict") problems.push('expect.catch_in must be "checked-or-verdict"');
+    if (c.kind !== "flawed") problems.push("expect.catch_in is only for a flawed case");
+    const correction = Array.isArray(expect.correction) ? expect.correction : null;
+    if (!correction || correction.length === 0) problems.push("expect.correction needs at least one phrase");
+    else {
+      const shown = `${typeof c.subject === "string" ? c.subject : ""}\n${typeof c.question === "string" ? c.question : ""}`;
+      for (const phrase of correction) {
+        if (typeof phrase !== "string" || phrase.trim().length < 3) {
+          problems.push("each correction phrase must be a string of at least 3 characters");
+          continue;
+        }
+        if (includesPhrase(shown, phrase)) problems.push(`"${phrase}" must not appear in the subject or question`);
+      }
+    }
+  }
   return problems;
 }
 
@@ -137,8 +185,40 @@ export function scoreCase(caseDef, result) {
 
   if (kind === "flawed" || kind === "loaded") {
     const mustTarget = Array.isArray(expect.must_target) ? expect.must_target : [];
+    // The figure cases pass only from the verdict or from Checked for you. Quoting the wrong
+    // figure while agreeing with it is not a catch. A Your call challenge is not a catch.
+    // The corrected figure is absent from the write-up, so stating it means the judge worked
+    // it out. A Checked for you blockquote or objection that quotes the wrong claim is the other catch.
+    const figureCheck = kind === "flawed" && expect.catch_in === "checked-or-verdict";
     if (!usable) {
       caught = false;
+    } else if (figureCheck) {
+      caught = false;
+      const corrections = Array.isArray(expect.correction) ? expect.correction : [];
+      const fromVerdict = corrections.find((phrase) => includesPhrase(r.verdictReason, phrase));
+      if (fromVerdict !== undefined) {
+        caught = true;
+        matchedPhrase = fromVerdict;
+      } else {
+        for (const c of challenges) {
+          if (c?.call !== "checked" || !CAUGHT_SEVERITIES.has(c?.severity)) continue;
+          // The blockquote and the objection are the Checked for you text. The premise and the
+          // falsifier can restate the claim as the condition that would rescue it.
+          const objection = `${typeof c?.target === "string" ? c.target : ""}\n${typeof c?.challenge === "string" ? c.challenge : ""}`;
+          const targetHit = mustTarget.find((phrase) => lower(objection).includes(lower(phrase)));
+          if (targetHit !== undefined) {
+            caught = true;
+            matchedPhrase = targetHit;
+            break;
+          }
+          const corrected = corrections.find((phrase) => includesPhrase(challengeText(c), phrase));
+          if (corrected !== undefined) {
+            caught = true;
+            matchedPhrase = corrected;
+            break;
+          }
+        }
+      }
     } else {
       caught = false;
       for (const c of challenges) {
@@ -426,7 +506,9 @@ export function renderSummary(summary, scores, { heldOut = false } = {}) {
       const expected =
         s.kind === "sound"
           ? `verdict in [${(s.expect?.verdict_in ?? []).join(", ")}], max severity ${s.expect?.max_severity ?? "?"}`
-          : `a challenge targeting one of: ${(s.expect?.must_target ?? []).join(" | ")}`;
+          : s.expect?.catch_in === "checked-or-verdict"
+            ? `the verdict or a Checked for you challenge catching one of: ${[...(s.expect?.must_target ?? []), ...(s.expect?.correction ?? [])].join(" | ")}`
+            : `a challenge targeting one of: ${(s.expect?.must_target ?? []).join(" | ")}`;
       const got =
         s.verdict === null
           ? "no usable result (verdict null)"

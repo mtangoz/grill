@@ -1,0 +1,13 @@
+{
+  "id": "wrong-figure-popup-dates",
+  "kind": "flawed",
+  "subject": "Hearth & Rind is a cheese stall deciding whether to confirm a pop-up inside a city arcade. The arcade offered Monday 6 April 2026 through Monday 20 April 2026. The write-up calls that span a ten-day run and says the count has already been checked. It recommends confirming the booking and rostering one cheesemonger for each of those ten days. Reasoning: the arcade's foot traffic is steady on weekdays, both endpoint dates fall on a Monday, and a ten-day run fits the monger's leave. The write-up states the ten-day length at 70% confidence and does not count the dates on a calendar. Prediction, offered at 70% confidence: a ten-day arcade run sells through the spring cheese before the May market. Goal: staff the arcade pop-up for the whole booked span. The strongest case against: the monger has a family lunch on Sunday 12 April, which sits inside the booking but is not a stall day.",
+  "question": "Should Hearth & Rind confirm the arcade pop-up as a ten-day run from 6 April through 20 April 2026?",
+  "expect": {
+    "must_target": ["a ten-day run", "those ten days", "the ten-day length"],
+    "verdict_not": ["holds"],
+    "catch_in": "checked-or-verdict",
+    "correction": ["15 days", "15-day", "fourteen days", "14 days", "14-day", "fifteen days", "Wednesday 15 April"]
+  },
+  "why": "Monday 6 April 2026 through Monday 20 April 2026 is 15 days counting both endpoints, and 14 days if one endpoint is left out. Neither count is ten. The write-up calls the span a ten-day run at 70% confidence."
+}

@@ -71,6 +71,152 @@ describe("scoreCase — flawed/loaded (must_target)", () => {
   });
 });
 
+// A write-up states a figure the inputs do not support, and states it with confidence.
+// The case passes only when the verdict states the corrected figure, or a Checked for you
+// challenge targets the wrong claim or states the corrected figure. Your call does not count,
+// and an agreeing verdict that only repeats the wrong figure does not either.
+describe("scoreCase — a confident wrong figure (checked-or-verdict)", () => {
+  const figureCase = {
+    id: "figure",
+    kind: "flawed",
+    why: "the lines add to $2,450",
+    expect: {
+      must_target: ["costs $2,900"],
+      verdict_not: ["holds"],
+      catch_in: "checked-or-verdict",
+      correction: ["$2,450", "50%"],
+    },
+  };
+
+  it("passes when the verdict states a corrected figure", () => {
+    const s = scoreCase(figureCase, usableResult({ verdictReason: "The three lines add to $2,450.", challenges: [] }));
+    assert.equal(s.caught, true);
+    assert.equal(s.matchedPhrase, "$2,450");
+    assert.equal(JSON.stringify(s).includes("The three lines"), false);
+  });
+
+  it("does not pass when the verdict only repeats the wrong figure", () => {
+    const s = scoreCase(
+      figureCase,
+      usableResult({ verdict: "holds", verdictReason: "The weekend costs $2,900, and that total holds.", challenges: [] }),
+    );
+    assert.equal(s.caught, false);
+  });
+
+  it("does not treat 50% as present inside 150%", () => {
+    const missed = scoreCase(figureCase, usableResult({ verdictReason: "Replies jumped 150% in July.", challenges: [] }));
+    assert.equal(missed.caught, false);
+    const hit = scoreCase(figureCase, usableResult({ verdictReason: "The relative change is 50%.", challenges: [] }));
+    assert.equal(hit.caught, true);
+    assert.equal(hit.matchedPhrase, "50%");
+  });
+
+  it("passes when a Checked for you challenge targets the wrong claim", () => {
+    const s = scoreCase(
+      figureCase,
+      usableResult({
+        challenges: [challenge({ call: "checked", severity: "serious", target: "the write-up says the weekend costs $2,900" })],
+      }),
+    );
+    assert.equal(s.caught, true);
+    assert.equal(s.matchedPhrase, "costs $2,900");
+  });
+
+  it("passes when the Checked for you objection quotes the wrong claim", () => {
+    const s = scoreCase(
+      figureCase,
+      usableResult({
+        challenges: [
+          challenge({
+            call: "checked",
+            severity: "serious",
+            target: "the weekend cost",
+            challenge: "The write-up says the weekend costs $2,900, and the lines do not support it.",
+          }),
+        ],
+      }),
+    );
+    assert.equal(s.caught, true);
+    assert.equal(s.matchedPhrase, "costs $2,900");
+  });
+
+  it("does not pass when only the falsifier repeats the wrong claim", () => {
+    const s = scoreCase(
+      figureCase,
+      usableResult({
+        challenges: [
+          challenge({
+            call: "checked",
+            severity: "serious",
+            target: "Saturday rain",
+            challenge: "Rain may cut the cups.",
+            falsifier: "A dry Saturday, and the weekend costs $2,900.",
+          }),
+        ],
+      }),
+    );
+    assert.equal(s.caught, false);
+  });
+
+  it("passes when a Checked for you challenge states the corrected figure", () => {
+    const s = scoreCase(
+      figureCase,
+      usableResult({
+        challenges: [
+          challenge({
+            call: "checked",
+            severity: "moderate",
+            target: "the weekend cost",
+            challenge: "Those lines add to $2,450. SECRET-CHALLENGE-BODY",
+          }),
+        ],
+      }),
+    );
+    assert.equal(s.caught, true);
+    assert.equal(s.matchedPhrase, "$2,450");
+    assert.equal(JSON.stringify(s).includes("SECRET-CHALLENGE-BODY"), false);
+  });
+
+  it("does not pass on a Your call challenge, a missing call, or a minor Checked for you note", () => {
+    const yours = scoreCase(
+      figureCase,
+      usableResult({
+        challenges: [challenge({ call: "yours", severity: "fatal", target: "costs $2,900", challenge: "The lines add to $2,450." })],
+      }),
+    );
+    const missing = scoreCase(
+      figureCase,
+      usableResult({ challenges: [challenge({ severity: "fatal", target: "costs $2,900", challenge: "The lines add to $2,450." })] }),
+    );
+    const minor = scoreCase(
+      figureCase,
+      usableResult({
+        challenges: [challenge({ call: "checked", severity: "minor", target: "costs $2,900", challenge: "The lines add to $2,450." })],
+      }),
+    );
+    assert.equal(yours.caught, false);
+    assert.equal(missing.caught, false);
+    assert.equal(minor.caught, false);
+  });
+
+  it("does not read the steelman or the fix-one-thing line", () => {
+    const s = scoreCase(
+      figureCase,
+      usableResult({
+        verdictReason: "The plan is attractive.",
+        steelman: "Even so the lines add to $2,450.",
+        strongestObjection: "Use $2,450.",
+        challenges: [],
+      }),
+    );
+    assert.equal(s.caught, false);
+  });
+
+  it("still counts a null verdict as a miss", () => {
+    assert.equal(scoreCase(figureCase, { verdict: null, verdictReason: "The lines add to $2,450." }).caught, false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 describe("scoreCase — sound (verdict_in / max_severity)", () => {
   const soundCase = { id: "s1", kind: "sound", expect: { verdict_in: ["holds", "holds-with-conditions"], max_severity: "moderate" } };
@@ -309,13 +455,13 @@ describe("renderSummary — never subject text beyond the case id", () => {
 describe("every committed case under evals/cases/ parses and has the fields its kind requires", () => {
   const files = readdirSync(CASES_DIR).filter((f) => f.endsWith(".json")).sort();
 
-  it("finds the full committed set: 15 flawed, 6 sound, 4 loaded", () => {
+  it("finds the full committed set: 19 flawed, 6 sound, 4 loaded", () => {
     const byKind = { flawed: 0, sound: 0, loaded: 0 };
     for (const f of files) {
       const c = JSON.parse(readFileSync(join(CASES_DIR, f), "utf8"));
       byKind[c.kind] = (byKind[c.kind] ?? 0) + 1;
     }
-    assert.deepEqual(byKind, { flawed: 15, sound: 6, loaded: 4 });
+    assert.deepEqual(byKind, { flawed: 19, sound: 6, loaded: 4 });
   });
 
   it("a cheap reversible try with no data must not be shaky just for lack of data", () => {
@@ -371,6 +517,69 @@ describe("every committed case under evals/cases/ parses and has the fields its 
     }
   });
 
+  // The write-up gives the inputs, then a total, a percentage, or a date those inputs do not
+  // support, and it states that figure with confidence. The corrected figure is not in the
+  // write-up. The case passes only from the verdict or from Checked for you.
+  const WRONG_FIGURE = [
+    "wrong-figure-market-total",
+    "wrong-figure-reply-rate",
+    "wrong-figure-popup-dates",
+    "wrong-figure-cake-order",
+  ];
+
+  it("the wrong-figure cases state a confident figure the inputs do not support", () => {
+    const loaded = Object.fromEntries(
+      WRONG_FIGURE.map((id) => {
+        const c = JSON.parse(readFileSync(join(CASES_DIR, `${id}.json`), "utf8"));
+        assert.equal(c.id, id);
+        assert.equal(c.kind, "flawed");
+        assert.equal(c.expect.catch_in, "checked-or-verdict");
+        assert.ok(c.expect.verdict_not.includes("holds"));
+        assert.ok(c.expect.must_target.length >= 2);
+        assert.ok(c.expect.correction.length >= 2);
+        assert.match(c.subject, /confidence/);
+        assert.match(c.why, /confidence/);
+        const shown = `${c.subject}\n${c.question}`.toLowerCase();
+        for (const phrase of c.expect.correction) {
+          assert.equal(shown.includes(phrase.toLowerCase()), false, `${id} already shows ${phrase}`);
+        }
+        assert.deepEqual(caseProblems(c, `${id}.json`), []);
+        return [id, c];
+      }),
+    );
+
+    const market = loaded["wrong-figure-market-total"];
+    assert.match(market.subject, /\$1,200/);
+    assert.match(market.subject, /\$800/);
+    assert.match(market.subject, /\$450/);
+    assert.match(market.subject, /\$2,900/);
+    assert.ok(market.expect.correction.some((phrase) => phrase.replace(/[$,]/g, "") === "2450"));
+
+    const rate = loaded["wrong-figure-reply-rate"];
+    assert.match(rate.subject, /10%/);
+    assert.match(rate.subject, /15%/);
+    assert.match(rate.subject, /25%/);
+    assert.ok(rate.expect.correction.some((phrase) => /50 percent|50%/.test(phrase)));
+    assert.ok(rate.expect.correction.some((phrase) => /5 percentage points/.test(phrase)));
+
+    const popup = loaded["wrong-figure-popup-dates"];
+    assert.match(popup.subject, /Monday 6 April 2026/);
+    assert.match(popup.subject, /Monday 20 April 2026/);
+    assert.match(popup.subject, /ten-day/);
+    const inclusive = (Date.UTC(2026, 3, 20) - Date.UTC(2026, 3, 6)) / 86400000 + 1;
+    assert.equal(inclusive, 15);
+    assert.equal(new Date(Date.UTC(2026, 3, 6)).getUTCDay(), 1);
+    assert.equal(new Date(Date.UTC(2026, 3, 20)).getUTCDay(), 1);
+    assert.ok(popup.expect.correction.includes("15 days"));
+    assert.ok(popup.expect.correction.includes("14 days"));
+
+    const cake = loaded["wrong-figure-cake-order"];
+    assert.match(cake.subject, /forty/);
+    assert.match(cake.subject, /\$18/);
+    assert.match(cake.subject, /\$900/);
+    assert.ok(cake.expect.correction.some((phrase) => phrase.replace(/[$,]/g, "") === "720"));
+  });
+
   for (const f of files) {
     it(`${f} parses as JSON and satisfies its kind's schema`, () => {
       const c = JSON.parse(readFileSync(join(CASES_DIR, f), "utf8")); // throws (and fails the test) on invalid JSON
@@ -415,6 +624,27 @@ describe("caseProblems: one home for the case format", () => {
     has({ ...flawed(), expect: { must_target: ["hidden fee"] } }, /verdict_not must include "holds"/);
     has({ ...flawed(), kind: "sound", expect: { max_severity: "moderate" } }, /verdict_in/);
     has({ ...flawed(), kind: "loaded", expect: { must_target: ["hidden fee"] } }, /"hidden fee" not found in question/);
+    has({ ...flawed(), expect: { ...flawed().expect, catch_in: "anywhere" } }, /catch_in must be/);
+    has({ ...flawed(), expect: { ...flawed().expect, catch_in: "checked-or-verdict", correction: [] } }, /correction needs/);
+    has({ ...flawed(), expect: { ...flawed().expect, catch_in: "checked-or-verdict", correction: ["no"] } }, /at least 3 characters/);
+    has(
+      { ...flawed(), expect: { ...flawed().expect, catch_in: "checked-or-verdict", correction: ["hidden fee"] } },
+      /must not appear in the subject or question/,
+    );
+    has(
+      { ...flawed(), question: "Is $2,450 the total?", expect: { ...flawed().expect, catch_in: "checked-or-verdict", correction: ["$2,450"] } },
+      /must not appear in the subject or question/,
+    );
+    has(
+      { ...flawed(), kind: "sound", expect: { verdict_in: ["holds"], max_severity: "moderate", catch_in: "checked-or-verdict", correction: ["$2,450"] } },
+      /only for a flawed case/,
+    );
+  });
+
+  it("accepts a wrong-figure case whose correction is not already in the write-up", () => {
+    const c = flawed();
+    c.expect = { ...c.expect, catch_in: "checked-or-verdict", correction: ["$2,450"] };
+    assert.deepEqual(caseProblems(c, "c1.json"), []);
   });
 });
 
@@ -434,6 +664,39 @@ describe("renderSummary: a held-out run shows rates, never a case", () => {
     for (const secret of ["secret-flawed-case", "secret-sound-case", "a private phrase", "unsupported-claim", "## Failed cases"]) {
       assert.ok(!md.includes(secret), `held-out report leaked ${secret}`);
     }
+  });
+
+  it("describes a wrong-figure miss as a verdict or Checked for you catch", () => {
+    const scores = [
+      {
+        id: "wrong-figure-market-total",
+        kind: "flawed",
+        verdict: "holds",
+        caught: false,
+        expect: { must_target: ["costs $2,900"], correction: ["$2,450"], catch_in: "checked-or-verdict", verdict_not: ["holds"] },
+        challengeSummary: [],
+        decorrelated: true,
+        schemaIssues: 0,
+      },
+    ];
+    const md = renderSummary(summarize(scores, { catchRate: 0 }), scores);
+    assert.match(md, /the verdict or a Checked for you challenge catching one of: costs \$2,900 \| \$2,450/);
+  });
+
+  it("keeps an ordinary flawed miss on the challenge-target line", () => {
+    const scores = [
+      {
+        id: "ordinary",
+        kind: "flawed",
+        verdict: "holds",
+        caught: false,
+        expect: { must_target: ["hidden fee"], verdict_not: ["holds"] },
+        challengeSummary: [],
+      },
+    ];
+    const md = renderSummary({ metrics: { n: 1 }, regressions: [], checks: [] }, scores);
+    assert.match(md, /a challenge targeting one of: hidden fee/);
+    assert.doesNotMatch(md, /Checked for you/);
   });
 
   it("leaves the public report as it was", () => {
