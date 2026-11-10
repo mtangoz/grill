@@ -91,6 +91,7 @@ import {
   storedInviteListed,
   storedInvitesEnabled,
   authorForJudge,
+  unknownClientJudgeLine,
   calendarFeed,
   calendarTokenHash,
   calendarTokenShape,
@@ -1464,7 +1465,7 @@ async function firstDisclosure(account, deps) {
   return won === "OK";
 }
 
-async function composeReport({ outcome, subject, sourceApp, account, credit, supersedes, changed, deps, depthJob, big, runId }) {
+async function composeReport({ outcome, subject, sourceApp, authorGiven = false, account, credit, supersedes, changed, deps, depthJob, big, runId }) {
   const stderr = String(outcome?.stderr || "");
   const parsed = outcome?.parsed || null;
   if (!outcome || outcome.code !== 0 || (!parsed && !String(outcome.report || "").trim())) {
@@ -1515,6 +1516,8 @@ async function composeReport({ outcome, subject, sourceApp, account, credit, sup
   await countSpend(account, deps, cost);
   if (completedGrill(parsed)) await countCompletedCheck(account, deps, runId);
   let text = appendRunNote(layers.brief, parsed || {}, Number(outcome.ms));
+  const gapLine = unknownClientJudgeLine({ sourceApp, authorGiven, servedModel: model });
+  if (gapLine) text = `${text}\n${gapLine}`;
   if (await firstDisclosure(account, deps)) text = `${ONCE_DISCLOSURE}\n\n${text}`;
   creditCache.delete(account.id);
   return {
@@ -1597,6 +1600,7 @@ async function callGrill(args, account, payload, params, deps) {
   const client = clientFromToken(payload, params, deps);
   const author = authorForJudge({ explicit: args.author, company: client.company });
   if (author.error) return toolText(author.error, true);
+  const authorGiven = Boolean(String(args.author || "").trim());
   if (account.records === "keep" && !keyFromEnv(deps.env, "GRILL_RECORD_KEY")) {
     logHosted(deps.requestId, "record-key");
     return toolText("Grill can't save decision records right now because of a setup problem on our side. Turn records off on your account page to grill without saving, or write to support@grillyour.ai.", true);
@@ -1642,6 +1646,7 @@ async function callGrill(args, account, payload, params, deps) {
       outcome: job.outcome,
       subject,
       sourceApp: client.sourceApp,
+      authorGiven,
       account,
       credit,
       supersedes: args.supersedes,
@@ -1668,6 +1673,7 @@ async function callGrill(args, account, payload, params, deps) {
           outcome,
           subject,
           sourceApp: client.sourceApp,
+          authorGiven,
           account,
           credit,
           supersedes: args.supersedes,

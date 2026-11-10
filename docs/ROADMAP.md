@@ -13,7 +13,7 @@ Most triggers read the real-user count in STRATEGY.md. That count is 1 as of 202
 | Idea | Impact | Trigger | Status |
 |---|---|---|---|
 | Record the real-user count | High, enables every other trigger | Now | Done |
-| Close the unknown-client judge gap | High, trust | Now | Trigger met |
+| Close the unknown-client judge gap | High, trust | Now | Draft PR open |
 | Publish the hosted address on the MCP Registry | Medium, usage | Now | Trigger met |
 | ChatGPT and Claude connector directory listings | High, usage | Now, with the owner's approval | Trigger met, blocked |
 | Hand-run partnerships | Medium, usage | Now | Trigger met |
@@ -235,13 +235,15 @@ Done: recorded 2026-11-09 in STRATEGY.md. Monthly refresh.
 
 ## Close the unknown-client judge gap
 
-When the MCP server does not recognise the client and no company is named, it still excludes Anthropic. A non-Claude author can then be judged by its own company. Say so on the verdict, or ask for the company, instead of guessing. This touches the judge, so it needs its own pull request and review (STRATEGY rec 3).
+On the hosted connector, an unrecognised client with no author named excludes nobody. It does not exclude Anthropic. The judge can then be the same company as the assistant, and the verdict used to say nothing about that. Say so on the verdict: one line after the privacy note, naming the judge's company, and saying to grill again and name the assistant if that company is the same. A recognised client gets no line. Cursor is recognised and still excludes nobody, on purpose, because it runs several companies' models, so it gets no line either. The installed MCP server still excludes Anthropic when it does not recognise the client and no company is named. This touches what the verdict says about the judge, so it needs its own pull request and review (STRATEGY rec 3).
 
 Impact: high, trust. A judge from a different company is the product (STRATEGY principle 1).
 
 Consider when: now, before any launch that brings people from non-Claude MCP apps.
 
 Trigger met: the consider-when is now (2026-11-08).
+
+Draft PR open: 2026-11-10. The hosted reply adds the line. Who is excluded is unchanged.
 
 ## Verify Meta AI (Muse) in chat
 

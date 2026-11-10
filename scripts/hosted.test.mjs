@@ -39,8 +39,10 @@ import {
   HOSTED_JUDGE_DEADLINE_MS,
   NO_JOB_TEXT,
   parseJobCredential,
+  judgeCompanyName,
   provenanceLine,
   sourceAppFromClient,
+  unknownClientJudgeLine,
   wwwAuthenticate,
 } from "./hostedCore.mjs";
 import { countWords } from "./judgeCore.mjs";
@@ -903,6 +905,102 @@ describe("hosted Grill", { concurrency: false }, () => {
         assert.doesNotMatch(textOf(json), /\*\*Verdict: solid\*\*/);
         assert.equal(fake.seen.chat[0].body.model, "openrouter/auto");
         assert.equal(fake.seen.chat[0].body.models, undefined);
+      } finally {
+        await fake.close();
+      }
+    });
+
+    it("adds one line when the client is unknown and no author was given, and stays quiet for a known client", async () => {
+      const usable = JSON.parse(readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8"));
+      const fake = await startFakeOpenRouter({
+        chat: (body) => {
+          const excluded = body?.plugins?.[0]?.excluded_models || [];
+          const model = excluded.some((item) => String(item).startsWith("openai")) ? "google/gemini-2.5-pro" : "openai/gpt-5.6-sol";
+          return { text: JSON.stringify({ ...usable, model }) };
+        },
+      });
+      const privacy =
+        "Private: sent only to zero-data-retention endpoints, with keys blocked and common personally identifiable information masked first.";
+      const note =
+        "Grill couldn't tell which AI you're using. This judge is from OpenAI. If your assistant is too, name it next time for a different company.";
+      const grill = (id, extra = {}, clientInfo) => ({
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: {
+          name: "grill",
+          arguments: {
+            subject: "Decision: ship the plan.\nI'm 70% sure.",
+            keep_records: false,
+            quality_check: false,
+            ...extra,
+          },
+          ...(clientInfo ? { _meta: { clientInfo } } : {}),
+        },
+      });
+      try {
+        const ctx = world();
+        const deps = { ...judgeDeps(fake), waitMs: 20_000 };
+        const unknown = await postMcp(ctx, grill(1), {
+          token: signJwt(claims({ sub: "user_unknown_gap" })),
+          deps,
+        });
+        const unknownText = textOf(unknown.json);
+        assert.equal(unknown.json.result.isError, false, unknownText);
+        assert.equal(note.includes("?"), false);
+        assert.ok(countWords(note) <= 25, countWords(note));
+        assert.ok(unknownText.includes(`${privacy}\n${note}\n`), unknownText);
+        assert.ok(unknownText.indexOf("**") < unknownText.indexOf(note), unknownText);
+        assert.ok(unknownText.indexOf("Say 'more'") < unknownText.indexOf(note), unknownText);
+        const afterNote = unknownText.slice(unknownText.indexOf(note) + note.length).trim();
+        assert.match(afterNote, /^follow: \S+$/, unknownText);
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
+        assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
+        assert.equal(ctx.writes.some((row) => row.join(" ").includes("couldn't tell which AI")), false);
+
+        const more = await postMcp(
+          ctx,
+          {
+            jsonrpc: "2.0",
+            id: 2,
+            method: "tools/call",
+            params: { name: "grill_result", arguments: { job_id: afterNote.replace(/^follow: /, ""), detail: "more" } },
+          },
+          { token: signJwt(claims({ sub: "user_unknown_gap" })), deps },
+        );
+        assert.equal(more.json.result.isError, false, textOf(more.json));
+        assert.equal(textOf(more.json).includes("couldn't tell which AI"), false, textOf(more.json));
+
+        const chatgpt = await postMcp(ctx, grill(3), {
+          token: signJwt(claims({
+            sub: "user_chatgpt_gap",
+            redirect_uri: "https://chatgpt.com/backend-api/aip/connectors/mcp/oauth_callback",
+          })),
+          deps,
+        });
+        const chatgptText = textOf(chatgpt.json);
+        assert.equal(chatgpt.json.result.isError, false, chatgptText);
+        assert.equal(chatgptText.includes("couldn't tell which AI"), false, chatgptText);
+        assert.ok(chatgptText.includes(privacy), chatgptText);
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["openai/*"]);
+
+        const cursor = await postMcp(ctx, grill(4, {}, { name: "Cursor" }), {
+          token: signJwt(claims({ sub: "user_cursor_gap" })),
+          deps,
+        });
+        const cursorText = textOf(cursor.json);
+        assert.equal(cursor.json.result.isError, false, cursorText);
+        assert.equal(cursorText.includes("couldn't tell which AI"), false, cursorText);
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
+
+        const named = await postMcp(ctx, grill(5, { author: "google" }), {
+          token: signJwt(claims({ sub: "user_named_gap" })),
+          deps,
+        });
+        const namedText = textOf(named.json);
+        assert.equal(named.json.result.isError, false, namedText);
+        assert.equal(namedText.includes("couldn't tell which AI"), false, namedText);
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
       } finally {
         await fake.close();
       }
@@ -2047,6 +2145,27 @@ describe("hosted mappings and ledger pins", () => {
     }
     assert.equal(authorForJudge({ explicit: "openai", company: "anthropic" }).author, "openai");
     assert.equal(authorForJudge({ company: "" }).author, "none");
+    assert.equal(judgeCompanyName("openai/gpt-5.6-sol"), "OpenAI");
+    assert.equal(judgeCompanyName("google/gemini-2.5-pro"), "Google");
+    assert.equal(judgeCompanyName("x-ai/grok-4"), "xAI");
+    assert.equal(judgeCompanyName("anthropic/claude-sonnet-4"), "Anthropic");
+    assert.equal(judgeCompanyName("amazon/claude-3"), "Anthropic");
+    assert.equal(judgeCompanyName("deepseek/deepseek-v4"), "DeepSeek");
+    assert.equal(judgeCompanyName("meta-llama/llama-3"), "Meta");
+    assert.equal(judgeCompanyName("openrouter/auto"), "");
+    assert.equal(judgeCompanyName(""), "");
+    assert.equal(judgeCompanyName("moonshotai/kimi"), "");
+    const line = unknownClientJudgeLine({ sourceApp: "unknown", servedModel: "openai/gpt-5.6-sol" });
+    assert.equal(
+      line,
+      "Grill couldn't tell which AI you're using. This judge is from OpenAI. If your assistant is too, name it next time for a different company.",
+    );
+    assert.ok(countWords(line) <= 25, countWords(line));
+    assert.equal(line.includes("?"), false);
+    assert.equal(unknownClientJudgeLine({ sourceApp: "chatgpt", servedModel: "google/gemini-2.5-pro" }), "");
+    assert.equal(unknownClientJudgeLine({ sourceApp: "cursor", servedModel: "openai/gpt-5.6-sol" }), "");
+    assert.equal(unknownClientJudgeLine({ sourceApp: "unknown", authorGiven: true, servedModel: "openai/gpt-5.6-sol" }), "");
+    assert.equal(unknownClientJudgeLine({ sourceApp: "unknown", servedModel: "moonshotai/kimi" }), "");
     assert.equal(sourceAppLabel("claude-code"), "claude-code");
     assert.equal(sourceAppLabel("Claude by Anthropic"), "claude");
   });
