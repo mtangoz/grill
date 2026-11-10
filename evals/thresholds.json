@@ -1,5 +1,6 @@
 {
   "catchRate": 0.67,
+  "figureCatchRate": 1,
   "falseAlarmRate": 0.34,
   "loadedCatchRate": 0.67,
   "decorrelatedRate": 1.0,

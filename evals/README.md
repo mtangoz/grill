@@ -7,7 +7,8 @@ runs each one through the real judge CLI and scores the result against `threshol
 **These thresholds are sanity floors, not precise scores.** Twenty-nine cases is not a statistically
 powered benchmark, and the judge is a stochastic third-party model reached through OpenRouter's
 Auto Router — the same case can score differently run to run. The numbers are loose on purpose:
-`catchRate`/`loadedCatchRate` only require catching 13 of 19 / 3 of 4 cases, and `decorrelatedRate`
+`catchRate`/`loadedCatchRate` only require catching 11 of 15 / 3 of 4 of the cases that
+were already here. `figureCatchRate` requires all 4 wrong-figure cases. `decorrelatedRate`
 (at least 1.0: every run judged outside Claude's family) and `schemaViolationRate` (at most 0.1) are strict. The goal is to
 catch a *regression* — the judge going quiet, or the output contract breaking — not to grade its
 reasoning precisely. Treat a red run as "go look," not a graded score.
@@ -57,12 +58,11 @@ does not pass, including when a challenge mentions it while objecting to somethi
 the corrected figure does not pass, and neither does a counterfactual mention of it. The same number written another way counts ("$2,450.00" is "$2,450"); a different number
 does not ("$2,450,000"). A hedge or a hypothetical in the same clause does not count. When a
 correction states a direction, the opposite direction does not pass. A Your call challenge does not pass. The corrected figure is
-not in the write-up, so stating it means the judge worked the answer out. That is the check from
-arXiv 2607.05904: a verifier accepts a wrong answer it was asked to check unless it works the
-answer out itself.
+not in the write-up. A stated number that matches is a matching correction, not proof the
+judge calculated it. The cases come from arXiv 2607.05904.
 
-**The eval gates only run with a key.** CI has no OpenRouter key, so there the eval prints a notice and
-skips. A change to the judge prompt or the severity scale needs a live run on a machine with a key
+**The eval gates only run with a key.** CI has no OpenRouter key, so there the eval prints
+`SKIPPED: no judge ran` and does not report a score. A change to the judge prompt or the severity scale needs a live run on a machine with a key
 (`OPENROUTER_API_KEY=… node scripts/eval.mjs`), ideally twice, since the same case can score
 differently run to run. Severity is graded against the choice between the options, so a sound case
 fails when a fix to its plan's details is filed as "serious".

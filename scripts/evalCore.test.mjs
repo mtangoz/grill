@@ -391,9 +391,27 @@ describe("scoreCase — the shared fields (schemaIssues, decorrelated, costUsd, 
 describe("summarize — rates and threshold boundaries", () => {
   const thresholds = { catchRate: 0.67, falseAlarmRate: 0.34, loadedCatchRate: 0.67, decorrelatedRate: 1.0, schemaViolationRate: 0.1 };
 
-  function scored({ kind, caught = null, falseAlarm = null, decorrelated = true, schemaIssues = 0, costUsd = 0, latencyMs = 100 }) {
-    return { id: `${kind}-${Math.random()}`, kind, caught, falseAlarm, decorrelated, schemaIssues, costUsd, servedModel: "x", latencyMs };
+  function scored({ kind, caught = null, falseAlarm = null, decorrelated = true, schemaIssues = 0, costUsd = 0, latencyMs = 100, expect = {} }) {
+    return { id: `${kind}-${Math.random()}`, kind, caught, falseAlarm, decorrelated, schemaIssues, costUsd, servedModel: "x", latencyMs, expect };
   }
+
+  it("keeps the old catch-rate floor and requires every wrong-figure case", () => {
+    const legacy = (caught, n) => Array.from({ length: n }, () => scored({ kind: "flawed", caught }));
+    const figure = (caught) => scored({ kind: "flawed", caught, expect: { catch_in: "checked-or-verdict" } });
+    const thresholds = { catchRate: 0.67, figureCatchRate: 1 };
+    // Nine of the original fifteen is below 0.67. Four new catches must not lift that floor.
+    const hidden = summarize([...legacy(true, 9), ...legacy(false, 6), ...Array.from({ length: 4 }, () => figure(true))], thresholds);
+    assert.ok(Math.abs(hidden.metrics.catchRate - 9 / 15) < 1e-9);
+    assert.equal(hidden.metrics.figureCatchRate, 1);
+    assert.ok(hidden.regressions.some((r) => r.startsWith("catchRate")));
+    assert.ok(!hidden.regressions.some((r) => r.startsWith("figureCatchRate")));
+    // All fifteen original cases caught, one of the four wrong-figure cases missed.
+    const missed = summarize([...legacy(true, 15), figure(true), figure(true), figure(true), figure(false)], thresholds);
+    assert.equal(missed.metrics.catchRate, 1);
+    assert.equal(missed.metrics.figureCatchRate, 0.75);
+    assert.ok(missed.regressions.some((r) => r.startsWith("figureCatchRate")));
+    assert.ok(!missed.regressions.some((r) => r.startsWith("catchRate")));
+  });
 
   it("computes catchRate/loadedCatchRate/falseAlarmRate as exact fractions", () => {
     const scores = [

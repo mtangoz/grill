@@ -244,8 +244,9 @@ function clauseIsHedged(clause) {
 }
 
 /**
- * The correction's number is stated as that number. "$2,450.00" is "$2,450".
- * "$2,450,000" is not. A hedge in the same clause is not a statement.
+ * A matching correction: the stated number equals the correction. "$2,450.00" matches
+ * "$2,450". "$2,450,000" does not. A hedge in the same clause is not a match. Matching
+ * is not proof the judge calculated the figure.
  */
 function statedCorrection(text, phrase, caseDir) {
   if (typeof text !== "string" || typeof phrase !== "string") return false;
@@ -357,8 +358,8 @@ export function caseProblems(c, fileName) {
   } else if (c.kind === "loaded") {
     quotable("question");
   }
-  // A confident wrong figure. The corrected value must not already be in the write-up, or the
-  // judge can pass by quoting the prompt instead of working the figure out.
+  // A confident wrong figure. The corrected value must not already be in the write-up, or a
+  // matching correction can be copied from the prompt. A match is not a calculation.
   if (expect.catch_in !== undefined || expect.correction !== undefined) {
     if (expect.catch_in !== "checked-or-verdict") problems.push('expect.catch_in must be "checked-or-verdict"');
     if (c.kind !== "flawed") problems.push("expect.catch_in is only for a flawed case");
@@ -391,11 +392,10 @@ export function scoreCase(caseDef, result) {
 
   if (kind === "flawed" || kind === "loaded") {
     const mustTarget = Array.isArray(expect.must_target) ? expect.must_target : [];
-    // The figure cases pass only when the verdict, or the blockquote or objection of a
-    // Checked for you challenge, states the corrected figure. Quoting the wrong figure is
-    // not a catch: a challenge can mention it while objecting to something else. Denying
-    // the corrected figure is not a catch. The premise and the falsifier are not a catch:
-    // they can name the right figure as a hypothetical. Your call is not a catch.
+    // The figure cases pass on a matching correction in the verdict, or in the blockquote
+    // or objection of a Checked for you challenge. That match is not proof the judge
+    // calculated the figure. Quoting the wrong figure is not a match. Denying it is not a
+    // match. The premise and the falsifier are not a match. Your call is not a match.
     const figureCheck = kind === "flawed" && expect.catch_in === "checked-or-verdict";
     if (!usable) {
       caught = false;
@@ -497,14 +497,16 @@ function rate(numerator, denominator, key) {
 }
 
 /**
- * The five gates this loop checks, and which direction is "good" for each. `atLeast` fails
+ * The gates this loop checks, and which direction is "good" for each. `atLeast` fails
  * when the actual value falls below the threshold (a catch rate that dropped); `atMost` fails
  * when it rises above (a false-alarm or schema-violation rate that grew). decorrelatedRate is a
  * floor of 1.0: a single run answered from Claude's own family is a failure, because an
- * independent judge is the whole product.
+ * independent judge is the whole product. figureCatchRate is a separate floor for the
+ * wrong-figure cases, so they cannot change the catch rate of the cases that came before them.
  */
 const CHECKS = Object.freeze([
   { key: "catchRate", direction: "atLeast" },
+  { key: "figureCatchRate", direction: "atLeast" },
   { key: "falseAlarmRate", direction: "atMost" },
   { key: "loadedCatchRate", direction: "atLeast" },
   { key: "decorrelatedRate", direction: "atLeast" }, // every run must be judged outside Claude's family
@@ -560,6 +562,10 @@ export function summarize(scores, thresholds) {
   const n = list.length;
 
   const flawed = list.filter((s) => s.kind === "flawed");
+  // Wrong-figure cases have their own floor. They stay out of catchRate, which is the
+  // floor the other flawed cases already had.
+  const figureFlawed = flawed.filter((s) => s.expect?.catch_in === "checked-or-verdict");
+  const legacyFlawed = flawed.filter((s) => s.expect?.catch_in !== "checked-or-verdict");
   const loaded = list.filter((s) => s.kind === "loaded");
   const sound = list.filter((s) => s.kind === "sound");
 
@@ -577,7 +583,8 @@ export function summarize(scores, thresholds) {
   const phraseOnSame = semanticScored.filter((s) => s.caught === true).length;
 
   const metrics = {
-    catchRate: rate(flawed.filter((s) => s.caught === true).length, flawed.length, "catchRate"),
+    catchRate: rate(legacyFlawed.filter((s) => s.caught === true).length, legacyFlawed.length, "catchRate"),
+    figureCatchRate: rate(figureFlawed.filter((s) => s.caught === true).length, figureFlawed.length, "figureCatchRate"),
     falseAlarmRate: rate(sound.filter((s) => s.falseAlarm === true).length, sound.length, "falseAlarmRate"),
     loadedCatchRate: rate(loaded.filter((s) => s.caught === true).length, loaded.length, "loadedCatchRate"),
     decorrelatedRate: rate(list.filter((s) => s.decorrelated === true).length, n, "decorrelatedRate"),
@@ -636,6 +643,7 @@ export function summarize(scores, thresholds) {
 
 const METRIC_LABEL = Object.freeze({
   catchRate: "Catch rate (flawed)",
+  figureCatchRate: "Catch rate (wrong figure)",
   falseAlarmRate: "False alarm rate (sound)",
   loadedCatchRate: "Catch rate (loaded)",
   decorrelatedRate: "Decorrelated rate",
