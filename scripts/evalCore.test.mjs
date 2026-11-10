@@ -72,9 +72,9 @@ describe("scoreCase — flawed/loaded (must_target)", () => {
 });
 
 // A write-up states a figure the inputs do not support, and states it with confidence.
-// The case passes only when the verdict states the corrected figure, or a Checked for you
-// challenge targets the wrong claim or states the corrected figure. Your call does not count,
-// and an agreeing verdict that only repeats the wrong figure does not either.
+// The case passes only when the verdict, or a Checked for you blockquote or objection, states
+// the corrected figure. Quoting the wrong figure is not enough. Denying the correction is not
+// enough. Your call does not count.
 describe("scoreCase — a confident wrong figure (checked-or-verdict)", () => {
   const figureCase = {
     id: "figure",
@@ -111,18 +111,7 @@ describe("scoreCase — a confident wrong figure (checked-or-verdict)", () => {
     assert.equal(hit.matchedPhrase, "50%");
   });
 
-  it("passes when a Checked for you challenge targets the wrong claim", () => {
-    const s = scoreCase(
-      figureCase,
-      usableResult({
-        challenges: [challenge({ call: "checked", severity: "serious", target: "the write-up says the weekend costs $2,900" })],
-      }),
-    );
-    assert.equal(s.caught, true);
-    assert.equal(s.matchedPhrase, "costs $2,900");
-  });
-
-  it("passes when the Checked for you objection quotes the wrong claim", () => {
+  it("does not pass when a Checked for you challenge quotes the wrong total but objects to the rain", () => {
     const s = scoreCase(
       figureCase,
       usableResult({
@@ -130,14 +119,78 @@ describe("scoreCase — a confident wrong figure (checked-or-verdict)", () => {
           challenge({
             call: "checked",
             severity: "serious",
-            target: "the weekend cost",
-            challenge: "The write-up says the weekend costs $2,900, and the lines do not support it.",
+            target: "the weekend costs $2,900",
+            challenge: "Rain may cut the cups.",
           }),
         ],
       }),
     );
+    assert.equal(s.caught, false);
+  });
+
+  it("does not pass when the verdict denies the corrected figure and endorses the wrong one", () => {
+    const s = scoreCase(
+      figureCase,
+      usableResult({ verdictReason: "The total is not $2,450; $2,900 is correct.", challenges: [] }),
+    );
+    assert.equal(s.caught, false);
+  });
+
+  it("passes when the verdict states the relative increase as 50%", () => {
+    const s = scoreCase(figureCase, usableResult({ verdictReason: "The increase is 50%.", challenges: [] }));
     assert.equal(s.caught, true);
-    assert.equal(s.matchedPhrase, "costs $2,900");
+    assert.equal(s.matchedPhrase, "50%");
+  });
+
+  it("does not pass when the verdict denies 50%", () => {
+    const s = scoreCase(figureCase, usableResult({ verdictReason: "The increase is not 50%.", challenges: [] }));
+    assert.equal(s.caught, false);
+    const equal = scoreCase(figureCase, usableResult({ verdictReason: "The total is not equal to $2,450.", challenges: [] }));
+    assert.equal(equal.caught, false);
+    const add = scoreCase(figureCase, usableResult({ verdictReason: "The lines do not add to $2,450.", challenges: [] }));
+    assert.equal(add.caught, false);
+  });
+
+  it("still passes when the corrected figure is stated and the wrong one is denied after it", () => {
+    const s = scoreCase(
+      figureCase,
+      usableResult({ verdictReason: "The lines add to $2,450, not $2,900.", challenges: [] }),
+    );
+    assert.equal(s.caught, true);
+    assert.equal(s.matchedPhrase, "$2,450");
+  });
+
+  it("does not pass when only the falsifier or the premise states the corrected figure", () => {
+    const falsifier = scoreCase(
+      figureCase,
+      usableResult({
+        challenges: [
+          challenge({
+            call: "checked",
+            severity: "serious",
+            target: "Saturday rain",
+            challenge: "Rain may cut the cups.",
+            falsifier: "A dry Saturday, and the lines add to $2,450.",
+          }),
+        ],
+      }),
+    );
+    const premise = scoreCase(
+      figureCase,
+      usableResult({
+        challenges: [
+          challenge({
+            call: "checked",
+            severity: "serious",
+            target: "Saturday rain",
+            challenge: "Rain may cut the cups.",
+            what_would_have_to_be_true: "The lines add to $2,450.",
+          }),
+        ],
+      }),
+    );
+    assert.equal(falsifier.caught, false);
+    assert.equal(premise.caught, false);
   });
 
   it("does not pass when only the falsifier repeats the wrong claim", () => {
@@ -680,7 +733,7 @@ describe("renderSummary: a held-out run shows rates, never a case", () => {
       },
     ];
     const md = renderSummary(summarize(scores, { catchRate: 0 }), scores);
-    assert.match(md, /the verdict or a Checked for you challenge catching one of: costs \$2,900 \| \$2,450/);
+    assert.match(md, /the verdict or a Checked for you objection stating one of: \$2,450/);
   });
 
   it("keeps an ordinary flawed miss on the challenge-target line", () => {

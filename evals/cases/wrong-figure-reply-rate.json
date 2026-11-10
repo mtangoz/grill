@@ -7,7 +7,7 @@
     "must_target": ["a 25% increase", "that 25% increase"],
     "verdict_not": ["holds"],
     "catch_in": "checked-or-verdict",
-    "correction": ["50 percent", "50% increase", "50% higher", "by 50%", "5 percentage points", "five percentage points"]
+    "correction": ["50 percent", "is 50%", "50%", "50% increase", "50% higher", "by 50%", "5 percentage points", "five percentage points"]
   },
   "why": "July's reply rate is 15% and June's is 10%. That is a 50 percent increase, or 5 percentage points, not a 25% increase. The write-up states that 25% figure at 75% confidence."
 }

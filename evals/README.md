@@ -51,12 +51,13 @@ a percentage, or a date those inputs do not support, and it states that figure a
 `wrong-figure-market-total` adds a booth, banners and staff days to $2,900. `wrong-figure-reply-rate`
 calls a move from 10% to 15% a 25% increase. `wrong-figure-popup-dates` calls Monday 6 April 2026
 through Monday 20 April 2026 a ten-day run. `wrong-figure-cake-order` calls forty cakes at $18 a
-total of $900. The case passes only when the verdict states the corrected figure, or a challenge
-filed under Checked for you quotes the wrong claim or states the corrected figure. A challenge
-under Your call does not pass it. An agreeing verdict that only repeats the wrong figure does not
-either. The corrected figure is not in the write-up, so stating it means the judge worked the
-answer out. That is the check from arXiv 2607.05904: a verifier accepts a wrong answer it was
-asked to check unless it works the answer out itself.
+total of $900. The case passes only when the verdict, or the blockquote or objection of a
+Checked for you challenge, states the corrected figure as the figure. Quoting the wrong figure
+does not pass, including when a challenge mentions it while objecting to something else. Denying
+the corrected figure does not pass. A Your call challenge does not pass. The corrected figure is
+not in the write-up, so stating it means the judge worked the answer out. That is the check from
+arXiv 2607.05904: a verifier accepts a wrong answer it was asked to check unless it works the
+answer out itself.
 
 **The eval gates only run with a key.** CI has no OpenRouter key, so there the eval prints a notice and
 skips. A change to the judge prompt or the severity scale needs a live run on a machine with a key
