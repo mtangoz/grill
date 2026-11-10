@@ -144,14 +144,39 @@ describe("scoreCase — a confident wrong figure (checked-or-verdict)", () => {
     }
   });
 
-  it("does not treat $2,450 as the same number as $2,450,000 or $2,450.00", () => {
+  it("compares the market total by numeric value", () => {
     const market = JSON.parse(readFileSync(join(CASES_DIR, "wrong-figure-market-total.json"), "utf8"));
-    for (const verdictReason of ["The lines add to $2,450,000.", "The lines add to $2,450.00."]) {
+    for (const verdictReason of ["The lines add to $2,450.", "The correct total is $2,450.00."]) {
+      const hit = scoreCase(market, usableResult({ verdictReason, challenges: [] }));
+      assert.equal(hit.caught, true, verdictReason);
+      assert.equal(hit.matchedPhrase, "$2,450");
+    }
+    assert.equal(
+      scoreCase(market, usableResult({ verdictReason: "The lines add to $2,450,000.", challenges: [] })).caught,
+      false,
+    );
+  });
+
+  it("does not count a figure in a hedged or hypothetical clause", () => {
+    const market = JSON.parse(readFileSync(join(CASES_DIR, "wrong-figure-market-total.json"), "utf8"));
+    for (const verdictReason of [
+      "The total might be $2,450.",
+      "The total may be $2,450.",
+      "The total could be $2,450.",
+      "Perhaps the total is $2,450.",
+      "The total is possibly $2,450.",
+      "If the total is $2,450.",
+      "Suppose the total is $2,450.",
+      "The total would be $2,450.",
+      "Were the total $2,450, the stall would clear.",
+    ]) {
       assert.equal(scoreCase(market, usableResult({ verdictReason, challenges: [] })).caught, false, verdictReason);
     }
-    const hit = scoreCase(market, usableResult({ verdictReason: "The lines add to $2,450.", challenges: [] }));
-    assert.equal(hit.caught, true);
-    assert.equal(hit.matchedPhrase, "$2,450");
+    const later = scoreCase(
+      market,
+      usableResult({ verdictReason: "Rain might cut the cups. The lines add to $2,450.", challenges: [] }),
+    );
+    assert.equal(later.caught, true);
   });
 
   it("does not treat a fall as the same direction as a 50% increase", () => {

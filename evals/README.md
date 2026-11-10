@@ -54,9 +54,9 @@ operating day and calls that list a ten-day run. `wrong-figure-cake-order` calls
 total of $900. The case passes only when the verdict, or the blockquote or objection of a
 Checked for you challenge, states the corrected figure as the figure. Quoting the wrong figure
 does not pass, including when a challenge mentions it while objecting to something else. Denying
-the corrected figure does not pass, and neither does a counterfactual mention of it. A longer
-number that only begins with the correction does not pass. When a correction states a direction,
-the opposite direction does not pass. A Your call challenge does not pass. The corrected figure is
+the corrected figure does not pass, and neither does a counterfactual mention of it. The same number written another way counts ("$2,450.00" is "$2,450"); a different number
+does not ("$2,450,000"). A hedge or a hypothetical in the same clause does not count. When a
+correction states a direction, the opposite direction does not pass. A Your call challenge does not pass. The corrected figure is
 not in the write-up, so stating it means the judge worked the answer out. That is the check from
 arXiv 2607.05904: a verifier accepts a wrong answer it was asked to check unless it works the
 answer out itself.

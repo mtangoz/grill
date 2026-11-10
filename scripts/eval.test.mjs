@@ -126,12 +126,13 @@ describe("eval.mjs over a temp copy of 2 cases, replaying a fixture", () => {
 
 // ---------------------------------------------------------------------------
 describe("the skip path — no OPENROUTER_API_KEY and no JUDGE_FIXTURE", () => {
-  it("prints the notice and exits 0 without touching the cases directory", async () => {
+  it("prints SKIPPED and exits 0 without a score when there is no key", async () => {
     const outPath = join(mkdtempSync(join(tmpdir(), "eval-skip-")), "out.json");
     const { code, stdout } = await runCli(["--out", outPath], envFor({}));
 
     assert.equal(code, 0);
-    assert.match(stdout, /::notice::no OPENROUTER_API_KEY; eval skipped/);
+    assert.match(stdout, /SKIPPED: no judge ran/);
+    assert.doesNotMatch(stdout, /PASS|Catch rate|catchRate/);
     assert.ok(!existsSync(outPath), "the skip path must not run any case or write a results file");
   });
 
@@ -142,10 +143,12 @@ describe("the skip path — no OPENROUTER_API_KEY and no JUDGE_FIXTURE", () => {
     const { code, stdout } = await runCli(["--require-key", "--out", outPath], envFor({ GITHUB_STEP_SUMMARY: summary }));
 
     assert.equal(code, 2);
+    assert.match(stdout, /SKIPPED: no judge ran/);
     assert.match(stdout, /::error::Not measured: no OPENROUTER_API_KEY/);
-    assert.ok(!stdout.includes("eval skipped"), "a required run must not read as a skip");
+    assert.doesNotMatch(stdout, /PASS|Catch rate|catchRate/);
     assert.ok(!existsSync(outPath));
     assert.match(readFileSync(summary, "utf8"), /Not measured/);
+    assert.doesNotMatch(readFileSync(summary, "utf8"), /PASS|Catch rate/);
   });
 
   it("with --require-key and JUDGE_FIXTURE, runs as usual", async () => {
@@ -166,7 +169,7 @@ describe("the skip path — no OPENROUTER_API_KEY and no JUDGE_FIXTURE", () => {
 
     const { stdout } = await runCli(["--cases", oneCase, "--out", outPath], env);
 
-    assert.ok(!stdout.includes("eval skipped"));
+    assert.ok(!stdout.includes("SKIPPED: no judge ran"));
     assert.ok(existsSync(outPath));
   });
 });

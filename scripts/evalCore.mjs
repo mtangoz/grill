@@ -84,16 +84,6 @@ function deniedAfter(hay, at, phraseLen) {
     || /^\s*(?:is|are|was|were)\s+(?:not\b|incorrect\b|wrong\b|false\b|mistaken\b|inaccurate\b|erroneous\b)/i.test(after);
 }
 
-/**
- * The phrase sits in a counterfactual: "If the total were $2,450".
- * A later "not $2,900" does not make the figure before it counterfactual.
- */
-function counterfactualAt(hay, at) {
-  const sentence = (hay.slice(Math.max(0, at - 96), at).split(/[.!?]/).pop() ?? "").trimEnd();
-  return /\bif\b[^.]{0,80}\b(?:were|had been)\b[\s$]*$/i.test(sentence)
-    || /\b(?:suppose|supposing|assuming|imagine)\b[^.]{0,60}\b(?:were|had been|was)\b[\s$]*$/i.test(sentence);
-}
-
 const UP_WORD = /\b(?:increas(?:e|ed|es|ing)|higher|rose|ris(?:e|es|en|ing)|grew|grown|growth)\b/i;
 const DOWN_WORD = /\b(?:decreas(?:e|ed|es|ing)|lower|fell|fall(?:s|en|ing)?|drop(?:s|ped|ping)?|declin(?:e|ed|es|ing))\b/i;
 
@@ -120,16 +110,6 @@ function caseDirection(corrections) {
   return up ? "up" : "down";
 }
 
-function sentenceAt(hay, at) {
-  const start = Math.max(hay.lastIndexOf(".", at), hay.lastIndexOf("?", at), hay.lastIndexOf("!", at), hay.lastIndexOf("\n", at));
-  let end = hay.length;
-  for (const mark of [".", "?", "!", "\n"]) {
-    const found = hay.indexOf(mark, at);
-    if (found !== -1 && found < end) end = found;
-  }
-  return hay.slice(start + 1, end);
-}
-
 /**
  * A directionless phrase inherits the direction of the correction list.
  * "fell by 50%" does not state the "50% increase" those corrections name.
@@ -144,23 +124,141 @@ function directionAgrees(sentence, phrase, caseDir) {
   return true;
 }
 
+const WORD_NUMBER = /^(?:fifteen|fifty|fourteen|forty|thirteen|thirty|twelve|twenty|eleven|eighteen|eighty|nineteen|ninety|seventeen|seventy|sixteen|sixty|zero|one|two|three|four|five|six|seven|eight|nine|ten)(?:[-\s](?:one|two|three|four|five|six|seven|eight|nine))?/i;
+const WORD_VALUE = Object.freeze({
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+  eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70,
+  eighty: 80, ninety: 90,
+});
+const MONTH = /(?:january|february|march|april|may|june|july|august|september|october|november|december)/i;
+
+/** Commas between digits and decimal points are part of one number, not a break. */
+function clausesOf(text) {
+  const parts = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const prev = i > 0 ? text[i - 1] : "";
+    const next = i + 1 < text.length ? text[i + 1] : "";
+    const betweenDigits = /[0-9]/.test(prev) && /[0-9]/.test(next);
+    if ((ch === "." && !betweenDigits) || ch === "!" || ch === "?" || ch === ";" || ch === "\n") {
+      parts.push({ text: text.slice(start, i), start, end: i });
+      start = i + 1;
+      continue;
+    }
+    if (ch === "," && !betweenDigits) {
+      parts.push({ text: text.slice(start, i), start, end: i });
+      start = i + 1;
+    }
+  }
+  parts.push({ text: text.slice(start), start, end: text.length });
+  return parts;
+}
+
+function unitAfter(text, end) {
+  const rest = text.slice(end);
+  const points = /^\s*percentage\s+points?\b/i.exec(rest);
+  if (points) return { unit: "pp", end: end + points[0].length };
+  const percent = /^\s*(?:%|percent\b)/i.exec(rest);
+  if (percent) return { unit: "percent", end: end + percent[0].length };
+  const days = /^\s*(?:-\s*day\b|operating\s+days?\b|days?\b)/i.exec(rest);
+  if (days) return { unit: "days", end: end + days[0].length };
+  const dollars = /^\s*dollars?\b/i.exec(rest);
+  if (dollars) return { unit: "money", end: end + dollars[0].length };
+  return { unit: null, end };
+}
+
+function isDate(text, start, end) {
+  const before = text.slice(Math.max(0, start - 16), start);
+  const after = text.slice(end, end + 20);
+  return new RegExp(`${MONTH.source}\\s*$`, "i").test(before) || new RegExp(`^\\s*(?:st|nd|rd|th)?\\s*${MONTH.source}`, "i").test(after);
+}
+
+function wordValue(raw) {
+  const parts = raw.toLowerCase().split(/[-\s]+/);
+  const tens = WORD_VALUE[parts[0]];
+  if (tens === undefined) return null;
+  if (parts.length === 1) return tens;
+  const ones = WORD_VALUE[parts[1]];
+  if (ones === undefined || ones > 9 || tens < 20) return null;
+  return tens + ones;
+}
+
+/** Quantities in the text. A comma or decimal between digits stays inside the value. Dates are marked and are not quantities. */
+function numberTokens(text) {
+  const tokens = [];
+  const taken = [];
+  const occupy = (start, end) => taken.some((span) => start < span.end && end > span.start);
+  let i = 0;
+  while (i < text.length) {
+    if (occupy(i, i + 1) || (i > 0 && /[A-Za-z0-9]/.test(text[i - 1]) && /[0-9]/.test(text[i]))) {
+      i += 1;
+      continue;
+    }
+    const slice = text.slice(i);
+    const digit = /^(?:\$?\d{1,3}(?:,\d{3})+(?:\.\d+)?|\$?\d+(?:\.\d+)?)/.exec(slice);
+    const word = !digit && (i === 0 || !/[A-Za-z]/.test(text[i - 1])) ? WORD_NUMBER.exec(slice) : null;
+    const raw = digit?.[0] ?? word?.[0];
+    if (!raw) {
+      i += 1;
+      continue;
+    }
+    const value = digit ? Number(raw.replace(/[$,]/g, "")) : wordValue(raw);
+    let end = i + raw.length;
+    let unit = raw.startsWith("$") ? "money" : null;
+    const after = unitAfter(text, end);
+    if (after.unit) {
+      unit = after.unit;
+      end = after.end;
+    }
+    if (Number.isFinite(value)) {
+      tokens.push({ value, start: i, end, unit, date: isDate(text, i, end) });
+      taken.push({ start: i, end });
+    }
+    i = end;
+  }
+  return tokens;
+}
+
+function sameValue(a, b) {
+  return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 1e-6;
+}
+
+function unitsCompatible(wanted, found) {
+  if (wanted === "days" || wanted === "percent" || wanted === "pp") return found === wanted;
+  if (wanted === "money") return found === "money" || found == null;
+  return found == null || found === "money";
+}
+
+/** A hedge or a hypothetical in this clause. "May" the month is not the hedge "may". */
+function clauseIsHedged(clause) {
+  if (/\bwould\s+be\b/i.test(clause)) return true;
+  const re = /\b(might|may|could|perhaps|possibly|if|suppose|supposing|were)\b/gi;
+  let match;
+  while ((match = re.exec(clause))) {
+    if (match[0] === "May") continue;
+    return true;
+  }
+  return false;
+}
+
 /**
- * The phrase is stated, not denied, and not glued into a longer number.
- * "The lines add to $2,450, not $2,900" states $2,450. "not $2,450" does not,
- * and neither does "$2,450 is incorrect", "If the total were $2,450",
- * "$2,450,000", or "fell by 50%" against an increase.
+ * The correction's number is stated as that number. "$2,450.00" is "$2,450".
+ * "$2,450,000" is not. A hedge in the same clause is not a statement.
  */
-function assertedPhrase(hay, phrase, caseDir) {
-  if (typeof hay !== "string" || typeof phrase !== "string" || phrase.length === 0) return false;
-  const h = hay.toLowerCase();
-  const p = phrase.toLowerCase();
-  let from = 0;
-  while (from < h.length) {
-    const at = h.indexOf(p, from);
-    if (at < 0) return false;
-    const agrees = directionAgrees(sentenceAt(h, at), p, caseDir);
-    if (!gluedToNumber(h, p, at) && !negatedAt(h, at) && !deniedAfter(h, at, p.length) && !counterfactualAt(h, at) && agrees) return true;
-    from = at + 1;
+function statedCorrection(text, phrase, caseDir) {
+  if (typeof text !== "string" || typeof phrase !== "string") return false;
+  const wanted = numberTokens(phrase).filter((token) => !token.date);
+  if (wanted.length === 0) return false;
+  const clauses = clausesOf(text);
+  for (const token of numberTokens(text)) {
+    if (token.date) continue;
+    const clause = clauses.find((part) => token.start >= part.start && token.start < part.end);
+    if (!clause || clauseIsHedged(clause.text)) continue;
+    if (negatedAt(text, token.start) || deniedAfter(text, token.start, token.end - token.start)) continue;
+    if (!directionAgrees(clause.text, phrase, caseDir)) continue;
+    if (wanted.some((want) => sameValue(want.value, token.value) && unitsCompatible(want.unit, token.unit))) return true;
   }
   return false;
 }
@@ -305,7 +403,7 @@ export function scoreCase(caseDef, result) {
       caught = false;
       const corrections = Array.isArray(expect.correction) ? expect.correction : [];
       const caseDir = caseDirection(corrections);
-      const fromVerdict = corrections.find((phrase) => assertedPhrase(r.verdictReason, phrase, caseDir));
+      const fromVerdict = corrections.find((phrase) => statedCorrection(r.verdictReason, phrase, caseDir));
       if (fromVerdict !== undefined) {
         caught = true;
         matchedPhrase = fromVerdict;
@@ -313,7 +411,7 @@ export function scoreCase(caseDef, result) {
         for (const c of challenges) {
           if (c?.call !== "checked" || !CAUGHT_SEVERITIES.has(c?.severity)) continue;
           const objection = `${typeof c?.target === "string" ? c.target : ""}\n${typeof c?.challenge === "string" ? c.challenge : ""}`;
-          const corrected = corrections.find((phrase) => assertedPhrase(objection, phrase, caseDir));
+          const corrected = corrections.find((phrase) => statedCorrection(objection, phrase, caseDir));
           if (corrected !== undefined) {
             caught = true;
             matchedPhrase = corrected;
