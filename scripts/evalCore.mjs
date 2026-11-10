@@ -28,10 +28,28 @@ function lower(v) {
 }
 
 /**
- * A case-insensitive phrase hit that does not glue onto a neighbouring digit.
- * "50%" is not a hit inside "150%", and "720" is not a hit inside "1720".
- * A "$" or a comma before a numeric phrase still counts: "$2,450" contains "2,450".
+ * The match is inside a longer number. A comma or a decimal point with a digit on
+ * both sides belongs to that number, so "$2,450" is not inside "$2,450,000" or "$2,450.00".
+ * A "$" or a comma that is not between digits still allows a hit: "$2,450" contains "2,450".
  */
+function gluedToNumber(hay, phrase, at) {
+  const end = at + phrase.length;
+  const startChar = phrase[0] ?? "";
+  const endChar = phrase[phrase.length - 1] ?? "";
+  const before = at === 0 ? "" : hay[at - 1];
+  const before2 = at < 2 ? "" : hay[at - 2];
+  const after = end >= hay.length ? "" : hay[end];
+  const after2 = end + 1 >= hay.length ? "" : hay[end + 1];
+  const startsDigit = /[0-9]/.test(startChar);
+  const endsDigit = /[0-9]/.test(endChar);
+  if (/[0-9]/.test(before) && startsDigit) return true;
+  if (/[0-9]/.test(after) && (endsDigit || endChar === "%")) return true;
+  if (endsDigit && /[,.]/.test(after) && /[0-9]/.test(after2)) return true;
+  if (startsDigit && /[,.]/.test(before) && /[0-9]/.test(before2)) return true;
+  return false;
+}
+
+/** A case-insensitive phrase hit that is not glued into a longer number. */
 function includesPhrase(hay, phrase) {
   if (typeof hay !== "string" || typeof phrase !== "string" || phrase.length === 0) return false;
   const h = hay.toLowerCase();
@@ -40,11 +58,7 @@ function includesPhrase(hay, phrase) {
   while (from < h.length) {
     const at = h.indexOf(p, from);
     if (at < 0) return false;
-    const before = at === 0 ? "" : h[at - 1];
-    const after = at + p.length >= h.length ? "" : h[at + p.length];
-    const gluedBefore = /[0-9]/.test(before) && /[0-9]/.test(p[0]);
-    const gluedAfter = /[0-9]/.test(after) && /[0-9%]/.test(p[p.length - 1]);
-    if (!gluedBefore && !gluedAfter) return true;
+    if (!gluedToNumber(h, p, at)) return true;
     from = at + 1;
   }
   return false;
@@ -80,12 +94,63 @@ function counterfactualAt(hay, at) {
     || /\b(?:suppose|supposing|assuming|imagine)\b[^.]{0,60}\b(?:were|had been|was)\b[\s$]*$/i.test(sentence);
 }
 
+const UP_WORD = /\b(?:increas(?:e|ed|es|ing)|higher|rose|ris(?:e|es|en|ing)|grew|grown|growth)\b/i;
+const DOWN_WORD = /\b(?:decreas(?:e|ed|es|ing)|lower|fell|fall(?:s|en|ing)?|drop(?:s|ped|ping)?|declin(?:e|ed|es|ing))\b/i;
+
+/** "up", "down", "mixed", or null when the text names no direction. */
+function figureDirection(text) {
+  const up = UP_WORD.test(text);
+  const down = DOWN_WORD.test(text);
+  if (up && down) return "mixed";
+  if (up) return "up";
+  if (down) return "down";
+  return null;
+}
+
+/** The direction stated by the correction list, or null when it states none or both. */
+function caseDirection(corrections) {
+  let up = false;
+  let down = false;
+  for (const phrase of corrections) {
+    const direction = figureDirection(phrase);
+    if (direction === "up" || direction === "mixed") up = true;
+    if (direction === "down" || direction === "mixed") down = true;
+  }
+  if (up === down) return null;
+  return up ? "up" : "down";
+}
+
+function sentenceAt(hay, at) {
+  const start = Math.max(hay.lastIndexOf(".", at), hay.lastIndexOf("?", at), hay.lastIndexOf("!", at), hay.lastIndexOf("\n", at));
+  let end = hay.length;
+  for (const mark of [".", "?", "!", "\n"]) {
+    const found = hay.indexOf(mark, at);
+    if (found !== -1 && found < end) end = found;
+  }
+  return hay.slice(start + 1, end);
+}
+
 /**
- * The phrase is stated, not denied, and not glued to a neighbouring digit.
- * "The lines add to $2,450, not $2,900" states $2,450. "not $2,450" does not,
- * and neither does "$2,450 is incorrect" or "If the total were $2,450".
+ * A directionless phrase inherits the direction of the correction list.
+ * "fell by 50%" does not state the "50% increase" those corrections name.
+ * A phrase that already says "increase" or "higher" carries its own direction.
  */
-function assertedPhrase(hay, phrase) {
+function directionAgrees(sentence, phrase, caseDir) {
+  const phraseDir = figureDirection(phrase);
+  const sentenceDir = figureDirection(sentence);
+  if (phraseDir === "up" || phraseDir === "down") return sentenceDir === phraseDir || sentenceDir === "mixed";
+  if (caseDir === "up" && (sentenceDir === "down" || sentenceDir === "mixed")) return false;
+  if (caseDir === "down" && (sentenceDir === "up" || sentenceDir === "mixed")) return false;
+  return true;
+}
+
+/**
+ * The phrase is stated, not denied, and not glued into a longer number.
+ * "The lines add to $2,450, not $2,900" states $2,450. "not $2,450" does not,
+ * and neither does "$2,450 is incorrect", "If the total were $2,450",
+ * "$2,450,000", or "fell by 50%" against an increase.
+ */
+function assertedPhrase(hay, phrase, caseDir) {
   if (typeof hay !== "string" || typeof phrase !== "string" || phrase.length === 0) return false;
   const h = hay.toLowerCase();
   const p = phrase.toLowerCase();
@@ -93,11 +158,8 @@ function assertedPhrase(hay, phrase) {
   while (from < h.length) {
     const at = h.indexOf(p, from);
     if (at < 0) return false;
-    const before = at === 0 ? "" : h[at - 1];
-    const after = at + p.length >= h.length ? "" : h[at + p.length];
-    const gluedBefore = /[0-9]/.test(before) && /[0-9]/.test(p[0]);
-    const gluedAfter = /[0-9]/.test(after) && /[0-9%]/.test(p[p.length - 1]);
-    if (!gluedBefore && !gluedAfter && !negatedAt(h, at) && !deniedAfter(h, at, p.length) && !counterfactualAt(h, at)) return true;
+    const agrees = directionAgrees(sentenceAt(h, at), p, caseDir);
+    if (!gluedToNumber(h, p, at) && !negatedAt(h, at) && !deniedAfter(h, at, p.length) && !counterfactualAt(h, at) && agrees) return true;
     from = at + 1;
   }
   return false;
@@ -242,7 +304,8 @@ export function scoreCase(caseDef, result) {
     } else if (figureCheck) {
       caught = false;
       const corrections = Array.isArray(expect.correction) ? expect.correction : [];
-      const fromVerdict = corrections.find((phrase) => assertedPhrase(r.verdictReason, phrase));
+      const caseDir = caseDirection(corrections);
+      const fromVerdict = corrections.find((phrase) => assertedPhrase(r.verdictReason, phrase, caseDir));
       if (fromVerdict !== undefined) {
         caught = true;
         matchedPhrase = fromVerdict;
@@ -250,7 +313,7 @@ export function scoreCase(caseDef, result) {
         for (const c of challenges) {
           if (c?.call !== "checked" || !CAUGHT_SEVERITIES.has(c?.severity)) continue;
           const objection = `${typeof c?.target === "string" ? c.target : ""}\n${typeof c?.challenge === "string" ? c.challenge : ""}`;
-          const corrected = corrections.find((phrase) => assertedPhrase(objection, phrase));
+          const corrected = corrections.find((phrase) => assertedPhrase(objection, phrase, caseDir));
           if (corrected !== undefined) {
             caught = true;
             matchedPhrase = corrected;

@@ -144,6 +144,24 @@ describe("scoreCase — a confident wrong figure (checked-or-verdict)", () => {
     }
   });
 
+  it("does not treat $2,450 as the same number as $2,450,000 or $2,450.00", () => {
+    const market = JSON.parse(readFileSync(join(CASES_DIR, "wrong-figure-market-total.json"), "utf8"));
+    for (const verdictReason of ["The lines add to $2,450,000.", "The lines add to $2,450.00."]) {
+      assert.equal(scoreCase(market, usableResult({ verdictReason, challenges: [] })).caught, false, verdictReason);
+    }
+    const hit = scoreCase(market, usableResult({ verdictReason: "The lines add to $2,450.", challenges: [] }));
+    assert.equal(hit.caught, true);
+    assert.equal(hit.matchedPhrase, "$2,450");
+  });
+
+  it("does not treat a fall as the same direction as a 50% increase", () => {
+    const rate = JSON.parse(readFileSync(join(CASES_DIR, "wrong-figure-reply-rate.json"), "utf8"));
+    const fell = scoreCase(rate, usableResult({ verdictReason: "The reply rate fell by 50%.", challenges: [] }));
+    assert.equal(fell.caught, false);
+    const rose = scoreCase(rate, usableResult({ verdictReason: "The reply rate rose by 50%.", challenges: [] }));
+    assert.equal(rose.caught, true);
+  });
+
   it("passes when the verdict states the relative increase as 50%", () => {
     const s = scoreCase(figureCase, usableResult({ verdictReason: "The increase is 50%.", challenges: [] }));
     assert.equal(s.caught, true);

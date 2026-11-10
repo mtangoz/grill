@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-10 | A wrong-figure catch no longer treats $2,450 as part of $2,450,000, or a 50% fall as a 50% increase. Commas and decimal points between digits stay inside the number. A correction that states a direction counts only when the judge states that same direction. The judge prompt is unchanged. |
 | 2026-11-10 | A wrong-figure catch no longer counts a corrected value the verdict denies or only supposes. The pop-up case lists every operating day, so the right count is fifteen days open, not ten. The judge prompt is unchanged. |
 | 2026-11-10 | Four synthetic eval cases plant a confident wrong figure: a market total, a reply-rate percentage, a pop-up date span, and a cake order. A case passes only when the verdict or a Checked for you challenge catches it. The judge prompt is unchanged. |
 | 2026-11-09 | Tony approved on 2026-11-09: the judge-commit rule stays off. It now calls a named person's stated criteria, keeps a missing option, and does not force a provisional go on sequencing or a safeguard on a cheap reversible experiment. Holdout v1 is spent (9 wins, 6 losses, p=0.30). Holdout v2 is 25 new cases with its own checksum. A three-model screen rates the full answers and leaves split pairs on a short sheet. |
