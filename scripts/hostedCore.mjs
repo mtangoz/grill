@@ -237,6 +237,45 @@ export function authorForJudge({ explicit = "", company = "" } = {}) {
   return { author: "none" };
 }
 
+/** Companies a served model slug can be named as, in plain words. One word each, so the note stays short. */
+const JUDGE_COMPANY_NAMES = Object.freeze({
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google",
+  "x-ai": "xAI",
+  xai: "xAI",
+  deepseek: "DeepSeek",
+  "meta-llama": "Meta",
+  meta: "Meta",
+  mistralai: "Mistral",
+  mistral: "Mistral",
+});
+
+/**
+ * The company behind the model that answered, as a person would say it.
+ * Empty when the slug does not name one of those companies, so a reply never invents one.
+ */
+export function judgeCompanyName(servedModel) {
+  const slug = String(servedModel || "").trim().toLowerCase();
+  if (!slug || slug.startsWith("openrouter/")) return "";
+  if (/(^|[/.])claude[-.\d]/.test(slug)) return "Anthropic";
+  return JUDGE_COMPANY_NAMES[slug.split("/")[0]] || "";
+}
+
+/**
+ * One line when a hosted grill excluded nobody because the client was unknown
+ * and the call named no author. A recognised client, including Cursor, gets nothing:
+ * Cursor excludes nobody on purpose, because it runs several companies' models.
+ * No line when the served model does not name a company.
+ */
+export function unknownClientJudgeLine({ sourceApp = "", authorGiven = false, servedModel = "" } = {}) {
+  if (String(sourceApp || "") !== "unknown") return "";
+  if (authorGiven) return "";
+  const company = judgeCompanyName(servedModel);
+  if (!company) return "";
+  return `Grill couldn't tell which AI you're using. This judge is from ${company}. If your assistant is too, name it next time for a different company.`;
+}
+
 export function starterCreditUsd(env = {}) {
   const n = Number(env.GRILL_STARTER_CREDIT_USD);
   if (Number.isFinite(n) && n > 0 && n <= 50) return Math.round(n * 100) / 100;
