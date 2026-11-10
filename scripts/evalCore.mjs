@@ -63,9 +63,27 @@ function negatedAt(hay, at) {
   return /(?:\b(?:not|no|never|isn't|isnt|aren't|arent|wasn't|wasnt|won't|wont|cannot|can't|cant|don't|dont|doesn't|doesnt)|n't)$/i.test(prefix);
 }
 
+/** The words just after the phrase deny it: "$2,450 is incorrect", "$2,450 isn't right". */
+function deniedAfter(hay, at, phraseLen) {
+  const after = hay.slice(at + phraseLen, at + phraseLen + 40);
+  return /^\s*(?:isn't|isnt|aren't|arent)\b/i.test(after)
+    || /^\s*(?:is|are|was|were)\s+(?:not\b|incorrect\b|wrong\b|false\b|mistaken\b|inaccurate\b|erroneous\b)/i.test(after);
+}
+
+/**
+ * The phrase sits in a counterfactual: "If the total were $2,450".
+ * A later "not $2,900" does not make the figure before it counterfactual.
+ */
+function counterfactualAt(hay, at) {
+  const sentence = (hay.slice(Math.max(0, at - 96), at).split(/[.!?]/).pop() ?? "").trimEnd();
+  return /\bif\b[^.]{0,80}\b(?:were|had been)\b[\s$]*$/i.test(sentence)
+    || /\b(?:suppose|supposing|assuming|imagine)\b[^.]{0,60}\b(?:were|had been|was)\b[\s$]*$/i.test(sentence);
+}
+
 /**
  * The phrase is stated, not denied, and not glued to a neighbouring digit.
- * "The lines add to $2,450, not $2,900" states $2,450. "not $2,450" does not.
+ * "The lines add to $2,450, not $2,900" states $2,450. "not $2,450" does not,
+ * and neither does "$2,450 is incorrect" or "If the total were $2,450".
  */
 function assertedPhrase(hay, phrase) {
   if (typeof hay !== "string" || typeof phrase !== "string" || phrase.length === 0) return false;
@@ -79,7 +97,7 @@ function assertedPhrase(hay, phrase) {
     const after = at + p.length >= h.length ? "" : h[at + p.length];
     const gluedBefore = /[0-9]/.test(before) && /[0-9]/.test(p[0]);
     const gluedAfter = /[0-9]/.test(after) && /[0-9%]/.test(p[p.length - 1]);
-    if (!gluedBefore && !gluedAfter && !negatedAt(h, at)) return true;
+    if (!gluedBefore && !gluedAfter && !negatedAt(h, at) && !deniedAfter(h, at, p.length) && !counterfactualAt(h, at)) return true;
     from = at + 1;
   }
   return false;

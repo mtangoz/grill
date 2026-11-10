@@ -136,6 +136,14 @@ describe("scoreCase — a confident wrong figure (checked-or-verdict)", () => {
     assert.equal(s.caught, false);
   });
 
+  it("does not pass when the market-total verdict rejects the correction or only supposes it", () => {
+    const market = JSON.parse(readFileSync(join(CASES_DIR, "wrong-figure-market-total.json"), "utf8"));
+    for (const verdictReason of ["$2,450 is incorrect; $2,900 is correct", "If the total were $2,450…"]) {
+      const s = scoreCase(market, usableResult({ verdictReason, challenges: [] }));
+      assert.equal(s.caught, false, verdictReason);
+    }
+  });
+
   it("passes when the verdict states the relative increase as 50%", () => {
     const s = scoreCase(figureCase, usableResult({ verdictReason: "The increase is 50%.", challenges: [] }));
     assert.equal(s.caught, true);
@@ -623,8 +631,14 @@ describe("every committed case under evals/cases/ parses and has the fields its 
     assert.equal(inclusive, 15);
     assert.equal(new Date(Date.UTC(2026, 3, 6)).getUTCDay(), 1);
     assert.equal(new Date(Date.UTC(2026, 3, 20)).getUTCDay(), 1);
+    assert.match(popup.subject, /open on every one of these dates/);
+    const listed = popup.subject.match(/these dates: ([^.]+)\./);
+    assert.ok(listed, "the subject lists the operating dates");
+    const days = listed[1].match(/\d+/g).map(Number);
+    assert.deepEqual(days, [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+    assert.equal(popup.subject.includes("not a stall day"), false);
     assert.ok(popup.expect.correction.includes("15 days"));
-    assert.ok(popup.expect.correction.includes("14 days"));
+    assert.equal(popup.expect.correction.some((phrase) => /14/.test(phrase)), false);
 
     const cake = loaded["wrong-figure-cake-order"];
     assert.match(cake.subject, /forty/);
