@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-09 | Tony approved on 2026-11-09: the judge-commit rule stays off. It now calls a named person's stated criteria, keeps a missing option, and does not force a provisional go on sequencing or a safeguard on a cheap reversible experiment. Holdout v1 is spent (9 wins, 6 losses, p=0.30). Holdout v2 is 25 new cases with its own checksum. A three-model screen rates the full answers and leaves split pairs on a short sheet. |
 | 2026-11-09 | Tony approved on 2026-11-09, on one condition: the judge rule that calls a decision against a named person's stated criteria stays off until it beats the current judge on a frozen, blind holdout. GRILL_JUDGE_COMMIT is unset, so production is unchanged. The verdict-quality harness, the holdout checksum, and the scorer ship with the flag off. |
 | 2026-11-09 | Tony approved on 2026-11-09: grill_feedback records a helped or meh reaction. The grill text is stored only if you agree to send that grill. Encrypted, kept 180 days. |
 | 2026-11-09 | Tony approved on 2026-11-09: layer 1 leaves off a flip line the judge did not name, and a cheap test the judge did not name. The run note follows the closing line. |

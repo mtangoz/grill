@@ -1217,8 +1217,10 @@ export function sourcesLine(sources) {
  */
 export const JUDGE_COMMIT_OPTION = "GRILL_JUDGE_COMMIT";
 
+// Narrow on purpose. Calling every unsettled outcome forced a provisional go on sequencing
+// and added safeguards to cheap reversible experiments. This fires only for a named person's stated criteria.
 export const JUDGE_COMMIT_RULE =
-  "When the outcome depends on someone else's opinion or can't be known yet, judge the work against that person's stated criteria and give a call. Never answer that the subject can't settle it. The cheap test names the person, the exact thing to show them, and what counts as a pass.";
+  "When a named person has stated criteria and the facts address them, call the outcome against those criteria — never say their decision can't be settled — and still name any missing option that would change the call. The cheap test names the person, what to show them, and what counts as a pass. Do not force a provisional go on a sequencing or multi-step question, do not add a safeguard to a cheap reversible experiment, and do not force a call when no named person has stated criteria.";
 
 export function judgeCommitEnabled(env = process.env) {
   const raw = typeof env?.GRILL_JUDGE_COMMIT === "string" ? env.GRILL_JUDGE_COMMIT.trim().toLowerCase() : "";
