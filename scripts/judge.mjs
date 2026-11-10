@@ -85,10 +85,12 @@
  *   JUDGE_CHECK           "1" turns the quality check on, like --check. Any other non-empty
  *                         value except "0" is reported and ignored: the check stays off.
  *   GRILL_JUDGE_COMMIT    "1", "true", "on", or "yes" appends one rule to the judge
- *                         instructions: when the outcome depends on someone else's opinion
- *                         or cannot be known yet, judge the work against that person's
- *                         stated criteria and give a call. Unset means off. Production
- *                         leaves it unset. Anything else, including a placeholder, is off.
+ *                         instructions: when a named person has stated criteria and the
+ *                         facts address them, call that outcome, keep any missing option,
+ *                         and do not force a provisional go on sequencing, a multi-step
+ *                         question, or a cheap reversible experiment. Unset means off.
+ *                         Production leaves it unset. Anything else, including a
+ *                         placeholder, is off.
  *   JUDGE_DECISIONS_URL   test-only override of the decisions endpoint the quality check
  *                         uses. Loopback-only, for the same reason and by the same guard as
  *                         JUDGE_OPENROUTER_URL.

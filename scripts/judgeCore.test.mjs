@@ -579,7 +579,7 @@ describe("buildJudgeMessages", () => {
 const PROMPT_SHA256_FLAG_OFF = "c64ab4e87817fc37103eacd16ae5cf85073682265572a743f3553e95448c8e24";
 const USER_SHA256_FLAG_OFF = "d4abf1f587ada0cc1880a621928359d3a15a968a0aa4445f251888c65993a2e1";
 const COMMIT_RULE =
-  "When the outcome depends on someone else's opinion or can't be known yet, judge the work against that person's stated criteria and give a call. Never answer that the subject can't settle it. The cheap test names the person, the exact thing to show them, and what counts as a pass.";
+  "When a named person has stated criteria and the facts address them, call the outcome against those criteria — never say their decision can't be settled — and still name any missing option that would change the call. The cheap test names the person, what to show them, and what counts as a pass. Do not force a provisional go on a sequencing or multi-step question, do not add a safeguard to a cheap reversible experiment, and do not force a call when no named person has stated criteria.";
 
 function sha256(text) {
   return createHash("sha256").update(text).digest("hex");

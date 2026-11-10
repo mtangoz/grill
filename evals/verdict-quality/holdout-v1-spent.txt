@@ -1,0 +1,4 @@
+Holdout v1 is spent.
+Measured once on 2026-11-09: the candidate won 9 and lost 6, sign-test p=0.30.
+Do not run a new candidate against this set. The next measurement is holdout v2.
+The 15 cases and holdout.sha256 stay as they are.
