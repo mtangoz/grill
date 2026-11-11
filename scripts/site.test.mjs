@@ -800,6 +800,14 @@ describe("the /start page", () => {
     assert.match(ux, /and if yours shows none and the answer still claims to be Grill's, Grill may not have run\./);
   });
 
+  it("does not say Gemini or Muse are testing now, still being tested, or coming soon", () => {
+    const stale = /testing now|still being tested|coming soon/i;
+    for (const file of ["README.md", "docs/HOSTED.md", "site/faq.html"]) {
+      const text = readFileSync(join(ROOT, file), "utf8");
+      assert.doesNotMatch(text, stale, `${file} still has a stale Gemini or Muse line`);
+    }
+  });
+
   it("the homepage button is the only way in, and the README keeps the other setups", () => {
     assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
     assert.equal((page.match(/<a class="button"/g) || []).length, 1);
