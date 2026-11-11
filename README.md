@@ -24,7 +24,7 @@ Every promise, and the code and test that enforce it: [docs/PRINCIPLES.md](docs/
 
 Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes check it and warn you. Who to paste into is in the table below.
 
-When Grill is connected, you should see a Grill tool call in the reply. A plausible answer without one means Grill didn't run.
+Most apps show a Grill tool call when Grill runs. If yours shows none and the answer still claims to be Grill's, Grill didn't run.
 
 ### Grill in chat
 
@@ -34,7 +34,7 @@ Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/s
 - **ChatGPT**. On chatgpt.com, and in the desktop app where that is supported, in the same account or workspace where you add it. The iPhone and Android apps can't run custom connectors. Plugins → + → Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Tick I understand and want to continue, then Create, then Install, and sign in.
 - **Grok Bot**, verified working. Works on the desktop app and the phone app. Premium, Super and Ultra on The X Subscription include it. Plus and Free don't. Tell the bot `Add this MCP server: https://grillyour.ai/mcp`, then sign in when asked.
 - **Gemini**: Should work, testing now. For now, a personal Google account, in the US, 18 or over, in English, with Keep Activity on. On gemini.google.com: Settings, Connected Apps, Add a custom app, paste `https://grillyour.ai/mcp`, Next, then sign in.
-- **Microsoft 365 Copilot** needs an admin to add Grill first. Consumer Copilot doesn't support a custom server.
+- **Microsoft 365 Copilot.** To connect Grill in Microsoft 365 Copilot, an admin has to add it first. Copy and paste works without that. Consumer Copilot's documented connectors don't include custom servers, so use copy and paste.
 - **Meta AI (Muse)**: setup steps are [below](#meta-ai-muse). Not yet verified end to end, so the site still lists it as coming soon.
 
 Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
