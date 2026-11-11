@@ -17,7 +17,7 @@ Most triggers read the real-user count in STRATEGY.md. That count is 1 as of 202
 | Publish the hosted address on the MCP Registry | Medium, usage | Now | Trigger met |
 | ChatGPT and Claude connector directory listings | High, usage | Now, with the owner's approval | Trigger met, blocked |
 | Hand-run partnerships | Medium, usage | Now | Trigger met |
-| Settle the Gemini "testing now" line | Low, trust | Now | Trigger met |
+| Settle the Gemini "testing now" line | Low, trust | Now | Done |
 | Verify Meta AI (Muse) in chat | Medium, usage | Now | Trigger met |
 | Remove the dead Smithery mentions | Low, hygiene | Now | Half done |
 | Pre-mortem reply angle | Low, usage | Now, content only | Trigger met |
@@ -178,6 +178,8 @@ Impact: low, trust. Copy that says "testing now" for weeks reads as stale.
 Consider when: now, so existing copy stays honest, or when the first user asks about Gemini (feedback).
 
 Trigger met: the consider-when is now (2026-11-04). A user asking is not required.
+
+Done: 2026-11-11. README, HOSTED.md and the FAQ say Gemini and Muse work today by copy and paste. Adding Grill as a connector inside either is not verified.
 
 ## Gemini and Google Search app listing
 

@@ -802,10 +802,21 @@ describe("the /start page", () => {
 
   it("does not say Gemini or Muse are testing now, still being tested, or coming soon", () => {
     const stale = /testing now|still being tested|coming soon/i;
-    for (const file of ["README.md", "docs/HOSTED.md", "site/faq.html"]) {
-      const text = readFileSync(join(ROOT, file), "utf8");
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    const hosted = readFileSync(join(ROOT, "docs/HOSTED.md"), "utf8");
+    const faq = readFileSync(join(ROOT, "site/faq.html"), "utf8");
+    for (const [file, text] of [["README.md", readme], ["docs/HOSTED.md", hosted], ["site/faq.html", faq]]) {
       assert.doesNotMatch(text, stale, `${file} still has a stale Gemini or Muse line`);
     }
+    const chat = readme.slice(readme.indexOf("### Grill in chat"), readme.indexOf("###", readme.indexOf("### Grill in chat") + 4));
+    assert.match(chat, /\*\*Gemini\*\*: Copy and paste works today\. No install, no key\./);
+    assert.match(chat, /Adding Grill as a connector inside Gemini is not verified\. You can try it\./);
+    assert.match(chat, /\*\*Meta AI \(Muse\)\*\*: Copy and paste works today\. No install, no key\./);
+    assert.match(chat, /Adding Grill as a connector inside Muse is not verified\. You can try the steps/);
+    assert.match(hosted, /Gemini and Muse work today by copy and paste, no install, no key\. Adding Grill as a connector inside Gemini or Muse is not verified\./);
+    assert.match(faq, /<strong>Live\.<\/strong> Copy and paste into ChatGPT, Copilot, DeepSeek, Gemini, Grok or Muse\. No install, no key\./);
+    assert.match(faq, /<strong>Preview\.<\/strong> Adding Grill as a connector inside Gemini or Muse is not verified\./);
+    assert.match(faq, /<strong>Planned\.<\/strong>/);
   });
 
   it("the homepage button is the only way in, and the README keeps the other setups", () => {
