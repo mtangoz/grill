@@ -611,6 +611,20 @@ describe("hosted Grill", { concurrency: false }, () => {
     );
   });
 
+  it("never lets the assistant present an answer as Grill unless grill or grill_result returned it", async () => {
+    const ctx = world();
+    const token = signJwt(claims());
+    const init = await postMcp(
+      ctx,
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } },
+      { token },
+    );
+    const instructions = init.json.result.instructions;
+    const sentence =
+      "Never present an answer as Grill's, or label it a Grill verdict, unless grill or grill_result returned it in this conversation; if the tool isn't available or fails, say Grill didn't run instead of imitating it.";
+    assert.equal(instructions.split(sentence).length, 2);
+  });
+
   it("prepares deepen during the grill only for a big decision when the test is on, and layer 1 stays first", async () => {
     const usable = readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8");
     const depth = readFileSync(join(ROOT, "scripts/fixtures/deepen-response.json"), "utf8");
