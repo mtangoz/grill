@@ -24,14 +24,17 @@ Every promise, and the code and test that enforce it: [docs/PRINCIPLES.md](docs/
 
 Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes check it and warn you. Who to paste into is in the table below.
 
+When Grill is connected, most apps show a Grill tool call when it runs. If yours shows none and the answer still claims to be Grill's, Grill didn't run.
+
 ### Grill in chat
 
 Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). Use the same email each time, the email you signed up with, every time.
 
-- **Claude.ai**, verified working. On the web, desktop or phone app, Free plan included: [Add Grill to Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Grill&connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp). Check the name says Grill and the URL says `https://grillyour.ai/mcp`, then Add and Connect, and sign in. Link didn't open? Customize → Connectors → Add custom connector and paste `https://grillyour.ai/mcp`. Asking Claude in a chat to connect it does not work.
+- **Claude.ai**, verified working. Works on the web, the desktop app and the phone app. The free plan allows only one custom connector. On a Team plan, an owner adds Grill, then each person signs in to Grill themselves. [Add Grill to Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Grill&connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp). Check the name says Grill and the URL says `https://grillyour.ai/mcp`, then Add and Connect, and sign in. Link didn't open? Customize → Connectors → Add custom connector and paste `https://grillyour.ai/mcp`. Asking Claude in a chat to connect it does not work.
 - **ChatGPT**. On chatgpt.com, and in the desktop app where that is supported, in the same account or workspace where you add it. The iPhone and Android apps can't run custom connectors. Plugins → + → Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Tick I understand and want to continue, then Create, then Install, and sign in.
-- **Grok Bot**, verified working. Tell the bot `Add this MCP server: https://grillyour.ai/mcp`, then sign in when asked.
-- **Gemini**: Should work, testing now. US only, a personal Google account, Keep Activity on. On gemini.google.com: Settings, Connected Apps, Add a custom app, paste `https://grillyour.ai/mcp`, Next, then sign in.
+- **Grok Bot**, verified working. Works on the desktop app and the phone app. Premium, Super and Ultra on The X Subscription include it. Check your X plan includes Grok Bot. Tell the bot `Add this MCP server: https://grillyour.ai/mcp`, then sign in when asked.
+- **Gemini**: Should work, testing now. For now, a personal Google account, in the US, 18 or over, in English, with Keep Activity on. On gemini.google.com: Settings, Connected Apps, Add a custom app, paste `https://grillyour.ai/mcp`, Next, then sign in.
+- **Microsoft 365 Copilot.** To connect Grill in Microsoft 365 Copilot, an admin has to add it first. Copy and paste works without that. Consumer Copilot's documented connectors don't include custom servers, so use copy and paste.
 - **Meta AI (Muse)**: setup steps are [below](#meta-ai-muse). Not yet verified end to end, so the site still lists it as coming soon.
 
 Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
@@ -76,6 +79,8 @@ Want it in one step? Use Claude Desktop, above.
 4. Tap **Add**, then sign in with the same email you signed up with, every time. We email you a code; check spam if it isn't there in a minute.
 
 ### Cursor, VS Code, Codex, Gemini CLI, or any app that runs MCP servers
+
+In Cursor, a desktop connection and a Cloud Agent connection are separate sign-ins. In Codex, check cloud authentication separately from the desktop app.
 
 ```bash
 npx -y grillyour --set-key      # once: paste your key, Enter, then Ctrl-D

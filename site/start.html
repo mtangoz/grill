@@ -6,6 +6,7 @@
 
   <h1>Connect Grill to your AI.</h1>
   <p id="founding-spots" class="note">First 100 users get Grill free for life, 100 spots left.</p>
+  <p class="note">When Grill is connected, most apps show a Grill tool call when it runs. If yours shows none and the answer still claims to be Grill's, Grill didn't run.</p>
 
   <fieldset class="picker" id="tool-picker">
     <legend class="ask-q">Pick your AI</legend>
@@ -32,15 +33,18 @@
     </div>
 
     <div class="tool-panel for-claude" id="claude-steps">
+      <p class="note">Works on the web, the desktop app and the phone app. The free plan allows only one custom connector. On a Team plan, an owner adds Grill, then each person signs in to Grill themselves.</p>
       <p><a href="https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=Grill&amp;connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp">Add Grill to Claude</a></p>
       <p class="note">Link didn't open? Customize → Connectors → Add custom connector, then paste <code>https://grillyour.ai/mcp</code>.</p>
     </div>
 
     <div class="tool-panel for-grok" id="grok-steps">
+      <p class="note">Works on the desktop app and the phone app. Premium, Super and Ultra on The X Subscription include it. Check your X plan includes Grok Bot.</p>
       <p>Tell the bot <code>Add this MCP server: https://grillyour.ai/mcp</code>, then sign in when asked.</p>
     </div>
 
     <div class="tool-panel for-cursor" id="cursor-steps">
+      <p class="note">In Cursor, a desktop connection and a Cloud Agent connection are separate sign-ins.</p>
       <p><a href="https://cursor.com/en/install-mcp?name=Grill&amp;config=eyJ1cmwiOiJodHRwczovL2dyaWxseW91ci5haS9tY3AifQ==">Add Grill to Cursor</a> · <a href="https://insiders.vscode.dev/redirect/mcp/install?name=Grill&amp;config=%7B%22name%22%3A%22Grill%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fgrillyour.ai%2Fmcp%22%7D">Add Grill to VS Code</a></p>
       <p>Or add it by hand. Name: <code>Grill</code>. Type: Streamable HTTP (HTTP in VS Code). URL: <code>https://grillyour.ai/mcp</code>. Leave the token and header fields empty, then Save. Grill asks you to sign in the first time you use it.</p>
       <p>Sign in with your email. We send you a code (check spam). No key.</p>
@@ -52,6 +56,7 @@
 
     <div class="tool-panel for-other" id="other-steps">
       <p class="note">Copilot, DeepSeek, Gemini, Muse, Grok and more. Copy and paste. No install, no key.</p>
+      <p class="note">To connect Grill in Microsoft 365 Copilot, an admin has to add it first. Copy and paste works without that. Consumer Copilot's documented connectors don't include custom servers, so use copy and paste.</p>
       <ol class="steps">
         <li>Copy <a href="https://github.com/mtangoz/grill/blob/main/prompts/grill.md">the Grill prompt</a> into the assistant you think with, and say what you're deciding.</li>
         <li>It writes the decision up with you, then gives you a prompt for the judge.</li>
