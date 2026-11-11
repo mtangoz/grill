@@ -24,7 +24,7 @@ Every promise, and the code and test that enforce it: [docs/PRINCIPLES.md](docs/
 
 Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes check it and warn you. Who to paste into is in the table below.
 
-When Grill is connected, most apps show a Grill tool call when it runs. If yours shows none and the answer still claims to be Grill's, Grill didn't run.
+When Grill is connected, most apps show a Grill tool call when it runs. If yours shows none and the answer still claims to be Grill's, Grill may not have run.
 
 ### Grill in chat
 
