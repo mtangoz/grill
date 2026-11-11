@@ -760,7 +760,7 @@ describe("the /start page", () => {
     assert.match(other, /To connect Grill in Microsoft 365 Copilot, an admin has to add it first\. Copy and paste works without that\. Consumer Copilot's documented connectors don't include custom servers, so use copy and paste\./);
     assert.doesNotMatch(other, /Copilot into (Claude|ChatGPT|Grok)/);
     assert.doesNotMatch(other, /grillyour\.ai\/mcp|custom connector|Keep Activity|Connected Apps|Add a custom app|Should work|coming soon|Meta AI|RNdHSHmWCRJO40vd|US only|personal Google/i);
-    assert.match(start, /When Grill is connected, most apps show a Grill tool call when it runs\. If yours shows none and the answer still claims to be Grill's, Grill didn't run\./);
+    assert.match(start, /When Grill is connected, most apps show a Grill tool call when it runs\. If yours shows none and the answer still claims to be Grill's, Grill may not have run\./);
     assert.doesNotMatch(start, /Grill doesn't (see|keep)|Grill does not (see|keep) grills/i);
     assert.ok(start.includes(`<p id="starter-prompt">${STARTER}</p>`), "starter prompt");
     assert.match(start, /<button class="button" type="button" id="copy-starter">Copy<\/button>/);
@@ -789,6 +789,7 @@ describe("the /start page", () => {
     assert.match(log, /\| 2026-11-09 \| Homepage Connect links to \/start\/\?ref=home\. Every \/start view increments grill:metric:start_views\. Weekly metrics print start views and start refs\. cta_connect is on the event allowlist\. The \/start API page sends no client analytics\. Plan: docs\/experiments\/analytics-loop\.md\. \|/);
     assert.match(log, /\| 2026-11-11 \| Tony approved on 2026-11-11: ChatGPT setup copy no longer says the phone app runs Grill\. Custom connectors work on chatgpt\.com, and in the desktop app where that is supported, in the account or workspace where they were added\. The iPhone and Android apps cannot run them\. Developer Mode is not required\. The start page says to pick @Grill, and that an answer "as Grill" with no Grill tool call has not grilled anything\. \|/);
     assert.match(log, /\| 2026-11-11 \| Setup copy names each app's limit before you hit it, and how to check Grill ran: when Grill is connected, most apps show a Grill tool call when it runs; if yours shows none and the answer still claims to be Grill's, Grill didn't run\. Claude works on the web, desktop and phone; the free plan allows only one custom connector; on a Team plan an owner adds Grill, then each person signs in themselves\. Gemini stays a personal Google account, in the US, 18 or over, in English, with Keep Activity on\. To connect Grill in Microsoft 365 Copilot, an admin has to add it first; copy and paste works without that\. Consumer Copilot's documented connectors don't include custom servers, so use copy and paste\. Cursor desktop and Cloud Agent sign-ins are separate\. Codex cloud authentication is checked separately\. Grok Bot works on desktop and phone\. Premium, Super and Ultra on The X Subscription include it\. Check your X plan includes Grok Bot\. Muse stays not yet verified\. \|/);
+    assert.match(log, /\| 2026-11-11 \| Tony approved on 2026-11-11: the line that checks Grill ran is no longer absolute\. On \/start, in the README, and in docs\/UX\.md it now ends: if yours shows none and the answer still claims to be Grill's, Grill may not have run\. \|/);
     const ux = readFileSync(join(ROOT, "docs/UX.md"), "utf8");
     assert.match(ux, /ChatGPT shows four short steps/);
     assert.match(ux, /Claude shows a pre-filled add-connector link/);
@@ -796,6 +797,7 @@ describe("the /start page", () => {
     assert.match(ux, /Cursor and VS Code show the hosted connector at `https:\/\/grillyour\.ai\/mcp`, then the npx setup for your own key/);
     assert.match(ux, /Other AI shows the copy-and-paste steps for Copilot, DeepSeek, Gemini, Muse, Grok and more/);
     assert.match(ux, /Then one prompt to copy\. Its only script copies that prompt/);
+    assert.match(ux, /and if yours shows none and the answer still claims to be Grill's, Grill may not have run\./);
   });
 
   it("the homepage button is the only way in, and the README keeps the other setups", () => {
@@ -826,7 +828,7 @@ describe("the /start page", () => {
     assert.match(chat, /\*\*Microsoft 365 Copilot\.\*\* To connect Grill in Microsoft 365 Copilot, an admin has to add it first\. Copy and paste works without that\. Consumer Copilot's documented connectors don't include custom servers, so use copy and paste\./);
     assert.match(chat, /Not yet verified end to end/);
     const setup = readme.slice(readme.indexOf("## Set up"), readme.indexOf("## What it costs"));
-    assert.match(setup, /When Grill is connected, most apps show a Grill tool call when it runs\. If yours shows none and the answer still claims to be Grill's, Grill didn't run\./);
+    assert.match(setup, /When Grill is connected, most apps show a Grill tool call when it runs\. If yours shows none and the answer still claims to be Grill's, Grill may not have run\./);
     assert.match(setup, /In Cursor, a desktop connection and a Cloud Agent connection are separate sign-ins\. In Codex, check cloud authentication separately from the desktop app\./);
     assert.doesNotMatch(setup, /Grill doesn't (see|keep)|Grill does not (see|keep) grills/i);
     assert.doesNotMatch(chat, /invite-only/i);
@@ -843,7 +845,7 @@ describe("the /start page", () => {
     execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
     const built = readFileSync(join(ROOT, "_site/start/index.html"), "utf8");
     assert.match(built, /<title>Start using Grill<\/title>/);
-    assert.match(built, /When Grill is connected, most apps show a Grill tool call when it runs\. If yours shows none and the answer still claims to be Grill's, Grill didn't run\./);
+    assert.match(built, /When Grill is connected, most apps show a Grill tool call when it runs\. If yours shows none and the answer still claims to be Grill's, Grill may not have run\./);
     assert.match(built, /<link rel="canonical" href="https:\/\/grillyour\.ai\/start\/">/);
     assert.match(built, /<meta name="description" content="Pick your AI, then connect Grill and paste one message\.">/);
     assert.match(built, /--paper:/);
