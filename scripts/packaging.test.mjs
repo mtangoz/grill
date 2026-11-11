@@ -433,4 +433,15 @@ describe("the npm package (npx -y grillyour)", () => {
     assert.equal(pkg.mcpName, json("server.json").name);
     assert.ok(existsSync(join(ROOT, "docs/ANY-APP.md")));
   });
+
+  it("points browser apps at the hosted connector and drops the unavailable-server claim", () => {
+    const doc = readFileSync(join(ROOT, "docs/ANY-APP.md"), "utf8");
+    assert.match(doc, /https:\/\/grillyour\.ai\/mcp/);
+    assert.match(doc, /README\.md#grill-in-chat/);
+    assert.doesNotMatch(doc, /Not here yet/);
+    assert.doesNotMatch(doc, /would need a hosted server/);
+    assert.doesNotMatch(doc, /not available yet/i);
+    assert.doesNotMatch(doc, /goes straight from your computer to the model router/);
+    assert.doesNotMatch(doc, /and nowhere else/);
+  });
 });
