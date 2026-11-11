@@ -33,9 +33,9 @@ Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/s
 - **Claude.ai**, verified working. Works on the web, the desktop app and the phone app. The free plan allows only one custom connector. On a Team plan, an owner adds Grill, then each person signs in to Grill themselves. [Add Grill to Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Grill&connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp). Check the name says Grill and the URL says `https://grillyour.ai/mcp`, then Add and Connect, and sign in. Link didn't open? Customize → Connectors → Add custom connector and paste `https://grillyour.ai/mcp`. Asking Claude in a chat to connect it does not work.
 - **ChatGPT**. On chatgpt.com, and in the desktop app where that is supported, in the same account or workspace where you add it. The iPhone and Android apps can't run custom connectors. Plugins → + → Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Tick I understand and want to continue, then Create, then Install, and sign in.
 - **Grok Bot**, verified working. Works on the desktop app and the phone app. Premium, Super and Ultra on The X Subscription include it. Check your X plan includes Grok Bot. Tell the bot `Add this MCP server: https://grillyour.ai/mcp`, then sign in when asked.
-- **Gemini**: Should work, testing now. For now, a personal Google account, in the US, 18 or over, in English, with Keep Activity on. On gemini.google.com: Settings, Connected Apps, Add a custom app, paste `https://grillyour.ai/mcp`, Next, then sign in.
+- **Gemini**: Copy and paste works today. No install, no key. The steps are under [ChatGPT, Copilot, DeepSeek, Gemini, Grok or Muse](#chatgpt-copilot-deepseek-gemini-grok-or-muse-no-install-no-key). Adding Grill as a connector inside Gemini is not verified. You can try it. For now, a personal Google account, in the US, 18 or over, in English, with Keep Activity on. On gemini.google.com: Settings, Connected Apps, Add a custom app, paste `https://grillyour.ai/mcp`, Next, then sign in.
 - **Microsoft 365 Copilot.** To connect Grill in Microsoft 365 Copilot, an admin has to add it first. Copy and paste works without that. Consumer Copilot's documented connectors don't include custom servers, so use copy and paste.
-- **Meta AI (Muse)**: setup steps are [below](#meta-ai-muse). Not yet verified end to end, so the site still lists it as coming soon.
+- **Meta AI (Muse)**: Copy and paste works today. No install, no key. The same steps as Gemini, above. Adding Grill as a connector inside Muse is not verified. You can try the steps [below](#meta-ai-muse). Not yet verified end to end.
 
 Setup for the owner is in [docs/HOSTED.md](docs/HOSTED.md).
 
@@ -72,6 +72,8 @@ Want it in one step? Use Claude Desktop, above.
 | Muse | Claude, ChatGPT or Gemini |
 
 ### Meta AI (Muse)
+
+You can try these steps. Adding Grill as a connector inside Muse is not verified.
 
 1. In Muse, ask it to add a custom connector named Grill (Meta's help: custom connectors are created in chat; Settings → Connectors is for the built-in list).
 2. URL: `https://grillyour.ai/mcp`. Transport: Streamable HTTP. Sign-in: OAuth.
