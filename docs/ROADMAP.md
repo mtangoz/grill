@@ -40,6 +40,8 @@ Most triggers read the real-user count in STRATEGY.md. That count is 1 as of 202
 | Higher spend cap for contributors | Low, contributors | First contributor near the $5 cap | Not met |
 | Contributor votes on the roadmap | Low, contributors | 10+ active contributors | Not met |
 | Privacy work for work use (work mode, Spaces, org view) | High, revenue later | The triggers in the privacy PRD | Not met |
+| Look-back reminders through ChatGPT MCP events | Medium, retention | ChatGPT listing live and 5 real users with a look-back date, or a user asks | Not met |
+| Publish our eval results in plain words | Low, trust | 10 real users, or a user or reviewer asks | Not met |
 
 ### Triggers that bring several ideas forward at once
 
@@ -55,7 +57,7 @@ Most triggers read the real-user count in STRATEGY.md. That count is 1 as of 202
 
 The cost line: the hosted service cap is `GRILL_MONTHLY_CAP_USD`, default $20 in the code ([HOSTED.md](HOSTED.md)). Earlier notes here said "about $40 a month", with no source. Use the production value of that cap. The owner sets it.
 
-Last scan: 2026-11-04. Names and links are in [COMPETITORS.md](COMPETITORS.md). An idea taken only from a competitor or a channel post, with no user signal, is labelled (competitor-only, needs user signal). A line that says "Trigger met" means the consider-when is already true. It is still not a promise to build.
+Last scan: 2026-11-11. Names and links are in [COMPETITORS.md](COMPETITORS.md). An idea taken only from a competitor or a channel post, with no user signal, is labelled (competitor-only, needs user signal). A line that says "Trigger met" means the consider-when is already true. It is still not a promise to build.
 
 ## Google Docs add-on
 
@@ -106,6 +108,8 @@ Get listed in OpenAI's ChatGPT plugin directory and Anthropic's Claude Connector
 2026-11-04 scan: Claude submissions are scanned and listed as Community by default. Verified is assigned automatically, with no application. A Community listing helps browse and search. It may not be suggested inside a chat. Plugins (plugins, skills and connectors on one page) reaches general availability on 2026-11-09. A local `.mcpb` is no longer accepted there. Only the hosted connector or a plugin can be listed.
 
 ChatGPT submission is a plugin ZIP, then automated findings, then review. Review needs 5 positive and 3 negative test cases, a demo video, a reviewer account that works without MFA, email codes or magic links, the four listing URLs, and verified identity. Custom MCP servers can be added from Plugins without Developer Mode. Checked this repo on 2026-11-04: `site/start.html` does not tell people to turn on Developer Mode. OpenAI's reviewer account cannot use an email code. This repo's privacy note still says sign-in is an emailed code only, and there is no password. Confirm how a reviewer signs in before anyone submits. The terms address is available. DCR may simplify sign-in. Identity verification is still Tony's.
+
+2026-11-11 scan: ChatGPT now suggests plugins mid-chat using conversion, usage and retention. That is a secondhand report of OpenAI's DevDay talk. Review info now lives in plugin.json. Queues are longer. The Claude Plugins page reached general availability on 2026-11-09. This raises the value of submitting ChatGPT soon. Remaining blockers are unchanged: Tony's approval, OpenAI identity verification, and reviewer account OAuth and seeding.
 
 Consider when: now. Do not submit until Tony approves. Blockers: a reviewer demo account past the invite wall, OpenAI identity verification, and a paid Claude plan for Anthropic's portal. The operator name and postal address are on the terms.
 
@@ -287,6 +291,8 @@ Invite one small team that already decides together to use in-chat Grill for a m
 
 Impact: high, revenue and retention. One team on a plan of around $50 to $100 a month is worth many solo subscribers, and a team reaches enough look-backs to be useful in weeks.
 
+Crux (uncrux.io) shows a free group-weighting tool. That is still not a reason to build before the trigger.
+
 Consider when: 100 users, or a team asks. Gate T in [PRD-privacy-foundations.md](PRD-privacy-foundations.md) still applies: no marketing hosted Grill for work or team use until its privacy steps merge.
 
 ## Personal calibration view
@@ -312,6 +318,26 @@ Work mode, Spaces, an aggregate org view, and later customer-managed keys, SSO, 
 Impact: high, revenue later. Work use is where a team plan gets paid for.
 
 Consider when: the triggers in PRD-privacy-foundations section 5 fire.
+
+## Look-back reminders through ChatGPT MCP events
+
+Impact: medium, retention. A reminder inside the chat the person already uses is more likely to get the one-tap outcome.
+
+ChatGPT, as of 2026-11-10, can start an automation when an MCP server emits an event. That works in Work chats, on the web and on desktop. This is a platform change, not a note from a competitor. Grill could emit an event when a look-back is due, so the person's own ChatGPT prompts the one-tap outcome. That needs the event spec on the server, and the ChatGPT listing, first.
+
+Consider when: the ChatGPT listing is live and at least 5 real users have a look-back date set, or a user asks for reminders inside ChatGPT.
+
+Status: not met.
+
+## Publish our eval results in plain words (competitor-only, needs user signal)
+
+Impact: low, trust.
+
+Cruxes lists every study, failures included. Grill could publish counts-only summaries of judge-rule tests. A rule that lost its holdout stays off. No decision content.
+
+Consider when: 10 real users, or a user or reviewer asks how Grill knows its verdicts are any good. (competitor-only, needs user signal)
+
+Status: not met.
 
 ## Archived
 
