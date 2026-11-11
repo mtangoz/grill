@@ -54,9 +54,9 @@ env = { GRILL_AUTHOR = "openai" }
 
 Restart the app, then ask: *"Grill this: we're moving our launch to March. I'm 70% sure it gets us more signups."* The assistant writes the decision up and shows it to you. Grill sends it only after you approve.
 
-## Not here yet: ChatGPT and claude.ai in a browser
+## ChatGPT and claude.ai in a browser
 
-Browser apps can only reach an MCP server on the internet. Grill would need a hosted server, and your write-up would then pass through it. Today a write-up goes straight from your computer to the model router, and nowhere else ([PRIVACY.md](PRIVACY.md)). Until that changes, use the copy-and-paste route in the [README](../README.md#chatgpt-copilot-gemini-grok-or-muse-no-install-no-key).
+Use the hosted connector: [https://grillyour.ai/mcp](https://grillyour.ai/mcp). Steps for each app are in the [README](../README.md#grill-in-chat).
 
 ## Without npm
 
