@@ -698,7 +698,9 @@ describe("the /start page", () => {
     }
     assert.ok(start.indexOf('id="pick-other"') < start.indexOf('id="chatgpt-steps"'), "every chip comes before the panels");
     const chatgpt = section(start, "chatgpt-steps", "claude-steps");
-    assert.match(chatgpt, /On a phone, use the ChatGPT website, not the iOS app\. Custom plugins can't be added in the iOS app\./);
+    assert.match(chatgpt, /Use it on chatgpt\.com, in the same account or workspace where you added it\. Pick @Grill so ChatGPT actually calls it\. The phone app can't run custom connectors yet\./);
+    assert.match(chatgpt, /If ChatGPT answers "as Grill" without showing a Grill tool call, it hasn't really grilled anything\./);
+    assert.doesNotMatch(chatgpt, /works in the phone app|iOS app|Custom plugins can't be added/);
     assert.match(chatgpt, /https:\/\/chatgpt\.com\//);
     assert.equal((chatgpt.match(/<li>/g) ?? []).length, 4, "ChatGPT is four lines");
     assert.match(chatgpt, /Plugins → \+ → Add custom MCP server/);
@@ -778,6 +780,7 @@ describe("the /start page", () => {
     assert.match(log, /\| 2026-11-09 \| Muse setup copy matches Meta's current custom-connector flow: ask Muse in chat, URL https:\/\/grillyour\.ai\/mcp, Client ID only if Muse asks\. Not yet verified end to end\. \|/);
     assert.match(log, /\| 2026-11-09 \| Tony approved on 2026-11-09: Other AI and the paste route list DeepSeek\. DeepSeek is copy-and-paste only; its consumer chat cannot add a remote connector\. The prompt pairs DeepSeek with Claude, ChatGPT, Gemini or Grok\. \|/);
     assert.match(log, /\| 2026-11-09 \| Homepage Connect links to \/start\/\?ref=home\. Every \/start view increments grill:metric:start_views\. Weekly metrics print start views and start refs\. cta_connect is on the event allowlist\. The \/start API page sends no client analytics\. Plan: docs\/experiments\/analytics-loop\.md\. \|/);
+    assert.match(log, /\| 2026-11-11 \| Tony approved on 2026-11-11: ChatGPT setup copy no longer says the phone app runs Grill\. Custom connectors work on chatgpt\.com, and in the desktop app where that is supported, in the account or workspace where they were added\. The iPhone and Android apps cannot run them\. Developer Mode is not required\. The start page says to pick @Grill, and that an answer "as Grill" with no Grill tool call has not grilled anything\. \|/);
     const ux = readFileSync(join(ROOT, "docs/UX.md"), "utf8");
     assert.match(ux, /ChatGPT shows four short steps/);
     assert.match(ux, /Claude shows a pre-filled add-connector link/);
@@ -799,7 +802,10 @@ describe("the /start page", () => {
     assert.match(chat, /Customize → Connectors → Add custom connector/);
     assert.doesNotMatch(chat, /Settings → Connectors → Add custom connector/);
     assert.match(chat, /Add custom MCP server/);
-    assert.match(chat, /Developer mode/);
+    assert.match(chat, /same account or workspace where you add it/);
+    assert.match(chat, /desktop app where that is supported/);
+    assert.match(chat, /iPhone and Android apps can't run custom connectors/);
+    assert.doesNotMatch(chat, /Developer mode|phone app too|Settings → Security and login/);
     assert.match(chat, /OAuth/);
     assert.match(chat, /I understand and want to continue/);
     assert.match(chat, /Grok Bot/);

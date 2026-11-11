@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-11 | Tony approved on 2026-11-11: ChatGPT setup copy no longer says the phone app runs Grill. Custom connectors work on chatgpt.com, and in the desktop app where that is supported, in the account or workspace where they were added. The iPhone and Android apps cannot run them. Developer Mode is not required. The start page says to pick @Grill, and that an answer "as Grill" with no Grill tool call has not grilled anything. |
 | 2026-11-10 | Wrong-figure cases have their own floor: all 4 must be a matching correction. The older catch-rate floor stays 11 of 15 and does not include these cases. A stated number is a matching correction, not proof the judge calculated it. The judge prompt is unchanged. |
 | 2026-11-10 | A wrong-figure catch compares the number, so $2,450.00 counts and $2,450,000 does not. A hedge or a hypothetical in the same clause does not count. With no OpenRouter key the eval prints "SKIPPED: no judge ran" and does not report a score. The judge prompt is unchanged. |
 | 2026-11-10 | A wrong-figure catch no longer treats $2,450 as part of $2,450,000, or a 50% fall as a 50% increase. Commas and decimal points between digits stay inside the number. A correction that states a direction counts only when the judge states that same direction. The judge prompt is unchanged. |
