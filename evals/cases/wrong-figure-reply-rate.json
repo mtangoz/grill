@@ -1,0 +1,13 @@
+{
+  "id": "wrong-figure-reply-rate",
+  "kind": "flawed",
+  "subject": "Pell & Post sends a short newsletter to independent bookshops and is deciding whether to pay for a second weekly send. In June the reply rate was 10%. In July, after a shorter subject line, the reply rate was 15%. The write-up calls that move a 25% increase and says the figure has already been checked. It recommends buying the extra send for August and September. Reasoning: the list is the same shops, the July mail went out on the same weekday as June, and a 25% increase on a list this size pays for the extra postage by the second month. The write-up states that 25% increase at 75% confidence and does not show the division of the two rates. Prediction, offered at 75% confidence: the second weekly send, justified by that 25% increase, adds enough replies in August to cover its postage. Goal: pay for a second weekly send only if July's gain is large enough. The strongest case against: several shops close for a week in August, so a second send may land while the buyer is away.",
+  "question": "Should Pell & Post buy a second weekly send on the strength of this 25% increase in replies?",
+  "expect": {
+    "must_target": ["a 25% increase", "that 25% increase"],
+    "verdict_not": ["holds"],
+    "catch_in": "checked-or-verdict",
+    "correction": ["50 percent", "is 50%", "50%", "50% increase", "50% higher", "by 50%", "5 percentage points", "five percentage points"]
+  },
+  "why": "July's reply rate is 15% and June's is 10%. That is a 50 percent increase, or 5 percentage points, not a 25% increase. The write-up states that 25% figure at 75% confidence."
+}

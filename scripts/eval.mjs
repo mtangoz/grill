@@ -106,10 +106,8 @@ const opts = parseArgs(process.argv.slice(2));
 
 // ── The skip path: no way to reach a real judge, and nothing standing in for one. ──
 if (!process.env.OPENROUTER_API_KEY && !process.env.JUDGE_FIXTURE) {
-  if (!opts.requireKey) {
-    console.log("::notice::no OPENROUTER_API_KEY; eval skipped");
-    process.exit(0);
-  }
+  console.log("SKIPPED: no judge ran");
+  if (!opts.requireKey) process.exit(0);
   const message = "Not measured: no OPENROUTER_API_KEY, so no case reached a judge.";
   console.log(`::error::${message}`);
   if (process.env.GITHUB_STEP_SUMMARY) {

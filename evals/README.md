@@ -1,13 +1,14 @@
 # Evals
 
-A self-improvement measurement loop for the judge, built on synthetic material only: 25 fictional
+A self-improvement measurement loop for the judge, built on synthetic material only: 29 fictional
 founder/operator decisions under `cases/`, never a real user's decision. `node scripts/eval.mjs`
 runs each one through the real judge CLI and scores the result against `thresholds.json`.
 
-**These thresholds are sanity floors, not precise scores.** Twenty-five cases is not a statistically
+**These thresholds are sanity floors, not precise scores.** Twenty-nine cases is not a statistically
 powered benchmark, and the judge is a stochastic third-party model reached through OpenRouter's
 Auto Router — the same case can score differently run to run. The numbers are loose on purpose:
-`catchRate`/`loadedCatchRate` only require catching 11 of 15 / 3 of 4 cases, and `decorrelatedRate`
+`catchRate`/`loadedCatchRate` only require catching 11 of 15 / 3 of 4 of the cases that
+were already here. `figureCatchRate` requires all 4 wrong-figure cases. `decorrelatedRate`
 (at least 1.0: every run judged outside Claude's family) and `schemaViolationRate` (at most 0.1) are strict. The goal is to
 catch a *regression* — the judge going quiet, or the output contract breaking — not to grade its
 reasoning precisely. Treat a red run as "go look," not a graded score.
@@ -46,8 +47,22 @@ the insurance rider does not cover. The clash is a consistency check, so the jud
 under Checked for you. The phrase-match gate scores whether a challenge quotes the limit or the
 step that breaks it. It does not read the Checked-for-you label.
 
-**The eval gates only run with a key.** CI has no OpenRouter key, so there the eval prints a notice and
-skips. A change to the judge prompt or the severity scale needs a live run on a machine with a key
+**Four cases cover a confident wrong figure.** The write-up gives the inputs, then states a total,
+a percentage, or a date those inputs do not support, and it states that figure as already checked.
+`wrong-figure-market-total` adds a booth, banners and staff days to $2,900. `wrong-figure-reply-rate`
+calls a move from 10% to 15% a 25% increase. `wrong-figure-popup-dates` lists every date from 6 April through 20 April 2026 as an
+operating day and calls that list a ten-day run. `wrong-figure-cake-order` calls forty cakes at $18 a
+total of $900. The case passes only when the verdict, or the blockquote or objection of a
+Checked for you challenge, states the corrected figure as the figure. Quoting the wrong figure
+does not pass, including when a challenge mentions it while objecting to something else. Denying
+the corrected figure does not pass, and neither does a counterfactual mention of it. The same number written another way counts ("$2,450.00" is "$2,450"); a different number
+does not ("$2,450,000"). A hedge or a hypothetical in the same clause does not count. When a
+correction states a direction, the opposite direction does not pass. A Your call challenge does not pass. The corrected figure is
+not in the write-up. A stated number that matches is a matching correction, not proof the
+judge calculated it. The cases come from arXiv 2607.05904.
+
+**The eval gates only run with a key.** CI has no OpenRouter key, so there the eval prints
+`SKIPPED: no judge ran` and does not report a score. A change to the judge prompt or the severity scale needs a live run on a machine with a key
 (`OPENROUTER_API_KEY=… node scripts/eval.mjs`), ideally twice, since the same case can score
 differently run to run. Severity is graded against the choice between the options, so a sound case
 fails when a fix to its plan's details is filed as "serious".

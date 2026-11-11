@@ -27,6 +27,243 @@ function lower(v) {
   return typeof v === "string" ? v.toLowerCase() : "";
 }
 
+/**
+ * The match is inside a longer number. A comma or a decimal point with a digit on
+ * both sides belongs to that number, so "$2,450" is not inside "$2,450,000" or "$2,450.00".
+ * A "$" or a comma that is not between digits still allows a hit: "$2,450" contains "2,450".
+ */
+function gluedToNumber(hay, phrase, at) {
+  const end = at + phrase.length;
+  const startChar = phrase[0] ?? "";
+  const endChar = phrase[phrase.length - 1] ?? "";
+  const before = at === 0 ? "" : hay[at - 1];
+  const before2 = at < 2 ? "" : hay[at - 2];
+  const after = end >= hay.length ? "" : hay[end];
+  const after2 = end + 1 >= hay.length ? "" : hay[end + 1];
+  const startsDigit = /[0-9]/.test(startChar);
+  const endsDigit = /[0-9]/.test(endChar);
+  if (/[0-9]/.test(before) && startsDigit) return true;
+  if (/[0-9]/.test(after) && (endsDigit || endChar === "%")) return true;
+  if (endsDigit && /[,.]/.test(after) && /[0-9]/.test(after2)) return true;
+  if (startsDigit && /[,.]/.test(before) && /[0-9]/.test(before2)) return true;
+  return false;
+}
+
+/** A case-insensitive phrase hit that is not glued into a longer number. */
+function includesPhrase(hay, phrase) {
+  if (typeof hay !== "string" || typeof phrase !== "string" || phrase.length === 0) return false;
+  const h = hay.toLowerCase();
+  const p = phrase.toLowerCase();
+  let from = 0;
+  while (from < h.length) {
+    const at = h.indexOf(p, from);
+    if (at < 0) return false;
+    if (!gluedToNumber(h, p, at)) return true;
+    from = at + 1;
+  }
+  return false;
+}
+
+/** The words just before `at` deny the phrase: "not $2,450", "is not equal to the $2,450". */
+function negatedAt(hay, at) {
+  let prefix = hay.slice(Math.max(0, at - 64), at).trimEnd();
+  const filler = /[\s"'“”‘’$(),:;.-]*(?:\b(?:the|a|an|is|are|was|were|be|been|being|equal|equals|equalled|equaled|to|add|adds)\b)[\s"'“”‘’$(),:;.-]*$/i;
+  for (let i = 0; i < 4; i++) {
+    const next = prefix.replace(filler, "");
+    if (next === prefix) break;
+    prefix = next;
+  }
+  prefix = prefix.replace(/[\s"'“”‘’$(),:;.-]+$/g, "");
+  return /(?:\b(?:not|no|never|isn't|isnt|aren't|arent|wasn't|wasnt|won't|wont|cannot|can't|cant|don't|dont|doesn't|doesnt)|n't)$/i.test(prefix);
+}
+
+/** The words just after the phrase deny it: "$2,450 is incorrect", "$2,450 isn't right". */
+function deniedAfter(hay, at, phraseLen) {
+  const after = hay.slice(at + phraseLen, at + phraseLen + 40);
+  return /^\s*(?:isn't|isnt|aren't|arent)\b/i.test(after)
+    || /^\s*(?:is|are|was|were)\s+(?:not\b|incorrect\b|wrong\b|false\b|mistaken\b|inaccurate\b|erroneous\b)/i.test(after);
+}
+
+const UP_WORD = /\b(?:increas(?:e|ed|es|ing)|higher|rose|ris(?:e|es|en|ing)|grew|grown|growth)\b/i;
+const DOWN_WORD = /\b(?:decreas(?:e|ed|es|ing)|lower|fell|fall(?:s|en|ing)?|drop(?:s|ped|ping)?|declin(?:e|ed|es|ing))\b/i;
+
+/** "up", "down", "mixed", or null when the text names no direction. */
+function figureDirection(text) {
+  const up = UP_WORD.test(text);
+  const down = DOWN_WORD.test(text);
+  if (up && down) return "mixed";
+  if (up) return "up";
+  if (down) return "down";
+  return null;
+}
+
+/** The direction stated by the correction list, or null when it states none or both. */
+function caseDirection(corrections) {
+  let up = false;
+  let down = false;
+  for (const phrase of corrections) {
+    const direction = figureDirection(phrase);
+    if (direction === "up" || direction === "mixed") up = true;
+    if (direction === "down" || direction === "mixed") down = true;
+  }
+  if (up === down) return null;
+  return up ? "up" : "down";
+}
+
+/**
+ * A directionless phrase inherits the direction of the correction list.
+ * "fell by 50%" does not state the "50% increase" those corrections name.
+ * A phrase that already says "increase" or "higher" carries its own direction.
+ */
+function directionAgrees(sentence, phrase, caseDir) {
+  const phraseDir = figureDirection(phrase);
+  const sentenceDir = figureDirection(sentence);
+  if (phraseDir === "up" || phraseDir === "down") return sentenceDir === phraseDir || sentenceDir === "mixed";
+  if (caseDir === "up" && (sentenceDir === "down" || sentenceDir === "mixed")) return false;
+  if (caseDir === "down" && (sentenceDir === "up" || sentenceDir === "mixed")) return false;
+  return true;
+}
+
+const WORD_NUMBER = /^(?:fifteen|fifty|fourteen|forty|thirteen|thirty|twelve|twenty|eleven|eighteen|eighty|nineteen|ninety|seventeen|seventy|sixteen|sixty|zero|one|two|three|four|five|six|seven|eight|nine|ten)(?:[-\s](?:one|two|three|four|five|six|seven|eight|nine))?/i;
+const WORD_VALUE = Object.freeze({
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+  eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70,
+  eighty: 80, ninety: 90,
+});
+const MONTH = /(?:january|february|march|april|may|june|july|august|september|october|november|december)/i;
+
+/** Commas between digits and decimal points are part of one number, not a break. */
+function clausesOf(text) {
+  const parts = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const prev = i > 0 ? text[i - 1] : "";
+    const next = i + 1 < text.length ? text[i + 1] : "";
+    const betweenDigits = /[0-9]/.test(prev) && /[0-9]/.test(next);
+    if ((ch === "." && !betweenDigits) || ch === "!" || ch === "?" || ch === ";" || ch === "\n") {
+      parts.push({ text: text.slice(start, i), start, end: i });
+      start = i + 1;
+      continue;
+    }
+    if (ch === "," && !betweenDigits) {
+      parts.push({ text: text.slice(start, i), start, end: i });
+      start = i + 1;
+    }
+  }
+  parts.push({ text: text.slice(start), start, end: text.length });
+  return parts;
+}
+
+function unitAfter(text, end) {
+  const rest = text.slice(end);
+  const points = /^\s*percentage\s+points?\b/i.exec(rest);
+  if (points) return { unit: "pp", end: end + points[0].length };
+  const percent = /^\s*(?:%|percent\b)/i.exec(rest);
+  if (percent) return { unit: "percent", end: end + percent[0].length };
+  const days = /^\s*(?:-\s*day\b|operating\s+days?\b|days?\b)/i.exec(rest);
+  if (days) return { unit: "days", end: end + days[0].length };
+  const dollars = /^\s*dollars?\b/i.exec(rest);
+  if (dollars) return { unit: "money", end: end + dollars[0].length };
+  return { unit: null, end };
+}
+
+function isDate(text, start, end) {
+  const before = text.slice(Math.max(0, start - 16), start);
+  const after = text.slice(end, end + 20);
+  return new RegExp(`${MONTH.source}\\s*$`, "i").test(before) || new RegExp(`^\\s*(?:st|nd|rd|th)?\\s*${MONTH.source}`, "i").test(after);
+}
+
+function wordValue(raw) {
+  const parts = raw.toLowerCase().split(/[-\s]+/);
+  const tens = WORD_VALUE[parts[0]];
+  if (tens === undefined) return null;
+  if (parts.length === 1) return tens;
+  const ones = WORD_VALUE[parts[1]];
+  if (ones === undefined || ones > 9 || tens < 20) return null;
+  return tens + ones;
+}
+
+/** Quantities in the text. A comma or decimal between digits stays inside the value. Dates are marked and are not quantities. */
+function numberTokens(text) {
+  const tokens = [];
+  const taken = [];
+  const occupy = (start, end) => taken.some((span) => start < span.end && end > span.start);
+  let i = 0;
+  while (i < text.length) {
+    if (occupy(i, i + 1) || (i > 0 && /[A-Za-z0-9]/.test(text[i - 1]) && /[0-9]/.test(text[i]))) {
+      i += 1;
+      continue;
+    }
+    const slice = text.slice(i);
+    const digit = /^(?:\$?\d{1,3}(?:,\d{3})+(?:\.\d+)?|\$?\d+(?:\.\d+)?)/.exec(slice);
+    const word = !digit && (i === 0 || !/[A-Za-z]/.test(text[i - 1])) ? WORD_NUMBER.exec(slice) : null;
+    const raw = digit?.[0] ?? word?.[0];
+    if (!raw) {
+      i += 1;
+      continue;
+    }
+    const value = digit ? Number(raw.replace(/[$,]/g, "")) : wordValue(raw);
+    let end = i + raw.length;
+    let unit = raw.startsWith("$") ? "money" : null;
+    const after = unitAfter(text, end);
+    if (after.unit) {
+      unit = after.unit;
+      end = after.end;
+    }
+    if (Number.isFinite(value)) {
+      tokens.push({ value, start: i, end, unit, date: isDate(text, i, end) });
+      taken.push({ start: i, end });
+    }
+    i = end;
+  }
+  return tokens;
+}
+
+function sameValue(a, b) {
+  return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 1e-6;
+}
+
+function unitsCompatible(wanted, found) {
+  if (wanted === "days" || wanted === "percent" || wanted === "pp") return found === wanted;
+  if (wanted === "money") return found === "money" || found == null;
+  return found == null || found === "money";
+}
+
+/** A hedge or a hypothetical in this clause. "May" the month is not the hedge "may". */
+function clauseIsHedged(clause) {
+  if (/\bwould\s+be\b/i.test(clause)) return true;
+  const re = /\b(might|may|could|perhaps|possibly|if|suppose|supposing|were)\b/gi;
+  let match;
+  while ((match = re.exec(clause))) {
+    if (match[0] === "May") continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * A matching correction: the stated number equals the correction. "$2,450.00" matches
+ * "$2,450". "$2,450,000" does not. A hedge in the same clause is not a match. Matching
+ * is not proof the judge calculated the figure.
+ */
+function statedCorrection(text, phrase, caseDir) {
+  if (typeof text !== "string" || typeof phrase !== "string") return false;
+  const wanted = numberTokens(phrase).filter((token) => !token.date);
+  if (wanted.length === 0) return false;
+  const clauses = clausesOf(text);
+  for (const token of numberTokens(text)) {
+    if (token.date) continue;
+    const clause = clauses.find((part) => token.start >= part.start && token.start < part.end);
+    if (!clause || clauseIsHedged(clause.text)) continue;
+    if (negatedAt(text, token.start) || deniedAfter(text, token.start, token.end - token.start)) continue;
+    if (!directionAgrees(clause.text, phrase, caseDir)) continue;
+    if (wanted.some((want) => sameValue(want.value, token.value) && unitsCompatible(want.unit, token.unit))) return true;
+  }
+  return false;
+}
+
 function count(v) {
   return Number.isInteger(v) && v >= 0 ? v : 0;
 }
@@ -121,6 +358,24 @@ export function caseProblems(c, fileName) {
   } else if (c.kind === "loaded") {
     quotable("question");
   }
+  // A confident wrong figure. The corrected value must not already be in the write-up, or a
+  // matching correction can be copied from the prompt. A match is not a calculation.
+  if (expect.catch_in !== undefined || expect.correction !== undefined) {
+    if (expect.catch_in !== "checked-or-verdict") problems.push('expect.catch_in must be "checked-or-verdict"');
+    if (c.kind !== "flawed") problems.push("expect.catch_in is only for a flawed case");
+    const correction = Array.isArray(expect.correction) ? expect.correction : null;
+    if (!correction || correction.length === 0) problems.push("expect.correction needs at least one phrase");
+    else {
+      const shown = `${typeof c.subject === "string" ? c.subject : ""}\n${typeof c.question === "string" ? c.question : ""}`;
+      for (const phrase of correction) {
+        if (typeof phrase !== "string" || phrase.trim().length < 3) {
+          problems.push("each correction phrase must be a string of at least 3 characters");
+          continue;
+        }
+        if (includesPhrase(shown, phrase)) problems.push(`"${phrase}" must not appear in the subject or question`);
+      }
+    }
+  }
   return problems;
 }
 
@@ -137,8 +392,33 @@ export function scoreCase(caseDef, result) {
 
   if (kind === "flawed" || kind === "loaded") {
     const mustTarget = Array.isArray(expect.must_target) ? expect.must_target : [];
+    // The figure cases pass on a matching correction in the verdict, or in the blockquote
+    // or objection of a Checked for you challenge. That match is not proof the judge
+    // calculated the figure. Quoting the wrong figure is not a match. Denying it is not a
+    // match. The premise and the falsifier are not a match. Your call is not a match.
+    const figureCheck = kind === "flawed" && expect.catch_in === "checked-or-verdict";
     if (!usable) {
       caught = false;
+    } else if (figureCheck) {
+      caught = false;
+      const corrections = Array.isArray(expect.correction) ? expect.correction : [];
+      const caseDir = caseDirection(corrections);
+      const fromVerdict = corrections.find((phrase) => statedCorrection(r.verdictReason, phrase, caseDir));
+      if (fromVerdict !== undefined) {
+        caught = true;
+        matchedPhrase = fromVerdict;
+      } else {
+        for (const c of challenges) {
+          if (c?.call !== "checked" || !CAUGHT_SEVERITIES.has(c?.severity)) continue;
+          const objection = `${typeof c?.target === "string" ? c.target : ""}\n${typeof c?.challenge === "string" ? c.challenge : ""}`;
+          const corrected = corrections.find((phrase) => statedCorrection(objection, phrase, caseDir));
+          if (corrected !== undefined) {
+            caught = true;
+            matchedPhrase = corrected;
+            break;
+          }
+        }
+      }
     } else {
       caught = false;
       for (const c of challenges) {
@@ -217,14 +497,16 @@ function rate(numerator, denominator, key) {
 }
 
 /**
- * The five gates this loop checks, and which direction is "good" for each. `atLeast` fails
+ * The gates this loop checks, and which direction is "good" for each. `atLeast` fails
  * when the actual value falls below the threshold (a catch rate that dropped); `atMost` fails
  * when it rises above (a false-alarm or schema-violation rate that grew). decorrelatedRate is a
  * floor of 1.0: a single run answered from Claude's own family is a failure, because an
- * independent judge is the whole product.
+ * independent judge is the whole product. figureCatchRate is a separate floor for the
+ * wrong-figure cases, so they cannot change the catch rate of the cases that came before them.
  */
 const CHECKS = Object.freeze([
   { key: "catchRate", direction: "atLeast" },
+  { key: "figureCatchRate", direction: "atLeast" },
   { key: "falseAlarmRate", direction: "atMost" },
   { key: "loadedCatchRate", direction: "atLeast" },
   { key: "decorrelatedRate", direction: "atLeast" }, // every run must be judged outside Claude's family
@@ -280,6 +562,10 @@ export function summarize(scores, thresholds) {
   const n = list.length;
 
   const flawed = list.filter((s) => s.kind === "flawed");
+  // Wrong-figure cases have their own floor. They stay out of catchRate, which is the
+  // floor the other flawed cases already had.
+  const figureFlawed = flawed.filter((s) => s.expect?.catch_in === "checked-or-verdict");
+  const legacyFlawed = flawed.filter((s) => s.expect?.catch_in !== "checked-or-verdict");
   const loaded = list.filter((s) => s.kind === "loaded");
   const sound = list.filter((s) => s.kind === "sound");
 
@@ -297,7 +583,8 @@ export function summarize(scores, thresholds) {
   const phraseOnSame = semanticScored.filter((s) => s.caught === true).length;
 
   const metrics = {
-    catchRate: rate(flawed.filter((s) => s.caught === true).length, flawed.length, "catchRate"),
+    catchRate: rate(legacyFlawed.filter((s) => s.caught === true).length, legacyFlawed.length, "catchRate"),
+    figureCatchRate: rate(figureFlawed.filter((s) => s.caught === true).length, figureFlawed.length, "figureCatchRate"),
     falseAlarmRate: rate(sound.filter((s) => s.falseAlarm === true).length, sound.length, "falseAlarmRate"),
     loadedCatchRate: rate(loaded.filter((s) => s.caught === true).length, loaded.length, "loadedCatchRate"),
     decorrelatedRate: rate(list.filter((s) => s.decorrelated === true).length, n, "decorrelatedRate"),
@@ -356,6 +643,7 @@ export function summarize(scores, thresholds) {
 
 const METRIC_LABEL = Object.freeze({
   catchRate: "Catch rate (flawed)",
+  figureCatchRate: "Catch rate (wrong figure)",
   falseAlarmRate: "False alarm rate (sound)",
   loadedCatchRate: "Catch rate (loaded)",
   decorrelatedRate: "Decorrelated rate",
@@ -426,7 +714,9 @@ export function renderSummary(summary, scores, { heldOut = false } = {}) {
       const expected =
         s.kind === "sound"
           ? `verdict in [${(s.expect?.verdict_in ?? []).join(", ")}], max severity ${s.expect?.max_severity ?? "?"}`
-          : `a challenge targeting one of: ${(s.expect?.must_target ?? []).join(" | ")}`;
+          : s.expect?.catch_in === "checked-or-verdict"
+            ? `the verdict or a Checked for you objection stating one of: ${(s.expect?.correction ?? []).join(" | ")}`
+            : `a challenge targeting one of: ${(s.expect?.must_target ?? []).join(" | ")}`;
       const got =
         s.verdict === null
           ? "no usable result (verdict null)"

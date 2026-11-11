@@ -1,0 +1,13 @@
+{
+  "id": "wrong-figure-cake-order",
+  "kind": "flawed",
+  "subject": "Little Oven Co-op is deciding what to tell a customer about a Saturday wedding order. The order is forty celebration cakes. The price is $18 each. The write-up multiplies those and states, at 85% confidence, that forty cakes at $18 come to $900, so the customer's deposit of that same $900 covers the order in full. Reasoning: the cakes are the same size as last month's standard order, the $18 price is the posted Saturday rate, and taking the deposit today holds the date. The write-up calls the $900 a checked product and does not show the multiplication. Prediction, offered at 85% confidence: telling the customer the forty cakes come to $900 lets the co-op keep the date without asking for more money. Goal: confirm the Saturday order against the deposit already paid. The strongest case against: the decorator who pipes the names is away on Saturday, so the co-op may have to simplify the icing.",
+  "question": "Should Little Oven Co-op tell the customer that forty celebration cakes at $18 come to $900?",
+  "expect": {
+    "must_target": ["come to $900", "the $900 a checked product"],
+    "verdict_not": ["holds"],
+    "catch_in": "checked-or-verdict",
+    "correction": ["$720", "720"]
+  },
+  "why": "Forty cakes at $18 each come to $720. The write-up states, at 85% confidence, that the same lines come to $900, and it calls that product already checked."
+}
