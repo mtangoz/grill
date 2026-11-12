@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { billingMode, couponId, starterAllowanceUsd } from "../api/_pro.mjs";
 import { analyticsSnippet } from "./siteAnalytics.mjs";
 import { renderContributorEntries } from "./contributorsCore.mjs";
+import { INDEXNOW_KEY } from "./indexnow.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "_site");
@@ -540,6 +541,9 @@ if (process.env.GRILL_MISS === "1") {
   );
 }
 writeFileSync(join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}sitemap.xml\n`);
+// IndexNow's public key file, at the site root. The body is the key. A trailing newline is allowed.
+// text/plain comes from the vercel.json route. Not a page, so it is not added to publicPages.
+writeFileSync(join(OUT, `${INDEXNOW_KEY}.txt`), `${INDEXNOW_KEY}\n`);
 // OpenAI's public domain-verification token. The body is these bytes and nothing else:
 // no newline, and text/plain comes from the vercel.json route for this path.
 mkdirSync(join(OUT, ".well-known"), { recursive: true });
