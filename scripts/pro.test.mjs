@@ -494,6 +494,12 @@ describe("the endpoints", () => {
           headers: { "Content-Type": "text/plain" },
         },
         {
+          src: "^/0fdf90c83b980b1b1f91d7ebf96d6806\\.txt$",
+          dest: "/0fdf90c83b980b1b1f91d7ebf96d6806.txt",
+          check: true,
+          headers: { "Content-Type": "text/plain" },
+        },
+        {
           src: "^/$",
           has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
           dest: "/index.md",
