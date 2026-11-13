@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "updated": "2026-11-13",
+  "users": {
+    "real": 1,
+    "as_of": "2026-11-09",
+    "evidenced_lookbacks": 0
+  },
+  "regression": {
+    "runs": [
+      {
+        "date": "2026-11-13",
+        "run_id": 43354935479,
+        "commit": "303a77f",
+        "cases": 29,
+        "reached_judge": 29,
+        "flawed": { "caught": 15, "of": 15 },
+        "wrong_figure": { "caught": 4, "of": 4 },
+        "loaded": { "caught": 4, "of": 4 },
+        "sound": { "false_alarms": 2, "of": 6 },
+        "schema_violations": { "k": 0, "of": 29 },
+        "different_company": { "k": 29, "of": 29 },
+        "quotes": { "found": 84, "of": 94 },
+        "semantic": { "caught": 22, "of": 23 },
+        "by_company": [
+          { "company": "google", "cases": 8 },
+          { "company": "openai", "cases": 14 },
+          { "company": "deepseek", "cases": 3 },
+          { "company": "minimax", "cases": 2 },
+          { "company": "moonshotai", "cases": 2 }
+        ]
+      }
+    ],
+    "not_measured": ["2026-11-02", "2026-11-09"],
+    "skipped_green": ["2026-10-19", "2026-10-26"]
+  },
+  "holdouts": [
+    {
+      "id": "v1",
+      "status": "run",
+      "date": "2026-11-09",
+      "decided": 15,
+      "candidate_wins": 9,
+      "rule_on": false
+    },
+    { "id": "v2", "status": "not-run" }
+  ],
+  "four_arm": {
+    "status": "draft",
+    "arms": [],
+    "comparisons": []
+  },
+  "signals": {
+    "rated": 0,
+    "resolved": 0
+  },
+  "account_lookbacks": {
+    "status": "not-counted"
+  }
+}
