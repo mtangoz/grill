@@ -77,7 +77,8 @@ The rules behind these steps are in [docs/UX.md](docs/UX.md), under "A public pa
 `/how-we-test/` shows `data/results.json`, a file of counts and dates and nothing else. The numbers are written into the page when the site is built.
 
 - `node scripts/results.mjs check` lists every problem in the file.
-- `node scripts/results.mjs merge-run <public-block.json>` adds one measured run of the weekly eval. Where that block comes from is in [evals/README.md](evals/README.md). The file keeps the first measured run and the 11 latest.
+- `node scripts/results.mjs merge-run <public-block.json>` adds one measured run of the weekly eval. Where that block comes from is in [evals/README.md](evals/README.md). The file keeps the first measured run and the 11 latest. Run it in a full clone. In a shallow one git cannot check the run's commit, and the run is refused.
+- The words of the page are kept whole in `scripts/howWeTest.test.mjs`. A sentence you add to `site/how-we-test.html`, or to what `scripts/resultsCore.mjs` writes, fails that test until you add it there too.
 - When the real-user count in [docs/STRATEGY.md](docs/STRATEGY.md) changes, change `users` in the file in the same commit. A test keeps the two equal.
 - When the four-arm comparison is measured, rewrite the page's opening, its description and blurb in `scripts/build-site.mjs`, and the FAQ's benchmarks answer in the same pull request. A test in `scripts/howWeTest.test.mjs` fails until then.
 

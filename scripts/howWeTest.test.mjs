@@ -67,7 +67,7 @@ const firstRecorded = () => ({
       },
     ],
     not_measured: ["2026-11-02", "2026-11-09"],
-    skipped_green: ["2026-10-19", "2026-10-26"],
+    skipped_green: ["2026-09-28", "2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26"],
   },
   holdouts: [
     { id: "v1", status: "run", date: "2026-11-09", decided: 15, candidate_wins: 9, rule_on: false },
@@ -77,6 +77,51 @@ const firstRecorded = () => ({
   signals: { rated: 0, resolved: 0 },
   account_lookbacks: { status: "not-counted" },
 });
+
+/**
+ * Every line a reader sees on the page built from that file, in order, from the heading to
+ * the footer. A link is its words. This is the whole page: a sentence that is not here is
+ * not on the page, so a new claim cannot be added without this text being changed with it.
+ */
+const FIRST_PAGE_TEXT = [
+  "How Grill tests its judge.",
+  "Not measured yet: whether an outside judge catches more than the same model starting fresh.",
+  "What has not been measured yet",
+  "Grill sends your plan to an outside judge. We have not measured whether that judge catches more than the model that wrote the plan would, starting fresh with no chat behind it. Until that is measured, Grill does not claim it. This page shows what has been measured, as counts, and says what has not.",
+  "What is true by rule",
+  "The judge is from a different company than the one that wrote the plan, when Grill can tell which that is. When it cannot, the verdict says so. That is a rule about who the judge is. It is not a result about how well it judges.",
+  "The comparison with the same model starting fresh",
+  "Draft protocol, not run. Grill has written a plan for one measurement and has not run it. Any part of the plan can still change. It would give the same made-up write-ups to four ways of getting the case against a plan, and count how many planted flaws each one catches:",
+  "The same chat. The model that wrote the plan is asked, in the same chat, to argue the other side.",
+  "The same model, starting fresh. The same model gets the plan in a new chat, with the instructions Grill gives its judge.",
+  "A stronger model from the same company. A stronger model from the company that wrote the plan gets it with those same instructions.",
+  "Grill as shipped. The router picks the judge, and the company that wrote the plan is left out.",
+  "The main question is whether Grill as shipped catches more planted flaws than the same model starting fresh. The result will be published here whichever way it falls. Read the draft protocol.",
+  "A weekly regression check, not a measure of quality",
+  "Grill's weekly check runs its judge on a public set of made-up cases. Some hold a planted flaw, some ask a loaded question, and some are sound plans. The check can show the judge going quiet or breaking its output rules. It cannot rank one critic against another.",
+  "One run is shown, the latest that measured: 13 November 2026, commit 303a77f, Actions run 43354935479. All 29 cases reached a judge.",
+  "Caught. The judge caught 19 of 19 flawed plans and 4 of 4 loaded questions, but these 29 cases were used to write the judge's instructions, so a full score says nothing about how good the judge is.",
+  "False alarms. 2 of 6 sound plans got a false alarm. That is too few plans to say what the real rate is.",
+  "Quotes not found. 10 of 94 quotes the judge gave were not found in the write-up they were quoted from.",
+  "Output rules. 0 of 29 answers broke the output rules.",
+  "A second reading. A separate quality check read the judge's answers and found the planted flaw named in 22 of 23 cases. These are the same cases, so this says nothing about how good the judge is either.",
+  "Routing. The judge came from a different company than the declared author in 29 of 29 cases. That is a routing check. It is not a measure of whether the two make different mistakes. This check names no author, so the default applies and the author is taken to be Anthropic.",
+  "Judge companies. The router picked the judge for each case. Cases by the company whose model answered: Google 8, OpenAI 14, DeepSeek 3, MiniMax 2, Moonshot AI 2.",
+  "Weeks that measured nothing. The weekly runs on 2 November 2026 and 9 November 2026 failed as not measured. The runs on 28 September 2026, 5 October 2026, 12 October 2026, 19 October 2026 and 26 October 2026 passed while skipping every case, so a pass on those days measured nothing.",
+  "A held-out check of one candidate rule",
+  "It compared two judges on the same decisions: one with today's instructions, and one with the same instructions plus one candidate rule. A rater who could not see which was which said which answer would change what you do next.",
+  "Version 1. Run on 9 November 2026. Of 15 decided pairs, the candidate rule won 9. If the two were equally good, the candidate would win that often or more about 30 times in 100. The rule stayed off.",
+  "Version 2. Not run.",
+  "People",
+  "Real users. 1, as of 9 November 2026. What counts as a real user is set out in Grill's strategy notes.",
+  "Evidenced look-backs. 0, as of the same day. What counts as one is set out in Grill's principles.",
+  "Look-backs saved on Grill accounts. Not counted yet. This is a separate count from evidenced look-backs, and the two are never added together.",
+  "Signals. 0 rated, 0 resolved. A signal is a short report a person chooses to send through a public form: a rating of one grill, or whether a call came true.",
+  "The counts on this page were last updated on 13 November 2026.",
+  "Connect Grill",
+  "Open source · Contribute · GitHub · Privacy · About · Contact",
+  "Made at Hold",
+].join("\n");
 
 /** A later state: a second run where two cases reached no judge, and a measured comparison. */
 const laterState = () => {
@@ -204,6 +249,20 @@ const textOf = (html) =>
     .filter(Boolean)
     .join("\n");
 
+/** The page from its heading to the end of <main>: all of it but the shared header. */
+const fromHeading = (html) => {
+  const main = mainOf(html);
+  const at = main.indexOf("<h1>");
+  assert.ok(at > 0, "the built page has an <h1>");
+  return main.slice(at);
+};
+
+/** The shared header: what <main> holds above the heading. */
+const headerOf = (html) => {
+  const main = mainOf(html);
+  return main.slice(0, main.indexOf("<h1>"));
+};
+
 /** One section of the built HTML: from its <h2> to the next <h2>, or to the call to action. */
 function htmlSection(html, heading) {
   const main = mainOf(html);
@@ -237,6 +296,14 @@ const mdText = (md) =>
     .replace(/\*\*/g, "")
     .replace(/^- /gm, "")
     .replace(/[ \t]+/g, " ");
+
+/** The whole Markdown twin as the lines a reader sees: its heading marks are removed as well. */
+const twinLines = (md) =>
+  mdText(md)
+    .split("\n")
+    .map((line) => line.replace(/^#{1,6} /, "").trim())
+    .filter(Boolean)
+    .join("\n");
 
 const SECTIONS = {
   notMeasured: "What has not been measured yet",
@@ -351,6 +418,51 @@ describe("the /how-we-test page", () => {
         assert.equal(twin, page, `the twin's "${heading}" section says what the page says`);
       }
     }
+  });
+
+  it("says these lines and no others, on the page and in its Markdown twin", () => {
+    // The whole reader-visible text, compared as one piece. Any sentence added to
+    // site/how-we-test.html, or to what the renderer writes for this file, fails here.
+    assert.equal(textOf(fromHeading(first.html)), FIRST_PAGE_TEXT);
+    assert.equal(twinLines(first.md), FIRST_PAGE_TEXT);
+    for (const built of [today, first, later]) {
+      // The twin says, line for line, what the page says, whatever the results file holds.
+      assert.equal(twinLines(built.md), textOf(fromHeading(built.html)));
+      // Above the heading there is only the shared header, the same markup as on the about page.
+      assert.ok(headerOf(built.html).includes('<nav aria-label="Sections">'));
+      assert.equal(headerOf(built.html), headerOf(built.out("about/index.html")));
+      // And nothing a reader sees is written outside <main>.
+      const body = built.html.slice(built.html.indexOf("<body"), built.html.indexOf("</body>"));
+      assert.ok(body.startsWith("<body"), "the built page has a <body>");
+      assert.equal(textOf(body.replace(/<main[\s\S]*<\/main>/, "").replace(/<script\b[\s\S]*?<\/script>/gi, "")), "");
+    }
+  });
+
+  it("with a later run and a measured comparison, changes these lines and adds no others", () => {
+    const firstLines = FIRST_PAGE_TEXT.split("\n");
+    const laterLines = textOf(fromHeading(later.html)).split("\n");
+    // Every line of the later page is one the first page has, or one of these.
+    assert.deepEqual(
+      laterLines.filter((line) => !firstLines.includes(line)),
+      [
+        "Measured. The comparison ran on 20 November 2026, at commit 0123abc, on 120 flawed plans, 40 sound plans and 20 loaded questions. Every case is made up. It gave the same write-ups to these ways of getting the case against a plan:",
+        "What follows is counts. Where 10 cases or more are behind a count, its share out of 100 is shown, with the range the true share is likely to sit in. Under 10, the count is shown alone. This page does not say which one did best: the protocol sets out how the result is read.",
+        "The same model, starting fresh. Planted flaws caught, counting an unusable answer as a miss: 80 of 120 (67 in 100, likely range 58 to 74). On usable answers only: 80 of 119 (67 in 100, likely range 58 to 75). Alarms on sound plans: 10 of 40 (25 in 100, likely range 14 to 40). Unusable answers: 1.",
+        "Grill as shipped. Planted flaws caught, counting an unusable answer as a miss: 95 of 120 (79 in 100, likely range 71 to 85). On usable answers only: 95 of 117 (81 in 100, likely range 73 to 87). Alarms on sound plans: 3 of 8. Unusable answers: 4.",
+        "Pair by pair, on the flawed plans, the number of cases where each one caught the planted flaw:",
+        "Grill as shipped against the same model, starting fresh. Counting an unusable answer as a miss: both caught it in 70 cases, only the first in 25, only the second in 10, neither in 15. On cases where both gave a usable answer: both caught it in 68 cases, only the first in 22, only the second in 9, neither in 12.",
+        "More than half of the cases were drafted by one model family. Under the protocol, a result from such a set can remove a claim about quality. It cannot support one.",
+        "One run is shown, the latest that measured: 16 November 2026, commit 0123abc, Actions run 43400000001. Only 27 of 29 cases reached a judge. A case with no answer counts as a miss, or as a false alarm on a sound plan.",
+        "Caught. The judge caught 18 of 19 flawed plans and 3 of 4 loaded questions, but these 29 cases were used to write the judge's instructions, so this score says nothing about how good the judge is.",
+        "False alarms. 1 of 6 sound plans got a false alarm. That is too few plans to say what the real rate is.",
+        "Quotes not found. 10 of 90 quotes the judge gave were not found in the write-up they were quoted from.",
+        "Output rules. 1 of 29 answers broke the output rules.",
+        "A second reading. A separate quality check read the judge's answers and found the planted flaw named in 20 of 23 cases. These are the same cases, so this says nothing about how good the judge is either.",
+        "Routing. The judge came from a different company than the declared author in 27 of 29 cases. That is a routing check. It is not a measure of whether the two make different mistakes. This check names no author, so the default applies and the author is taken to be Anthropic.",
+        "Judge companies. The router picked the judge for each case. Cases by the company whose model answered: Google 20, other companies 7.",
+        "The counts on this page were last updated on 20 November 2026.",
+      ],
+    );
   });
 
   it("is served by the routes that already exist, with no rewrite of its own", () => {
@@ -513,7 +625,7 @@ describe("the /how-we-test page", () => {
   // (e)
   it("says plainly which weeks measured nothing, as dates", () => {
     const weeks =
-      "Weeks that measured nothing. The weekly runs on 2 November 2026 and 9 November 2026 failed as not measured. The runs on 19 October 2026 and 26 October 2026 passed while skipping every case, so a pass on those days measured nothing.";
+      "Weeks that measured nothing. The weekly runs on 2 November 2026 and 9 November 2026 failed as not measured. The runs on 28 September 2026, 5 October 2026, 12 October 2026, 19 October 2026 and 26 October 2026 passed while skipping every case, so a pass on those days measured nothing.";
     assert.ok(textOf(htmlSection(first.html, SECTIONS.weekly)).includes(weeks));
     assert.ok(mdText(mdSection(first.md, SECTIONS.weekly)).includes(weeks));
     const committed = committedResults();
