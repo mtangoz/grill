@@ -11,7 +11,7 @@
  *   node scripts/results.mjs merge-run <public-block.json> [--file <path>]
  *
  *   check       reads the file and prints every problem in it, one a line. Exit 1 if there
- *               is any. It reads only.
+ *               is any. It reads only. A valid file kept in another layout gets one note.
  *   merge-run   adds one run. <public-block.json> is the counts-only block a measured run of
  *               scripts/eval.mjs writes beside its results in GitHub Actions
  *               (latest.public.json, in the run's eval-results artifact).
@@ -181,6 +181,10 @@ function main(argv) {
     const problems = fileProblems(opts.file);
     if (problems.length === 0) {
       console.log(`ok: ${opts.file} is valid`);
+      // Not a problem: the values are right. Said so that a later merge-run's rewrite is no surprise.
+      if (readFileSync(opts.file, "utf8") !== formatResults(JSON.parse(readFileSync(opts.file, "utf8")))) {
+        console.log("note: the file is not in the layout merge-run writes, so the next merge-run will rewrite it as a whole");
+      }
       return 0;
     }
     for (const line of problems) console.error(line);

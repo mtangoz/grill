@@ -1389,8 +1389,16 @@ describe("scripts/results.mjs", () => {
     assert.equal(readFileSync(file, "utf8"), before, "check writes nothing");
     const inPlace = run(dir, ["check"]);
     assert.equal(inPlace.code, 0);
-    assert.equal(inPlace.stdout, `ok: ${join(ROOT, "data", "results.json")} is valid\n`);
+    assert.equal(inPlace.stdout, `ok: ${join(ROOT, "data", "results.json")} is valid\n`, "valid, and in the layout merge-run writes");
     assert.equal(read("data/results.json"), before, "the committed file is as it was");
+    // The same values in another layout are still valid. One note says a merge would rewrite the file.
+    writeFileSync(file, `${JSON.stringify(seed(), null, 2)}\n`);
+    const otherLayout = run(dir, ["check", "--file", file]);
+    assert.equal(otherLayout.code, 0);
+    assert.deepEqual(otherLayout.stdout.trim().split("\n"), [
+      `ok: ${file} is valid`,
+      "note: the file is not in the layout merge-run writes, so the next merge-run will rewrite it as a whole",
+    ]);
     rmSync(dir, { recursive: true, force: true });
   });
 
