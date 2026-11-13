@@ -18,6 +18,8 @@
  *   score                   Graders answer one blinded yes or no question per answer, and the
  *                           sheet of blinded items for the owner is written.
  *   report                  No model call. Counts, tests, the decision, and the public block.
+ *                           On the frozen split it checks the registration and the seeds
+ *                           again, and stops if either changed after the run.
  *       --owner-labels <f>  the owner's replies to the audit sheet ("1: yes", one per line)
  *       --results <path>    also write the block into that results file's four_arm key
  *
@@ -29,7 +31,8 @@
  *   --out <dir>             default evals/results/four-arm/<split> (ignored by git)
  *   --concurrency <n>       default 3
  *   --resume                fill in what a stopped step left undone; never redo what is there
- *   --require-key           with no router key, exit 2 and say nothing was measured
+ *   --require-key           with no router key, exit 2 and say nothing was measured. Always
+ *                           on for author, run and score on the frozen split.
  *   --audit-all             (score) put every graded item on the owner's sheet, not only 40
  *
  * ENVIRONMENT
@@ -40,14 +43,24 @@
  *   JUDGE_MODEL, JUDGE_FIXTURE, JUDGE_CHECK and GRILL_JUDGE_COMMIT are removed from every
  *   judge child, whatever is set here.
  *
- * WITH NO KEY, author, run and score print "SKIPPED: no arm ran" and exit 0, and report no
- * score. With --require-key they exit 2 and print "Not measured".
+ * WITH NO KEY, author, run and score on the dev split print "SKIPPED: no arm ran" and exit 0,
+ * and report no score. With --require-key they exit 2 and print "Not measured". On the
+ * frozen split they always do: a frozen step never ends green on a skip.
+ *
+ * NOT MEASURED IS HELD AT EVERY STEP. Fewer than 9 in 10 usable write-ups stops the author
+ * step, and run, score and report each check it again, so a run that fell under the floor
+ * cannot carry on to a result, whether or not the shell stops on the first exit 2.
+ *
+ * RAW ROWS (under --out, ignored by git): answers.jsonl keeps what each arm returned before
+ * blinding. For arm A that is the reply, in `raw`. For arms B, C and D it is the whole
+ * result judge.mjs printed, in `judge`. `critique` is the blinded text the graders read.
  *
  * EXIT CODES
- *   0   the step finished, or was skipped for lack of a key without --require-key
+ *   0   the step finished, or a dev step was skipped for lack of a key without --require-key
  *   1   a problem with the seeds, the arms file, the registration or the arguments
- *   2   Not measured: no key under --require-key, too few usable answers, or the grader
- *       check was not passed. No score is printed and no results file is changed.
+ *   2   Not measured: no key on the frozen split or under --require-key, too few usable
+ *       write-ups, too few usable answers, or the grader check was not passed. No score is
+ *       printed and no results file is changed.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -74,6 +87,7 @@ import {
   armEnv,
   armValid,
   armsModelIds,
+  armsModelsChecksum,
   armsProblems,
   assignAuthors,
   auditSample,
@@ -112,6 +126,7 @@ import {
   sha256,
   singleDrafter,
   summarize,
+  writeUpFloorMet,
   writeUpUsable,
 } from "./fourArmCore.mjs";
 import { companyIdOf, isCommitHash, isIsoDate } from "./resultsCore.mjs";
@@ -128,6 +143,8 @@ const COMMITTED_RESULTS = join(REPO_ROOT, "data", "results.json");
 const OPENROUTER_DEFAULT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 const COMMANDS = ["validate-seeds", "assign-authors", "preflight", "author", "run", "score", "report"];
+/** The steps that call a model. On the frozen split these are never skipped for lack of a key. */
+const MODEL_STEPS = ["author", "run", "score"];
 
 function fail(message, code = 1) {
   console.error(`[four-arm] ERROR: ${message}`);
@@ -237,6 +254,8 @@ function parseArgs(argv) {
     }
   }
   if (opts.split !== "dev" && opts.split !== "frozen") fail(`unknown split: ${opts.split}`);
+  // A green skip on the frozen split would read as a run that passed. With no key it is Not measured.
+  if (opts.split === "frozen" && MODEL_STEPS.includes(opts.command)) opts.requireKey = true;
   if (!opts.out) opts.out = join(DEFAULT_OUT, opts.split);
   if (opts.commit && !isCommitHash(opts.commit)) fail("--commit must be 7 to 40 lowercase hex characters");
   if (opts.date && !isIsoDate(opts.date)) fail("--date must be written YYYY-MM-DD");
@@ -343,7 +362,7 @@ function readMeta(opts) {
   return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : { split: opts.split, rehearsal: [], steps: {} };
 }
 
-function writeMeta(opts, meta, step, endpoint, seeds) {
+function writeMeta(opts, meta, step, endpoint, seeds, config) {
   const reasons = rehearsalReasons(opts, endpoint);
   const next = {
     ...meta,
@@ -352,7 +371,7 @@ function writeMeta(opts, meta, step, endpoint, seeds) {
     seeds_sha256: seedsChecksum(seeds),
     steps: {
       ...(meta.steps ?? {}),
-      [step]: { date: opts.date || utcDate(), commit: currentCommit(opts), judge_prompt_sha256: judgePromptFingerprint() },
+      [step]: { date: opts.date || utcDate(), commit: currentCommit(opts), judge_prompt_sha256: judgePromptFingerprint(), models_sha256: armsModelsChecksum(config) },
     },
   };
   mkdirSync(opts.out, { recursive: true });
@@ -367,6 +386,21 @@ function requireRegistration(opts, config, seeds) {
   if (problems.length === 0) return;
   for (const problem of problems) console.error(`[four-arm] not registered: ${problem}`);
   fail("the frozen split runs only after the protocol is registered. See evals/four-arm/README.md, \"What the owner does\".");
+}
+
+/**
+ * The seeds a frozen run began with are the seeds it ends with. meta.json holds the checksum
+ * the first step saw, and every later step compares before it writes, so no step can carry a
+ * changed seed set into the run's own record. Once write-ups exist that record must be there:
+ * the author step writes it before the first write-up.
+ */
+function requireSameSeeds(opts, meta, seeds, since, { recordNeeded = false } = {}) {
+  if (opts.split !== "frozen") return;
+  if (!meta.seeds_sha256) {
+    if (recordNeeded) fail(`${join(opts.out, "meta.json")} has no record of the seeds this run used, so they cannot be checked against the seeds given now.`);
+    return;
+  }
+  if (meta.seeds_sha256 !== seedsChecksum(seeds)) fail(`the frozen seeds changed after ${since}. The set is frozen at registration.`);
 }
 
 // == Not measured =================================================================
@@ -385,6 +419,17 @@ function notMeasured(reason) {
   console.log("No score is reported and no results file was changed.");
   stepSummary(`## Four-arm comparison\n\n**${message}** No score is reported.\n`);
   process.exit(2);
+}
+
+/**
+ * The write-up floor, held by every step. The author step says Not measured when it is not
+ * met, and run, score and report say it again, so a run under the floor never reaches an arm,
+ * a grader or a results file.
+ */
+function requireWriteUpFloor(opts, seeds, writeUps) {
+  const floor = writeUpFloorMet(seeds, writeUps, opts.split);
+  if (!floor.met) notMeasured(`only ${floor.usable} of ${floor.of} write-ups are usable.`);
+  return floor;
 }
 
 /** The router key, or the skip path: the same two conventions as scripts/eval.mjs. */
@@ -614,6 +659,7 @@ function preflight(opts) {
         say(`- ${family}: author ${entry.author_model} (${entry.author_model_status}), stronger ${entry.stronger_model} (${entry.stronger_model_status})`);
       }
       for (const grader of config.graders) say(`- grader ${grader.model} (${grader.status})`);
+      say(`Model ids fingerprint: ${armsModelsChecksum(config)}`);
       const unconfirmed = [
         ...AUTHOR_FAMILIES.flatMap((family) => ["author_model", "stronger_model"].filter((role) => config.families[family][`${role}_status`] !== ID_CONFIRMED)),
         ...config.graders.filter((grader) => grader.status !== ID_CONFIRMED),
@@ -654,7 +700,7 @@ function preflight(opts) {
   const endpoint = resolveEndpoint();
   say(`Endpoint: ${endpoint.loopback ? "loopback (a rehearsal)" : "the model router"}.`);
   const key = resolveApiKey();
-  say(key.key ? `Router key: found (${key.source === "GRILL_API_KEY" || key.source === "OPENROUTER_API_KEY" ? key.source : "the key file"}).` : "Router key: none. author, run and score will skip.");
+  say(key.key ? `Router key: found (${key.source === "GRILL_API_KEY" || key.source === "OPENROUTER_API_KEY" ? key.source : "the key file"}).` : "Router key: none. A dev step will skip. A frozen step will be Not measured.");
   say(`Raw rows go under: ${opts.out} (ignored by git).`);
   if (problems) fail(`${problems} problem(s) found`);
   if (!key.key && opts.requireKey) notMeasured("no router key, so no arm reached a model.");
@@ -674,7 +720,9 @@ async function authorCommand(opts) {
   const existing = readJsonl(path);
   if (existing.length && !opts.resume) fail(`write-ups already exist at ${path}. Each write-up is written once. Use --resume to fill in missing ones.`);
   const ctx = { key, endpoint, opts };
-  writeMeta(opts, readMeta(opts), "author", endpoint, seeds);
+  const meta = readMeta(opts);
+  requireSameSeeds(opts, meta, seeds, "this run began");
+  writeMeta(opts, meta, "author", endpoint, seeds, config);
 
   const have = new Set(existing.map((row) => row.id));
   const todo = mine.filter((seed) => !have.has(seed.id));
@@ -721,7 +769,7 @@ async function authorCommand(opts) {
   console.log(`Write-ups: ${usable} of ${mine.length} usable.`);
   console.log(`Analysed cases: ${cases.filter((c) => c.kind === "flawed").length} flawed, ${cases.filter((c) => c.kind === "sound").length} sound twins, ${cases.filter((c) => c.kind === "loaded").length} loaded.`);
   console.log(`Left out by rule: ${Object.entries(dropped).map(([why, n]) => `${why} ${n}`).join(", ")}.`);
-  if (usable * USABLE_FLOOR.den < mine.length * USABLE_FLOOR.num) notMeasured(`only ${usable} of ${mine.length} write-ups are usable.`);
+  requireWriteUpFloor(opts, seeds, all);
 }
 
 // == run ==========================================================================
@@ -761,6 +809,9 @@ async function runArm(arm, seed, writeUp, config, ctx) {
       served,
       raw: critique,
       critique,
+      // Everything judge.mjs printed, before blinding: the short default reply can be built
+      // from it later, and so can any other layer. The run is paid for once, so it is kept.
+      judge: result ?? null,
       verdict: typeof result?.verdict === "string" ? result.verdict : null,
       challenges: Array.isArray(result?.challenges) ? result.challenges.length : null,
       cost_usd: typeof result?.costUsd === "number" ? result.costUsd : null,
@@ -787,13 +838,14 @@ async function runCommand(opts) {
   const key = keyOrSkip(opts);
   const { config, seeds, writeUps, cases } = loadRunInputs(opts);
   if (writeUps.length === 0) fail(`no write-ups under ${opts.out}. Run the author step first.`);
+  requireWriteUpFloor(opts, seeds, writeUps);
   const meta = readMeta(opts);
   if (meta.seeds_sha256 && meta.seeds_sha256 !== seedsChecksum(seeds)) fail("the frozen seeds changed after the write-ups were made. Start again in a new --out directory.");
   const path = join(opts.out, "answers.jsonl");
   const existing = readJsonl(path);
   if (existing.length && !opts.resume) fail(`arm answers already exist at ${path}. The frozen split is run once. Use --resume to fill in what is missing.`);
   const ctx = { key, endpoint, opts };
-  writeMeta(opts, meta, "run", endpoint, seeds);
+  writeMeta(opts, meta, "run", endpoint, seeds, config);
 
   const seedOf = new Map(seeds.map((seed) => [seed.id, seed]));
   const writeUpOf = new Map(writeUps.map((row) => [row.id, row.write_up]));
@@ -814,6 +866,7 @@ async function runCommand(opts) {
           words: got.usable ? countWords(got.critique) : null,
           critique: got.critique,
           raw: got.raw,
+          judge: got.judge ?? null,
           verdict: got.verdict,
           challenges: got.challenges,
           cost_usd: got.cost_usd,
@@ -884,13 +937,17 @@ async function scoreCommand(opts) {
   const endpoint = resolveEndpoint();
   const key = keyOrSkip(opts);
   const { config, seeds, writeUps, cases } = loadRunInputs(opts);
+  if (writeUps.length === 0) fail(`no write-ups under ${opts.out}. Run the author step first.`);
+  const meta = readMeta(opts);
+  requireSameSeeds(opts, meta, seeds, "the arms ran", { recordNeeded: true });
+  requireWriteUpFloor(opts, seeds, writeUps);
   const answers = readJsonl(join(opts.out, "answers.jsonl"));
   if (answers.length === 0) fail(`no arm answers under ${opts.out}. Run the arms first.`);
   const path = join(opts.out, "grades.jsonl");
   const existing = readJsonl(path);
   if (existing.length && !opts.resume) fail(`grades already exist at ${path}. Use --resume to fill in what is missing.`);
   const ctx = { key, endpoint, opts };
-  writeMeta(opts, readMeta(opts), "score", endpoint, seeds);
+  writeMeta(opts, meta, "score", endpoint, seeds, config);
 
   const seedOf = new Map(seeds.map((seed) => [seed.id, seed]));
   const writeUpOf = new Map(writeUps.map((row) => [row.id, row.write_up]));
@@ -952,15 +1009,21 @@ function reportCommand(opts) {
   const answers = readJsonl(join(opts.out, "answers.jsonl"));
   const grades = readJsonl(join(opts.out, "grades.jsonl"));
   const meta = readMeta(opts);
+  // This is the step that decides and writes the public block, so it holds the frozen split to
+  // the same registration as the steps before it, and to the seeds the run itself recorded.
+  requireRegistration(opts, config, seeds);
+  requireSameSeeds(opts, meta, seeds, "the run", { recordNeeded: writeUps.length > 0 });
   const rehearsal = [...new Set([...(meta.rehearsal ?? []), ...rehearsalReasons(opts, { loopback: false })])];
   const { cases, dropped } = analysedCases(seeds, writeUps, opts.split);
-  const { audit, ownerLabels } = readAudit(opts, grades);
-  const items = buildItems(cases, answers, grades, ownerLabels);
 
   console.log("# Four-arm comparison: what came back\n");
   if (rehearsal.length) console.log(`REHEARSAL, not a measurement: this run used ${rehearsal.join(", ")}.\n`);
-  console.log(`${renderPlumbing(cases, items)}\n`);
+  if (writeUps.length === 0) notMeasured("no write-ups were found. Run the author step first.");
+  const floor = requireWriteUpFloor(opts, seeds, writeUps);
   if (answers.length === 0) notMeasured("no arm answers were found. Run the arms first.");
+  const { audit, ownerLabels } = readAudit(opts, grades);
+  const items = buildItems(cases, answers, grades, ownerLabels);
+  console.log(`${renderPlumbing(cases, items)}\n`);
 
   const date = opts.date || meta.steps?.run?.date || utcDate();
   const commit = meta.steps?.run?.commit || currentCommit(opts);
@@ -970,15 +1033,21 @@ function reportCommand(opts) {
   if (config.registered && ranWith && config.registered.judge_prompt_sha256 !== ranWith) {
     deviations.push("the judge's instructions at the run were not the registered ones");
   }
+  // A frozen step runs only on registered ids, so this shows only when arms.json was registered again part way through, or after.
+  const stepIds = Object.values(meta.steps ?? {}).map((step) => step?.models_sha256).filter(Boolean);
+  if (config.registered && stepIds.some((sum) => sum !== config.registered.models_sha256)) {
+    deviations.push("the model ids at a step of the run were not the ones registered now");
+  }
 
   if (opts.split === "dev") {
     console.log("Dev rehearsal: the dev split checks the plumbing. It produces no result and no public block.");
     return;
   }
-  const report = summarize({ cases, items, date, commit, single_drafter: singleDrafter(seeds), audit, dropped, split: opts.split, deviations });
+  const report = summarize({ cases, items, date, commit, single_drafter: singleDrafter(seeds), audit, write_up_floor_met: floor.met, dropped, split: opts.split, deviations });
   if (report.decision.outcome === "not-measured") {
     const usable = items.filter((item) => itemUsable(item)).length;
     const why = report.decision.reasons.join("; ");
+    if (why.includes("write-ups")) notMeasured(`only ${floor.usable} of ${floor.of} write-ups are usable.`);
     if (why.includes("grader")) {
       notMeasured(
         audit

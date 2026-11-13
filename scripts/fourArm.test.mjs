@@ -6,7 +6,7 @@ import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,10 +23,13 @@ import {
   AUDIT_ALARM_ITEMS,
   AUDIT_ITEMS,
   AUTHOR_FAMILIES,
+  BRAND_WORDS,
   COMPARISONS,
   DRAFTER_FAMILIES,
   EFFECT_POINTS,
   FLAW_TYPES,
+  GAP_SEEN_REASON,
+  GAP_SEEN_WORDS,
   ID_UNCONFIRMED,
   LOADED_FLAW_TYPE,
   MIN_ANALYSED_FLAWED,
@@ -35,9 +38,13 @@ import {
   OUTCOMES,
   OUTCOME_WORDS,
   PRIMARY_COMPARISON,
+  REPORT_LABELS,
+  SAME_SCENARIO_OVERLAP,
   SECONDARY_COMPARISONS,
   SEED_CATEGORIES,
   SEED_KEYS,
+  TEMPLATE_PHRASES,
+  TWIN_MIN_OVERLAP,
   WRITE_UP_WORDS,
   alarmRanking,
   analysedCases,
@@ -46,6 +53,7 @@ import {
   armEnv,
   armValid,
   armsModelIds,
+  armsModelsChecksum,
   armsProblems,
   assignAuthors,
   auditSample,
@@ -79,6 +87,7 @@ import {
   productChainUntouched,
   readmeSeedCounts,
   registrationProblems,
+  renderReport,
   renderSeedCounts,
   seedCounts,
   seedProblems,
@@ -89,6 +98,7 @@ import {
   summarize,
   topLevelValueText,
   usableFloorMet,
+  writeUpFloorMet,
   writeUpUsable,
 } from "./fourArmCore.mjs";
 import { AUTO_ROUTER_MAX_RETRIES, DEFAULT_CHAIN, resolveChain } from "./judgeCore.mjs";
@@ -204,6 +214,12 @@ function tinySet() {
 }
 const toJsonl = (seeds) => `${seeds.map((row) => JSON.stringify(row)).join("\n")}\n`;
 
+/** What the README's Registered line still lacks, given a registered arms file: the date, the commit, the seed checksum and every model id. */
+function registeredLineMisses(line, config) {
+  const reg = config?.registered ?? {};
+  return [reg.date, reg.commit, reg.seeds_sha256, ...armsModelIds(config)].filter((part) => typeof part !== "string" || !String(line).includes(part));
+}
+
 // == Seeds ========================================================================
 describe("seed validation", () => {
   it("accepts a flawed seed, its sound twin and a loaded seed", () => {
@@ -220,9 +236,11 @@ describe("seed validation", () => {
     assert.deepEqual(SEED_KEYS, ["id", "kind", "category", "user_ask", "question", "flaw", "flaw_type", "twin_of", "author_family", "drafter_family", "split"]);
     assert.equal(SEED_CATEGORIES.length, 10);
     assert.equal(FLAW_TYPES.length, 12);
-    for (const type of ["arithmetic", "base-rate-ignored", "survivorship", "sunk-cost", "dropped-requirement", "hidden-dependency", "timeline-conflict", "confounded-evidence", "small-sample", "selection", "contradicts-own-goal", "irreversible-no-cheap-test"]) {
+    for (const type of ["arithmetic", "base-rate-ignored", "survivorship", "sunk-cost", "dropped-requirement", "hidden-dependency", "timeline-conflict", "confounded-evidence", "small-sample", "selection", "contradicts-own-goal", "irreversible-no-trial"]) {
       assert.ok(FLAW_TYPES.includes(type), type);
     }
+    // No flaw type borrows the product's own words. Grill's brief and report say "cheap test"; a type named for it would lean the flaw sentences toward the arms that carry the brief.
+    for (const type of FLAW_TYPES) assert.doesNotMatch(type, /cheap|test|flip/, type);
     assert.ok(DRAFTER_FAMILIES.includes("anthropic") && DRAFTER_FAMILIES.includes("owner"));
     assert.ok(!DRAFTER_FAMILIES.includes("other"));
   });
@@ -296,6 +314,20 @@ describe("seed validation", () => {
     assert.match(withText("The strongest case against is the cost."), /phrase from Grill's own write-up template/);
   });
 
+  it("rejects Grill's own phrases and report labels in the ask, the question and the flaw alike", () => {
+    assert.deepEqual(TEMPLATE_PHRASES, ["prediction, offered at", "the strongest case against"]);
+    assert.deepEqual(REPORT_LABELS, ["cheap test", "what would flip the call"]);
+    const bad = (extra) => seedProblems(seed("f-oven", "oven", extra)).join("\n");
+    assert.match(bad({ flaw: "The switch cannot be undone and the plan names no cheap test to run before it." }), /flaw uses a label Grill prints in its own report \("cheap test"\)/);
+    assert.match(bad({ question: "What would flip the call on buying the second oven now?" }), /question uses a label Grill prints in its own report \("what would flip the call"\)/);
+    assert.match(bad({ user_ask: `${ASKS.oven("f-oven")} Nobody has named a Cheap  Test for it.` }), /user_ask uses a label Grill prints in its own report \("cheap test"\)/);
+    assert.match(bad({ flaw: "No cheap-test is named before the money is spent on the second oven." }), /flaw uses a label Grill prints in its own report/, "a hyphen in place of the space is the same label");
+    assert.match(bad({ flaw: "The strongest case against is the cost, which the plan leaves out of its sums." }), /flaw uses a phrase from Grill's own write-up template \("the strongest case against"\)/);
+    assert.match(bad({ question: "Is the prediction, offered at seven in ten, a fair one?" }), /question uses a phrase from Grill's own write-up template \("prediction, offered at"\)/);
+    // The same words apart are ordinary words.
+    assert.deepEqual(seedProblems(seed("f-oven", "oven", { flaw: "The plan picks the cheapest oven and never says how it would test the claim that sales keep growing." })), []);
+  });
+
   it("finds problems that only show across the set: repeated ids, broken twins, a reused scenario", () => {
     const set = tinySet();
     assert.deepEqual(seedSetProblems(set), []);
@@ -309,6 +341,17 @@ describe("seed validation", () => {
     assert.match(seedSetProblems(second).join("\n"), /f-oven already has a twin \(s-oven\)/);
     const copy = [...set, { ...seed("f-oven-again", "oven"), author_family: "openai" }];
     assert.match(seedSetProblems(copy).join("\n"), /read as the same scenario/);
+  });
+
+  it("tells a twin written in other words how much wording it has to share", () => {
+    assert.equal(TWIN_MIN_OVERLAP, 0.2);
+    assert.equal(SAME_SCENARIO_OVERLAP, 0.5);
+    const set = tinySet();
+    const reworded =
+      "Our bakery has one oven and it is full by nine most mornings, so I want a second one this spring. Call this reference code s-oven. It would cost about four thousand dollars, paid from savings, and sales have grown for a year. My partner would rather wait one more season before we spend it. Please set the choice out in about 200 words so that she and I can read it together.";
+    const apart = set.map((row) => (row.id === "s-oven" ? { ...row, user_ask: reworded } : row));
+    assert.deepEqual(seedProblems(apart.find((row) => row.id === "s-oven")), []);
+    assert.match(seedSetProblems(apart).join("\n"), /s-oven: a twin tells the same situation as f-oven with the flaw taken out, and these two asks share too little: under a fifth of their wording\. Copy the flawed ask and change only what takes the flaw out\./);
   });
 
   it("wants author families on every seed or on none, balanced, with a twin following its sibling", () => {
@@ -419,11 +462,24 @@ describe("evals/four-arm: the draft protocol and its files", () => {
       assert.doesNotMatch(readme, /pre-?regist/i, "it is not called a pre-registration until it is registered");
       assert.equal(existsSync(CHECKSUM_FILE), false, "a seed checksum is committed at registration, not before");
     } else {
-      const registered = JSON.parse(read(ARMS_FILE)).registered;
-      for (const part of [registered.date, registered.commit, registered.seeds_sha256]) assert.ok(lines[2].includes(part), "the Registered line gives the date, the commit and the seed checksum");
+      assert.deepEqual(registeredLineMisses(lines[2], JSON.parse(read(ARMS_FILE))), [], "the Registered line gives the date, the commit, the seed checksum and every model id");
       assert.equal(lines[3] === "Measured: not yet.", status === "registered");
       const { seeds } = parseSeedsJsonl(read(SEEDS_FILE));
       assert.deepEqual(registrationProblems(JSON.parse(read(ARMS_FILE)), { seeds, checksumOnFile: read(CHECKSUM_FILE) }), [], "a registered protocol has confirmed ids and a matching checksum");
+    }
+  });
+
+  it("the Registered line has to carry the date, the commit, the seed checksum and every model id", () => {
+    const config = fixtureArms({ seeds_sha256: "a".repeat(64) });
+    const ids = armsModelIds(config);
+    assert.equal(ids.length, 9);
+    const line = `Registered: 2026-01-05, commit abc1234, seed checksum ${"a".repeat(64)}, model ids ${ids.join(", ")}.`;
+    assert.deepEqual(registeredLineMisses(line, config), []);
+    assert.deepEqual(registeredLineMisses(line.replace(`${ids[1]}, `, ""), config), [ids[1]], "one id left off the line");
+    assert.deepEqual(registeredLineMisses("Registered: 2026-01-05, commit abc1234.", config), ["a".repeat(64), ...ids]);
+    // While the protocol is a draft, the line says what it will carry. Once registered, the status test holds it to that.
+    if (JSON.parse(read(ARMS_FILE)).status === "draft") {
+      assert.match(readme.split("\n").filter((row) => row.trim())[2], /the date, the commit, the seed checksum and the model ids/);
     }
   });
 
@@ -489,6 +545,42 @@ describe("evals/four-arm: the draft protocol and its files", () => {
     assert.ok(readme.includes(`${ASK_WORDS.min} to ${ASK_WORDS.max} words`));
     assert.ok(readme.includes("4 to 40 words"));
     assert.ok(readme.includes("6 to 60 words"));
+  });
+
+  it("gives a seed writer every rule the validator holds, so nobody has to read the code", () => {
+    const section = readme.slice(readme.indexOf("### The seed file"), readme.indexOf("## Who writes each case"));
+    for (const family of DRAFTER_FAMILIES) assert.ok(section.includes(`\`${family}\``), `drafter_family ${family}`);
+    assert.doesNotMatch(section, /and so on/, "the drafter list is given whole");
+    assert.match(section, /\| `id` \|[^\n]*80 characters at most/);
+    assert.match(section, /at least a fifth of the wording shared/);
+    assert.match(section, /half of their wording or more/);
+    for (const phrase of [...TEMPLATE_PHRASES, ...REPORT_LABELS]) assert.ok(section.includes(`"${phrase}"`), phrase);
+    assert.match(section, /use invented names/i);
+    assert.match(section, /`question` and `flaw` are each one line\./);
+    assert.match(section, /`ovenbarn\.com` counts as a web address/);
+    assert.match(section, /the minus sign character included/);
+    assert.doesNotMatch(readme, /irreversible-no-cheap-test/);
+    // The list of refused words is the validator's own list, and every word and example the README gives is in fact refused.
+    const refused = (text) => seedProblems(seed("f-oven", "oven", { user_ask: `${ASKS.oven("f-oven")} We order through ${text} now.` })).join("\n");
+    const listed = /The refused words are:\n\n([^\n]+)\.\n/.exec(section)[1].split(", ");
+    assert.deepEqual(listed, BRAND_WORDS.map((word) => word.replace("\\s?", "")));
+    for (const word of listed) assert.match(refused(word), /names an AI company or model/, word);
+    for (const name of ["Amazon", "Google", "Microsoft", "Nvidia", "Copilot", "Gemini", "Mistral", "Cohere", "Llama"]) {
+      assert.ok(section.includes(name), name);
+      assert.match(refused(name), /names an AI company or model/, name);
+    }
+    for (const also of ["open ai", "chat gpt", "Meta", "o4-mini", "stepfun/step-3", "GEMINI 4 Pro"]) assert.match(refused(also), /names an AI company or model/, also);
+    assert.equal(refused("a meta point and a Googled answer"), "", "a part of a longer word, or meta in small letters, is not a name");
+  });
+
+  it("says what a frozen run is held to at every step", () => {
+    assert.ok(readme.includes(`The result line then reads "${GAP_SEEN_WORDS}".`));
+    assert.match(readme, /If the gap seen is 15 points or more and the test is still not under 0\.05, the report says a gap of that size was seen and could not be told from chance\. It does not say none was found\./);
+    assert.match(readme, /With no key, a dev step prints "SKIPPED: no arm ran" and stops with no score\. A frozen step with no key is Not measured, with or without `--require-key`\./);
+    assert.match(readme, /the author step says so, and the run, score and report steps each say it again/);
+    assert.match(readme, /`models_sha256` \(the model ids fingerprint that `preflight` prints\)/);
+    assert.match(readme, /`report` checks the registration and the seeds again, and stops if either changed after the run\./);
+    assert.match(readme, /the reply for arm A, and the judge's whole result for arms B, C and D/);
   });
 
   it("keeps to the wording rules for public copy", () => {
@@ -578,8 +670,10 @@ describe("arms file checks", () => {
     assert.match(edit((c) => (c.graders[1].model = "google/another-grader")), /a second grader from google/);
     assert.match(edit((c) => (c.graders = c.graders.slice(0, 3))), /graders must list at least 4 models/);
     assert.match(edit((c) => (c.status = "running")), /status must be one of draft, registered, measured/);
-    assert.match(edit((c) => (c.registered = null)), /registered must hold date, commit, seeds_sha256, judge_prompt_sha256/);
+    assert.match(edit((c) => (c.registered = null)), /registered must hold date, commit, seeds_sha256, judge_prompt_sha256, models_sha256 once status is registered/);
     assert.match(edit((c) => (c.registered.judge_prompt_sha256 = "abc")), /registered\.judge_prompt_sha256 must be 64 hex characters/);
+    assert.match(edit((c) => delete c.registered.models_sha256), /registered\.models_sha256 must be 64 hex characters/);
+    assert.match(edit((c) => (c.registered.models = "all of them")), /registered: unexpected key models/);
     assert.match(edit((c) => (c.judge_model = "openai/example")), /unexpected key: judge_model/);
     assert.match(armsProblems({ ...fixtureArms({ status: "draft" }), registered: { date: "2026-01-05" } }).join("\n"), /registered must be null while status is draft/);
   });
@@ -595,6 +689,33 @@ describe("arms file checks", () => {
     unconfirmed.graders[2].status = ID_UNCONFIRMED;
     unconfirmed.families.openai.stronger_model_status = ID_UNCONFIRMED;
     assert.match(registrationProblems(unconfirmed, { seeds, checksumOnFile: sum }).join("\n"), /still marked "owner to confirm": families\.openai\.stronger_model, graders\[2\]/);
+  });
+
+  it("registration fixes the model ids: an author, a stronger model or a grader swapped afterwards is a problem", () => {
+    const seeds = tinySet();
+    const sum = seedsChecksum(seeds);
+    const registered = () => fixtureArms({ seeds_sha256: sum });
+    assert.equal(armsModelsChecksum(registered()), sha(armsModelIds(registered()).join("\n")), "the fingerprint is the ids, one per line, in the order the file lists them");
+    assert.equal(registered().registered.models_sha256, armsModelsChecksum(registered()));
+    const after = (change) => {
+      const config = registered();
+      change(config);
+      return registrationProblems(config, { seeds, checksumOnFile: sum });
+    };
+    assert.deepEqual(after(() => {}), []);
+    const changed = /^a model id in arms\.json changed after registration$/m;
+    assert.match(after((c) => (c.families.openai.author_model = "openai/another-author")).join("\n"), changed);
+    assert.match(after((c) => (c.families.anthropic.stronger_model = "anthropic/another-stronger")).join("\n"), changed);
+    assert.match(after((c) => (c.graders[4].model = "qwen/example-grader")).join("\n"), changed);
+    assert.match(after((c) => c.graders.reverse()).join("\n"), changed, "the order the graders are asked in is part of what was registered");
+    assert.match(after((c) => c.graders.push({ model: "qwen/example-grader", status: "confirmed" })).join("\n"), changed);
+    // All three at once, the swap an independent check made: nothing else in the file notices it.
+    const swapped = after((c) => {
+      c.families.openai.author_model = "openai/another-author";
+      c.families.anthropic.stronger_model = "anthropic/another-stronger";
+      c.graders[4].model = "qwen/example-grader";
+    });
+    assert.deepEqual(swapped, ["a model id in arms.json changed after registration"]);
   });
 });
 
@@ -990,6 +1111,7 @@ describe("the decision rule", () => {
   });
   const facts = (over = {}) => ({
     analysed_flawed: 120,
+    write_up_floor_met: true,
     usable_floor_met: true,
     audit: { agree: 36, of: 40, labels_by: "graders" },
     primary: cells(70, 25, 8, 17),
@@ -1070,6 +1192,76 @@ describe("the decision rule", () => {
     assert.equal(d.quality_sentence_allowed, false);
   });
 
+  it("does not say none was found when a gap of 15 points or more was seen and the test could not tell it from chance", () => {
+    assert.equal(GAP_SEEN_WORDS, "a gap of 15 points or more was seen, and no direction is claimed");
+    assert.equal(GAP_SEEN_REASON, "a gap of 15 points or more was seen, and the test could not tell it from chance");
+    // 120 flawed cases. Only D caught 48, only B caught 30: 18 cases is exactly 15.0 points, and the exact test gives about 0.054.
+    const p = mcnemarExactP(48, 30);
+    assert.ok(p > 0.05 && p < 0.06, String(p));
+    const even = (first, second) => [{ family: "anthropic", first_only: first / 2, second_only: second / 2 }, { family: "openai", first_only: first / 2, second_only: second / 2 }];
+    const d = decideFourArm(facts({ primary: cells(20, 48, 30, 22), by_author: even(48, 30) }));
+    assert.equal(d.outcome, "no-difference-of-15-found", "the branch, and what it changes, stay the same");
+    assert.equal(d.gap_seen, true);
+    assert.equal(d.words, GAP_SEEN_WORDS);
+    assert.doesNotMatch(d.words, /no difference/);
+    assert.deepEqual(d.reasons, [GAP_SEEN_REASON]);
+    assert.equal(d.counts_agree, true);
+    assert.equal(d.quality_sentence_allowed, false);
+    assert.equal(d.changes, "no-quality-sentence");
+
+    // One case fewer for D is 14.2 points, and the plain words stand.
+    assert.ok(mcnemarExactP(47, 30) > 0.05);
+    const under = decideFourArm(facts({ primary: cells(20, 47, 30, 23), by_author: [{ family: "anthropic", first_only: 24, second_only: 15 }, { family: "openai", first_only: 23, second_only: 15 }] }));
+    assert.equal(under.outcome, "no-difference-of-15-found");
+    assert.equal(under.gap_seen, false);
+    assert.equal(under.words, "no difference of 15 points or more was found");
+    assert.deepEqual(under.reasons, []);
+
+    // The same holds when B is ahead, and when the gap shows only on usable answers.
+    const behind = decideFourArm(facts({ primary: cells(20, 30, 48, 22), by_author: even(30, 48) }));
+    assert.equal(behind.outcome, "no-difference-of-15-found");
+    assert.equal(behind.words, GAP_SEEN_WORDS);
+    assert.ok(mcnemarExactP(40, 24) > 0.05);
+    const usableOnly = decideFourArm(facts({ primary: cells(20, 40, 30, 30, [20, 40, 24, 16]), by_author: even(40, 30) }));
+    assert.equal(usableOnly.words, GAP_SEEN_WORDS, "16 points on the 100 cases both arms answered");
+    assert.deepEqual(usableOnly.reasons, [GAP_SEEN_REASON]);
+
+    // The two ways of counting disagree and one of them shows the gap: still not "none was found".
+    assert.ok(mcnemarExactP(30, 8) < 0.05 && mcnemarExactP(12, 8) > 0.05);
+    const split = decideFourArm(facts({ primary: cells(60, 30, 8, 22, [60, 12, 8, 20]), by_author: even(30, 8) }));
+    assert.equal(split.outcome, "no-difference-of-15-found");
+    assert.equal(split.counts_agree, false);
+    assert.equal(split.words, GAP_SEEN_WORDS);
+    assert.deepEqual(split.reasons, ["the two ways of counting disagree, so no direction is claimed"]);
+
+    // A direction that holds both ways is still a direction, whatever the size of the gap.
+    assert.equal(decideFourArm(facts()).words, "D better");
+  });
+
+  it("prints the 48 to 30 table without the words 'no difference'", () => {
+    const cases = [];
+    const items = [];
+    const add = (n, hits, prefix) => {
+      for (let i = 0; i < n; i += 1) {
+        const id = `${prefix}-${i}`;
+        cases.push({ id, kind: "flawed", author_family: AUTHOR_FAMILIES[i % 2], drafter_family: "owner", visible: "yes" });
+        for (const arm of ARMS) items.push({ id, arm, usable: true, label: hits.includes(arm) ? "yes" : "no", words: 120, objections: 3, served_company: arm === "D" ? "google" : null });
+      }
+    };
+    add(20, ["A", "B", "C", "D"], "all");
+    add(48, ["C", "D"], "product-only");
+    add(30, ["A", "B"], "fresh-only");
+    add(22, [], "none");
+    const report = summarize({ cases, items, date: "2026-12-01", commit: "abc1234", single_drafter: false, audit: { agree: 38, of: 40, labels_by: "graders" }, write_up_floor_met: true });
+    assert.equal(report.decision.outcome, "no-difference-of-15-found");
+    const text = renderReport(report);
+    assert.match(text, /^## Result: a gap of 15 points or more was seen, and no direction is claimed$/m);
+    assert.match(text, /^Why: a gap of 15 points or more was seen, and the test could not tell it from chance\.$/m);
+    assert.ok(text.includes("48 to 30 (+15.0 points, p 0.054)"), "the row that shows the gap");
+    assert.doesNotMatch(text, /no difference of 15 points or more was found/, "the page must not say none was found beside a row that shows one");
+    assert.match(text, /A public sentence about quality is not allowed on this result\./);
+  });
+
   it("under 110 analysed flawed cases the result is too few cases to test, and changes no claim", () => {
     const d = decideFourArm(facts({ analysed_flawed: 109 }));
     assert.equal(d.outcome, "too-few-cases");
@@ -1105,6 +1297,37 @@ describe("the decision rule", () => {
     assert.equal(decideFourArm(facts({ usable_floor_met: false, analysed_flawed: 5 })).outcome, "not-measured", "not measured comes before too few cases");
   });
 
+  it("is not measured when too few write-ups were usable, whatever the arms did afterwards", () => {
+    for (const value of [false, undefined, null, "yes", 1]) {
+      const d = decideFourArm(facts({ write_up_floor_met: value }));
+      assert.equal(d.outcome, "not-measured", String(value));
+      assert.deepEqual(d.reasons, ["too few usable write-ups"]);
+      assert.equal(d.p, null);
+      assert.equal(d.quality_sentence_allowed, false);
+    }
+    const { write_up_floor_met: dropped, ...without } = facts();
+    assert.equal(dropped, true);
+    assert.equal(decideFourArm(without).outcome, "not-measured", "a caller that never checked the write-ups gets no result");
+    assert.equal(decideFourArm(facts({ write_up_floor_met: false, analysed_flawed: 120 })).outcome, "not-measured", "120 analysed cases do not rescue it");
+  });
+
+  it("holds the write-up floor: nine in ten of a split's seeds need a usable write-up", () => {
+    const seeds = tinySet();
+    const rows = (short = []) => seeds.map((row) => ({ id: row.id, usable: !short.includes(row.id) }));
+    assert.deepEqual(writeUpFloorMet(seeds, rows(), "frozen"), { usable: 12, of: 12, met: true });
+    assert.deepEqual(writeUpFloorMet(seeds, rows(["f-oven"]), "frozen"), { usable: 11, of: 12, met: true }, "11 of 12 is over 9 in 10");
+    assert.deepEqual(writeUpFloorMet(seeds, rows(["f-oven", "s-hire"]), "frozen"), { usable: 10, of: 12, met: false }, "10 of 12 is under it");
+    assert.deepEqual(writeUpFloorMet(seeds, rows(["f-course", "s-lease", "l-job"]), "frozen"), { usable: 9, of: 12, met: false });
+    assert.deepEqual(writeUpFloorMet(seeds, [], "frozen"), { usable: 0, of: 12, met: false });
+    assert.deepEqual(writeUpFloorMet(seeds, rows(), "dev"), { usable: 1, of: 1, met: true }, "each split is held to its own seeds");
+    assert.deepEqual(writeUpFloorMet(seeds, [...rows(["f-oven", "s-hire"]), { id: "f-hire", usable: true }, { id: "f-hire", usable: true }], "frozen"), { usable: 10, of: 12, met: false }, "a row written twice counts once");
+    assert.deepEqual(writeUpFloorMet(seeds, rows().map((row) => ({ ...row, usable: "yes" })), "frozen"), { usable: 0, of: 12, met: false });
+    assert.deepEqual(writeUpFloorMet([], [], "frozen"), { usable: 0, of: 0, met: false }, "no seeds is not a pass");
+    // Ten of ten at exactly nine in ten.
+    const ten = seeds.filter((row) => row.split === "frozen").slice(0, 10);
+    assert.equal(writeUpFloorMet(ten, ten.map((row, i) => ({ id: row.id, usable: i > 0 })), "frozen").met, true, "9 of 10 meets the floor");
+  });
+
   it("needs every arm usable on at least 9 in 10 flawed cases", () => {
     const arm = (id, usable) => ({ arm: id, flawed: 120, usable_flawed: usable });
     assert.equal(usableFloorMet(FOUR_ARM_IDS.map((id) => arm(id, 108))), true);
@@ -1123,12 +1346,17 @@ describe("the decision rule", () => {
       ],
       single_drafter: false,
     };
-    const got = factsFromBlock(block, { by_author: [], audit: { agree: 40, of: 40, labels_by: "graders" } });
+    const got = factsFromBlock(block, { by_author: [], audit: { agree: 40, of: 40, labels_by: "graders" }, write_up_floor_met: true });
     assert.equal(got.primary.first_only, 25, "the product's cell, though the block lists it second");
     assert.equal(got.primary.second_only, 8);
     assert.equal(got.analysed_flawed, 120);
     assert.equal(got.usable_floor_met, true);
+    assert.equal(got.write_up_floor_met, true);
     assert.equal(decideFourArm(got).outcome, "d-better");
+    // The write-up floor is not in the public block. A caller that does not pass it gets no result.
+    const unchecked = factsFromBlock(block, { by_author: [], audit: { agree: 40, of: 40, labels_by: "graders" } });
+    assert.equal(unchecked.write_up_floor_met, false);
+    assert.equal(decideFourArm(unchecked).outcome, "not-measured");
   });
 
   it("ranks arms on alarm only at 30 points or more, and never ranks arm A", () => {
@@ -1228,6 +1456,22 @@ describe("eval-four-arm.mjs with no key", () => {
     rmSync(out, { recursive: true, force: true });
   });
 
+  it("on the frozen split, no key is Not measured with or without --require-key: a frozen step never ends green on a skip", async () => {
+    const out = mkdtempSync(join(tmpdir(), "four-arm-frozen-nokey-"));
+    for (const step of ["author", "run", "score"]) {
+      const { code, stdout } = await runCli([step, "--split", "frozen", "--out", out], envFor());
+      assert.equal(code, 2, `${step} --split frozen with no key and no --require-key`);
+      assert.match(stdout, /::error::Not measured: no router key, so no arm reached a model\./, step);
+      assert.match(stdout, /No score is reported and no results file was changed\./, step);
+      assert.doesNotMatch(stdout, /\d+ of \d+|%/, step);
+    }
+    assert.equal(existsSync(join(out, "meta.json")), false);
+    // The dev split keeps its skip, and steps that call no model are not held to a key.
+    assert.equal((await runCli(["author", "--split", "dev", "--out", out], envFor())).code, 0);
+    assert.equal((await runCli(["preflight", "--split", "frozen", "--out", out], envFor())).code, 0, "preflight calls no model");
+    rmSync(out, { recursive: true, force: true });
+  });
+
   it("refuses an endpoint override that is not loopback, before anything is sent", async () => {
     const { code, stderr } = await runCli(["author"], envFor({ OPENROUTER_API_KEY: "test-key", JUDGE_OPENROUTER_URL: "https://collector.example/v1" }));
     assert.equal(code, 1);
@@ -1239,8 +1483,9 @@ describe("eval-four-arm.mjs with no key", () => {
     assert.equal(code, 0, stdout);
     assert.match(stdout, /No model is called\./);
     assert.match(stdout, /Product judge chain: openrouter\/auto \(untouched\)\./);
-    assert.match(stdout, /Router key: none\./);
+    assert.match(stdout, /Router key: none\. A dev step will skip\. A frozen step will be Not measured\./);
     assert.match(stdout, /node scripts\/upstream-check\.mjs/);
+    assert.ok(stdout.includes(`Model ids fingerprint: ${armsModelsChecksum(JSON.parse(read(ARMS_FILE)))}`), "the value registration records as models_sha256");
     const draft = JSON.parse(read(ARMS_FILE)).status === "draft";
     if (draft) assert.match(stdout, /placeholders until confirmed/);
   });
@@ -1426,6 +1671,33 @@ describe("a full loopback run of a tiny set", () => {
     assert.ok(answers.filter((row) => row.arm === "D").every((row) => row.served_company === "google"));
   });
 
+  it("keeps what each arm returned as it came back: the reply for arm A, the judge's own result for B, C and D", () => {
+    const answers = jsonl("answers.jsonl");
+    for (const row of answers.filter((r) => r.arm === "A")) {
+      assert.equal(row.judge, null, "arm A does not run the judge");
+      assert.match(row.raw, /^As Claude, made by Anthropic, and not ChatGPT, I will argue the other side/);
+      assert.notEqual(row.raw, row.critique);
+    }
+    const judged = answers.filter((r) => r.arm !== "A");
+    assert.equal(judged.length, 33);
+    for (const row of judged) {
+      const id = `${row.id} ${row.arm}`;
+      assert.ok(row.judge !== null && typeof row.judge === "object", `${id}: the judge's result is kept`);
+      assert.equal(row.judge.verdict, row.verdict, id);
+      assert.equal(row.judge.servedModel, row.served_model, id);
+      assert.equal(row.judge.challenges.length, row.challenges, id);
+      for (const field of ["verdictReason", "steelman", "counterSteelman", "strongestObjection"]) assert.ok(typeof row.judge[field] === "string" && row.judge[field].length > 0, `${id} ${field}`);
+      for (const field of ["challenges", "rejected", "notes", "factsNeeded", "requestedChain"]) assert.ok(Array.isArray(row.judge[field]), `${id} ${field}`);
+      assert.ok("grounding" in row.judge && "degraded" in row.judge && "decorrelated" in row.judge, id);
+      assert.equal(row.judge.declaredAuthor, familyOf(row.id), id);
+      assert.equal(row.judge.challenges[0].falsifier, "Check the first week against the plan before spending more.", `${id}: the challenge as the judge wrote it`);
+    }
+    const product = judged.filter((row) => row.arm === "D");
+    assert.ok(product.every((row) => row.judge.servedModel === PRODUCT_SERVES && row.judge.decorrelated === true && row.judge.requestedChain[0] === "openrouter/auto"));
+    assert.ok(product.every((row) => !row.critique.includes(PRODUCT_SERVES)), "the graded text stays blinded");
+    assert.doesNotMatch(read(join(paths.out, "answers.jsonl")), /test-key-loopback-only/, "the key is in no row");
+  });
+
   it("graders see blinded text only: no arm, no model, no vendor", () => {
     assert.equal(steps.score.code, 0, steps.score.stderr);
     assert.match(steps.score.stdout, /Graded: 44 of 44 usable answers\./);
@@ -1570,6 +1842,114 @@ describe("a full loopback run of a tiny set", () => {
     assert.match(refused.stderr, /not registered: the frozen seeds do not match seeds\.sha256/);
   });
 
+  // A copy of the finished run's folder, with no report in it yet, so a test can change one thing and report on it.
+  const copyOut = (name) => {
+    const out = join(dir, name);
+    mkdirSync(out);
+    for (const file of ["meta.json", "writeups.jsonl", "answers.jsonl", "grades.jsonl", "audit-map.jsonl"]) writeFileSync(join(out, file), read(join(paths.out, file)));
+    return out;
+  };
+  const argsWith = (swap) => common.map((arg) => swap[arg] ?? arg);
+  const freshResults = (name) => {
+    const path = join(dir, name);
+    writeFileSync(path, read(COMMITTED_RESULTS));
+    return path;
+  };
+
+  it("the report holds the write-up floor itself: answers and grades on file do not make up for three write-ups in twelve that were too short", async () => {
+    const out = copyOut("out-short-writeups");
+    const results = freshResults("results-short-writeups.json");
+    const rows = jsonl("writeups.jsonl").map((row) => (["f-course", "s-lease", "l-job"].includes(row.id) ? { ...row, usable: false, words: 9, write_up: "", sha256: "", note: "the write-up has 9 words" } : row));
+    writeFileSync(join(out, "writeups.jsonl"), toJsonl(rows));
+    const report = await runCli(["report", ...argsWith({ [paths.out]: out }), "--owner-labels", ownerReplies(0), "--results", results], env);
+    assert.equal(report.code, 2, report.stdout + report.stderr);
+    assert.match(report.stdout, /::error::Not measured: only 9 of 12 write-ups are usable\./);
+    assert.match(report.stdout, /No score is reported and no results file was changed\./);
+    assert.doesNotMatch(report.stdout, /## Result|Public block|Catch on flawed cases|p 0\./);
+    assert.equal(existsSync(join(out, "public-block.json")), false);
+    assert.equal(existsSync(join(out, "report.json")), false);
+    assert.equal(read(results), read(COMMITTED_RESULTS), "the results file is byte for byte as it was");
+  });
+
+  it("the report refuses seeds that changed after the run, and an arms file that is not registered", async () => {
+    const out = copyOut("out-changed-seeds");
+    const results = freshResults("results-changed-seeds.json");
+    const labels = ownerReplies(0);
+    const nothingWritten = (step) => {
+      assert.equal(existsSync(join(out, "public-block.json")), false, `${step}: no block`);
+      assert.equal(read(results), read(COMMITTED_RESULTS), `${step}: the results file is as it was`);
+    };
+
+    // One seed relabelled after the run, the registered checksum left alone.
+    const relabelled = seeds.map((row) => (row.id === "f-oven" ? { ...row, drafter_family: "owner" } : row));
+    const changed = join(dir, "relabelled.jsonl");
+    writeFileSync(changed, toJsonl(relabelled));
+    const first = await runCli(["report", ...argsWith({ [paths.out]: out, [paths.seeds]: changed }), "--owner-labels", labels, "--results", results], env);
+    assert.equal(first.code, 1, first.stdout);
+    assert.match(first.stderr, /not registered: the frozen seeds do not match seeds\.sha256; the set is frozen at registration/);
+    nothingWritten("relabelled");
+
+    // Every seed relabelled and the registration rewritten to match: the run's own record still has the seeds it ran on.
+    const allOwner = seeds.map((row) => ({ ...row, drafter_family: "owner" }));
+    assert.equal(singleDrafter(allOwner), false, "this is the switch a relabel would flip");
+    const again = { seeds: join(dir, "all-owner.jsonl"), arms: join(dir, "arms-again.json"), checksum: join(dir, "again.sha256") };
+    writeFileSync(again.seeds, toJsonl(allOwner));
+    writeFileSync(again.arms, JSON.stringify(fixtureArms({ seeds_sha256: seedsChecksum(allOwner), judge_prompt_sha256: judgePromptFingerprint() })));
+    writeFileSync(again.checksum, `${seedsChecksum(allOwner)}\n`);
+    const reRegistered = argsWith({ [paths.out]: out, [paths.seeds]: again.seeds, [paths.arms]: again.arms, [paths.checksum]: again.checksum });
+    const second = await runCli(["report", ...reRegistered, "--owner-labels", labels, "--results", results], env);
+    assert.equal(second.code, 1, second.stdout);
+    assert.match(second.stderr, /the frozen seeds changed after the run\. The set is frozen at registration\./);
+    nothingWritten("registered again");
+    // The score step may not launder the change into the run's record either.
+    const rescored = await runCli(["score", ...reRegistered, "--resume"], env);
+    assert.equal(rescored.code, 1, rescored.stdout);
+    assert.match(rescored.stderr, /the frozen seeds changed after the arms ran\. The set is frozen at registration\./);
+    assert.equal(JSON.parse(read(join(out, "meta.json"))).seeds_sha256, sum, "the record of what the run used is untouched");
+
+    // A draft arms file, with the ids still waiting for the owner.
+    const draft = fixtureArms({ status: "draft" });
+    draft.graders[0].status = ID_UNCONFIRMED;
+    const draftArms = join(dir, "arms-draft.json");
+    writeFileSync(draftArms, JSON.stringify(draft));
+    const third = await runCli(["report", ...argsWith({ [paths.out]: out, [paths.arms]: draftArms }), "--owner-labels", labels, "--results", results], env);
+    assert.equal(third.code, 1, third.stdout);
+    assert.match(third.stderr, /not registered: arms\.json status is "draft"; a frozen run needs "registered"/);
+    assert.match(third.stderr, /the frozen split runs only after the protocol is registered/);
+    nothingWritten("draft arms");
+
+    // With the run's own record of its seeds gone, there is nothing to check the seeds against.
+    const metaText = read(join(out, "meta.json"));
+    rmSync(join(out, "meta.json"));
+    const noRecord = await runCli(["report", ...reRegistered, "--owner-labels", labels, "--results", results], env);
+    writeFileSync(join(out, "meta.json"), metaText);
+    assert.equal(noRecord.code, 1, noRecord.stdout);
+    assert.match(noRecord.stderr, /meta\.json has no record of the seeds this run used/);
+    nothingWritten("no record of the seeds");
+
+    // Unchanged seeds and the registered arms still report, with no deviation to list.
+    const fine = await runCli(["report", ...argsWith({ [paths.out]: out }), "--owner-labels", labels, "--results", results], env);
+    assert.equal(fine.code, 0, fine.stdout + fine.stderr);
+    assert.equal(JSON.parse(read(join(out, "public-block.json"))).single_drafter, true);
+    assert.doesNotMatch(fine.stdout, /Deviations from the registered protocol/);
+    const steps = JSON.parse(read(join(out, "meta.json"))).steps;
+    for (const step of ["author", "run", "score"]) assert.equal(steps[step].models_sha256, armsModelsChecksum(arms), `${step} recorded the ids it ran on`);
+
+    // A grader swapped after the run and the arms file registered again: the report goes ahead and lists the deviation itself.
+    const swapped = fixtureArms({ seeds_sha256: sum, judge_prompt_sha256: judgePromptFingerprint() });
+    swapped.graders[4].model = "qwen/example-grader";
+    const swappedArms = join(dir, "arms-swapped.json");
+    writeFileSync(swappedArms, JSON.stringify(swapped));
+    const notRegistered = await runCli(["report", ...argsWith({ [paths.out]: out, [paths.arms]: swappedArms }), "--owner-labels", labels], env);
+    assert.equal(notRegistered.code, 1, notRegistered.stdout);
+    assert.match(notRegistered.stderr, /not registered: a model id in arms\.json changed after registration/);
+    swapped.registered.models_sha256 = armsModelsChecksum(swapped);
+    writeFileSync(swappedArms, JSON.stringify(swapped));
+    const listed = await runCli(["report", ...argsWith({ [paths.out]: out, [paths.arms]: swappedArms }), "--owner-labels", labels], env);
+    assert.equal(listed.code, 0, listed.stdout + listed.stderr);
+    assert.match(listed.stdout, /Deviations from the registered protocol: the model ids at a step of the run were not the ones registered now\./);
+  });
+
   it("leaves the product judge and the committed results as they were", () => {
     assert.deepEqual(productHashes(), hashesBefore);
   });
@@ -1592,6 +1972,29 @@ describe("a frozen run needs a registered protocol", () => {
     assert.match(frozen.stderr, /not registered: evals\/four-arm\/seeds\.sha256 does not exist/);
     assert.match(frozen.stderr, /the frozen split runs only after the protocol is registered/);
     assert.equal(router.calls.author.length + router.calls.grader.length + router.calls.judge.length, 0);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("stops before any model is called when a model id was swapped after registration", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "four-arm-swapped-"));
+    const seeds = tinySet();
+    const sum = seedsChecksum(seeds);
+    const swapped = fixtureArms({ seeds_sha256: sum });
+    swapped.families.openai.author_model = "openai/another-author";
+    writeFileSync(join(dir, "seeds.jsonl"), toJsonl(seeds));
+    writeFileSync(join(dir, "arms.json"), JSON.stringify(swapped));
+    writeFileSync(join(dir, "seeds.sha256"), `${sum}\n`);
+    const router = await startFourArmRouter({ arms: swapped });
+    const env = envFor({ OPENROUTER_API_KEY: "test-key-loopback-only", ...router.env });
+    const args = ["--split", "frozen", "--seeds", join(dir, "seeds.jsonl"), "--arms", join(dir, "arms.json"), "--checksum", join(dir, "seeds.sha256"), "--out", join(dir, "out")];
+    const frozen = await runCli(["author", ...args], env);
+    const preflight = await runCli(["preflight", ...args], env);
+    await router.close();
+    assert.equal(frozen.code, 1, frozen.stdout);
+    assert.match(frozen.stderr, /not registered: a model id in arms\.json changed after registration/);
+    assert.equal(router.calls.author.length + router.calls.grader.length + router.calls.judge.length + router.calls.unknown.length, 0);
+    assert.match(preflight.stdout, /Registration: not complete\. The frozen split will not run until:\n- a model id in arms\.json changed after registration/);
+    assert.ok(preflight.stdout.includes(`Model ids fingerprint: ${armsModelsChecksum(swapped)}`));
     rmSync(dir, { recursive: true, force: true });
   });
 });
@@ -1621,11 +2024,12 @@ describe("Not measured", () => {
     assert.equal(router.calls.author.length, 3 * ARM_MAX_REQUESTS, "each write-up was asked for three times and no more");
     const run = await runCli(["run", ...args], env);
     assert.equal(run.code, 2);
-    assert.match(run.stdout, /::error::Not measured: no flawed case has a usable write-up, so there was nothing for the arms to answer\./);
+    assert.match(run.stdout, /::error::Not measured: only 0 of 3 write-ups are usable\./);
+    assert.equal(router.calls.armA.length + router.calls.judge.length, 0, "no arm is asked once the write-ups are under the floor");
     const report = await runCli(["report", ...args, "--results", results], env);
     await router.close();
     assert.equal(report.code, 2);
-    assert.match(report.stdout, /::error::Not measured: no arm answers were found\./);
+    assert.match(report.stdout, /::error::Not measured: only 0 of 3 write-ups are usable\./);
     assert.match(report.stdout, /No score is reported and no results file was changed\./);
     assert.doesNotMatch(report.stdout, /Public block|p 0\.|%/);
     assert.equal(read(results), read(COMMITTED_RESULTS));
@@ -1649,6 +2053,12 @@ describe("Not measured", () => {
     const answers = read(join(dir, "out", "answers.jsonl")).split("\n").filter(Boolean).map((line) => JSON.parse(line));
     assert.equal(answers.length, 12);
     assert.ok(answers.every((row) => row.usable === false && row.critique === ""));
+    // What came back is kept even when it is not an answer: the judge's own note says why there is no verdict.
+    assert.ok(answers.filter((row) => row.arm === "A").every((row) => row.judge === null && row.raw === ""));
+    for (const row of answers.filter((r) => r.arm !== "A")) {
+      assert.equal(row.judge.verdict, null, `${row.id} ${row.arm}`);
+      assert.ok(row.judge.degraded.some((line) => /the judge returned no tool call/.test(line)), `${row.id} ${row.arm}: the note on why there is no verdict`);
+    }
     assert.ok(answers.filter((row) => row.arm === "D").every((row) => row.requests === 1));
     const score = await runCli(["score", ...args], env);
     assert.equal(score.code, 0, score.stderr);
@@ -1658,6 +2068,65 @@ describe("Not measured", () => {
     assert.equal(report.code, 2);
     assert.match(report.stdout, /::error::Not measured: /);
     assert.doesNotMatch(report.stdout, /Public block|Catch on flawed cases/);
+    assert.equal(read(results), read(COMMITTED_RESULTS));
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("three of twelve write-ups too short: the author, run, score and report steps are each Not measured, and no arm is asked", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "four-arm-floor-"));
+    const seeds = tinySet();
+    const sum = seedsChecksum(seeds);
+    const arms = fixtureArms({ seeds_sha256: sum, judge_prompt_sha256: judgePromptFingerprint() });
+    const results = join(dir, "results.json");
+    const labels = join(dir, "labels.txt");
+    writeFileSync(join(dir, "seeds.jsonl"), toJsonl(seeds));
+    writeFileSync(join(dir, "arms.json"), JSON.stringify(arms));
+    writeFileSync(join(dir, "seeds.sha256"), `${sum}\n`);
+    writeFileSync(results, read(COMMITTED_RESULTS));
+    writeFileSync(labels, "1: yes\n2: no\n");
+    const short = { writeUp: "short" };
+    const router = await startFourArmRouter({ arms, script: { "f-course": short, "s-lease": short, "l-job": short, "f-event": { A: "hit", B: "hit", C: "hit", D: "hit" } } });
+    const env = envFor({ OPENROUTER_API_KEY: "test-key-loopback-only", ...router.env });
+    const out = join(dir, "out");
+    const args = ["--split", "frozen", "--seeds", join(dir, "seeds.jsonl"), "--arms", join(dir, "arms.json"), "--checksum", join(dir, "seeds.sha256"), "--out", out, "--backoff-ms", "0", "--commit", "abc1234"];
+    // The four commands of the README's "How to run it" block, one after another, as a shell without `set -e` would run them.
+    const author = await runCli(["author", ...args, "--concurrency", "4"], env);
+    const gradersAfterAuthor = router.calls.grader.length;
+    const run = await runCli(["run", ...args], env);
+    const armCalls = router.calls.armA.length + router.calls.judge.length;
+    const score = await runCli(["score", ...args], env);
+    const gradersAfterScore = router.calls.grader.length;
+    const report = await runCli(["report", ...args, "--owner-labels", labels, "--results", results], env);
+    await router.close();
+
+    const floor = /::error::Not measured: only 9 of 12 write-ups are usable\./;
+    assert.equal(author.code, 2);
+    assert.match(author.stdout, /Write-ups: 9 of 12 usable\./);
+    assert.match(author.stdout, floor);
+    assert.equal(run.code, 2, `run went on after the author step said Not measured: ${run.stdout}`);
+    assert.match(run.stdout, floor);
+    assert.equal(armCalls, 0, "no arm was asked: not arm A, not the judge");
+    assert.equal(existsSync(join(out, "answers.jsonl")), false);
+    assert.equal(score.code, 2, score.stdout + score.stderr);
+    assert.match(score.stdout, floor);
+    assert.equal(gradersAfterScore, gradersAfterAuthor, "no grader was asked");
+    assert.equal(report.code, 2, report.stdout + report.stderr);
+    assert.match(report.stdout, floor);
+    assert.match(report.stdout, /No score is reported and no results file was changed\./);
+    assert.doesNotMatch(report.stdout, /## Result|Public block|Catch on flawed cases/);
+    assert.equal(existsSync(join(out, "public-block.json")), false);
+    assert.equal(read(results), read(COMMITTED_RESULTS), "the results file is byte for byte as it was");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("a report before the arms have run is Not measured: no arm answers", async () => {
+    const { dir, router, env, args, results } = await setup({});
+    const author = await runCli(["author", ...args], env);
+    const report = await runCli(["report", ...args, "--results", results], env);
+    await router.close();
+    assert.equal(author.code, 0, author.stderr);
+    assert.equal(report.code, 2);
+    assert.match(report.stdout, /::error::Not measured: no arm answers were found\. Run the arms first\./);
     assert.equal(read(results), read(COMMITTED_RESULTS));
     rmSync(dir, { recursive: true, force: true });
   });
@@ -1714,7 +2183,7 @@ describe("the full report on a set large enough to test", () => {
       cases.push({ id, kind: "sound", author_family: AUTHOR_FAMILIES[i % 2], drafter_family: "owner", visible: null });
       for (const arm of ARMS) items.push({ id, arm, usable: true, label: arm === "A" || (arm === "B" && i < 16) || (arm === "D" && i < 4) ? "yes" : "no", words: 90, objections: 2 });
     }
-    const report = summarize({ cases, items, date: "2026-12-01", commit: "abc1234", single_drafter: false, audit: { agree: 38, of: 40, labels_by: "graders" } });
+    const report = summarize({ cases, items, date: "2026-12-01", commit: "abc1234", single_drafter: false, audit: { agree: 38, of: 40, labels_by: "graders" }, write_up_floor_met: true });
     assert.equal(report.public_block.cases.flawed, 120);
     assert.equal(report.decision.outcome, "d-better");
     assert.equal(report.decision.quality_sentence_allowed, true);
@@ -1723,8 +2192,12 @@ describe("the full report on a set large enough to test", () => {
     assert.equal(report.secondary.find((test) => test.id === "product-vs-stronger-same-lab").misses.p, 1, "D and C caught the same cases");
     assert.equal(report.alarm.find((pair) => pair.first === "D" && pair.second === "B").ranked, true);
     assert.equal(report.splits.by_drafter.length, 2);
-    const single = summarize({ cases, items, date: "2026-12-01", commit: "abc1234", single_drafter: true, audit: { agree: 38, of: 40, labels_by: "graders" } });
+    const single = summarize({ cases, items, date: "2026-12-01", commit: "abc1234", single_drafter: true, audit: { agree: 38, of: 40, labels_by: "graders" }, write_up_floor_met: true });
     assert.equal(single.decision.quality_sentence_allowed, false);
+    const noFloor = summarize({ cases, items, date: "2026-12-01", commit: "abc1234", single_drafter: false, audit: { agree: 38, of: 40, labels_by: "graders" } });
+    assert.equal(noFloor.decision.outcome, "not-measured", "the same counts are no result when the write-up floor was not checked or not met");
+    assert.deepEqual(noFloor.decision.reasons, ["too few usable write-ups"]);
+    assert.match(renderReport(noFloor), /## Result: Not measured\n\nWhy: too few usable write-ups\.\nNothing here is a result\. No counts are published\./);
     validateFourArm(JSON.parse(JSON.stringify(report.public_block)));
     assert.equal(countWords("one two  three"), 3);
   });

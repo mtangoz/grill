@@ -18,6 +18,7 @@
 //
 // The model ids below are made up.
 
+import { armsModelsChecksum } from "../fourArmCore.mjs";
 import { startFakeOpenRouter } from "./fake-openrouter.mjs";
 
 /** The word a hit carries. It is not a word a write-up or a prompt would use. */
@@ -26,12 +27,16 @@ export const HIT_WORD = "zebra";
 export const FLAGGED_WORD = "walrus";
 export const HIDDEN_WORD = "ostrich";
 
-/** A complete arms file for tests: registered, with every id confirmed. */
+/**
+ * A complete arms file for tests: registered, with every id confirmed, and with the model
+ * ids fingerprint registration records. A test that swaps an id afterwards leaves that
+ * fingerprint as it was, which is what a swap after registration looks like.
+ */
 export function fixtureArms({ seeds_sha256 = "0".repeat(64), judge_prompt_sha256 = "0".repeat(64), status = "registered" } = {}) {
-  return {
+  const config = {
     about: "Made-up ids for tests.",
     status,
-    registered: status === "draft" ? null : { date: "2026-01-05", commit: "abc1234", seeds_sha256, judge_prompt_sha256 },
+    registered: status === "draft" ? null : { date: "2026-01-05", commit: "abc1234", seeds_sha256, judge_prompt_sha256, models_sha256: "" },
     families: {
       anthropic: {
         author_model: "anthropic/example-author",
@@ -54,6 +59,8 @@ export function fixtureArms({ seeds_sha256 = "0".repeat(64), judge_prompt_sha256
       { model: "moonshotai/example-grader", status: "confirmed" },
     ],
   };
+  if (config.registered) config.registered.models_sha256 = armsModelsChecksum(config);
+  return config;
 }
 
 /** The model the stand-in serves for the product arm unless a test says otherwise. */

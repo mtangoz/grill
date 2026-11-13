@@ -127,6 +127,14 @@ export const OUTCOME_WORDS = Object.freeze({
   "no-difference-of-15-found": `no difference of ${EFFECT_POINTS} points or more was found`,
   "d-worse": "D worse",
 });
+/**
+ * The middle branch has one corner where its plain words would be false on the page: the
+ * gap seen is EFFECT_POINTS or more, on either way of counting, and still no direction can
+ * be claimed. The outcome and what it changes stay the same. The result line reads this.
+ */
+export const GAP_SEEN_WORDS = `a gap of ${EFFECT_POINTS} points or more was seen, and no direction is claimed`;
+/** The reason given when that gap was seen and its own test was not under ALPHA. */
+export const GAP_SEEN_REASON = `a gap of ${EFFECT_POINTS} points or more was seen, and the test could not tell it from chance`;
 
 // == Seeds ======================================================================
 
@@ -173,7 +181,9 @@ export const FLAW_TYPES = Object.freeze([
   "small-sample",
   "selection",
   "contradicts-own-goal",
-  "irreversible-no-cheap-test",
+  // Named in words the product does not use. Grill's brief and report say "cheap test", so a
+  // type named for it would pull the flaw sentences toward the arms that carry the brief.
+  "irreversible-no-trial",
 ]);
 /** The flaw type of every loaded seed, and of nothing else. */
 export const LOADED_FLAW_TYPE = "loaded-question";
@@ -216,7 +226,13 @@ const PHONE_RXS = Object.freeze([
   /\b0\d{2,4}[\s-]\d{3,4}[\s-]\d{3,4}\b/,
 ]);
 /** Phrases from Grill's own write-up template. A seed is what a person types, not that template. */
-const TEMPLATE_PHRASES = Object.freeze(["prediction, offered at", "the strongest case against"]);
+export const TEMPLATE_PHRASES = Object.freeze(["prediction, offered at", "the strongest case against"]);
+/**
+ * Labels Grill prints in its own report. Every challenge in the graded text of arms B, C and
+ * D carries them and arm A's prose does not, so a flaw sentence that used one would read as
+ * a match for those arms on its wording alone.
+ */
+export const REPORT_LABELS = Object.freeze(["cheap test", "what would flip the call"]);
 const WRITE_UP_LENGTH_RX = /\b200[- ]words?\b/i;
 
 export function countWords(text) {
@@ -236,6 +252,14 @@ function textProblems(field, text) {
   if (PHONE_RXS.some((rx) => rx.test(text))) problems.push(`${field} has what looks like a phone number`);
   const names = namesFound(text);
   if (names.length) problems.push(`${field} names an AI company or model (${names.join(", ")})`);
+  // Matched in any letter case, with a hyphen or any run of spaces read as one space.
+  const plain = text.toLowerCase().replace(/[\s-]+/g, " ");
+  for (const phrase of TEMPLATE_PHRASES) {
+    if (plain.includes(phrase)) problems.push(`${field} uses a phrase from Grill's own write-up template ("${phrase}")`);
+  }
+  for (const label of REPORT_LABELS) {
+    if (plain.includes(label)) problems.push(`${field} uses a label Grill prints in its own report ("${label}")`);
+  }
   return problems;
 }
 
@@ -265,10 +289,6 @@ export function seedProblems(seed) {
     problems.push(`user_ask must be ${ASK_WORDS.min} to ${ASK_WORDS.max} words (it has ${askWords})`);
   }
   if (!WRITE_UP_LENGTH_RX.test(seed.user_ask)) problems.push('user_ask must ask for a write-up of about 200 words (say "200 words")');
-  const lowerAsk = seed.user_ask.toLowerCase();
-  for (const phrase of TEMPLATE_PHRASES) {
-    if (lowerAsk.includes(phrase)) problems.push(`user_ask uses a phrase from Grill's own write-up template ("${phrase}")`);
-  }
 
   const questionWords = countWords(seed.question);
   if (/[\r\n]/.test(seed.question)) problems.push("question must be one line");
@@ -356,7 +376,9 @@ export function seedSetProblems(seeds) {
     if (twinsOf.has(sibling.id)) problems.push(`${seed.id}: ${sibling.id} already has a twin (${twinsOf.get(sibling.id)})`);
     else twinsOf.set(sibling.id, seed.id);
     if (overlap(shingles(seed.user_ask), shingles(sibling.user_ask)) < TWIN_MIN_OVERLAP) {
-      problems.push(`${seed.id}: a twin tells the same situation as ${sibling.id} with the flaw taken out, and these two asks share too little`);
+      problems.push(
+        `${seed.id}: a twin tells the same situation as ${sibling.id} with the flaw taken out, and these two asks share too little: under a fifth of their wording. Copy the flawed ask and change only what takes the flaw out.`,
+      );
     }
   }
 
@@ -571,8 +593,12 @@ const VENDOR_PREFIXES = Object.freeze([
   "01-ai", "thedrummer",
 ]);
 
-/** Company and model family names, as people write them. Matched whole, in any letter case. */
-const BRAND_WORDS = Object.freeze([
+/**
+ * Company and model family names, as people write them. Matched whole, in any letter case.
+ * Each is a fragment of a pattern, where "\s?" is an optional space. The README lists them for
+ * seed writers, and a test keeps that list and this one the same.
+ */
+export const BRAND_WORDS = Object.freeze([
   "anthropic", "claude", "open\\s?ai", "chat\\s?gpt", "gpt", "google", "deepmind", "gemini", "gemma", "x-ai", "xai",
   "grok", "deepseek", "meta-llama", "meta ai", "llama", "mistralai", "mistral", "moonshotai", "moonshot", "kimi",
   "minimax", "qwen", "alibaba", "tongyi", "cohere", "amazon", "microsoft", "copilot", "nvidia", "perplexity", "z-ai",
@@ -648,7 +674,7 @@ const ID_STATUSES = Object.freeze([ID_UNCONFIRMED, ID_CONFIRMED]);
 const MODEL_ID_RX = /^[a-z0-9][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const ARMS_KEYS = Object.freeze(["about", "status", "registered", "catalog_checked", "families", "graders"]);
 const FAMILY_KEYS = Object.freeze(["author_model", "author_model_status", "stronger_model", "stronger_model_status"]);
-const REGISTERED_KEYS = Object.freeze(["date", "commit", "seeds_sha256", "judge_prompt_sha256"]);
+const REGISTERED_KEYS = Object.freeze(["date", "commit", "seeds_sha256", "judge_prompt_sha256", "models_sha256"]);
 const SHA256_RX = /^[0-9a-f]{64}$/;
 
 function isRecord(value) {
@@ -720,7 +746,7 @@ export function armsProblems(config) {
       for (const key of Object.keys(reg)) if (!REGISTERED_KEYS.includes(key)) problems.push(`registered: unexpected key ${key}`);
       if (!isIsoDate(reg.date)) problems.push("registered.date must be a date written YYYY-MM-DD");
       if (!isCommitHash(reg.commit)) problems.push("registered.commit must be a commit hash");
-      for (const key of ["seeds_sha256", "judge_prompt_sha256"]) {
+      for (const key of ["seeds_sha256", "judge_prompt_sha256", "models_sha256"]) {
         if (typeof reg[key] !== "string" || !SHA256_RX.test(reg[key])) problems.push(`registered.${key} must be 64 hex characters`);
       }
     }
@@ -742,9 +768,20 @@ export function armsModelIds(config) {
 }
 
 /**
+ * A fingerprint of every model id in an arms file: the ids one per line, in the order
+ * armsModelIds gives them. Registration records it as registered.models_sha256, so an
+ * author, a stronger model or a grader cannot be swapped afterwards without it showing.
+ * The order of the graders is part of it, because graders are asked in the listed order.
+ */
+export function armsModelsChecksum(config) {
+  return sha256(armsModelIds(config).join("\n"));
+}
+
+/**
  * What still stands between a draft and a run on the frozen split. Empty means registered:
- * the ids are confirmed, the status says registered, and the seed checksum on file, the one
- * in arms.json and the one worked out from the seeds are the same.
+ * the ids are confirmed and are the ones that were registered, the status says registered,
+ * and the seed checksum on file, the one in arms.json and the one worked out from the seeds
+ * are the same.
  */
 export function registrationProblems(config, { seeds, checksumOnFile } = {}) {
   const problems = armsProblems(config);
@@ -760,6 +797,9 @@ export function registrationProblems(config, { seeds, checksumOnFile } = {}) {
     if (grader.status !== ID_CONFIRMED) unconfirmed.push(`graders[${i}]`);
   });
   if (unconfirmed.length) problems.push(`model ids still marked "${ID_UNCONFIRMED}": ${unconfirmed.join(", ")}`);
+  if (isRecord(config.registered) && config.registered.models_sha256 !== armsModelsChecksum(config)) {
+    problems.push("a model id in arms.json changed after registration");
+  }
   const computed = seedsChecksum(seeds);
   const onFile = typeof checksumOnFile === "string" ? checksumOnFile.trim().split(/\s+/)[0] : "";
   if (!onFile) problems.push("evals/four-arm/seeds.sha256 does not exist; it is written at registration");
@@ -1285,6 +1325,19 @@ export function graderCheckPassed(audit) {
   return of >= AUDIT_ITEMS && agree * AUDIT_ITEMS >= AUDIT_AGREE_FLOOR * of;
 }
 
+/**
+ * Did the author step give enough usable write-ups? Counted over every seed of the split,
+ * before any case is left out by rule, each seed once. The author step checks this, and so
+ * does every step after it: a run that fell under the floor does not carry on to a result.
+ *
+ * writeUps: [{id, usable}] as the author step saved them.
+ */
+export function writeUpFloorMet(seeds, writeUps, split) {
+  const ids = new Set((Array.isArray(seeds) ? seeds : []).filter((seed) => seed && seed.split === split).map((seed) => seed.id));
+  const usable = new Set((Array.isArray(writeUps) ? writeUps : []).filter((row) => row && row.usable === true && ids.has(row.id)).map((row) => row.id)).size;
+  return { usable, of: ids.size, met: ids.size > 0 && usable * USABLE_FLOOR.den >= ids.size * USABLE_FLOOR.num };
+}
+
 /** Did every arm give a usable answer on enough of the analysed flawed cases? */
 export function usableFloorMet(arms) {
   const list = Array.isArray(arms) ? arms : [];
@@ -1297,19 +1350,23 @@ export function usableFloorMet(arms) {
 /**
  * The decision rule, as one ordered list. It takes counts and returns one outcome.
  *
- *   1. not-measured        too few usable answers, or the grader check was not passed.
+ *   1. not-measured        too few usable write-ups, too few usable answers, or the grader
+ *                          check was not passed.
  *   2. too-few-cases       fewer than MIN_ANALYSED_FLAWED flawed cases were analysed.
  *   3. no-pooled-headline  D minus B has opposite signs in the two author families.
  *   4. d-better            D caught more than B, under ALPHA, both ways of counting.
  *   5. d-worse             B caught more than D, under ALPHA, both ways of counting.
- *   6. no-difference-of-15-found   anything else.
+ *   6. no-difference-of-15-found   anything else. When the gap seen is EFFECT_POINTS or more
+ *                          on either way of counting, the outcome is the same and its words
+ *                          are GAP_SEEN_WORDS: the page never says none was found beside a
+ *                          row that shows one.
  *
  * A public sentence about quality is allowed only on d-better, only when D is not worse
  * than C (D caught at least as many as C, both ways of counting), and never from a
  * single-drafter set.
  *
  * facts: {
- *   analysed_flawed, usable_floor_met, audit: {agree, of, labels_by},
+ *   analysed_flawed, write_up_floor_met, usable_floor_met, audit: {agree, of, labels_by},
  *   primary: {both, first_only, second_only, neither, usable_...},             first is D, second is B
  *   product_vs_stronger: the same cells,                                       first is D, second is C
  *   by_author: [{family, first_only, second_only}],                            D minus B, misses counted
@@ -1324,6 +1381,7 @@ export function decideFourArm(facts) {
     counts_agree: null,
     sign_flip: null,
     d_not_worse_than_c: null,
+    gap_seen: null,
     single_drafter: facts?.single_drafter === true,
     quality_sentence_allowed: false,
     changes: "none",
@@ -1332,13 +1390,18 @@ export function decideFourArm(facts) {
   const done = (outcome, extra = {}) => ({ ...base, ...extra, outcome, words: OUTCOME_WORDS[outcome] });
 
   if (!isRecord(facts)) return done("not-measured", { reasons: ["no counts"] });
+  // Only `true` passes. A caller that never checked the write-ups gets no result.
+  if (facts.write_up_floor_met !== true) return done("not-measured", { reasons: ["too few usable write-ups"] });
   if (facts.usable_floor_met !== true) return done("not-measured", { reasons: ["too few usable answers"] });
   if (!graderCheckPassed(facts.audit)) return done("not-measured", { reasons: ["the grader check was not passed"] });
   if (!Number.isInteger(facts.analysed_flawed) || facts.analysed_flawed < MIN_ANALYSED_FLAWED) return done("too-few-cases");
 
   const primary = pairedReadings(facts.primary);
   const versusStronger = pairedReadings(facts.product_vs_stronger);
-  const dirs = [direction(primary.misses), direction(primary.usable)];
+  const readings = [primary.misses, primary.usable];
+  const dirs = readings.map(direction);
+  // In whole numbers, so a gap of exactly EFFECT_POINTS is never lost to rounding.
+  const gapSeen = readings.map((r) => r.n > 0 && Math.abs(r.first_only - r.second_only) * 100 >= EFFECT_POINTS * r.n);
   const flip = signFlip(facts.by_author);
   const notWorse =
     versusStronger.misses.first_only >= versusStronger.misses.second_only && versusStronger.usable.first_only >= versusStronger.usable.second_only;
@@ -1346,6 +1409,7 @@ export function decideFourArm(facts) {
     counts_agree: dirs[0] === dirs[1],
     sign_flip: flip,
     d_not_worse_than_c: notWorse,
+    gap_seen: gapSeen.includes(true),
     p: { misses: primary.misses.p, usable: primary.usable.p },
   };
 
@@ -1359,7 +1423,9 @@ export function decideFourArm(facts) {
   }
   if (dirs[0] === -1 && dirs[1] === -1) return done("d-worse", { ...shared, changes: "no-quality-sentence-and-judge-quality-floor" });
   const reasons = shared.counts_agree ? [] : ["the two ways of counting disagree, so no direction is claimed"];
-  return done("no-difference-of-15-found", { ...shared, reasons, changes: "no-quality-sentence" });
+  if (gapSeen.some((seen, i) => seen && dirs[i] === 0)) reasons.push(GAP_SEEN_REASON);
+  const middle = done("no-difference-of-15-found", { ...shared, reasons, changes: "no-quality-sentence" });
+  return shared.gap_seen ? { ...middle, words: GAP_SEEN_WORDS } : middle;
 }
 
 function comparisonCells(block, firstId, secondId) {
@@ -1382,13 +1448,15 @@ function comparisonCells(block, firstId, secondId) {
 }
 
 /**
- * The facts decideFourArm needs, read from a public block. The split by author family and
- * the grader check are not in that block, so the caller passes them.
+ * The facts decideFourArm needs, read from a public block. The split by author family, the
+ * grader check and whether the write-up floor was met are not in that block, so the caller
+ * passes them. Left out, the write-up floor counts as not met.
  */
-export function factsFromBlock(block, { by_author = [], audit = null } = {}) {
+export function factsFromBlock(block, { by_author = [], audit = null, write_up_floor_met = false } = {}) {
   const empty = { both: 0, first_only: 0, second_only: 0, neither: 0, usable_both: 0, usable_first_only: 0, usable_second_only: 0, usable_neither: 0 };
   return {
     analysed_flawed: block?.cases?.flawed ?? 0,
+    write_up_floor_met: write_up_floor_met === true,
     usable_floor_met: usableFloorMet(block?.arms),
     audit,
     primary: comparisonCells(block, ARM_IDS.D, ARM_IDS.B) ?? empty,
@@ -1458,8 +1526,9 @@ function splitBy(cases, items, keyOf, first, second) {
  *
  * cases: [{id, kind, author_family, drafter_family, visible}] the analysed cases
  * items: [{id, arm, usable, label, words, objections, served_company}] one per case and arm
+ * write_up_floor_met: writeUpFloorMet(...).met for the split. Anything but true is Not measured.
  */
-export function summarize({ cases, items, date, commit, single_drafter, audit, dropped = {}, split = "frozen", deviations = [] } = {}) {
+export function summarize({ cases, items, date, commit, single_drafter, audit, write_up_floor_met = false, dropped = {}, split = "frozen", deviations = [] } = {}) {
   const list = Array.isArray(cases) ? cases : [];
   const all = Array.isArray(items) ? items : [];
   const block = buildPublicBlock({ cases: list, items: all, date, commit, single_drafter });
@@ -1506,6 +1575,7 @@ export function summarize({ cases, items, date, commit, single_drafter, audit, d
     factsFromBlock(block, {
       by_author: byAuthor.map((row) => ({ family: row.key, first_only: row.first_only, second_only: row.second_only })),
       audit,
+      write_up_floor_met,
     }),
   );
 

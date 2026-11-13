@@ -61,19 +61,39 @@ The 29 public cases in `evals/cases/` are not used here. They were used to write
 
 | Field | What it holds |
 | --- | --- |
-| `id` | Lowercase words and digits joined by hyphens. Unique in the file. |
+| `id` | Lowercase words and digits joined by hyphens, 80 characters at most. Unique in the file. |
 | `kind` | `flawed`, `sound` or `loaded`. |
 | `category` | One of `personal-money`, `career`, `hiring-and-team`, `pricing-and-sales`, `marketing`, `operations-and-suppliers`, `software-and-tools`, `housing-and-moving`, `study-and-training`, `events-and-community`. |
 | `user_ask` | 60 to 220 words. What the person types. It must ask for a write-up of about 200 words, in those words: "200 words". |
 | `question` | The one-line question put to the judge. 4 to 40 words, ending in a question mark. |
 | `flaw` | One sentence of 6 to 60 words that names the planted flaw, or how the question is loaded. Empty for a sound seed. |
-| `flaw_type` | For a flawed seed, one of `arithmetic`, `base-rate-ignored`, `survivorship`, `sunk-cost`, `dropped-requirement`, `hidden-dependency`, `timeline-conflict`, `confounded-evidence`, `small-sample`, `selection`, `contradicts-own-goal`, `irreversible-no-cheap-test`. For a loaded seed, `loaded-question`. For a sound seed, `none`. |
+| `flaw_type` | For a flawed seed, one of `arithmetic`, `base-rate-ignored`, `survivorship`, `sunk-cost`, `dropped-requirement`, `hidden-dependency`, `timeline-conflict`, `confounded-evidence`, `small-sample`, `selection`, `contradicts-own-goal`, `irreversible-no-trial`. For a loaded seed, `loaded-question`. For a sound seed, `none`. |
 | `twin_of` | For a sound seed, the id of the flawed seed it corrects, in the same split and category. Empty otherwise. A flawed seed has at most one twin. |
 | `author_family` | `anthropic` or `openai`. Empty in a draft batch. It is set on every seed when the batches are merged. |
-| `drafter_family` | Who drafted the seed: a model company (`anthropic`, `openai`, `google` and so on), `owner`, or `person`. |
+| `drafter_family` | Who drafted the seed. For a model, its company, spelled as one of `openai`, `anthropic`, `google`, `x-ai`, `deepseek`, `meta-llama`, `mistralai`, `moonshotai`, `minimax`, `qwen`, `cohere`, `amazon`, `microsoft`, `nvidia`, `perplexity`, `z-ai`. For a human, `owner` or `person`. No other spelling is taken. |
 | `split` | `dev` or `frozen`. |
 
-`user_ask`, `question` and `flaw` may not hold an email address, a web address, a phone number, an em dash or an en dash, the name of an AI company or model, or a phrase from Grill's own write-up template. Two seeds may not tell the same situation, apart from a twin and the seed it corrects, which must.
+`question` and `flaw` are each one line.
+
+`user_ask`, `question` and `flaw` may not hold any of these:
+
+- An email address, a phone number or a web address. A bare site name such as `ovenbarn.com` counts as a web address.
+- An em dash, an en dash or any other long dash, the minus sign character included. A plain hyphen is fine.
+- The name of an AI company or model. See the list below.
+- A phrase from Grill's own write-up template: "prediction, offered at" and "the strongest case against".
+- A label Grill prints in its own report: "cheap test" and "what would flip the call".
+
+The last rule is there because arms B, C and D print those labels and arm A does not. A `question` or a `flaw` sentence that used one would lean toward those arms on its wording alone. A hyphen in place of the space, or capital letters, changes nothing. No flaw type is named in those words either.
+
+The name check is by whole word, in any letter case, and it is wide. Company names such as Amazon, Google, Microsoft and Nvidia count as AI company names here. So do product names such as Copilot, Gemini, Mistral, Cohere and Llama, even where they are everyday words or a person's name. Use invented names. The refused words are:
+
+anthropic, claude, openai, chatgpt, gpt, google, deepmind, gemini, gemma, x-ai, xai, grok, deepseek, meta-llama, meta ai, llama, mistralai, mistral, moonshotai, moonshot, kimi, minimax, qwen, alibaba, tongyi, cohere, amazon, microsoft, copilot, nvidia, perplexity, z-ai, zhipu, glm, openrouter, auto router, typesafe, jev, baidu, tencent, hunyuan, bytedance, doubao, xiaomi, stepfun, inclusionai, thinkingmachines, nousresearch.
+
+Also refused: "open ai" and "chat gpt" written as two words, Meta with a capital M, a short model name such as o4-mini, and any model id written as company/model.
+
+Two seeds may not tell the same situation. The validator reads two asks as the same situation when they share half of their wording or more. A twin and the seed it corrects are the one exception, and they must share wording. Write a twin by copying the flawed seed's ask and changing only what takes the flaw out. The validator wants at least a fifth of the wording shared. Wording is counted in runs of five words.
+
+`validate-seeds` names the line, the seed and the rule for each problem it finds.
 
 ## Who writes each case
 
@@ -114,7 +134,7 @@ The rule is one ordered list. The first line that applies is the result.
 3. If there is a sign flip between the two author families, there is no pooled headline. See "Splits".
 4. D better: D caught more than B, and the test is under 0.05.
 5. D worse: B caught more than D, and the test is under 0.05. This sends work to a judge quality floor, a rule for which models the router may pick, before anything else.
-6. Otherwise: no difference of 15 points or more was found. It is never "no difference". A smaller one could be there and this run could not see it.
+6. Otherwise: no difference of 15 points or more was found. It is never "no difference". A smaller one could be there and this run could not see it. If the gap seen is 15 points or more and the test is still not under 0.05, the report says a gap of that size was seen and could not be told from chance. It does not say none was found. The result line then reads "a gap of 15 points or more was seen, and no direction is claimed". What it changes is the same.
 
 Two more conditions:
 
@@ -128,7 +148,7 @@ What each result changes:
 | Not measured | Nothing. There is no result. |
 | too few cases to test | No claim changes. |
 | D better | A sentence about quality may be put to the owner, only if D is not worse than C and the set is not a single-drafter set. It states the difference, the number of cases, and that the cases are made up. Nothing stronger. |
-| no difference of 15 points or more was found | No sentence about quality. Public copy keeps to the rule and says no more. |
+| no difference of 15 points or more was found, or a gap was seen and no direction is claimed | No sentence about quality. Public copy keeps to the rule and says no more. |
 | no pooled headline | The same as the line above. The two author families are shown apart. |
 | D worse | No sentence about quality. The next work is a judge quality floor. |
 
@@ -171,7 +191,7 @@ Catch is reported two ways:
 1. With unusable answers counted as misses.
 2. On usable answers only.
 
-The primary conclusion must hold in both. If the two disagree, no direction is claimed. The result is reported under "no difference of 15 points or more was found", with a line that says the two ways of counting disagree, and both tables are shown.
+The primary conclusion must hold in both. If the two disagree, no direction is claimed. The result falls under rule 6 of the decision rule, with a line that says the two ways of counting disagree, and both tables are shown.
 
 ## The retry rule
 
@@ -187,7 +207,7 @@ A step that stopped part way can be resumed. Resuming fills in what is missing. 
 
 For each arm the report gives the median word count of the text the graders read, and the median number of objections in it. The graders count the objections, with the same question for every arm. A longer answer has more chances to mention the flaw. These two numbers let a reader see that.
 
-Arms B, C and D are graded on the full report, the longest layer a person can ask Grill for. It shows at most four challenges, as the product does. The short default reply is not graded in this run.
+Arms B, C and D are graded on the full report, the longest layer a person can ask Grill for. It shows at most four challenges, as the product does. The short default reply is not graded in this run. The judge's whole result is kept in the raw rows, so the short reply can be graded later without a second run.
 
 ## Splits
 
@@ -227,12 +247,14 @@ Not measured means the run produced no result. The harness prints "Not measured"
 
 It happens when:
 
-- there is no router key and `--require-key` was given;
+- there is no router key, on the frozen split or when `--require-key` was given;
 - fewer than 9 in 10 write-ups were usable;
 - any arm gave a usable answer on fewer than 9 in 10 of the analysed flawed cases;
 - the grader check was not done, or was not passed.
 
-With no key and no `--require-key`, the harness prints "SKIPPED: no arm ran" and stops with no score.
+The floors are held more than once. If the write-ups fall under 9 in 10, the author step says so, and the run, score and report steps each say it again. No arm is asked, no grader is asked and no block is written. The floor for each arm is checked when the arms have run, and again by `report`. So a run cannot carry on to a result past a step that said Not measured, whether or not the shell stops at the first exit code 2.
+
+With no key, a dev step prints "SKIPPED: no arm ran" and stops with no score. A frozen step with no key is Not measured, with or without `--require-key`.
 
 Not measured is not a null result. It is said as plainly as a result would be.
 
@@ -248,7 +270,7 @@ No rates, no p values, no model names, no dollar amounts and no text. A page wor
 
 It is published whichever way it falls. That includes "too few cases to test" and a result that goes against Grill.
 
-Raw answers stay under `evals/results/four-arm/`, which git ignores. The public block has no place yet for the split by author family, the grader check or the result line. Until the results shape is widened, those are in the run's own report.
+Raw answers stay under `evals/results/four-arm/`, which git ignores. Each row keeps what the arm returned before blinding: the reply for arm A, and the judge's whole result for arms B, C and D. The public block has no place yet for the split by author family, the grader check or the result line. Until the results shape is widened, those are in the run's own report.
 
 A rehearsal is never written into `data/results.json`. A rehearsal is any run on the dev split, on a loopback endpoint, or with a seed, arms or checksum file other than the committed one.
 
@@ -277,7 +299,7 @@ About twenty-five to forty-five US dollars for one frozen run, and about two dol
 
 None yet.
 
-After registration, any change to the seeds, the model ids, the judge's instructions or the analysis is listed here, with its date and its reason, before the result is read.
+After registration, any change to the seeds, the model ids, the judge's instructions or the analysis is listed here, with its date and its reason, before the result is read. A changed seed or model id also stops every frozen step, `report` included. A changed model id needs the protocol registered again, and the report then lists it here by itself, as it does when the judge's instructions at the run were not the registered ones. A seed changed after the run began cannot be reported on at all: the run's own record of its seeds no longer matches.
 
 ## What the owner does
 
@@ -286,10 +308,10 @@ After registration, any change to the seeds, the model ids, the judge's instruct
 3. Decide whether the seeds stay public before the run.
 4. Confirm the model ids in `arms.json`. `node scripts/eval-four-arm.mjs preflight` prints them and a command that checks them against the public model list. Change each "owner to confirm" to "confirmed".
 5. Rehearse on the dev split (see below).
-6. Register. Write the frozen checksum to `evals/four-arm/seeds.sha256`. In `arms.json`, set `status` to `registered` and fill `registered` with the date, the commit of the tree being registered, the seed checksum, and the judge instructions fingerprint that `preflight` prints. Change the status lines at the top of this file. Set `four_arm.status` to `registered` in `data/results.json`. Commit it all together. A test fails if the three places disagree.
+6. Register. Write the frozen checksum to `evals/four-arm/seeds.sha256`. In `arms.json`, set `status` to `registered` and fill `registered` with five things: `date`, `commit` (the commit of the tree being registered), `seeds_sha256` (the seed checksum), `judge_prompt_sha256` (the judge instructions fingerprint that `preflight` prints) and `models_sha256` (the model ids fingerprint that `preflight` prints). Change the status lines at the top of this file. The Registered line gives the date, the commit, the seed checksum and every model id in `arms.json`. Set `four_arm.status` to `registered` in `data/results.json`. Commit it all together. A test fails if the three places disagree, or if a model id is missing from the Registered line. From then on a frozen step stops if a seed or a model id has changed.
 7. Run the frozen split once, with a capped key.
 8. Label the 40 blinded items in `audit-sheet.md`. Do not open `audit-map.jsonl` first.
-9. Run `report` with `--results data/results.json`, and commit the result whichever way it falls.
+9. Run `report` with `--results data/results.json`, and commit the result whichever way it falls. `report` checks the registration and the seeds again, and stops if either changed after the run.
 
 ## How to run it
 
