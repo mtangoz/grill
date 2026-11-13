@@ -528,8 +528,8 @@ if (opts.dryRun) {
       ? `plugin "${autoPlugin.id}" · excluding nothing (no author family — this does not fall back to excluding Anthropic)`
       : `plugin "${autoPlugin.id}" · excluding ${autoPlugin.excluded_models.join(", ")} (${
           opts.author
-            ? `the declared author family \`${opts.author}\`, IN PLACE OF the default — a judge from the subject's own family buys nothing`
-            : "the default excluded family — a same-family judge buys nothing"
+            ? `the declared author family \`${opts.author}\`, IN PLACE OF the default, so the judge is not from the subject's own family`
+            : "the default excluded family, so the judge is not from the subject's own family"
         })`;
   console.log(`[judge] auto-router: ${routerNote}`);
   console.log(
