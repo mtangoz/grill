@@ -968,6 +968,20 @@ export function scorecardLine(rows, { type = "", source = "" } = {}) {
 export const LOOKBACK_HOW =
   "A look-back is due 14 days after you choose. Say “look back” in your chat and say what happened.";
 
+/** How long a grill waits for a stated choice before its draft is deleted. */
+export const PENDING_KEEP_DAYS = 14;
+
+/**
+ * /decisions, when a grill has a verdict and no stated choice yet. A count only: the page
+ * shows no title, verdict or text from a draft.
+ */
+export function waitingGrillLine(count) {
+  const n = Math.floor(Number(count) || 0);
+  if (n < 1) return "";
+  return n === 1 ? "1 grill is waiting for your call." : `${n} grills are waiting for your call.`;
+}
+export const WAITING_GRILL_HOW = `In a chat where Grill is connected, tell your AI what you chose, for example “I’m going ahead”. It is saved here with a look-back date. A waiting grill is deleted after ${PENDING_KEEP_DAYS} days.`;
+
 /** A judge kind that flags a source, a fact, or a figure. The flag is not proof it was wrong. */
 export const FLAG_KINDS = Object.freeze(["unsupported-claim", "evidence-mismatch", "wrong-cost-model"]);
 

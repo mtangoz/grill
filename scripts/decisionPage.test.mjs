@@ -26,6 +26,9 @@ import {
   impactDetailLine,
   impactLines,
   scorecardLine,
+  PENDING_KEEP_DAYS,
+  WAITING_GRILL_HOW,
+  waitingGrillLine,
 } from "./hostedCore.mjs";
 
 const FEB = Date.parse("2026-02-01T15:00:00Z");
@@ -464,5 +467,34 @@ describe("the Your grills list row", () => {
     const empty = renderDecisionsForTest({ records: "keep" }, [], { now: Date.parse("2026-11-08T12:00:00Z") });
     assert.equal(empty.includes("What Grill changed"), false);
     assert.equal(empty.includes("looked back"), false);
+  });
+});
+
+describe("the waiting line on Your grills", () => {
+  it("counts in plain words, and says nothing when nothing waits", () => {
+    assert.equal(waitingGrillLine(0), "");
+    assert.equal(waitingGrillLine(-2), "");
+    assert.equal(waitingGrillLine("x"), "");
+    assert.equal(waitingGrillLine(1), "1 grill is waiting for your call.");
+    assert.equal(waitingGrillLine(3), "3 grills are waiting for your call.");
+    assert.equal(PENDING_KEEP_DAYS, 14);
+    assert.match(WAITING_GRILL_HOW, /A waiting grill is deleted after 14 days\.$/);
+  });
+
+  it("shows only while records are on and no filter is set, and replaces the empty line", async () => {
+    const { renderDecisionsForTest } = await import("../api/_hosted.mjs");
+    const now = Date.parse("2026-11-08T12:00:00Z");
+    const waiting = renderDecisionsForTest({ records: "keep" }, [], { now, waiting: 2 });
+    assert.match(waiting, /<strong>2 grills are waiting for your call\.<\/strong>/);
+    assert.equal(waiting.includes("No decisions saved yet."), false);
+    const none = renderDecisionsForTest({ records: "keep" }, [], { now, waiting: 0 });
+    assert.match(none, /No decisions saved yet\./);
+    assert.equal(none.includes('id="waiting"'), false);
+    // Records off: a waiting grill cannot be saved, so the page does not tell the person to save it.
+    const off = renderDecisionsForTest({ records: "off" }, [], { now, waiting: 2 });
+    assert.equal(off.includes('id="waiting"'), false);
+    assert.match(off, /No decisions saved yet\./);
+    const filtered = renderDecisionsForTest({ records: "keep" }, [], { now, waiting: 2, type: "work" });
+    assert.equal(filtered.includes('id="waiting"'), false);
   });
 });

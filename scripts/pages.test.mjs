@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAccount, handleCalendar, handleDecisions, handleMcp, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
-import { CLAUDE_WEB_REDIRECT, createMemoryRedis, FUNNEL_KEYS } from "./hostedCore.mjs";
+import { CLAUDE_WEB_REDIRECT, createMemoryRedis, FUNNEL_KEYS, WAITING_GRILL_HOW } from "./hostedCore.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -105,6 +105,29 @@ async function decide(ctx, fake, title, now, extra = {}) {
   const grilled = await send(call(1, "grill", { subject: `Decision: ${title}\nI'm 60% sure.`, keep_records: true, quality_check: false, ...extra }));
   assert.equal(grilled.result.isError, false, grilled.result?.content?.[0]?.text || "");
   await send(call(2, "grill_decided", { decided: `Go with ${title}.` }));
+}
+
+/** One tool call from the chat, as the signed-in person. */
+async function chat(ctx, fake, name, args, now) {
+  const token = signJwt({
+    iss: "https://clerk.example.test",
+    sub: "user_invitee",
+    aud: RESOURCE,
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    redirect_uri: CLAUDE_WEB_REDIRECT,
+  });
+  const deps = { judgeOpenRouterUrl: fake.env.JUDGE_OPENROUTER_URL, judgeDecisionsUrl: fake.env.JUDGE_DECISIONS_URL, now };
+  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } });
+  const res = await handleMcp(new Request(RESOURCE, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body }), { ...ctx, ...deps });
+  const json = await res.json();
+  return { text: json.result?.content?.[0]?.text || "", isError: json.result?.isError === true };
+}
+
+/** A grill that got its verdict and has no stated choice yet. With records on, that leaves a draft. */
+async function grillOnly(ctx, fake, title, now, extra = {}) {
+  const grilled = await chat(ctx, fake, "grill", { subject: `Decision: ${title}\nI'm 60% sure.`, keep_records: true, quality_check: false, ...extra }, now);
+  assert.equal(grilled.isError, false, grilled.text);
+  return grilled;
 }
 
 describe("pages a person sees", () => {
@@ -823,6 +846,56 @@ describe("the decisions page layout", () => {
       await fake.close();
     }
   });
+});
+
+describe("a grill that is waiting for a choice", () => {
+  it("is shown on Your grills as a count, with what to do, and nothing from the grill itself", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await grillOnly(ctx, fake, "Hire contractor", JAN);
+      const one = await getPage(ctx, "/decisions", { now: JAN });
+      assert.match(one.html, /<section id="waiting">\s*<p class="action"><strong>1 grill is waiting for your call\.<\/strong><\/p>/);
+      assert.ok(one.html.includes(`<p>${WAITING_GRILL_HOW}</p>`), "the page says what to do");
+      assert.equal(
+        WAITING_GRILL_HOW,
+        "In a chat where Grill is connected, tell your AI what you chose, for example “I’m going ahead”. It is saved here with a look-back date. A waiting grill is deleted after 14 days.",
+      );
+      assert.equal(one.html.includes("No decisions saved yet."), false, "an empty list is not the whole story when a grill waits");
+      assert.equal(one.html.includes("Hire contractor"), false, "a draft's title is not shown");
+      assert.doesNotMatch(one.html, /shaky|Shaky/, "nor its verdict");
+      assert.equal(one.html.includes("<script"), false);
+      assert.match(one.html, /A look-back is due 14 days after you choose/);
+
+      await grillOnly(ctx, fake, "Move office", JAN);
+      const two = await getPage(ctx, "/decisions", { now: JAN });
+      assert.match(two.html, /<strong>2 grills are waiting for your call\.<\/strong>/);
+
+      // Saying a choice saves the latest one. One still waits, and the line sits above the list.
+      const saved = await chat(ctx, fake, "grill_decided", { decided: "Go with the move." }, JAN);
+      assert.match(saved.text, /^Saved\./);
+      const mixed = await getPage(ctx, "/decisions", { now: JAN });
+      assert.match(mixed.html, /<strong>1 grill is waiting for your call\.<\/strong>/);
+      assert.match(mixed.html, /Move office/);
+      const waitingAt = mixed.html.indexOf('<section id="waiting">');
+      assert.ok(waitingAt > mixed.html.indexOf("<h1>") && waitingAt < mixed.html.indexOf('<section id="open">'), "waiting sits above the Open group");
+      assert.ok(waitingAt < mixed.html.indexOf("Keep my decision records"));
+      assert.equal(mixed.html.includes("Log your choice after a grill so it counts."), false, "the page does not say it twice");
+      // A filter is a view of saved decisions. A waiting grill belongs to none.
+      const filtered = await getPage(ctx, "/decisions?type=work", { now: JAN });
+      assert.equal(filtered.html.includes('id="waiting"'), false);
+
+      const last = await chat(ctx, fake, "grill_decided", { decided: "Hire the contractor." }, JAN);
+      assert.match(last.text, /^Saved\./);
+      const none = await getPage(ctx, "/decisions", { now: JAN });
+      assert.equal(none.html.includes('id="waiting"'), false);
+      assert.doesNotMatch(none.html, /grills? (?:is|are) waiting for your call/);
+    } finally {
+      await fake.close();
+    }
+  });
+
 });
 
 describe("the public pages name where saved grills are", () => {

@@ -160,6 +160,9 @@ import {
   publicOrigin,
   queryHasToken,
   recordsForLookBack,
+  PENDING_KEEP_DAYS,
+  waitingGrillLine,
+  WAITING_GRILL_HOW,
   savedConfirmation,
   serviceFailureText,
   signInUrl,
@@ -371,7 +374,7 @@ function pendingIndex(userId) {
 function pendingRedisKey(userId, id) {
   return `grill:hosted:pending:${userId}:${id}`;
 }
-const PENDING_TTL_SECONDS = 14 * 24 * 60 * 60;
+const PENDING_TTL_SECONDS = PENDING_KEEP_DAYS * 24 * 60 * 60;
 /**
  * Fields that a running grill changes live in their own keys, written with atomic
  * commands, so two grills finishing at once can't overwrite each other's copy of
@@ -2735,6 +2738,16 @@ function renderDueAction(rows, byId, now, query) {
   </section>`;
 }
 
+/** A grill with a verdict and no stated choice. A count and what to do; nothing from the draft itself. */
+function renderWaiting(count) {
+  const line = waitingGrillLine(count);
+  if (!line) return "";
+  return `<section id="waiting">
+    <p class="action"><strong>${esc(line)}</strong></p>
+    <p>${esc(WAITING_GRILL_HOW)}</p>
+  </section>`;
+}
+
 function renderNamedGroup(id, label, rows, byId, now, query) {
   if (!rows.length) return "";
   const items = rows.map((row) => renderListRow(row, byId, now, query)).join("");
@@ -2956,21 +2969,24 @@ function renderDecisions(account, rows, _credit, habits, extra = {}) {
     .filter((row) => decisionGroup(row, now) === "closed")
     .sort((a, b) => String(b.lookback?.at || b.createdAt || b.date || "").localeCompare(String(a.lookback?.at || a.createdAt || a.date || "")));
   const narrowed = Boolean(type || source);
-  const empty = shown.length ? "" : narrowed ? `<p>${esc(emptyInView(type, source))}</p>` : EMPTY_DECISIONS;
-  const how = shown.length < 3 && !(narrowed && !shown.length) ? `<p class="small">${LOOKBACK_HOW}</p>` : "";
   const keeping = account.records === "keep";
+  // A grill can wait for a choice only while records are on, and it belongs to no filter.
+  const waiting = keeping && !narrowed ? renderWaiting(habits?.waiting || 0) : "";
+  const empty = shown.length ? "" : narrowed ? `<p>${esc(emptyInView(type, source))}</p>` : waiting ? "" : EMPTY_DECISIONS;
+  const how = shown.length < 3 && !(narrowed && !shown.length) ? `<p class="small">${LOOKBACK_HOW}</p>` : "";
   return page(
     "Your grills",
     `${LIST_STYLE}
     <h1>Your grills</h1>
     ${renderImpact(shown, type, source)}
     ${renderDueAction(shown, byId, now, query)}
+    ${waiting}
     ${filterRow(linked, type, source)}
     ${renderNamedGroup("open", "Open", open, byId, now, query)}
     ${renderNamedGroup("closed", "Closed", closed, byId, now, query)}
     ${empty}
     ${how}
-    ${renderNudge(shown, { waiting: habits?.waiting || 0, now, type, source })}
+    ${renderNudge(shown, { waiting: waiting ? 0 : habits?.waiting || 0, now, type, source })}
     ${renderFooter(linked.length, narrowed)}
     <details class="settings">
     <summary>Settings</summary>
@@ -3999,5 +4015,5 @@ export async function handleShare(request, deps) {
 
 /** Test hook: the list page with no session or store. */
 export function renderDecisionsForTest(account, rows, extra = {}) {
-  return renderDecisions(account, rows, null, { waiting: 0 }, extra);
+  return renderDecisions(account, rows, null, { waiting: extra.waiting || 0 }, extra);
 }
