@@ -5,7 +5,9 @@ FROM node:22-slim
 
 WORKDIR /app
 COPY --chown=node:node server/index.mjs server/index.mjs
-COPY --chown=node:node scripts/judge.mjs scripts/apiKey.mjs scripts/judgeCore.mjs scripts/checkCore.mjs scripts/reflection.mjs scripts/usageStats.mjs scripts/
+# Every file server/index.mjs reaches: its imports, the judge it starts, and what those import.
+# scripts/packaging.test.mjs fails when one is missing here.
+COPY --chown=node:node scripts/judge.mjs scripts/apiKey.mjs scripts/judgeCore.mjs scripts/checkCore.mjs scripts/reflection.mjs scripts/usageStats.mjs scripts/feedbackCore.mjs scripts/
 # Bake the image build's UTC day into RELEASE_DATE. The script is not part of the running server.
 COPY --chown=node:node scripts/releaseDate.mjs scripts/releaseDate.mjs
 RUN node --input-type=module -e 'import { stampReleaseDateFile } from "./scripts/releaseDate.mjs"; stampReleaseDateFile("server/index.mjs");' \

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -379,8 +379,49 @@ describe("the registry listing", () => {
   });
 });
 
+/** The files the image holds when it runs: every COPY, minus what the build removes again. */
+function dockerImageFiles(docker) {
+  const files = new Set();
+  for (const line of docker.split("\n")) {
+    if (!/^COPY\s/.test(line)) continue;
+    const parts = line.trim().split(/\s+/).slice(1).filter((part) => !part.startsWith("--"));
+    const dest = parts.pop();
+    for (const src of parts) files.add(dest.endsWith("/") ? `${dest}${posix.basename(src)}` : dest);
+  }
+  for (const [, removed] of docker.matchAll(/\brm (\S+)/g)) files.delete(removed);
+  return files;
+}
+
+/** The repo files one file needs at run time: its relative imports, and a script it starts by path. */
+function relativeNeeds(file) {
+  const source = readFileSync(join(ROOT, file), "utf8");
+  const needs = new Set();
+  const add = (rel) => needs.add(posix.join(posix.dirname(file), rel));
+  for (const [, rel] of source.matchAll(/^\s*(?:import|export)\b[^"'\n;]*?\bfrom\s*"(\.{1,2}\/[^"]+)"/gm)) add(rel);
+  for (const [, rel] of source.matchAll(/^\}\s*from\s*"(\.{1,2}\/[^"]+)"/gm)) add(rel);
+  for (const [, rel] of source.matchAll(/^\s*import\s*"(\.{1,2}\/[^"]+)"/gm)) add(rel);
+  for (const [, rel] of source.matchAll(/\bimport\(\s*"(\.{1,2}\/[^"]+)"\s*\)/g)) add(rel);
+  for (const [, rel] of source.matchAll(/new URL\("(\.{1,2}\/[^"]+\.mjs)", import\.meta\.url\)/g)) add(rel);
+  return needs;
+}
+
+/** Everything the server reaches, one hop after another, with the file that asked for each. */
+function serverClosure() {
+  const askedBy = new Map([["server/index.mjs", "the image's entry point"]]);
+  const queue = ["server/index.mjs"];
+  while (queue.length) {
+    const file = queue.shift();
+    for (const need of relativeNeeds(file)) {
+      if (askedBy.has(need)) continue;
+      askedBy.set(need, file);
+      queue.push(need);
+    }
+  }
+  return askedBy;
+}
+
 describe("Glama listing files", () => {
-  it("glama.json names the maintainer who can claim the listing, and the image starts the server", () => {
+  it("glama.json names the maintainer who can claim the listing, and the image starts the server", async () => {
     const glama = json("glama.json");
     assert.equal(glama.$schema, "https://glama.ai/mcp/schemas/server.json");
     assert.deepEqual(glama.maintainers, ["mtangoz"]);
@@ -389,6 +430,39 @@ describe("Glama listing files", () => {
     assert.match(docker, /^USER node$/m);
     assert.match(docker, /stampReleaseDateFile/);
     assert.match(docker, /rm scripts\/releaseDate\.mjs/);
+
+    // Every file the server reaches is in the image: its own relative imports, the judge it
+    // starts by path, and what each of those imports in turn. One missing file and the
+    // image exits before it answers tools/list.
+    const image = dockerImageFiles(docker);
+    const closure = serverClosure();
+    assert.ok(closure.has("scripts/judge.mjs"), "the server starts the judge by path");
+    assert.ok(closure.has("scripts/feedbackCore.mjs"), "the server imports the reaction core");
+    assert.ok(closure.has("scripts/checkCore.mjs"), "a second hop is followed");
+    for (const [file, asker] of closure) {
+      assert.ok(existsSync(join(ROOT, file)), `${asker} needs ${file}, which is not in the repo`);
+      assert.ok(image.has(file), `${asker} needs ${file}, which the Dockerfile does not COPY`);
+    }
+    // The image runs the same code as the Desktop extension and the npm package: no more, no less.
+    const build = readFileSync(join(ROOT, "scripts/build-extension.mjs"), "utf8");
+    const extension = JSON.parse(build.match(/const FILES = (\[[^\]]+\])/)[1]).filter((file) => file.endsWith(".mjs"));
+    assert.deepEqual([...image].sort(), extension.sort());
+
+    // And it does start: the same files, laid out the same way, answer tools/list with no key.
+    const dir = mkdtempSync(join(tmpdir(), "grill-image-"));
+    try {
+      for (const file of image) {
+        mkdirSync(dirname(join(dir, file)), { recursive: true });
+        cpSync(join(ROOT, file), join(dir, file));
+      }
+      const listed = await listTools(join(dir, "server/index.mjs"));
+      assert.deepEqual(
+        listed.map((tool) => tool.name),
+        manifest.tools.map((tool) => tool.name),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
