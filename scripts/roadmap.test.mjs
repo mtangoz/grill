@@ -105,7 +105,7 @@ describe("later ideas and competitor notes", () => {
     assert.ok(proposed.includes("[PROPOSED-WORDING.md](PROPOSED-WORDING.md)"));
     for (const text of [proposed, wording]) {
       assert.doesNotMatch(text, /Tony approved|owner decided/i);
-      assert.doesNotMatch(text, /[–—]/);
+      assert.doesNotMatch(text, /[\u2013\u2014]/);
     }
   });
 
