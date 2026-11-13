@@ -26,6 +26,8 @@ npm run build:extension          # dist/grill.mcpb and dist/grill-smithery.mcpb
 - Run the tests before you open the pull request.
 - Keep a change small. One idea per pull request.
 - Don't paste a real decision, a key, or anything private into an issue, a pull request, or a committed fixture.
+- If a model wrote the change, name it. Put a line `Written-by-model: <vendor>/<model>` in the pull request body, such as `Written-by-model: anthropic/claude-opus-4`. Grill CI uses it to keep that company out of the judge. Without the line, Grill CI knows the company only when the login or the branch names it. Otherwise its comment says independence isn't verified. The pull request template has the line. An agent that opens a pull request through the API does not get the template, so it has to add the line itself.
+- If the change touches a public page, run `node scripts/indexnow.mjs` once it is merged and live. The template's checklist has a line for it. What the script does is under "The website and Grill Pro" below.
 - What you contribute is licensed under MIT, the same as the rest of the code. A fork is welcome under another name: [TRADEMARKS.md](TRADEMARKS.md).
 
 Low-risk pull requests merge themselves once checks are green. Medium and high risk pull requests from the same authors are grilled. Rules and the opt-out labels are in [docs/PR-AUTOMATION.md](docs/PR-AUTOMATION.md).

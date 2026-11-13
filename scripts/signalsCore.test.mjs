@@ -1,10 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { BRANCH_FAMILIES, writtenByModel } from "./grillPrCore.mjs";
 import { fetchSignalIssues } from "./signals.mjs";
 import { aggregate, FIELDS, isSignalIssue, parseSignal, recommend, renderReport, SIGNAL_LABEL, SIGNAL_TITLE } from "./signalsCore.mjs";
 
@@ -491,5 +492,97 @@ describe("learn.yml: one rolling issue, and nothing when there are zero signals"
     const { status, calls } = runStep(POST_STEP, { expectJq: "another filter" });
     assert.notEqual(status, 0);
     assert.deepEqual(calls.map((call) => call.slice(0, 2).join(" ")), ["issue list"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The pull request template, and the two docs that repeat what it asks for. Grill CI can keep
+// the writing company out of the judge only when it knows which company that is, and for most
+// logins the one place it can learn that is a Written-by-model line in the pull request body.
+
+describe("the pull request template", () => {
+  const template = readFileSync(join(ROOT, ".github/pull_request_template.md"), "utf8");
+  const templateLines = template.split("\n");
+  const PLACEHOLDER = "Written-by-model: <vendor>/<model>";
+
+  it("asks for the writing model on a line of its own, under the summary", () => {
+    assert.equal(templateLines.filter((line) => line === PLACEHOLDER).length, 1);
+    const at = templateLines.indexOf(PLACEHOLDER);
+    assert.ok(templateLines.indexOf("## Summary") < at && at < templateLines.indexOf("## Checklist"));
+  });
+
+  it("says why in one comment line: Grill CI keeps that company out of the judge", () => {
+    const comment = templateLines[templateLines.indexOf(PLACEHOLDER) + 1];
+    assert.match(comment, /^<!-- [^<>]* -->$/, "one comment, on the line right under the placeholder");
+    assert.ok(comment.includes("Grill CI uses this line to keep that company out of the judge."));
+  });
+
+  it("names no model until someone fills it in, so an untouched template excludes no company", () => {
+    assert.equal(writtenByModel(template), null, "the placeholder is not read as a model");
+    assert.equal(writtenByModel(template.replace(`${PLACEHOLDER}\n`, "")), null, "nor is the example in the comment");
+    const filled = template.replace(PLACEHOLDER, "Written-by-model: openai/gpt-5.6-sol");
+    assert.deepEqual(writtenByModel(filled), { vendor: "openai", model: "gpt-5.6-sol", slug: "openai/gpt-5.6-sol" });
+  });
+
+  it("keeps the five checklist lines it had, and adds one for IndexNow after a page change", () => {
+    const boxes = templateLines.filter((line) => line.startsWith("- [ ] "));
+    assert.deepEqual(boxes, [
+      "- [ ] Does this change what data leaves the user's machine? If yes, update PRIVACY.md.",
+      "- [ ] Tests pass (`node --test scripts/*.test.mjs`), no new dependencies",
+      "- [ ] Judge stays decorrelated and unpinned",
+      "- [ ] If this changes a page a person sees: docs/UX.md still holds, or the rule changed on purpose and says why.",
+      "- [ ] Looked at 390 px, light and dark.",
+      "- [ ] If this changes a public page: once it is merged and live, run `node scripts/indexnow.mjs`. It prints what it would send, and `--send` posts it.",
+    ]);
+    // The script the line names is there, and it sends only when told to.
+    assert.ok(existsSync(join(ROOT, "scripts/indexnow.mjs")));
+    const indexnow = readFileSync(join(ROOT, "scripts/indexnow.mjs"), "utf8");
+    assert.ok(indexnow.includes("dry run: not sent (pass --send to submit)"));
+  });
+
+  it("has no em dash or en dash", () => {
+    assert.doesNotMatch(template, /[–—]/);
+  });
+});
+
+describe("CONTRIBUTING.md and docs/PR-AUTOMATION.md say what the template says", () => {
+  const docs = {
+    "CONTRIBUTING.md": readFileSync(join(ROOT, "CONTRIBUTING.md"), "utf8"),
+    "docs/PR-AUTOMATION.md": readFileSync(join(ROOT, "docs/PR-AUTOMATION.md"), "utf8"),
+  };
+
+  it("both ask for the Written-by-model line and say Grill CI uses it to keep that company out of the judge", () => {
+    for (const [name, text] of Object.entries(docs)) {
+      assert.ok(text.includes("a line `Written-by-model: <vendor>/<model>`"), name);
+      assert.ok(text.includes("Grill CI uses it to keep that company out of the judge."), name);
+      assert.ok(text.includes("independence isn't verified"), `${name} says what happens without the line`);
+      assert.ok(text.includes("An agent that opens a pull request through the API does not get the template, so it has to add the line itself."), name);
+    }
+  });
+
+  it("both say to run the IndexNow script once a page change is merged and live", () => {
+    for (const [name, text] of Object.entries(docs)) {
+      assert.ok(text.includes("`node scripts/indexnow.mjs`"), name);
+      assert.ok(text.includes("merged and live"), name);
+    }
+    assert.ok(docs["CONTRIBUTING.md"].includes("The template's checklist has a line for it."));
+    assert.ok(docs["docs/PR-AUTOMATION.md"].includes("No workflow runs it."));
+    // That last sentence is true: no workflow mentions the script.
+    const workflows = readdirSync(join(ROOT, ".github/workflows"));
+    assert.ok(workflows.includes("learn.yml"));
+    for (const workflow of workflows) {
+      assert.ok(!readFileSync(join(ROOT, ".github/workflows", workflow), "utf8").includes("indexnow"), workflow);
+    }
+  });
+
+  it("the automation doc names every branch prefix that tells Grill CI the company", () => {
+    const names = { anthropic: "Anthropic", openai: "OpenAI" };
+    for (const [prefix, family] of BRANCH_FAMILIES) {
+      assert.ok(docs["docs/PR-AUTOMATION.md"].includes(`\`${prefix}\` (${names[family]})`), `${prefix} ${family}`);
+    }
+  });
+
+  it("neither has an em dash or an en dash", () => {
+    for (const [name, text] of Object.entries(docs)) assert.doesNotMatch(text, /[–—]/, name);
   });
 });
