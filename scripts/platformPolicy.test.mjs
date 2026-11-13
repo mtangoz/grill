@@ -24,6 +24,7 @@ import {
   renderLayers,
 } from "./judgeCore.mjs";
 import { changesView, lookBack, recordBlock } from "./reflection.mjs";
+import { INDEPENDENCE_RELAY, buildGrillTools, groundedAuthor } from "../server/index.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (file) => readFileSync(join(ROOT, file), "utf8");
@@ -423,5 +424,104 @@ describe("Grill in chat shows no plan, price, upgrade or credit", () => {
     }
     // The code sends the constant, not a sentence of its own.
     assert.match(hostedToolCode(), /account\.creditBlocked === "email"\) \{\s*return toolText\(EMAIL_CLAIMED_TEXT, true\);/);
+  });
+});
+
+describe("the hosted grill tool reads true on every host", () => {
+  const grill = hostedCore.hostedTools().find((tool) => tool.name === "grill");
+  const installed = buildGrillTools({ checkOn: true }).find((tool) => tool.name === "grill");
+  const sentencesOf = (text) =>
+    String(text)
+      .split(/(?<=[.!?])\s+/)
+      .map((sentence) => sentence.trim())
+      .filter(Boolean);
+
+  it("does not call Claude the author, and says nothing about settings it does not have", () => {
+    // ChatGPT, Grok and Cursor read this text too. The author comes from the app that connected.
+    for (const { where, text } of modelFacingRows()) {
+      assert.doesNotMatch(text, /\bClaude\b/, where);
+      assert.doesNotMatch(text, /unless set otherwise/i, where);
+      assert.doesNotMatch(text, /\bsettings\b/i, where);
+    }
+    assert.doesNotMatch(grill.description, /name a judge model|same-company pin|Leave it blank/);
+    // The installed tool keeps both sentences. If its wording moves, the swap below would
+    // silently stop working, so this fails first and says where to look.
+    assert.ok(installed.description.includes(hostedCore.LOCAL_ONLY_OPENING), "server/index.mjs changed its opening sentence: update LOCAL_ONLY_OPENING in hostedCore.mjs");
+    assert.ok(installed.description.includes(hostedCore.LOCAL_ONLY_JUDGE_SETTING), "server/index.mjs changed its judge-setting sentences: update LOCAL_ONLY_JUDGE_SETTING in hostedCore.mjs");
+    assert.equal(grill.description.includes(hostedCore.LOCAL_ONLY_OPENING), false);
+  });
+
+  it("says the judge is from a different company only when Grill can tell who wrote the decision", () => {
+    assert.equal(
+      hostedCore.HOSTED_OPENING,
+      "Send a decision, plan or forecast to an outside AI judge. The judge is from a different company than the one whose model wrote it, when Grill can tell which that is. When it cannot, the verdict says so.",
+    );
+    assert.ok(grill.description.startsWith(`${hostedCore.HOSTED_OPENING} The judge is picked by openrouter/auto.`), grill.description.slice(0, 260));
+    // One "different company" in the whole description, and it is the conditional one.
+    assert.equal(grill.description.split("different company").length, 2);
+    assert.match(grill.description, /openrouter\/auto/);
+  });
+
+  it("asks for the author in words that fit any assistant, with examples that do exclude a company", () => {
+    const author = grill.inputSchema.properties.author.description;
+    assert.equal(
+      author,
+      "Optional. The model family that wrote the subject, for example openai, anthropic, google or x-ai. That family is excluded from judging. Set it to your own family when you know it.",
+    );
+    for (const example of author.match(/for example ([^.]+)\./)[1].split(/, | or /)) {
+      assert.equal(groundedAuthor(example), example, `${example} must be a name that excludes a company`);
+    }
+    assert.equal(grill.inputSchema.properties.author.type, "string");
+    assert.equal(grill.inputSchema.properties.quality_check.type, "boolean");
+  });
+
+  it("discloses the quality check by TypeSafe, and how to skip it", () => {
+    assert.equal(
+      hostedCore.HOSTED_CHECK_DISCLOSURE,
+      "By default a quality check by TypeSafe (a model called Jev) also gets the masked write-up and the judge's verdict and challenges. Pass quality_check: false only if the person asks to skip it.",
+    );
+    assert.equal(grill.description.split(hostedCore.HOSTED_CHECK_DISCLOSURE).length, 2);
+    assert.equal(
+      grill.inputSchema.properties.quality_check.description,
+      "Optional. false skips the TypeSafe quality check for this grill only, when the person asks.",
+    );
+    // It makes no promise about what TypeSafe keeps: that request carries no retention flag.
+    assert.doesNotMatch(hostedCore.HOSTED_CHECK_DISCLOSURE, /zero|retention|not keep|never keep/i);
+  });
+
+  it("limits the no-disclosure rule to Grill's own text, in the description and in the instructions", () => {
+    assert.equal(
+      hostedCore.OWN_DISCLOSURE_RULE,
+      "Do not add a disclosure of your own to Grill's text. Anything your own rules require, say it separately, after the run note.",
+    );
+    for (const [where, text] of [["grill description", grill.description], ["instructions", hostedCore.HOSTED_INSTRUCTIONS]]) {
+      assert.equal(text.split(hostedCore.OWN_DISCLOSURE_RULE).length, 2, where);
+      // No second, unscoped copy of the rule.
+      assert.equal(text.split("Do not add a disclosure of your own").length, 2, where);
+      assert.doesNotMatch(text, /Do not add your own disclosure/, where);
+      assert.equal(text.split(INDEPENDENCE_RELAY).length, 2, where);
+    }
+    assert.match(hostedCore.HOSTED_INSTRUCTIONS, /or format rules\. Do not add a disclaimer to Grill's text\./);
+    assert.doesNotMatch(hostedCore.HOSTED_INSTRUCTIONS, /do not show[^.]*disclaimer/i);
+  });
+
+  it("says each thing once", () => {
+    const seen = new Map();
+    for (const sentence of sentencesOf(grill.description)) seen.set(sentence, (seen.get(sentence) || 0) + 1);
+    const repeated = [...seen].filter(([, count]) => count > 1).map(([sentence]) => sentence);
+    assert.deepEqual(repeated, []);
+    // The sentences only the hosted tool needs are still there.
+    for (const kept of [
+      "It never falls back to this chat's own model, for speed or cost, and it never pins a model.",
+      "If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives.",
+      "A follow: line is a job id for you.",
+      "Later results leave it off.",
+      "Grill's job ends at the verdict and the record.",
+      "Do not write a layer yourself.",
+      "Never put that line before the verdict.",
+    ]) {
+      assert.ok(seen.has(kept), kept);
+    }
+    assert.match(grill.description, /keep_records true or false only after they answer Yes or No\./);
   });
 });

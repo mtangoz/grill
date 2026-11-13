@@ -1121,9 +1121,39 @@ export function recordsForLookBack(saved, { records = "", now = Date.now() } = {
   return { mode: "named", text: rows.map((row) => row.block).join("\n\n"), rows };
 }
 
-const HOSTED_COST_LINE =
-  "The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. Do not ask the person for a job id. The first time, Grill asks whether to keep decision records before anything is sent: show that one question, and call again with keep_records true or false only after they answer Yes or No. Do not add your own disclosure. If the result starts with the outside-judge sentence, show that one line once. Later results leave it off. Layer 1 is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question. When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Do not write a layer yourself. A follow: line is a job id for you. Never show it. " +
-  SCOPE_GUARD;
+/**
+ * What only the hosted grill tool says, after the text it shares with the installed tool.
+ * Each sentence is here once. The shared text already covers the layers, deepen, the
+ * first-use line and the scope rule, so this does not say them again.
+ */
+const HOSTED_GRILL_TAIL =
+  "The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. The first time, Grill asks whether to keep decision records before anything is sent: show that one question, and call again with keep_records true or false only after they answer Yes or No. A follow: line is a job id for you. Never show it.";
+
+// The installed tool's description assumes Claude wrote the subject unless a setting says
+// otherwise, and it describes a judge model named in settings. Neither is true of Grill in
+// chat: the author comes from the app that connected, and there are no settings. These are the
+// installed sentences that hostedTools() swaps out. scripts/platformPolicy.test.mjs fails if
+// one of them stops matching, so a change to the installed text cannot leave it in place here.
+export const LOCAL_ONLY_OPENING =
+  "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).";
+export const HOSTED_OPENING =
+  "Send a decision, plan or forecast to an outside AI judge. The judge is from a different company than the one whose model wrote it, when Grill can tell which that is. When it cannot, the verdict says so.";
+export const LOCAL_ONLY_JUDGE_SETTING =
+  "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default. ";
+
+/**
+ * The quality check is a second place the write-up goes, and it is on unless the call turns
+ * it off. The assistant is told here, in the tool description a reviewer reads.
+ */
+export const HOSTED_CHECK_DISCLOSURE =
+  "By default a quality check by TypeSafe (a model called Jev) also gets the masked write-up and the judge's verdict and challenges. Pass quality_check: false only if the person asks to skip it.";
+
+/**
+ * Grill's text is relayed as written. What the assistant's own rules require is not
+ * Grill's to forbid, so the rule covers Grill's text and says where the rest goes.
+ */
+export const OWN_DISCLOSURE_RULE =
+  "Do not add a disclosure of your own to Grill's text. Anything your own rules require, say it separately, after the run note.";
 
 /** What the assistant reads from grill_result. The next step, if the job is still running, is another call. */
 const HOSTED_RESULT_DESCRIPTION =
@@ -1163,7 +1193,7 @@ export function hostedTools() {
   const localDisclosure =
     /The first time you use Grill with this person, say once\b.*?Do not mention a score, a balance, or a quote check\. /;
   const hostedDisclosure =
-    `Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Every result then ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY} Do not mention a Jev score or a quote check. `;
+    `${OWN_DISCLOSURE_RULE} If the result starts with the outside-judge sentence, show it once. Later results leave it off. Every result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY} ${HOSTED_CHECK_DISCLOSURE} Do not mention a Jev score or a quote check. `;
   // Hosted hints are set here, not copied from the local tools. A local look-back stores
   // nothing, and a local grill does not write an account. OpenAI's review reads all three,
   // and the MCP defaults (read-only false, destructive true, open-world true) are wrong for
@@ -1172,12 +1202,24 @@ export function hostedTools() {
   return [
     {
       ...grill,
-      description: `${grill.description.replace(localDisclosure, hostedDisclosure)} ${HOSTED_COST_LINE}`,
+      description: `${grill.description
+        .replace(LOCAL_ONLY_OPENING, HOSTED_OPENING)
+        .replace(localDisclosure, hostedDisclosure)
+        .replace(LOCAL_ONLY_JUDGE_SETTING, "")} ${HOSTED_GRILL_TAIL}`,
       annotations: { title: "Grill a decision", readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       inputSchema: {
         ...grill.inputSchema,
         properties: {
           ...grill.inputSchema.properties,
+          author: {
+            ...grill.inputSchema.properties.author,
+            description:
+              "Optional. The model family that wrote the subject, for example openai, anthropic, google or x-ai. That family is excluded from judging. Set it to your own family when you know it.",
+          },
+          quality_check: {
+            ...grill.inputSchema.properties.quality_check,
+            description: "Optional. false skips the TypeSafe quality check for this grill only, when the person asks.",
+          },
           keep_records: {
             type: "boolean",
             description:
@@ -1273,14 +1315,14 @@ export const HOSTED_INSTRUCTIONS = [
   "Do not rewrite the decision, do not add your own case against, and do not wait for an OK.",
   "Ask at most one short question, and only if the decision is truly unclear, such as what the goal is.",
   "The first time, grill asks whether to keep decision records before anything is sent. Relay that one question and call again with keep_records true or false only after they answer.",
-  `If the result starts with the outside-judge sentence, show that one line once. Do not add a disclosure of your own, and do not repeat it later. Every result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY}`,
+  `If the result starts with the outside-judge sentence, show that one line once, and do not repeat it later. ${OWN_DISCLOSURE_RULE} Every result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY}`,
   "If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the note arrives. Do not ask the person to check, and do not ask them for a job id.",
   "If three grills are still running, wait about 2 minutes and call grill again yourself. Do not ask the person for a job id.",
   "Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question, a fact list, a confidence question, or a line of your own. It already ends with the next-step line.",
   "When the note has a line that starts with Look back on, show that one line after the verdict. It is optional. Do not add one when it is not there. Never on a quick or bulk grill.",
   "When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Pass job_id if you have one. A follow: line is a job id for you. Never show it. Do not write a layer yourself.",
   "Never present an answer as Grill's, or label it a Grill verdict, unless grill or grill_result returned it in this conversation; if the tool isn't available or fails, say Grill didn't run instead of imitating it.",
-  "Do not add a model name of your own, and do not show a record, a Jev score, a quote check, format rules, or a disclaimer.",
+  "Do not add a model name of your own, and do not show a record, a Jev score, a quote check, or format rules. Do not add a disclaimer to Grill's text.",
   "Call grill_result with detail provenance only when you are writing a lasting record of the grill, such as an audit log. Put that one line in the record, not in your reply, unless the person asks which model judged.",
   "The verdict never becomes the decision. If they ask whether they should do it, hand the choice back and name the cheap test.",
   "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation as written, and sometimes one more line saying earlier calls are due for a look-back. If they never answer, do not call it, and there is no record and no look-back.",
