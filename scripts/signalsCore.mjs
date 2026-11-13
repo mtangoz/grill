@@ -33,6 +33,24 @@ export const FIELDS = Object.freeze({
   client: { label: "Where you used Grill", options: ["desktop", "web", "phone", "code"] },
 });
 
+/** The form's own title and label, as .github/ISSUE_TEMPLATE/grill-signal.yml sets them. */
+export const SIGNAL_TITLE = "Grill signal";
+export const SIGNAL_LABEL = "signal";
+
+/**
+ * Is this issue one the report should read? Yes when it carries the form's label, or when its
+ * title is exactly the form's title. The second rule is there because GitHub adds a form's label
+ * only when the repository already has a label of that name, so a signal can arrive without it.
+ * A pull request is never a signal. Passing this check is not enough to be counted: parseSignal
+ * still drops any issue whose body is off-form.
+ */
+export function isSignalIssue(issue) {
+  if (!issue || typeof issue !== "object" || issue.pull_request) return false;
+  const labels = Array.isArray(issue.labels) ? issue.labels : [];
+  if (labels.some((label) => (typeof label === "string" ? label : label?.name) === SIGNAL_LABEL)) return true;
+  return issue.title === SIGNAL_TITLE;
+}
+
 const NO_RESPONSE = "_No response_";
 
 /** Older signal issues used the tool's internal verdict names. They still count, under the public names. */
@@ -128,7 +146,7 @@ export function recommend(agg, { minN = 10 } = {}) {
 
 /** The monthly report, as markdown. No subject text exists anywhere in its inputs. */
 export function renderReport(agg, recs, { dropped = 0, period = "" } = {}) {
-  const pct = (r) => (r === null ? "–" : `${Math.round(r * 100)}%`);
+  const pct = (r) => (r === null ? "n/a" : `${Math.round(r * 100)}%`);
   const lines = [`# Grill learning report${period ? `: ${period}` : ""}`, ""];
   lines.push(
     `${agg.counts.signals} signals (${agg.counts.rated} rated, ${agg.counts.resolved} resolved)${dropped ? `; ${dropped} dropped as off-form` : ""}.`,
