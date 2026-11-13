@@ -4,13 +4,17 @@
  * off, choices, first grills by app, and the kill threshold for the record bet.
  *   node scripts/outside-loop.mjs
  * Reads the counters with the same Upstash settings scripts/weekly-metrics.mjs uses. It reads
- * whole numbers only: no account, no email, no title, and no kept record. The rules are in
- * scripts/outsideLoopCore.mjs.
+ * whole numbers and two days only: no account, no email, no title, and no kept record. The
+ * rules are in scripts/outsideLoopCore.mjs.
+ *
+ * It reads the store, not the server, so it cannot see whether the internal list is set there
+ * today. It prints the last day the server handled an event with the list set, and warns when
+ * that day is old.
  */
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { redisCommand } from "../api/_account.mjs";
-import { OUTSIDE_KEYS, OUTSIDE_LIVE_KEY, outsideLines, outsideReading, utcDay } from "./outsideLoopCore.mjs";
+import { OUTSIDE_KEYS, OUTSIDE_LIVE_KEY, OUTSIDE_SEEN_KEY, outsideLines, outsideReading, utcDay } from "./outsideLoopCore.mjs";
 
 export const NOT_CONFIGURED_LINE = "Outside loop readout: the Upstash settings are not set here, so nothing was read.";
 
@@ -18,11 +22,15 @@ function setting(env, name) {
   return typeof env?.[name] === "string" ? env[name].trim() : "";
 }
 
-/** One HGETALL per counter and one GET for the day counting began. Nothing is written. */
+/**
+ * One HGETALL per counter, one GET for the day counting began, and one GET for the last day
+ * the server handled an event with the internal list set. Nothing is written.
+ */
 export async function readOutsideCounters(command) {
   const raw = {};
   for (const [name, key] of Object.entries(OUTSIDE_KEYS)) raw[name] = await command(["HGETALL", key]);
   raw.live = await command(["GET", OUTSIDE_LIVE_KEY]);
+  raw.seen = await command(["GET", OUTSIDE_SEEN_KEY]);
   return raw;
 }
 

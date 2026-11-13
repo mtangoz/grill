@@ -36,6 +36,16 @@ export const OUTSIDE_KEYS = Object.freeze({
 /** A plain string: the UTC day the server first ran with the internal list set. */
 export const OUTSIDE_LIVE_KEY = `${OUTSIDE_PREFIX}live`;
 
+/**
+ * A plain string: the last UTC day the server handled an event with the internal list set.
+ * The readout runs away from the server and cannot see the list. If the list is unset later,
+ * counting stops without a trace in the counters. This day stops moving too, and that shows.
+ */
+export const OUTSIDE_SEEN_KEY = `${OUTSIDE_PREFIX}seen`;
+
+/** The readout warns when the last day above is more than this many days old. */
+export const SEEN_STALE_DAYS = 7;
+
 /** The apps a first grill is filed under. Anything else is "other". */
 export const OUTSIDE_APPS = Object.freeze(["claude", "claude-code", "chatgpt", "grok", "gemini", "muse", "cursor", "other"]);
 
@@ -370,7 +380,8 @@ export function killThreshold(given, today) {
 
 /**
  * Everything the readout prints, as numbers. `raw` holds one HGETALL reply per name in
- * OUTSIDE_KEYS, plus `live`, the day counting began.
+ * OUTSIDE_KEYS, plus `live`, the day counting began, and `seen`, the last day the server
+ * handled an event with the internal list set.
  */
 export function outsideReading(raw = {}, today) {
   const counters = {
@@ -387,13 +398,20 @@ export function outsideReading(raw = {}, today) {
   const apps = hashCounts(raw.firstGrillApp);
   const byApp = OUTSIDE_APPS.map((app) => [app, apps[app] || 0]).filter(([, n]) => n > 0);
   const live = isDay(raw.live) ? raw.live : "";
+  const seen = isDay(raw.seen) ? raw.seen : "";
+  const seenAge = seen ? Math.round((dayStart(today) - dayStart(seen)) / DAY_MS) : null;
   const anything = Object.values(counters).some((hash) => total(hash) > 0) || byApp.length > 0;
   const oldEnough = (day) => addDays(day, CAME_BACK_AGE_DAYS) <= today;
   const grilledOld = total(counters.firstGrills, oldEnough);
   return {
     today,
     live,
-    counting: Boolean(live) || anything,
+    seen,
+    // Whole days from that day to today. Null when no such day is on file.
+    seenAge,
+    // No day on file, or an old one: the list may have been unset on the server since.
+    seenStale: seenAge === null || seenAge > SEEN_STALE_DAYS,
+    counting: Boolean(live) || Boolean(seen) || anything,
     grilled: total(counters.firstGrills),
     grilledOld,
     // A missed write must not show more people back than people who started.
@@ -404,6 +422,21 @@ export function outsideReading(raw = {}, today) {
     byApp,
     threshold: killThreshold(counters, today),
   };
+}
+
+/**
+ * The last day the server counted, and a warning when that day is old or missing. The store
+ * cannot say whether the list is still set on the server, so the warning names both readings.
+ */
+function seenLines(reading) {
+  const check = "Check the list on the host before you read the numbers below.";
+  const lines = [`Last day the server handled an event with the list set: ${reading.seen || "not recorded"}`];
+  if (!reading.seen) {
+    lines.push(`Warning: no such day is on file. This readout reads the store only. It cannot tell whether the internal list is still set on the server. ${check}`);
+  } else if (reading.seenStale) {
+    lines.push(`Warning: that is ${reading.seenAge} days ago. Either no account has used Grill since, or the internal list was unset on the server and nothing has been counted since. ${check}`);
+  }
+  return lines;
 }
 
 function span(first, last) {
@@ -462,6 +495,7 @@ export function outsideLines(reading) {
   return [
     head,
     `Counting since: ${reading.live || "not recorded"}`,
+    ...seenLines(reading),
     `Outside people who grilled: ${reading.grilled}`,
     `First grilled ${CAME_BACK_AGE_DAYS} or more days ago: ${reading.grilledOld}`,
     `Of those, came back: ${reading.cameBackOld} of ${reading.grilledOld}`,

@@ -69,7 +69,8 @@ import {
 import { testSigningKey } from "./testSigningKey.mjs";
 import { lookBack, parseRecords, recordBlock, sourceAppLabel } from "./reflection.mjs";
 import { readFeedbackRecords } from "./feedbackCore.mjs";
-import { OUTSIDE_KEYS, OUTSIDE_LIVE_KEY, hashFields } from "./outsideLoopCore.mjs";
+import { OUTSIDE_KEYS, OUTSIDE_LIVE_KEY, OUTSIDE_SEEN_KEY, hashFields } from "./outsideLoopCore.mjs";
+import { outsideLoopLines } from "./outside-loop.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ANTHROPIC = readFileSync(join(ROOT, "scripts/fixtures/anthropic-served-response.json"), "utf8");
@@ -4098,6 +4099,7 @@ describe("outside counters, written when the event happens", { concurrency: fals
       assert.deepEqual(outsideWrites(ctx), [], "fail closed: no key with outside in it was read or written");
       assert.deepEqual(ctx.writes.filter((args) => HASH_OPS.includes(args[0])), [], "and no hash command ran at all");
       assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), null);
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_SEEN_KEY]), null);
       for (const key of Object.values(OUTSIDE_KEYS)) assert.deepEqual(hash(ctx, key), {}, key);
       assert.deepEqual(marksOf(ctx), {});
       const rows = await exported(ctx);
@@ -4192,12 +4194,15 @@ describe("outside counters, written when the event happens", { concurrency: fals
       for (const key of Object.values(OUTSIDE_KEYS)) assert.deepEqual(hash(ctx, key), {}, key);
       assert.deepEqual(marksOf(ctx), {});
       assert.equal((await exported(ctx))[0].lookback_counted_day, "");
-      // The one thing written is the day the list was first seen set, so the readout can say counting is on.
-      assert.deepEqual(
-        outsideWrites(ctx).map((args) => args.slice(0, 2)),
-        [["SET", OUTSIDE_LIVE_KEY]],
-      );
+      // All that is written is two days: the day the list was first seen set, so the readout can say
+      // counting is on, and each day an event was handled with it set, so the readout can show the last one.
+      assert.deepEqual(outsideWrites(ctx), [
+        ["SET", OUTSIDE_LIVE_KEY, "2026-01-01", "NX"],
+        ["SET", OUTSIDE_SEEN_KEY, "2026-01-01"],
+        ["SET", OUTSIDE_SEEN_KEY, "2026-01-02"],
+      ]);
       assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), "2026-01-01");
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_SEEN_KEY]), "2026-01-02");
 
       // An agent that acts for an internal person is internal too. One that acts for an outside person is counted.
       const firstAnswerFrom = async (human) => {
@@ -4281,6 +4286,74 @@ describe("outside counters, written when the event happens", { concurrency: fals
       const [after] = await exported(ctx, FEB + DAY);
       assert.equal(after.lookback_first_at, new Date(JAN + 20 * DAY).toISOString());
       assert.equal(after.lookback.at, new Date(FEB + DAY).toISOString());
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("keeps the last day an event was handled with the list set, and the readout warns once the list is unset", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const DAY = 24 * HOUR;
+      const seenWrites = () => ctx.writes.filter((args) => args[1] === OUTSIDE_SEEN_KEY);
+      const seenDay = () => ctx.memory.command(["GET", OUTSIDE_SEEN_KEY]);
+      // The readout as an operator runs it: it reads this store, and has no way to see the server's settings.
+      const readout = (now) =>
+        outsideLoopLines({
+          env: { UPSTASH_REDIS_REST_URL: "https://redis.example.test", UPSTASH_REDIS_REST_TOKEN: "redis-token" },
+          fetch: async (url, init) => Response.json({ result: ctx.memory.command(JSON.parse(init.body)) }),
+          now,
+        });
+      const LAST = "Last day the server handled an event with the list set:";
+
+      // Several events on 1 January write the day once. The next day writes it once more.
+      await grill(ctx, fake, token, "Hire contractor", JAN);
+      await decided(ctx, fake, token, "Hire contractor", JAN);
+      await grill(ctx, fake, token, "Move office", JAN + 2 * HOUR, {});
+      assert.deepEqual(seenWrites(), [["SET", OUTSIDE_SEEN_KEY, "2026-01-01"]], "once per process per day");
+      await grill(ctx, fake, token, "Cut prices", JAN + 30 * HOUR, {});
+      assert.deepEqual(seenWrites().map((args) => args[2]), ["2026-01-01", "2026-01-02"]);
+      assert.equal(seenDay(), "2026-01-02");
+      // A late request carrying an earlier time does not move the day back.
+      await decided(ctx, fake, token, "Move office", JAN + 3 * HOUR);
+      assert.equal(seenDay(), "2026-01-02");
+      // It is a day and nothing else: no account, no address, no time of day.
+      for (const args of seenWrites()) assert.deepEqual(args.slice(3), [], "a plain SET that never expires");
+      const fresh = await readout(JAN + 31 * HOUR);
+      assert.deepEqual(fresh.slice(0, 4), ["Outside loop readout (UTC day 2026-01-02)", "Counting since: 2026-01-01", `${LAST} 2026-01-02`, "Outside people who grilled: 1"]);
+      assert.equal(fresh.some((line) => line.startsWith("Warning:")), false);
+
+      // The list is unset on the server, and a new process starts. Events go on. Nothing outside is written.
+      delete ctx.env.GRILL_INTERNAL_EMAILS;
+      resetHostedCaches();
+      const before = ctx.writes.length;
+      await grill(ctx, fake, token, "Change supplier", FEB, {});
+      await decided(ctx, fake, token, "Change supplier", FEB);
+      assert.deepEqual(ctx.writes.slice(before).filter((args) => args.some((part) => part.includes("outside"))), [], "fail closed");
+      assert.equal(seenDay(), "2026-01-02", "the day stops moving");
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.choices), { "2026-01-01": "2" }, "the February choice was not counted");
+      // The readout cannot see the server. It can see that the day stopped moving, and it says so.
+      const later = await readout(FEB + DAY);
+      assert.deepEqual(later.slice(0, 5), [
+        "Outside loop readout (UTC day 2026-02-02)",
+        "Counting since: 2026-01-01",
+        `${LAST} 2026-01-02`,
+        "Warning: that is 31 days ago. Either no account has used Grill since, or the internal list was unset on the server and nothing has been counted since. Check the list on the host before you read the numbers below.",
+        "Outside people who grilled: 1",
+      ]);
+
+      // The list is set again: the next event moves the day, and the warning goes.
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      resetHostedCaches();
+      await grill(ctx, fake, token, "Renew the lease", FEB + 2 * DAY, {});
+      assert.equal(seenDay(), "2026-02-03");
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), "2026-01-01", "the day counting began does not move");
+      const back = await readout(FEB + 2 * DAY);
+      assert.equal(back[2], `${LAST} 2026-02-03`);
+      assert.equal(back.some((line) => line.startsWith("Warning:")), false);
     } finally {
       await fake.close();
     }

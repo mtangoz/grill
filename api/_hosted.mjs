@@ -192,6 +192,7 @@ import {
 } from "../scripts/feedbackCore.mjs";
 import {
   OUTSIDE_LIVE_KEY,
+  OUTSIDE_SEEN_KEY,
   cameBackOps,
   choiceOps,
   countsAsOutside,
@@ -230,6 +231,8 @@ const clientHintBySub = new Map();
 const CLIENT_HINTS_PER_PERSON = 8;
 // Whether this process has already written the day the outside counters went live.
 let outsideLiveNoted = false;
+// The last UTC day this process wrote as a day it handled an event with the internal list set.
+let outsideSeenDay = "";
 export const AUTH_METADATA_CACHE_MS = 60_000;
 
 export function resetHostedCaches() {
@@ -239,6 +242,7 @@ export function resetHostedCaches() {
   authMetadataCache.clear();
   clientHintBySub.clear();
   outsideLiveNoted = false;
+  outsideSeenDay = "";
 }
 
 class Coded extends Error {
@@ -560,15 +564,27 @@ function nowOf(deps) {
 /**
  * Whether this account's events are counted. Once per process it also writes the day the
  * counters went live, so the readout can tell "nobody yet" from "the list was never set".
+ * Once per process per day it writes that day as the last one an event was handled with the
+ * list set. The readout cannot see the server's settings: if the list is unset later, that
+ * day stops moving, and the readout can show it. Both are a day and nothing else.
  */
 async function outsideGate(account, deps) {
   if (!internalEmails(deps.env)) return false;
+  const today = isoDay(nowOf(deps));
   if (!outsideLiveNoted) {
     try {
-      await redis(deps, ["SET", OUTSIDE_LIVE_KEY, isoDay(nowOf(deps)), "NX"]);
+      await redis(deps, ["SET", OUTSIDE_LIVE_KEY, today, "NX"]);
       outsideLiveNoted = true;
     } catch {
       // Tried again on the next event. A missed mark does not stop the count.
+    }
+  }
+  if (today > outsideSeenDay) {
+    try {
+      await redis(deps, ["SET", OUTSIDE_SEEN_KEY, today]);
+      outsideSeenDay = today;
+    } catch {
+      // Tried again on the next event.
     }
   }
   return countsAsOutside(account, deps.env);

@@ -17,6 +17,7 @@ import {
   OUTSIDE_KEYS,
   OUTSIDE_LIVE_KEY,
   OUTSIDE_PREFIX,
+  OUTSIDE_SEEN_KEY,
   addDays,
   cameBackOps,
   choiceOps,
@@ -81,6 +82,7 @@ function counters(extra = {}) {
     lookbacksDone7d: {},
     lookbacksDone14d: {},
     live: "2026-11-20",
+    seen: "2026-12-19",
     ...extra,
   };
 }
@@ -500,19 +502,60 @@ describe("outside loop readout: the kill threshold", () => {
 
 describe("outside loop readout: what it prints", () => {
   it("prints that nothing is counted when the internal list was never set", () => {
-    const lines = outsideLines(outsideReading(counters({ live: null }), "2026-12-01"));
+    const lines = outsideLines(outsideReading(counters({ live: null, seen: null }), "2026-12-01"));
     assert.deepEqual(lines, ["Outside loop readout (UTC day 2026-12-01)", "not counted: internal list not set"]);
     assert.equal(lines[1], NOT_COUNTED_LINE);
     // The list is set and nobody outside has come yet: zeros, not "not counted".
-    const quiet = outsideLines(outsideReading(counters(), "2026-12-01"));
+    const quiet = outsideLines(outsideReading(counters({ seen: "2026-11-30" }), "2026-12-01"));
     assert.equal(quiet.includes(NOT_COUNTED_LINE), false);
     assert.equal(quiet[1], "Counting since: 2026-11-20");
-    assert.equal(quiet[2], "Outside people who grilled: 0");
+    assert.equal(quiet[2], "Last day the server handled an event with the list set: 2026-11-30");
+    assert.equal(quiet[3], "Outside people who grilled: 0");
     assert.equal(lineOf(quiet, "Of those, came back:"), "Of those, came back: 0 of 0");
     // Counts with no start day on file are still printed.
-    const unmarked = outsideLines(outsideReading(counters({ live: null, firstGrills: { "2026-11-21": 1 } }), "2026-12-01"));
+    const unmarked = outsideLines(outsideReading(counters({ live: null, seen: "2026-11-30", firstGrills: { "2026-11-21": 1 } }), "2026-12-01"));
     assert.equal(unmarked[1], "Counting since: not recorded");
-    assert.equal(unmarked[2], "Outside people who grilled: 1");
+    assert.equal(unmarked[3], "Outside people who grilled: 1");
+  });
+
+  it("prints the last day the server counted, and warns when that day is more than 7 days old", () => {
+    const LAST = "Last day the server handled an event with the list set:";
+    const top = (extra, today = "2026-12-20") => outsideLines(outsideReading(counters(extra), today)).slice(1, 5);
+    // Today, yesterday and 7 days ago: the day is printed, with no warning.
+    for (const seen of ["2026-12-20", "2026-12-19", "2026-12-13"]) {
+      assert.deepEqual(top({ seen }).slice(0, 3), ["Counting since: 2026-11-20", `${LAST} ${seen}`, "Outside people who grilled: 0"], seen);
+    }
+    // 8 days ago. The readout reads the store, not the server, so it cannot say which of the two it is.
+    assert.deepEqual(top({ seen: "2026-12-12" }), [
+      "Counting since: 2026-11-20",
+      `${LAST} 2026-12-12`,
+      "Warning: that is 8 days ago. Either no account has used Grill since, or the internal list was unset on the server and nothing has been counted since. Check the list on the host before you read the numbers below.",
+      "Outside people who grilled: 0",
+    ]);
+    assert.equal(top({ seen: "2026-11-20" })[2].startsWith("Warning: that is 30 days ago."), true);
+    assert.equal(core.SEEN_STALE_DAYS, 7);
+    assert.equal(outsideReading(counters({ seen: "2026-12-12" }), "2026-12-20").seenAge, 8);
+    assert.equal(outsideReading(counters({ seen: "2026-12-12" }), "2026-12-20").seenStale, true);
+    assert.equal(outsideReading(counters({ seen: "2026-12-13" }), "2026-12-20").seenStale, false);
+    // Counts in the store and no such day: say so, and say what the readout cannot know.
+    for (const seen of [null, "", "yesterday", "2026-13-40"]) {
+      assert.deepEqual(top({ seen }), [
+        "Counting since: 2026-11-20",
+        `${LAST} not recorded`,
+        "Warning: no such day is on file. This readout reads the store only. It cannot tell whether the internal list is still set on the server. Check the list on the host before you read the numbers below.",
+        "Outside people who grilled: 0",
+      ]);
+    }
+    // The day alone shows the list was set once: zeros and the day, not "not counted".
+    const only = outsideLines(outsideReading(counters({ live: null, seen: "2026-12-19" }), "2026-12-20"));
+    assert.equal(only.includes(NOT_COUNTED_LINE), false);
+    assert.deepEqual(only.slice(1, 3), ["Counting since: not recorded", `${LAST} 2026-12-19`]);
+    // The warning sits above the numbers and takes none of them away.
+    const stale = outsideLines(outsideReading(counters({ seen: "2026-12-01", lookbacksDue: { "2026-12-05": 3 } }), "2026-12-20"));
+    assert.equal(lineOf(stale, "Look-backs counted:"), "Look-backs counted: 3 (due 2026-12-05)");
+    assert.equal(stale.filter((line) => line.startsWith("Warning:")).length, 1);
+    assert.equal(OUTSIDE_SEEN_KEY, "grill:metric:outside:seen");
+    assert.ok(OUTSIDE_SEEN_KEY.startsWith(OUTSIDE_PREFIX));
   });
 
   it("prints every line by name, as whole numbers and k of n", () => {
@@ -533,6 +576,7 @@ describe("outside loop readout: what it prints", () => {
     assert.deepEqual(lines, [
       "Outside loop readout (UTC day 2026-12-20)",
       "Counting since: 2026-11-20",
+      "Last day the server handled an event with the list set: 2026-12-19",
       "Outside people who grilled: 7",
       "First grilled 14 or more days ago: 3",
       "Of those, came back: 1 of 3",
@@ -639,6 +683,7 @@ describe("outside loop readout: the script", () => {
       fetch: fetchFor(
         {
           [OUTSIDE_LIVE_KEY]: "2026-11-20",
+          [OUTSIDE_SEEN_KEY]: "2026-12-18",
           [OUTSIDE_KEYS.firstGrills]: ["2026-11-21", "2", "2026-12-10", "4"],
           [OUTSIDE_KEYS.firstGrillApp]: ["claude", "5", "cursor", "1"],
           [OUTSIDE_KEYS.cameBack]: ["2026-11-21", "1"],
@@ -651,11 +696,12 @@ describe("outside loop readout: the script", () => {
         seen,
       ),
     });
-    assert.deepEqual(seen, [...Object.values(OUTSIDE_KEYS).map((key) => ["HGETALL", key]), ["GET", OUTSIDE_LIVE_KEY]]);
-    assert.equal(seen.length, 11);
-    assert.deepEqual(lines.slice(0, 8), [
+    assert.deepEqual(seen, [...Object.values(OUTSIDE_KEYS).map((key) => ["HGETALL", key]), ["GET", OUTSIDE_LIVE_KEY], ["GET", OUTSIDE_SEEN_KEY]]);
+    assert.equal(seen.length, 12);
+    assert.deepEqual(lines.slice(0, 9), [
       "Outside loop readout (UTC day 2026-12-20)",
       "Counting since: 2026-11-20",
+      "Last day the server handled an event with the list set: 2026-12-18",
       "Outside people who grilled: 6",
       "First grilled 14 or more days ago: 2",
       "Of those, came back: 1 of 2",
@@ -667,7 +713,8 @@ describe("outside loop readout: the script", () => {
     assert.equal(lineOf(lines, "Cohort people:"), "Cohort people: 2");
     // Every key the reader asks for is one the writers use.
     const raw = await readOutsideCounters(async ([op, key]) => (op === "GET" ? key : [key, "1"]));
-    assert.deepEqual(Object.keys(raw).sort(), [...Object.keys(OUTSIDE_KEYS), "live"].sort());
+    assert.deepEqual(Object.keys(raw).sort(), [...Object.keys(OUTSIDE_KEYS), "live", "seen"].sort());
+    assert.equal(raw.seen, OUTSIDE_SEEN_KEY);
   });
 
   it("prints not counted when the store holds no outside key", async () => {
