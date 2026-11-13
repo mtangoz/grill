@@ -614,7 +614,7 @@ function ref(requestId) {
 export function judgeFailureText(stderr = "", requestId = "") {
   const s = String(stderr || "");
   if (/correlated verdict|excluded company/i.test(s)) {
-    return "The only judge available was from the same company that wrote this, so Grill held back the verdict rather than give you a biased one. Try again in a few minutes.";
+    return "The only judge available was from the same company that wrote this, so Grill held back the verdict. Try again in a few minutes.";
   }
   if (/\b402\b|insufficient credits|key limit exceeded/i.test(s)) return OUT_OF_CREDIT;
   if (/looks like .*(key|token)|Nothing was sent/i.test(s)) {

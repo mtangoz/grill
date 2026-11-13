@@ -2755,6 +2755,12 @@ describe("hosted Grill: spending caps, open sign-up, races and plain errors", ()
       assert.match(text, want, stderr);
       assert.doesNotMatch(text, /\[judge\]|ERROR|http_|stack/);
     }
+    // The refusal says what happened. It does not say what a same-company verdict would have been like.
+    assert.equal(
+      judgeFailureText("[judge] ERROR: refusing a correlated verdict", "ab12cd34"),
+      "The only judge available was from the same company that wrote this, so Grill held back the verdict. Try again in a few minutes.",
+    );
+    assert.doesNotMatch(judgeFailureText("[judge] ERROR: refusing a correlated verdict", ""), /biased/i);
     for (const code of ["store", "clerk", "starter-key", "key-encryption", "clerk-delete", ""]) {
       const text = serviceFailureText(code, "ab12cd34");
       assert.match(text, /Try again|write to support/);
