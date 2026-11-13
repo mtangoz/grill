@@ -645,9 +645,41 @@ describe("outside loop readout: what it prints", () => {
       "Next 30, done within 7 days: 1 of 32",
       "Next 30, read day: 2027-01-11. Not read yet.",
     ]);
-    assert.equal(lines({ "2026-12-26": 4, "2026-12-28": 3 }, {}, "2027-01-11")[3], "Next 30, rule 2. Kill: fewer than 8 were done within 14 days. Stop building on the solo record.");
-    assert.equal(lines({ "2026-12-26": 12, "2026-12-28": 3 }, {}, "2027-01-11")[3], "Next 30, rule 3. Keep going: 15 or more were done within 14 days.");
+    assert.equal(
+      lines({ "2026-12-26": 4, "2026-12-28": 3 }, {}, "2027-01-11")[3],
+      "Next 30, rule 2. Kill: fewer than 8 were done within 14 days. Stop building on the solo record (no Pro work, no calibration view, no new reminder channel). The team pilot is the only record bet left.",
+    );
+    assert.equal(
+      lines({ "2026-12-26": 12, "2026-12-28": 3 }, {}, "2027-01-11")[3],
+      "Next 30, rule 3. Keep going: 15 or more were done within 14 days. Half within 7 days is the reminder plan's own target (docs/PRD-lookback-reminders.md).",
+    );
     assert.equal(lines({ "2026-12-26": 6, "2026-12-28": 3 }, {}, "2027-01-11")[3], "Next 30: between 8 and 14 done within 14 days. Rules 2 and 3 do not decide this. It goes to the owner.");
+  });
+
+  it("says what a kill and a keep mean in the same words, on the first read and on the next 30", () => {
+    const thirty = { "2026-12-01": 10, "2026-12-05": 10, "2026-12-10": 10 };
+    // First read: 30 look-backs from 5 people, read on the read day.
+    const firstRead = (done14) =>
+      lineOf(outsideLines(outsideReading(counters({ lookbacksDue: thirty, lookbackPeople: { "2026-12-01": 5 }, lookbacksDone14d: { "2026-12-01": Math.min(done14, 10), "2026-12-05": Math.max(done14 - 10, 0) } }), "2026-12-24")), "Rule that applies today:");
+    // Second read: the first 30 read rule 4 (10 of 30), then the next 32 are read on their own read day.
+    const nextRead = (done14) =>
+      lineOf(
+        outsideLines(outsideReading(counters({ lookbacksDue: { ...thirty, "2026-12-26": 20, "2026-12-28": 12 }, lookbackPeople: { "2026-12-01": 6 }, lookbacksDone14d: { "2026-12-01": 5, "2026-12-05": 5, "2026-12-26": done14 } }), "2027-01-11")),
+        "Next 30, rule",
+      );
+    const killMeans = " Stop building on the solo record (no Pro work, no calibration view, no new reminder channel). The team pilot is the only record bet left.";
+    const shortTarget = " Half within 7 days is the reminder plan's own target (docs/PRD-lookback-reminders.md).";
+    const tail = (line, words) => line.slice(-words.length);
+    // A kill says what stopping means, whichever read reached it.
+    assert.match(firstRead(7), /^Rule that applies today: 2\. Kill:/);
+    assert.match(nextRead(5), /^Next 30, rule 2\. Kill:/);
+    assert.equal(tail(firstRead(7), killMeans), killMeans);
+    assert.equal(tail(nextRead(5), killMeans), killMeans);
+    // A keep names the 7-day target beside it, whichever read reached it.
+    assert.match(firstRead(16), /^Rule that applies today: 3\. Keep going:/);
+    assert.match(nextRead(20), /^Next 30, rule 3\. Keep going:/);
+    assert.equal(tail(firstRead(16), shortTarget), shortTarget);
+    assert.equal(tail(nextRead(20), shortTarget), shortTarget);
   });
 
   it("reads counts as whole numbers and drops anything that is not one", () => {

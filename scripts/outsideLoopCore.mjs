@@ -447,6 +447,10 @@ function span(first, last) {
   return first === last ? ` (due ${first})` : ` (due ${first} to ${last})`;
 }
 
+// What a kill and a keep mean. The first read and the next 30 print the same words.
+const KILL_MEANS = "Stop building on the solo record (no Pro work, no calibration view, no new reminder channel). The team pilot is the only record bet left.";
+const SHORT_TARGET = `Half within ${DONE_SHORT_DAYS} days is the reminder plan's own target (docs/PRD-lookback-reminders.md).`;
+
 function ruleLine(t) {
   if (t.rule === 1) {
     const why = [];
@@ -457,10 +461,10 @@ function ruleLine(t) {
     return `Rule that applies today: 1. ${verdict} ${why.join(" ")} This is never a kill.`;
   }
   if (t.rule === 2) {
-    return `Rule that applies today: 2. Kill: fewer than ${KILL_BELOW} of the cohort were done within ${DONE_DAYS} days (${t.done14} of ${t.cohort.size}). Stop building on the solo record (no Pro work, no calibration view, no new reminder channel). The team pilot is the only record bet left.`;
+    return `Rule that applies today: 2. Kill: fewer than ${KILL_BELOW} of the cohort were done within ${DONE_DAYS} days (${t.done14} of ${t.cohort.size}). ${KILL_MEANS}`;
   }
   if (t.rule === 3) {
-    return `Rule that applies today: 3. Keep going: ${KEEP_FROM} or more were done within ${DONE_DAYS} days (${t.done14} of ${t.cohort.size}). Within ${DONE_SHORT_DAYS} days: ${t.done7} of ${t.cohort.size}. Half within ${DONE_SHORT_DAYS} days is the reminder plan's own target (docs/PRD-lookback-reminders.md).`;
+    return `Rule that applies today: 3. Keep going: ${KEEP_FROM} or more were done within ${DONE_DAYS} days (${t.done14} of ${t.cohort.size}). Within ${DONE_SHORT_DAYS} days: ${t.done7} of ${t.cohort.size}. ${SHORT_TARGET}`;
   }
   return `Rule that applies today: 4. Change one thing about the reminder, read the next ${COHORT_SIZE} once, then decide by rules 2 and 3 (${t.done14} of ${t.cohort.size} done within ${DONE_DAYS} days).`;
 }
@@ -477,9 +481,9 @@ function nextLines(next) {
   if (!next.reached) {
     lines.push(next.readDay ? `Next ${COHORT_SIZE}, read day: ${next.readDay}. Not read yet.` : `Next ${COHORT_SIZE}, read day: ${DONE_DAYS} days after its 30th look-back falls due. Not known yet.`);
   } else if (next.rule === 2) {
-    lines.push(`Next ${COHORT_SIZE}, rule 2. Kill: fewer than ${KILL_BELOW} were done within ${DONE_DAYS} days. Stop building on the solo record.`);
+    lines.push(`Next ${COHORT_SIZE}, rule 2. Kill: fewer than ${KILL_BELOW} were done within ${DONE_DAYS} days. ${KILL_MEANS}`);
   } else if (next.rule === 3) {
-    lines.push(`Next ${COHORT_SIZE}, rule 3. Keep going: ${KEEP_FROM} or more were done within ${DONE_DAYS} days.`);
+    lines.push(`Next ${COHORT_SIZE}, rule 3. Keep going: ${KEEP_FROM} or more were done within ${DONE_DAYS} days. ${SHORT_TARGET}`);
   } else {
     lines.push(`Next ${COHORT_SIZE}: between ${KILL_BELOW} and ${KEEP_FROM - 1} done within ${DONE_DAYS} days. Rules 2 and 3 do not decide this. It goes to the owner.`);
   }
