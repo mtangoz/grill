@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -262,5 +262,234 @@ describe("the CLI, offline", () => {
     assert.match(none.out, /^0 signals \(0 rated, 0 resolved\); 1 dropped as off-form\.$/m);
     assert.equal(none.summary, none.out, "a report with zero signals still reaches the job summary");
     assert.equal(run([]).output, "signals=0\n");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// .github/workflows/learn.yml, the monthly job that runs signals.mjs and posts the report.
+//
+// The file is read as text. There is no YAML parser here and none is needed: each pin is a
+// line or a block that must be present as written. Its two shell steps are also run for real,
+// through bash, against a stand-in `gh` that records what it was asked to do.
+
+const learnYml = readFileSync(join(ROOT, ".github/workflows/learn.yml"), "utf8");
+const learnLines = learnYml.split("\n");
+const LABEL_STEP = "Make sure the signal and learning labels exist";
+const AGGREGATE_STEP = "Aggregate the signals";
+const POST_STEP = "With at least one signal, add the report to ONE rolling issue";
+const ROLLING_TITLE = "Learning report";
+const EXACT_ROLLING_FILTER = `[.[] | select(.title == "${ROLLING_TITLE}")][0].number // empty`;
+
+/** The lines of the step with this name, up to the next step. */
+function stepLines(name) {
+  const from = learnLines.indexOf(`      - name: ${name}`);
+  assert.ok(from >= 0, `learn.yml has a step named "${name}"`);
+  let to = from + 1;
+  // A step item starts at six spaces. A comment above the next step belongs to that step.
+  while (to < learnLines.length && !/^ {6}(- |# )/.test(learnLines[to])) to += 1;
+  return learnLines.slice(from, to);
+}
+
+/** The shell script of a step: the block under `run: |`, with its indentation removed. */
+function runScript(name) {
+  const step = stepLines(name);
+  const at = step.indexOf("        run: |");
+  assert.ok(at >= 0, `the step "${name}" has a run block`);
+  return step
+    .slice(at + 1)
+    .map((line) => line.replace(/^ {10}/, ""))
+    .join("\n");
+}
+
+// `gh`, as a stand-in. It records each call. It answers "issue list" the way the pinned filter
+// would, and refuses any other filter, so a change to the filter has to come back through the
+// text pin. It can play a repository where the labels already exist, or where one is missing.
+const GH_STUB = `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const args = process.argv.slice(2);
+appendFileSync(process.env.GH_STUB_LOG, JSON.stringify(args) + "\\n");
+const flag = (name) => args[args.indexOf(name) + 1];
+const fail = (why) => {
+  process.stderr.write(why + "\\n");
+  process.exit(1);
+};
+if (args[0] === "label" && args[1] === "create") {
+  if (process.env.GH_LABELS_EXIST === "1") fail("label already exists");
+  process.exit(0);
+}
+if (args[0] === "issue" && args[1] === "list") {
+  if (flag("--state") !== "open" || flag("--json") !== "number,title" || flag("--jq") !== process.env.GH_EXPECT_JQ) {
+    fail("unexpected gh issue list arguments");
+  }
+  const hit = JSON.parse(process.env.GH_OPEN_ISSUES).find((issue) => issue.title === process.env.GH_EXACT_TITLE);
+  if (hit) process.stdout.write(String(hit.number) + "\\n");
+  process.exit(0);
+}
+if (args[0] === "issue" && args[1] === "create") {
+  if (args.includes("--label") && process.env.GH_LABEL_MISSING === "1") fail("could not add label: not found");
+  process.exit(0);
+}
+if (args[0] === "issue" && args[1] === "comment") process.exit(0);
+fail("unexpected gh " + args.join(" "));
+`;
+
+/** Run one step's script the way the runner does (bash -eo pipefail), with the stand-in gh. */
+function runStep(name, { openIssues = [], labelsExist = false, labelMissing = false, expectJq = EXACT_ROLLING_FILTER } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "learn-workflow-"));
+  const bin = join(dir, "bin");
+  const log = join(dir, "calls.jsonl");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "gh"), GH_STUB);
+  chmodSync(join(bin, "gh"), 0o755);
+  writeFileSync(log, "");
+  writeFileSync(join(dir, "learning-report.md"), "# Grill learning report: 2026-12\n");
+  const script = runScript(name);
+  assert.ok(!script.includes("${{"), "the script reads the environment, not workflow expressions");
+  const scriptPath = join(dir, "step.sh");
+  writeFileSync(scriptPath, script);
+  const env = {
+    ...process.env,
+    PATH: `${bin}:${process.env.PATH}`,
+    GH_STUB_LOG: log,
+    GH_OPEN_ISSUES: JSON.stringify(openIssues),
+    GH_EXPECT_JQ: expectJq,
+    GH_EXACT_TITLE: ROLLING_TITLE,
+    GH_LABELS_EXIST: labelsExist ? "1" : "0",
+    GH_LABEL_MISSING: labelMissing ? "1" : "0",
+    GH_TOKEN: "test-token",
+    GITHUB_REPOSITORY: "mtangoz/grill",
+  };
+  let status = 0;
+  try {
+    execFileSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", scriptPath], { cwd: dir, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch (err) {
+    status = err.status ?? 1;
+  }
+  const calls = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  rmSync(dir, { recursive: true, force: true });
+  return { status, calls };
+}
+
+describe("learn.yml: when it runs and what it may do", () => {
+  it("runs on the first of each month and by hand, and never on a pull request or a push", () => {
+    assert.ok(learnYml.includes('\non:\n  schedule:\n    - cron: "0 14 1 * *"\n  workflow_dispatch:\n\npermissions:\n'));
+    assert.doesNotMatch(learnYml, /pull_request|^ {2}push:/m);
+  });
+
+  it("keeps least privilege: read the code, write issues, and no secret", () => {
+    assert.ok(learnYml.includes("\npermissions:\n  contents: read\n  issues: write\n\njobs:\n"));
+    assert.equal(learnYml.match(/^\s*permissions:/gm).length, 1, "one permissions block, at the top");
+    assert.doesNotMatch(learnYml, /contents: write|pull-requests: write|id-token|write-all|secrets\./);
+    const uses = learnLines.filter((line) => /^\s*(- )?uses: /.test(line)).map((line) => line.trim().replace(/^- /, ""));
+    assert.deepEqual(uses, ["uses: actions/checkout@v4", "uses: actions/setup-node@v4"]);
+    assert.ok(learnLines.includes("    runs-on: ubuntu-latest"));
+    assert.ok(learnLines.includes("    timeout-minutes: 10"));
+  });
+});
+
+describe("learn.yml: the labels", () => {
+  const script = runScript(LABEL_STEP);
+
+  it("makes the signal and learning labels before anything else, every month", () => {
+    const steps = learnLines.filter((line) => /^ {6}- /.test(line));
+    assert.equal(steps[0], `      - name: ${LABEL_STEP}`, "the label step is the first step");
+    assert.ok(!stepLines(LABEL_STEP).some((line) => /^ {8}if:/.test(line)), "it has no condition, so a month with zero signals still makes the labels");
+    assert.deepEqual(script.split("\n").filter(Boolean), [
+      'gh label create signal --repo "$GITHUB_REPOSITORY" --description "A Grill signal: choices only, filed through the signal form" || true',
+      'gh label create learning --repo "$GITHUB_REPOSITORY" --description "The rolling learning report" || true',
+    ]);
+    assert.ok(script.includes(`gh label create ${SIGNAL_LABEL} `), "the label it makes is the one the form asks for");
+    assert.doesNotMatch(learnYml, /--force/, "an existing label is never overwritten");
+  });
+
+  it("creates both labels, and a label that is already there does not fail the run", () => {
+    const fresh = runStep(LABEL_STEP);
+    assert.equal(fresh.status, 0);
+    assert.deepEqual(fresh.calls.map((call) => call.slice(0, 5)), [
+      ["label", "create", "signal", "--repo", "mtangoz/grill"],
+      ["label", "create", "learning", "--repo", "mtangoz/grill"],
+    ]);
+    const existing = runStep(LABEL_STEP, { labelsExist: true });
+    assert.equal(existing.status, 0, "both creates failed and the step still passed");
+    assert.equal(existing.calls.length, 2, "the second label is still tried after the first one failed");
+  });
+});
+
+describe("learn.yml: one rolling issue, and nothing when there are zero signals", () => {
+  const step = stepLines(POST_STEP);
+  const script = runScript(POST_STEP);
+
+  it("posts only when the script counted at least one signal", () => {
+    const aggregate = stepLines(AGGREGATE_STEP);
+    assert.ok(aggregate.includes("        id: report"));
+    assert.ok(aggregate.includes('        run: node scripts/signals.mjs --period "$(date -u +%Y-%m)" > learning-report.md'));
+    assert.ok(step.includes("        if: steps.report.outputs.signals != '' && steps.report.outputs.signals != '0'"));
+    // The count it reads is the one signals.mjs writes to the step outputs.
+    const cli = readFileSync(SIGNALS_CLI, "utf8");
+    assert.ok(cli.includes("appendFileSync(process.env.GITHUB_OUTPUT, `signals=${agg.counts.signals}\\n`);"));
+    assert.equal(learnYml.match(/gh issue (create|comment)/g).length, 3, "no other step posts anything");
+    assert.equal(learnLines.filter((line) => /^ {6}- name: /.test(line)).length, 3, "label, aggregate, post: three named steps");
+  });
+
+  it("looks only at open issues and picks only the exact title, which carries no month", () => {
+    assert.ok(script.includes(`TITLE="${ROLLING_TITLE}"`));
+    assert.ok(
+      script.includes(
+        `NUMBER=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --search "\\"$TITLE\\" in:title" --json number,title --jq '${EXACT_ROLLING_FILTER}')`,
+      ),
+    );
+    assert.ok(!script.includes("$(date"), "the title is the same every month");
+    assert.ok(!learnYml.includes(`${ROLLING_TITLE}:`), "the older one-issue-a-month title is gone");
+  });
+
+  it("comments on that issue or opens it, and does nothing else to any issue", () => {
+    assert.deepEqual(script.match(/gh [a-z]+ [a-z]+/g), ["gh issue list", "gh issue comment", "gh issue create", "gh issue create"]);
+    assert.ok(script.includes('gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body-file learning-report.md'));
+    assert.ok(script.includes('gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file learning-report.md --label learning || \\'));
+    assert.ok(script.includes('  gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file learning-report.md\n'));
+    assert.ok(step.includes("          GH_TOKEN: ${{ github.token }}"));
+    assert.doesNotMatch(learnYml, /gh issue (close|reopen|delete|edit|lock|transfer|pin)|gh pr |gh api /);
+  });
+
+  it("adds a comment to the open rolling issue, and leaves the older monthly issues alone", () => {
+    const { status, calls } = runStep(POST_STEP, {
+      openIssues: [
+        { number: 123, title: "Learning report: 2026-11" },
+        { number: 22, title: "Learning report: 2026-10" },
+        { number: 300, title: ROLLING_TITLE },
+      ],
+    });
+    assert.equal(status, 0);
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[0].slice(0, 9), ["issue", "list", "--repo", "mtangoz/grill", "--state", "open", "--limit", "100", "--search"]);
+    assert.equal(calls[0][9], `"${ROLLING_TITLE}" in:title`);
+    assert.deepEqual(calls[1], ["issue", "comment", "300", "--repo", "mtangoz/grill", "--body-file", "learning-report.md"]);
+  });
+
+  it("opens the rolling issue when only the older monthly issues are open, and comments on neither", () => {
+    const { status, calls } = runStep(POST_STEP, {
+      openIssues: [
+        { number: 123, title: "Learning report: 2026-11" },
+        { number: 22, title: "Learning report: 2026-10" },
+      ],
+    });
+    assert.equal(status, 0);
+    assert.deepEqual(calls.map((call) => call.slice(0, 2).join(" ")), ["issue list", "issue create"]);
+    assert.deepEqual(calls[1], ["issue", "create", "--repo", "mtangoz/grill", "--title", ROLLING_TITLE, "--body-file", "learning-report.md", "--label", "learning"]);
+  });
+
+  it("still opens the issue, without the label, when the label is missing", () => {
+    const { status, calls } = runStep(POST_STEP, { labelMissing: true });
+    assert.equal(status, 0);
+    assert.deepEqual(calls.map((call) => call.slice(0, 2).join(" ")), ["issue list", "issue create", "issue create"]);
+    assert.ok(calls[1].includes("--label"));
+    assert.deepEqual(calls[2], ["issue", "create", "--repo", "mtangoz/grill", "--title", ROLLING_TITLE, "--body-file", "learning-report.md"]);
+  });
+
+  it("posts nothing when it cannot read the open issues", () => {
+    // The stand-in refuses a list call whose filter is not the one it expects, as a failed call would.
+    const { status, calls } = runStep(POST_STEP, { expectJq: "another filter" });
+    assert.notEqual(status, 0);
+    assert.deepEqual(calls.map((call) => call.slice(0, 2).join(" ")), ["issue list"]);
   });
 });

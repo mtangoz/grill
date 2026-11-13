@@ -1,9 +1,10 @@
 name: learn
 
-# The monthly learning report: aggregate the public, dropdown-only "signal" issues into
-# worth-engaging rates by judge family and verdict-vs-outcome tables, then post ONE issue with the
-# recommendations. It recommends; it never changes the judge. Every change it suggests must also
-# pass the synthetic evals (eval.yml) before it merges. See LEARNING.md.
+# The monthly learning report: aggregate the public, dropdown-only signal issues into
+# worth-engaging rates by judge family and verdict-vs-outcome tables, then add the report to ONE
+# rolling issue titled "Learning report". With zero signals it posts nothing. The report still
+# goes to the run's job summary. It recommends; it never changes the judge. Every change it
+# suggests must also pass the synthetic evals (eval.yml) before it merges. See LEARNING.md.
 on:
   schedule:
     - cron: "0 14 1 * *"
@@ -18,18 +19,41 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # The signal form asks for the "signal" label, and GitHub adds a form's label only when
+      # the repository already has it. The report issue asks for "learning". So make both. This
+      # runs every month, signals or not. Creating a label that is already there fails, and
+      # that is fine: an existing label is left as it is.
+      - name: Make sure the signal and learning labels exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create signal --repo "$GITHUB_REPOSITORY" --description "A Grill signal: choices only, filed through the signal form" || true
+          gh label create learning --repo "$GITHUB_REPOSITORY" --description "The rolling learning report" || true
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The script writes signals to the step outputs: how many on-form signals it counted.
       - name: Aggregate the signals
+        id: report
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/signals.mjs --period "$(date -u +%Y-%m)" > learning-report.md
-      - name: Post the report
+      # ONE rolling issue. The report is added as a comment to the open issue whose title is
+      # exactly "Learning report". If there is none, that issue is opened with the report as its
+      # body. An issue with any other title is never touched, and nothing is ever closed. With
+      # zero signals this step does not run, so an empty report is never posted.
+      - name: With at least one signal, add the report to ONE rolling issue
+        if: steps.report.outputs.signals != '' && steps.report.outputs.signals != '0'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          title="Learning report: $(date -u +%Y-%m)"
-          gh issue create --title "$title" --body-file learning-report.md --label learning || \
-            gh issue create --title "$title" --body-file learning-report.md
+          set -e
+          TITLE="Learning report"
+          NUMBER=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --search "\"$TITLE\" in:title" --json number,title --jq '[.[] | select(.title == "Learning report")][0].number // empty')
+          if [ -n "$NUMBER" ]; then
+            gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body-file learning-report.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file learning-report.md --label learning || \
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file learning-report.md
+          fi
