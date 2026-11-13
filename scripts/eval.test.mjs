@@ -12,6 +12,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
+import { JUDGE_COMMIT_RULE } from "./judgeCore.mjs";
 import { isIsoDate, validateRegressionRun } from "./resultsCore.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -527,5 +528,48 @@ describe("the public block: one run as counts only", () => {
     assert.match(stdout, /^Reached a judge: 1 of 1 cases\.$/m);
     assert.match(stdout, /^\| openai \| 1 \| 0 of 1 \| 0 of 0 \|$/m);
     assert.ok(!stdout.includes("private-held-out-case") && !stderr.includes("private-held-out-case"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("the eval always runs the product path", () => {
+  const SHA = "0123456789abcdef0123456789abcdef01234567";
+  const run = async (settings) => {
+    const fake = await startFakeOpenRouter();
+    const dir = tempCasesDir("hidden-assumption-annual-billing", "sound-ab-test-pricing-page");
+    const outDir = mkdtempSync(join(tmpdir(), "eval-product-path-"));
+    const result = await runCli(
+      ["--require-key", "--cases", dir, "--out", join(outDir, "latest.json")],
+      envFor({ OPENROUTER_API_KEY: "test-key-loopback-only", ...fake.env, GITHUB_RUN_ID: "43354935479", GITHUB_SHA: SHA, ...settings }),
+    );
+    await fake.close();
+    return { ...result, fake, outDir };
+  };
+  const prompts = (fake) => fake.seen.chat.map((call) => JSON.stringify(call.body.messages));
+
+  it("a pinned JUDGE_MODEL in the environment is not passed to the judge, so the public block is never a pinned judge's record", async () => {
+    const { fake, outDir, stderr } = await run({ JUDGE_MODEL: "openai/gpt-pinned-for-test" });
+
+    assert.equal(fake.seen.chat.length, 2, "both cases reached the router");
+    assert.equal(fake.seen.chat[0].body.model, "openrouter/auto");
+    assert.deepEqual([...new Set(fake.seen.chat.map((call) => call.body.model))], ["openrouter/auto"]);
+    assert.ok(existsSync(join(outDir, "latest.public.json")), "the block is written, and it records the router's own choice");
+    assert.match(stderr, /^\[eval\] JUDGE_MODEL is set and was not passed to the judge: the eval always runs the product path$/m);
+  });
+
+  it("GRILL_JUDGE_COMMIT is not passed either, so the candidate rule is never what the weekly number scores", async () => {
+    const { fake, stderr } = await run({ GRILL_JUDGE_COMMIT: "1" });
+
+    assert.equal(fake.seen.chat.length, 2);
+    for (const prompt of prompts(fake)) assert.ok(!prompt.includes(JSON.stringify(JUDGE_COMMIT_RULE).slice(1, -1)), "the judge got today's instructions");
+    assert.match(stderr, /^\[eval\] GRILL_JUDGE_COMMIT is set and was not passed to the judge: the eval always runs the product path$/m);
+  });
+
+  it("with neither set, nothing is said about them", async () => {
+    const { fake, stderr } = await run({});
+
+    assert.deepEqual([...new Set(fake.seen.chat.map((call) => call.body.model))], ["openrouter/auto"]);
+    for (const prompt of prompts(fake)) assert.ok(prompt.includes("You are an independent adversarial judge."), "the prompt is where this test looks for the rule");
+    assert.doesNotMatch(stderr, /was not passed to the judge/);
   });
 });

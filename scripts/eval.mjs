@@ -40,6 +40,11 @@
  * case gets a verdict back, the run prints "Not measured: 0 of N cases reached a judge.",
  * writes no results file and no table, and exits 2, with or without --require-key.
  *
+ * ALWAYS THE PRODUCT PATH. Each case goes to the judge the way a person's grill does: the
+ * default Auto Router and today's instructions. JUDGE_MODEL (a pinned judge) and
+ * GRILL_JUDGE_COMMIT (the candidate rule) are removed from the judge's environment, so a run
+ * with either set still scores, and records, the judge people use. It says so in one line.
+ *
  * THE PUBLIC BLOCK. Beside the results file (latest.json gives latest.public.json) a measured
  * run also writes its counts in the shape data/results.json keeps under regression.runs: whole
  * numbers, the date, the Actions run number, a short commit hash and judge company ids. No
@@ -63,6 +68,7 @@
  *                                        workflow can tell a run that measured from one that
  *                                        did not.
  *   GITHUB_RUN_ID / GITHUB_SHA           the run number and commit for the public block.
+ *   JUDGE_MODEL / GRILL_JUDGE_COMMIT     never passed to the judge. See above.
  *
  * EXIT CODES
  *   0   ran clean (including the "skipped, no key" path without --require-key).
@@ -183,6 +189,19 @@ if (heldOut) {
   if (insideRepo(opts.out)) fail("a held-out run writes its results outside this repository: pass --out <path outside the repo>");
 }
 
+// ── The judge's environment: the product path, whatever this shell has set ──
+// A pinned judge or the candidate rule would be scored, and written to the public block, as
+// if it were the judge people use. eval-verdicts.mjs is where the candidate rule is compared.
+const NOT_PASSED_TO_THE_JUDGE = ["JUDGE_MODEL", "GRILL_JUDGE_COMMIT"];
+const judgeEnv = { ...process.env };
+for (const name of NOT_PASSED_TO_THE_JUDGE) {
+  const value = judgeEnv[name];
+  delete judgeEnv[name];
+  if (typeof value === "string" && value.trim()) {
+    console.error(`[eval] ${name} is set and was not passed to the judge: the eval always runs the product path`);
+  }
+}
+
 // ── Run one case through the real judge CLI, timing it ──────────────────────
 function runOneCase(caseDef) {
   return new Promise((resolve) => {
@@ -196,7 +215,7 @@ function runOneCase(caseDef) {
     }
 
     const child = spawn(process.execPath, [JUDGE_CLI, ...args], {
-      env: process.env,
+      env: judgeEnv,
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";

@@ -1330,6 +1330,17 @@ describe("evals/README.md: the first measured run, as counts and with its limits
     }
   });
 
+  it("says the eval always runs the product path, whatever judge the environment pins", () => {
+    const flat = between("**The eval always runs the product path.**", "**A held-out set keeps the score honest.**").replace(/\s+/g, " ");
+    assert.ok(flat.includes("Each case goes to the judge the way a person's grill does: through OpenRouter's Auto Router, with today's instructions."));
+    assert.ok(flat.includes("`scripts/eval.mjs` removes `JUDGE_MODEL` (a pinned judge) and `GRILL_JUDGE_COMMIT` (the candidate rule) from the judge's environment"));
+    // The script does what the note says: the judge is spawned with that environment, not this shell's.
+    const cli = readFileSync(join(HERE, "eval.mjs"), "utf8");
+    assert.ok(cli.includes('const NOT_PASSED_TO_THE_JUDGE = ["JUDGE_MODEL", "GRILL_JUDGE_COMMIT"];'));
+    assert.ok(cli.includes("env: judgeEnv,"));
+    assert.ok(!cli.includes("env: process.env"));
+  });
+
   it("uses no em dash or en dash in what was written on 2026-11-13", () => {
     assert.doesNotMatch(between("**The eval gates only run with a key.**", "**A held-out set keeps the score honest.**"), new RegExp(`[${String.fromCharCode(0x2013, 0x2014)}]`));
   });

@@ -128,6 +128,12 @@ with `JUDGE_FIXTURE`. Only a weekly or manual run of `main` belongs in `data/res
 summary carries the same counts: the number of cases that reached a judge, a count beside each
 gated rate, and the cases by judge company.
 
+**The eval always runs the product path.** Each case goes to the judge the way a person's grill
+does: through OpenRouter's Auto Router, with today's instructions. `scripts/eval.mjs` removes
+`JUDGE_MODEL` (a pinned judge) and `GRILL_JUDGE_COMMIT` (the candidate rule) from the judge's
+environment, and says so in one line when either was set. So the counts a run writes are never the
+record of a pinned judge or of the candidate rule.
+
 **A held-out set keeps the score honest.** Every case above is public, so a model can be trained on
 it and a prompt can be tuned to it, and over time a good score would stop meaning anything. The
 maintainers keep a second set of fictional cases outside this repository, marked `"heldOut": true`,
