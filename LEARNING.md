@@ -4,17 +4,22 @@ A model router improves every day without reading anyone's prompts: it learns wh
 
 **The rule:** contribute the miss, never the decision. Grill learns from synthetic cases, public metadata, choices people share, and **miss cards**: how AI got a decision wrong, written in made-up names and numbers. Never from a decision, with one exception you control: a grill you choose to send after a reaction ([docs/PRIVACY.md](docs/PRIVACY.md), "When you tell Grill a grill helped or didn't").
 
-## Three loops
+## The loops
 
 | Loop | Learns from | Runs | Output |
 |---|---|---|---|
 | **1. Model choice** | The router's market data: which models people use for each task type | Continuously, inside the router | The judge Grill gets, inherited free as models improve |
-| **2. Quality** | 29 synthetic decisions in `evals/cases/`, plus a private held-out set the maintainers keep outside the repository, with planted flaws, sound cases, loaded questions, write-ups that lean toward their own decision, plans that quietly drop a must-have stated earlier, and write-ups that state a confident wrong figure. Each report is also scored by **Jev**, TypeSafe's typed decision model, which is a third model family | Weekly, and on every change to the judge (`eval.yml`) | Gated: catch rate, false-alarm rate, loaded-question catches, decorrelation. Watched: quotes grounded, falsifiers concrete, verdicts that fit, and Jev's reading of whether the planted flaw was caught. An issue if a gate falls below its floor |
-| **3. Usefulness and accuracy** | Opt-in, dropdown-only signals: "worth engaging?" by judge family, and each verdict against its outcome | Monthly (`learn.yml`) | A report with recommendations, such as "exclude judge family X" or "verdicts aren't predicting outcomes" |
+| **2. Quality** | 29 synthetic decisions in `evals/cases/`, plus a private held-out set the maintainers keep outside the repository, with planted flaws, sound cases, loaded questions, write-ups that lean toward their own decision, plans that quietly drop a must-have stated earlier, and write-ups that state a confident wrong figure. Each report is also scored by **Jev**, TypeSafe's typed decision model, which is a third model family | Weekly, by hand, and on a pull request that changes the judge files, a case or a threshold (`eval.yml`). It first reached a judge on 2026-11-13. Before that every weekly run skipped or failed as not measured. | Gated: catch rate, false-alarm rate, loaded-question catches, and a routing check that the judge came from a different company than the declared author. Watched: quotes grounded, falsifiers concrete, verdicts that fit, and Jev's reading of whether the planted flaw was caught. An issue if a gate falls below its floor. A separate issue if a weekly run measures nothing, closed by the next run that measures |
+| **3. Usefulness and accuracy** | Opt-in, dropdown-only signals: "worth engaging?" by judge family, and each verdict against its outcome | Monthly (`learn.yml`) | A report with recommendations, such as "exclude judge family X" or "verdicts aren't predicting outcomes". It goes to one rolling issue titled "Learning report". A month with zero signals posts nothing |
+| **4. Publishing the counts** | The counts-only public block a measured weekly run writes (`latest.public.json`, in the run's `eval-results` artifact) | Each Monday, after the weekly eval (13:00 UTC). A maintainer does it by hand, in the Monday readout. No workflow writes to the repository | The maintainer downloads that block and runs `node scripts/results.mjs merge-run <public block>`, then `node scripts/results.mjs check`, and opens a pull request with `data/results.json`. /how-we-test/ shows the new run at the next deploy. A week with no measured run adds nothing, and the page keeps showing the date of the last run it has |
 
 **Plus upkeep** (`upstream.yml`, weekly):
 - the judge asks OpenRouter's Auto Router (`openrouter/auto`) with no pinned fallback model; every endpoint serving Jev is zero-retention;
 - the extension manifest still validates against the latest `mcpb` tool.
+
+What these loops have measured so far is on [grillyour.ai/how-we-test](https://grillyour.ai/how-we-test/), as counts. The page is built from `data/results.json`. A measured weekly run is added to that file with `node scripts/results.mjs merge-run <public-block.json>`, and `node scripts/results.mjs check` checks it. In a shallow clone `merge-run` refuses unless `--allow-unchecked-commit` is passed.
+
+First measured run, 2026-11-13 (Actions run 43354935479 on commit 303a77f): 19 of 19 flawed cases caught, 4 of 4 loaded questions caught, 2 of 6 sound cases got a false alarm, 84 of 94 quoted targets found. These 29 cases were used to write the judge's instructions, so a full catch score says nothing about how good the judge is. With 6 sound cases the false-alarm gate goes red by chance about one week in three if that first rate is real, so a red false-alarm row on its own means go look, not that the judge got worse. Details: [evals/README.md](evals/README.md).
 
 ## Quality checks on one grill
 
