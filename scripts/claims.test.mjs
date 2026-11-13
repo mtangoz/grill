@@ -4,8 +4,9 @@
 // copy does not say "never" or "always" about that either.
 //
 // This file guards the pages, docs, skills and prompt listed below, and the built
-// llms.txt that agents read. It does not read the hosted tool strings, the judge's
-// notes, or docs/PRINCIPLES.md and docs/STRATEGY.md yet.
+// llms.txt that agents read. In llms.txt it also reads sentence by sentence: one that
+// says "different company" has to keep the condition. It does not read the hosted tool
+// strings, the judge's notes, or docs/PRINCIPLES.md and docs/STRATEGY.md yet.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -58,6 +59,21 @@ function bannedIn(text) {
   return BANNED.filter((phrase) => raw.includes(phrase) || plain.includes(phrase));
 }
 
+// An agent quotes llms.txt one sentence at a time, so a sentence there that says
+// "different company" has to stand on its own. It keeps the condition, or it says what
+// has not been measured, or it names the routing check by its plain name.
+const STANDS_ALONE = [/\bwhen grill can tell\b/, /\bnot yet measured\b/, /\bnot measured yet\b/, /\bthan the declared author\b/];
+
+/** The sentences that say "different company" and would mislead if quoted alone. */
+function unconditionalIn(text) {
+  return String(text)
+    .split(/\n+/)
+    .flatMap((line) => line.split(/(?<=[.?!])\s+/))
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => flatten(sentence).includes("different company"))
+    .filter((sentence) => !STANDS_ALONE.some((shape) => shape.test(flatten(sentence))));
+}
+
 describe("claims Grill does not make before they are measured", () => {
   it("the check itself catches each phrase, in any case, across a line break or a tag", () => {
     assert.equal(BANNED.length, 9);
@@ -89,5 +105,25 @@ describe("claims Grill does not make before they are measured", () => {
     const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
     assert.match(llms, /^## FAQ$/m, "llms.txt carries the FAQ answers");
     assert.deepEqual(bannedIn(llms), []);
+  });
+
+  it("every llms.txt sentence that says different company keeps the condition", () => {
+    // The check itself: the plain claim is caught, and the three honest shapes pass.
+    assert.deepEqual(unconditionalIn("You decide. An outside judge, a model from a different company, gives the case against.\nThen stop."), [
+      "An outside judge, a model from a different company, gives the case against.",
+    ]);
+    assert.deepEqual(unconditionalIn("- [GitHub](https://example.com): A model from a Different Company."), [
+      "- [GitHub](https://example.com): A model from a Different Company.",
+    ]);
+    assert.deepEqual(unconditionalIn("When Grill can tell which AI wrote the plan, the judge is from a different company."), []);
+    assert.deepEqual(unconditionalIn("Grill’s judge is from a different company when Grill can tell which AI wrote it."), []);
+    assert.deepEqual(unconditionalIn("We have not yet measured a judge from a different company against the same model starting fresh."), []);
+    assert.deepEqual(unconditionalIn("The judge came from a different company than the declared author in 29 of 29 cases."), []);
+    assert.deepEqual(unconditionalIn("The judge did not write your plan. You decide."), []);
+
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+    const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
+    assert.match(llms, /different company/, "llms.txt still says when the judge is from a different company");
+    assert.deepEqual(unconditionalIn(llms), []);
   });
 });

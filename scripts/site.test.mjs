@@ -381,7 +381,7 @@ describe("the site build", () => {
       assert.match(llms, /^# Grill\n/);
       assert.match(
         llms,
-        /^> Grill your AI before you send it to your boss\. An outside judge, a model from a different company, gives the strongest case against a decision\.\n/m,
+        /^> Grill your AI before you send it to your boss\. An outside judge gives the strongest case against a decision\. When Grill can tell which AI wrote the plan, the judge is from a different company\.\n/m,
       );
       assert.match(llms, /https:\/\/grillyour\.ai\/mcp/);
       assert.match(llms, /Anyone can sign up and connect Grill to the AI they use at https:\/\/grillyour\.ai\/mcp\./);
@@ -389,6 +389,8 @@ describe("the site build", () => {
       assert.doesNotMatch(llms, /invite-only/);
       assert.doesNotMatch(llms, /Join the waitlist/);
       assert.match(llms, /\[GitHub\]\(https:\/\/github\.com\/mtangoz\/grill\): \S/);
+      // The GitHub line says what is in the repo. It makes no claim about the judge.
+      assert.match(llms, /^- \[GitHub\]\(https:\/\/github\.com\/mtangoz\/grill\): The code, the tests and the judge prompt\.$/m);
       const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
       for (const path of ["", "start/", "privacy/", "terms/", "look-back/", "contribute/", "demo/"]) {
         assert.ok(locs.includes(`https://grillyour.ai/${path}`), `sitemap lists /${path}`);

@@ -576,7 +576,7 @@ writeFileSync(
   [
     "# Grill",
     "",
-    "> Grill your AI before you send it to your boss. An outside judge, a model from a different company, gives the strongest case against a decision.",
+    "> Grill your AI before you send it to your boss. An outside judge gives the strongest case against a decision. When Grill can tell which AI wrote the plan, the judge is from a different company.",
     "",
     "Anyone can sign up and connect Grill to the AI they use at https://grillyour.ai/mcp.",
     "",
@@ -589,7 +589,7 @@ writeFileSync(
     "## Pages",
     "",
     ...publicPages.map((p) => `- [${p.name}](${p.url}): ${p.blurb}`),
-    `- [GitHub](${GITHUB_URL}): An outside judge, a model from a different company.`,
+    `- [GitHub](${GITHUB_URL}): The code, the tests and the judge prompt.`,
     "",
     FAQ_FOR_AGENTS,
   ].join("\n"),
