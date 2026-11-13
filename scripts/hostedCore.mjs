@@ -3,16 +3,25 @@
  * The installed local tool does not import this file.
  */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
-import { addDays, confidenceValue, isoDate, parseDecided, parseOutcomes, parseRecords, plainVerdict, REVIEW_DAYS, reviewDateFor } from "./reflection.mjs";
+import { addDays, confidenceValue, isoDate, lookBackPrompt, parseDecided, parseOutcomes, parseRecords, plainVerdict, REVIEW_DAYS, reviewDateFor, shortDecision } from "./reflection.mjs";
 import { CHALLENGE_KINDS, SCOPE_GUARD, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
-import { buildGrillTools } from "../server/index.mjs";
-import { FEEDBACK_POINTER } from "./feedbackCore.mjs";
+import { INDEPENDENCE_NOT_VERIFIED, INDEPENDENCE_RELAY, buildGrillTools, groundedAuthor } from "../server/index.mjs";
+import { FEEDBACK_KEEP_DAYS, FEEDBACK_POINTER } from "./feedbackCore.mjs";
 
 export { SCOPE_GUARD };
 
 /** First use only. One line. The privacy page holds the rest. Same words as the local server. */
 export const ONCE_DISCLOSURE =
   "This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/#privacy";
+
+/**
+ * The same line on a run that ruled nobody out, because Grill could not tell who wrote the
+ * write-up. It is the sentence above without the company claim, built from it so the two
+ * cannot drift apart. Same words as the local server.
+ */
+export const ONCE_DISCLOSURE_UNVERIFIED = ONCE_DISCLOSURE.replace(" from a different company", "");
+
+export { INDEPENDENCE_NOT_VERIFIED };
 
 export const HOSTED_PROTOCOLS = Object.freeze(["2025-11-25", "2025-06-18", "2025-03-26"]);
 export const CLAUDE_WEB_REDIRECT = "https://claude.ai/api/mcp/auth_callback";
@@ -35,7 +44,16 @@ export const HOSTED_JUDGE_ATTEMPT_MS = 180_000;
 export const DAILY_GRILL_LIMIT = 30;
 export const RUNNING_JOB_LIMIT = 3;
 export const CREDIT_CACHE_MS = 60_000;
-export const OUT_OF_CREDIT = "You're out of grill credit for this month, so this one didn't run. It starts again on the 1st. Nothing was charged to you. If you need more sooner, write to support@grillyour.ai.";
+/**
+ * The person's router key has no allowance left this month, or the judge answered 402.
+ * The name is older than the wording: no tool text says "credit", and
+ * scripts/platformPolicy.test.mjs holds that line.
+ */
+export const OUT_OF_CREDIT =
+  "You've reached this month's free limit, so this one didn't run. It resets on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.";
+/** One email, two sign-ins, and the second one cannot share the first one's account. */
+export const EMAIL_CLAIMED_TEXT =
+  "This email is already set up with Grill on another sign-in. Sign in with that one instead, or write to support@grillyour.ai if you've lost it.";
 /** The invite-only reply. `origin` makes the redeem link absolute for the host they are on. */
 export function inviteOnlyText(origin = "") {
   const base = String(origin || "").replace(/\/$/, "");
@@ -44,11 +62,40 @@ export function inviteOnlyText(origin = "") {
 }
 
 export const INVITE_ONLY = inviteOnlyText();
+/** The page that says what goes where and what is kept. The records note points at it. */
+export const DATA_FLOW_URL = "https://grillyour.ai/data-flow/";
+
+/** The one question. /judge shows this line above its Yes and No buttons. It does not change. */
+export const RECORDS_QUESTION = "Keep a record of your decisions on your Grill account? Yes / No";
+
+/**
+ * What the person reads under the question, before anything is sent: where the decision goes
+ * whichever way they answer, and what a yes adds. It asks nothing, so the first reply still
+ * holds one question. It makes no claim about which company the judge is from, because this
+ * is shown before Grill has looked at who is asking.
+ */
+export const RECORDS_NOTE = `Either way, your decision goes through Grill's server to an outside AI judge that OpenRouter picks, and to a quality check by TypeSafe. If you say yes, Grill keeps an encrypted record that its operators could open, and emails you on Mondays when a look-back is due unless you turn that off. What is kept and for how long: ${DATA_FLOW_URL}`;
+
 export const CONSENT_TEXT = [
-  "Keep a record of your decisions on your Grill account? Yes / No",
+  RECORDS_QUESTION,
   "",
-  "Ask that once, then call grill again with keep_records true or false. Do not send the decision until they answer.",
+  RECORDS_NOTE,
+  "",
+  "Ask that once, and show the paragraph under the question with it. Then call grill again with keep_records true or false. Do not send the decision until they answer.",
 ].join("\n");
+
+/**
+ * What the person is told after a reaction when the grill itself was not sent. It names what
+ * buildFeedbackRecord stores that came from them or from the grill, and for how long.
+ */
+export const FEEDBACK_KEPT_TEXT = `Noted. Grill keeps the rating, your one-line reason, the verdict label and the judge model for ${FEEDBACK_KEEP_DAYS} days. Not the decision.`;
+
+/** The reply to grill_feedback. `record` is what was stored: it holds the grill only when they said yes to sending it. */
+export function hostedFeedbackReply(share, record) {
+  if (share && (record?.subject || record?.layer1)) return "Noted. This grill was sent so Grill can learn from it.";
+  if (share) return "Noted. The rating was stored. That grill's text was no longer available to send.";
+  return FEEDBACK_KEPT_TEXT;
+}
 
 /** When three grills are still running after the wait. The assistant retries. The person is not asked for a job id. */
 export const CAP_RETRY_TEXT =
@@ -168,8 +215,9 @@ function rememberedHint(remembered) {
 /**
  * Map an OAuth client to the company to exclude and the source_app to store.
  * The OAuth client wins. Otherwise the same name list as the local server:
- * clientInfo from initialize, then a hint remembered from that handshake,
- * then the User-Agent. An unknown client still excludes nothing.
+ * clientInfo from initialize, then a User-Agent that says Cursor, then a hint
+ * remembered from this client's own handshake, then the rest of the User-Agent
+ * list. An unknown client still excludes nothing.
  */
 export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInfo = null, userAgent = "", remembered = null } = {}) {
   const redirect = String(redirectUri || "").trim();
@@ -218,22 +266,36 @@ export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInf
   if (/\b(?:muse|meta)\b/i.test(named)) return { company: "meta-llama", sourceApp: "muse" };
   const fromName = clientCompanyHint({ clientInfo });
   if (fromName) return fromName;
+  // Read before the remembered hint, so a company kept from a handshake is never used for Cursor.
+  if (/\bcursor\b/i.test(String(userAgent || ""))) return { company: "", sourceApp: "cursor" };
   const kept = rememberedHint(remembered);
   if (kept) return kept;
-  if (/\bcursor\b/i.test(String(userAgent || ""))) return { company: "", sourceApp: "cursor" };
   const fromAgent = clientCompanyHint({ userAgent });
   if (fromAgent) return fromAgent;
   return { company: "", sourceApp: "unknown" };
 }
 
-/** An explicit author wins. Unknown clients exclude nothing beyond that, which means `--author none`. */
+/**
+ * Which company the judge must not come from.
+ *
+ * A company named on the call wins when it is one the router uses, after common names are
+ * mapped to the router's prefix (`xai` to `x-ai`, `claude` to `anthropic`). That holds even
+ * when it differs from the recognised client's company. Whether it should is an open owner
+ * decision.
+ *
+ * `none`, or any name the router does not use, is not a company. It never replaces the
+ * recognised client's company, so the assistant cannot switch the exclusion off.
+ *
+ * With no company from either, the author is `none`: nobody is excluded, and the verdict
+ * says independence was not verified.
+ */
 export function authorForJudge({ explicit = "", company = "" } = {}) {
   const given = String(explicit || "").trim().toLowerCase();
-  if (given) {
-    if (!AUTHOR_RE.test(given)) return { error: "author must be a lowercase model-family name, like openai." };
-    return { author: given };
-  }
-  if (company && AUTHOR_RE.test(company)) return { author: company };
+  if (given && !AUTHOR_RE.test(given)) return { error: "author must be a lowercase model-family name, like openai." };
+  const named = groundedAuthor(given);
+  if (named) return { author: named };
+  const client = groundedAuthor(company);
+  if (client) return { author: client };
   return { author: "none" };
 }
 
@@ -262,19 +324,38 @@ export function judgeCompanyName(servedModel) {
   return JUDGE_COMPANY_NAMES[slug.split("/")[0]] || "";
 }
 
-/**
- * One line when a hosted grill excluded nobody because the client was unknown
- * and the call named no author. A recognised client, including Cursor, gets nothing:
- * Cursor excludes nobody on purpose, because it runs several companies' models.
- * No line when the served model does not name a company.
- */
-export function unknownClientJudgeLine({ sourceApp = "", authorGiven = false, servedModel = "" } = {}) {
-  if (String(sourceApp || "") !== "unknown") return "";
-  if (authorGiven) return "";
-  const company = judgeCompanyName(servedModel);
-  if (!company) return "";
-  return `Grill couldn't tell which AI you're using. This judge is from ${company}. If your assistant is too, name it next time for a different company.`;
+/** The plain name for a company id from sourceAppFromClient, or "" when Grill has no name for it. */
+export function companyLabel(company) {
+  const id = String(company || "").trim().toLowerCase();
+  return Object.hasOwn(JUDGE_COMPANY_NAMES, id) ? JUDGE_COMPANY_NAMES[id] : "";
 }
+
+/**
+ * One line on every hosted verdict that excluded nobody. `author` is what authorForJudge
+ * returned: `none` means neither the client nor the call named a company the router uses.
+ *
+ * An unknown client is told which company judged, when Grill has a name for it, so the person
+ * can see whether it matches their own assistant. Cursor runs several companies' models, and
+ * some served models come from a company Grill has no name for: those get the plain line.
+ * Anything but a named company counts as `none`, so a caller that forgets `author` still
+ * gets the line.
+ */
+export function independenceLine({ author = "none", sourceApp = "", servedModel = "" } = {}) {
+  if (groundedAuthor(author)) return "";
+  const company = String(sourceApp || "") === "unknown" ? judgeCompanyName(servedModel) : "";
+  if (company) {
+    return `${INDEPENDENCE_NOT_VERIFIED} Grill couldn't tell which AI you're using. This judge is from ${company}. If yours is too, name it next time.`;
+  }
+  return `${INDEPENDENCE_NOT_VERIFIED} Grill couldn't tell which company's model wrote this, so no company was ruled out.`;
+}
+
+/** The first-use line for this run: without the company claim when nobody was excluded. */
+export function onceDisclosureFor(author) {
+  return groundedAuthor(author) ? ONCE_DISCLOSURE : ONCE_DISCLOSURE_UNVERIFIED;
+}
+
+/** On /judge, above the button, when the link named no assistant whose company Grill knows. */
+export const JUDGE_PAGE_UNVERIFIED_LINE = `${INDEPENDENCE_NOT_VERIFIED} Grill can't tell which company's model wrote this, so no company is ruled out.`;
 
 export function starterCreditUsd(env = {}) {
   const n = Number(env.GRILL_STARTER_CREDIT_USD);
@@ -456,10 +537,12 @@ export const TESTER_MONTHLY_USD = 5;
 export const DEFAULT_USER_MONTHLY_CAP_USD = TESTER_MONTHLY_USD;
 export const CAP_COUNTER_TTL_SECONDS = 40 * 24 * 60 * 60;
 
+// Each says what happened and when it starts again. Neither offers a way to get more:
+// a directory reads that as a sale.
 export const SERVICE_CAP_TEXT =
-  "Grill has used up this month's free grills for everyone, so this one didn't run. It starts again on the 1st. Nothing was charged to you. If you need a grill sooner, write to support@grillyour.ai.";
+  "Grill has used up this month's free grills for everyone, so this one didn't run. It starts again on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.";
 export const USER_CAP_TEXT =
-  "You've used this month's free grills, so this one didn't run. It starts again on the 1st. Nothing was charged to you. If you need more sooner, write to support@grillyour.ai.";
+  "You've used this month's free grills, so this one didn't run. It starts again on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.";
 
 function capFromEnv(value, fallback) {
   const n = Number(value);
@@ -573,7 +656,7 @@ function ref(requestId) {
 export function judgeFailureText(stderr = "", requestId = "") {
   const s = String(stderr || "");
   if (/correlated verdict|excluded company/i.test(s)) {
-    return "The only judge available was from the same company that wrote this, so Grill held back the verdict rather than give you a biased one. Try again in a few minutes.";
+    return "The only judge available was from the same company that wrote this, so Grill held back the verdict. Try again in a few minutes.";
   }
   if (/\b402\b|insufficient credits|key limit exceeded/i.test(s)) return OUT_OF_CREDIT;
   if (/looks like .*(key|token)|Nothing was sent/i.test(s)) {
@@ -600,7 +683,7 @@ export function serviceFailureText(code = "", requestId = "") {
     case "jwks":
       return `Grill couldn't check your sign-in just now. Try again in a minute; if it keeps happening, reconnect Grill in your chat app's settings${ref(requestId)}.`;
     case "starter-key":
-      return `Grill couldn't set up your free starter credit just now. Try again in a few minutes; if it keeps happening, write to support@grillyour.ai${ref(requestId)}.`;
+      return `Grill couldn't finish setting up your account just now. Try again in a few minutes; if it keeps happening, write to support@grillyour.ai${ref(requestId)}.`;
     case "key-encryption":
     case "record-key":
       return `Grill isn't fully set up on the server right now, so it can't run this. We've logged it; write to support@grillyour.ai if you need it sooner${ref(requestId)}.`;
@@ -609,11 +692,6 @@ export function serviceFailureText(code = "", requestId = "") {
     default:
       return `Something on Grill's side broke while handling this. Try again in a minute; if it keeps happening, write to support@grillyour.ai${ref(requestId)}.`;
   }
-}
-
-export function grillsLeft(remainingUsd) {
-  if (!(Number(remainingUsd) > 0)) return 0;
-  return Math.floor(Number(remainingUsd) / TYPICAL_GRILL_USD);
 }
 
 /**
@@ -659,19 +737,11 @@ export const FUNNEL_KEYS = Object.freeze({
   lookbacksDone: "grill:metric:funnel_lookbacks_done",
 });
 
-/** Saved line in chat. Points at Your grills. No confidence nag and no credit line. */
+/** Saved line in chat. Points at Your grills. No confidence nag, and nothing about what is left this month. */
 export function savedConfirmation(review) {
   const day = formatDay(review);
   const where = `Your grills: ${PUBLIC_SITE_ORIGIN}/decisions`;
   return day ? `Saved. Look-back ${day}. ${where}` : `Saved. ${where}`;
-}
-
-export function footerLine({ saved, review = "", remainingUsd = 0 } = {}) {
-  const left = grillsLeft(remainingUsd);
-  const credit = `about ${left} grill${left === 1 ? "" : "s"} of credit left`;
-  if (!saved) return `Not saved · ${credit}`;
-  const day = formatDay(review);
-  return day ? `Saved to your decisions · look-back on ${day} · ${credit}` : `Saved to your decisions · ${credit}`;
 }
 
 export function isoDay(ms = Date.now()) {
@@ -900,6 +970,25 @@ export function scorecardLine(rows, { type = "", source = "" } = {}) {
 export const LOOKBACK_HOW =
   "A look-back is due 14 days after you choose. Say “look back” in your chat and say what happened.";
 
+/** How long a grill waits for a stated choice before its draft is deleted. */
+export const PENDING_KEEP_DAYS = 14;
+
+/**
+ * /decisions, when a grill has a verdict and no stated choice yet. A count only: the page
+ * shows no title, verdict or text from a draft.
+ */
+export function waitingGrillLine(count) {
+  const n = Math.floor(Number(count) || 0);
+  if (n < 1) return "";
+  return n === 1 ? "1 grill is waiting for your call." : `${n} grills are waiting for your call.`;
+}
+export const WAITING_GRILL_HOW = `In a chat where Grill is connected, tell your AI what you chose, for example “I’m going ahead”. It is saved here with a look-back date. A waiting grill is deleted after ${PENDING_KEEP_DAYS} days.`;
+
+/** What the records switch and Delete all do to a waiting grill, said on the page next to each. */
+export const RECORDS_OFF_DELETES_WAITING = "A grill still waiting for your call is deleted.";
+export const RECORDS_OFF_NOTE = `Turning records off leaves the decisions already saved until you delete them. ${RECORDS_OFF_DELETES_WAITING}`;
+export const DELETE_ALL_ALSO_WAITING = "It also removes any grill still waiting for your call.";
+
 /** A judge kind that flags a source, a fact, or a figure. The flag is not proof it was wrong. */
 export const FLAG_KINDS = Object.freeze(["unsupported-claim", "evidence-mismatch", "wrong-cost-model"]);
 
@@ -1082,9 +1171,235 @@ export function recordsForLookBack(saved, { records = "", now = Date.now() } = {
   return { mode: "named", text: rows.map((row) => row.block).join("\n\n"), rows };
 }
 
-const HOSTED_COST_LINE =
-  "Uses a little of the person's Grill credit. Do not tell them the balance or how long it takes. The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. Do not ask the person for a job id. The first time, Grill asks whether to keep decision records before anything is sent: show that one question, and call again with keep_records true or false only after they answer Yes or No. Do not add your own disclosure. If the result starts with the outside-judge sentence, show that one line once. Later results leave it off. Layer 1 is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question. When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Do not write a layer yourself. A follow: line is a job id for you. Never show it. " +
-  SCOPE_GUARD;
+// A look-back answered in chat.
+// With one saved decision in view, one answer is that decision's answer. With two or more,
+// the chat names each one, and an answer is saved only on the decision it names.
+
+/** How many decisions one chat reply names. The page lists the rest. */
+export const LOOKBACK_LIST_MAX = 5;
+
+const LOOKBACK_NOTE_MAX = 2000;
+
+function squash(text) {
+  return String(text ?? "").replace(/\s+/g, " ").trim();
+}
+
+/** A name without its case, spacing, closing full stop or cut-off mark, so two spellings of one title match. */
+function nameKey(text) {
+  return squash(text)
+    .replace(/[….\s]+$/u, "")
+    .toLowerCase();
+}
+
+/** How the chat names one saved decision: its title as the list shows it, and the day its look-back falls due. */
+export function lookbackLabel(row) {
+  const title = shortDecision(row?.title);
+  const day = formatDay(row?.review);
+  return day ? `${title} (due ${day})` : title;
+}
+
+/**
+ * The saved decisions a name points at. A name is a title, the label the chat showed, or a
+ * date and a title. Only an exact match counts, so an answer never lands on a near miss.
+ */
+export function rowsNamed(rows, name) {
+  const needle = nameKey(name);
+  if (!needle) return [];
+  return (rows || []).filter((row) => {
+    const title = String(row?.title || "");
+    if (!title.trim()) return false;
+    return [title, shortDecision(title), lookbackLabel(row), `${row?.date || ""} ${title}`].some((form) => nameKey(form) === needle);
+  });
+}
+
+/**
+ * The saved decisions one look-back call is about. Pasted records point at the saved
+ * decisions with the same date and title. With nothing pasted they are the ones that are due,
+ * or the ones a name matched. A name that fits a saved decision exactly wins over a loose match.
+ */
+export function lookBackTargets(saved, picked, name = "") {
+  if (picked?.mode === "pasted") {
+    const pasted = picked.parsed || [];
+    return (saved || []).filter((row) => pasted.some((item) => item.date === row.date && item.title === row.title));
+  }
+  const rows = picked?.rows || [];
+  if (picked?.mode !== "named") return rows;
+  const exact = rowsNamed(saved, name);
+  return exact.length ? exact : rows;
+}
+
+/** An answer split at its `title:` lines. Lines above the first title belong to no decision. */
+export function titledAnswers(happened) {
+  const answers = [];
+  let current = null;
+  for (const raw of String(happened || "").split(/\r?\n/)) {
+    const line = raw.trim().replace(/^[-*]\s*/, "");
+    const title = line.match(/^title\s*:\s*(.*)$/i);
+    if (title) {
+      current = { title: squash(title[1]), lines: [] };
+      answers.push(current);
+    } else if (current && line) current.lines.push(line);
+  }
+  return answers.filter((answer) => answer.title).map((answer) => ({ title: answer.title, text: answer.lines.join("\n") }));
+}
+
+/**
+ * Which saved decisions an answer is saved on, and with which words.
+ * One decision in view: the whole answer is its answer.
+ * Two or more: a decision gets an answer only when the answer names it on a `title:` line,
+ * and it gets only the lines under that title. An answer that names none is saved nowhere.
+ * `unmatched` lists titles that fit no single decision in view.
+ */
+export function lookbackSaves(targets, happened) {
+  const rows = targets || [];
+  const whole = squash(happened).slice(0, LOOKBACK_NOTE_MAX);
+  if (!whole || !rows.length) return { saves: [], unmatched: [] };
+  if (rows.length === 1) return { saves: [{ row: rows[0], happened: whole, lines: String(happened) }], unmatched: [] };
+  const saves = [];
+  const unmatched = [];
+  for (const answer of titledAnswers(happened)) {
+    const named = rowsNamed(rows, answer.title);
+    const words = squash(answer.text).slice(0, LOOKBACK_NOTE_MAX);
+    if (named.length !== 1) unmatched.push(answer.title);
+    else if (words && !saves.some((save) => save.row === named[0])) saves.push({ row: named[0], happened: words, lines: answer.text });
+  }
+  return { saves, unmatched };
+}
+
+/**
+ * Write a look-back onto a saved record. `lookback.at` is the time of this edit, as it always
+ * was, or the time already there when `keepAt` is set (a note keeps the time of the tap).
+ * `lookbackFirstAt` is the time the record first got a look-back with words, from a chat
+ * answer, a tap or a note. It is set once and never moved: a later edit, a second tap and a
+ * cleared note all leave it alone. Returns true only on that first time.
+ */
+export function setLookback(row, happened, now = Date.now(), { keepAt = false } = {}) {
+  const when = new Date(now).toISOString();
+  const before = row.lookback || null;
+  // A record looked back before this field existed: the time it carries is the only one known.
+  if (!row.lookbackFirstAt && hasLookback(row)) row.lookbackFirstAt = before.at || when;
+  const words = String(happened || "");
+  row.lookback = words.trim() ? { at: keepAt && before?.at ? before.at : when, happened: words } : null;
+  if (row.lookbackFirstAt || !hasLookback(row)) return false;
+  row.lookbackFirstAt = when;
+  return true;
+}
+
+function lookbackLine(row) {
+  return `${lookbackLabel(row)}: ${lookBackPrompt(parseRecords(row?.block || "")[0] || {})}`;
+}
+
+function lookbackLines(rows) {
+  const list = rows || [];
+  const lines = list.slice(0, LOOKBACK_LIST_MAX).map(lookbackLine);
+  const more = list.length - lines.length;
+  if (more > 0) lines.push(`${more} more ${more === 1 ? "is" : "are"} on ${PUBLIC_SITE_ORIGIN}/decisions`);
+  return lines;
+}
+
+export const LOOKBACK_ASK_WHICH = "Say which one, and what happened.";
+export const LOOKBACK_NOT_NAMED = "Nothing was saved. That answer did not name one of these decisions. Which one is it about?";
+/** What the one-decision reply ends with when the answer was saved. */
+export const LOOKBACK_SAVED = "Saved with your decision record.";
+
+/** Several saved decisions are in view and nothing was said yet: one line each, by name. */
+export function lookbackAskText(rows) {
+  return [...lookbackLines(rows), LOOKBACK_ASK_WHICH].join("\n");
+}
+
+/** An answer came in for several decisions and named none of them. Nothing is saved on a guess. */
+export function lookbackWhichText(rows) {
+  return [LOOKBACK_NOT_NAMED, ...lookbackLines(rows)].join("\n");
+}
+
+// The reading is written for the paste route, which stores nothing and says so. When an answer
+// was saved, those words would be false, so they are taken out before the reply says "Saved".
+const PASTE_STORES_NOTHING = "Nothing is stored. This reading stays in the chat.\n\n";
+const PASTE_NOT_SCORED = "Nothing is stored. Those notes did not say whether each call came true, so nothing was scored.";
+const NOT_SCORED = "Those notes did not say whether each call came true, so nothing was scored.";
+
+function readingForSaved(reading, pasted) {
+  const text = String(reading || "").replace(PASTE_STORES_NOTHING, "");
+  if (text.includes(PASTE_NOT_SCORED)) return pasted ? text.replace(PASTE_NOT_SCORED, NOT_SCORED).trim() : `## Look back\n\n${NOT_SCORED}`;
+  return (pasted ? text : text.split("\nStill to answer:")[0]).trim();
+}
+
+/**
+ * The reply after an answer was saved on the one saved decision in view. It is the paste
+ * route's reading, sentence for sentence, without that route's words about storing nothing.
+ * The answer was stored, so the reply must not say otherwise. Nothing else is changed.
+ */
+export function lookbackSavedOneText(reading) {
+  const text = String(reading || "").replace(PASTE_STORES_NOTHING, "").replace(PASTE_NOT_SCORED, NOT_SCORED);
+  return `${text}\n\n${LOOKBACK_SAVED}`;
+}
+
+/**
+ * The reply after an answer was saved while several saved decisions were in view. It says
+ * which decisions the answer went on, which named titles fit none, and what is still open.
+ */
+export function lookbackSavedText({ reading = "", saved = [], unmatched = [], remaining = [], pasted = false } = {}) {
+  const lines = [];
+  const body = readingForSaved(reading, pasted);
+  if (body) lines.push(body, "");
+  lines.push("Saved with your decision record:", ...saved.map((row) => shortDecision(row?.title)));
+  if (unmatched.length) {
+    const names = unmatched.map((title) => `"${squash(title).slice(0, 120)}"`).join(", ");
+    lines.push("", `Nothing was saved for ${names}. That title matches no single decision here.`);
+  }
+  if (remaining.length) lines.push("", "Still to answer:", ...lookbackLines(remaining));
+  return lines.join("\n");
+}
+
+/**
+ * What only the hosted grill tool says, after the text it shares with the installed tool.
+ * Each sentence is here once. The shared text already covers the layers, deepen, the
+ * first-use line and the scope rule, so this does not say them again.
+ */
+const HOSTED_GRILL_TAIL =
+  "The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up, when Grill can tell which that is. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. The first time, Grill asks whether to keep decision records before anything is sent: show that one question and the paragraph under it, and call again with keep_records true or false only after they answer Yes or No. A follow: line is a job id for you. Never show it.";
+
+// The installed tool's description assumes Claude wrote the subject unless a setting says
+// otherwise, and it describes a judge model named in settings. Neither is true of Grill in
+// chat: the author comes from the app that connected, and there is no judge model setting.
+// These are the installed sentences that hostedTools() swaps out. scripts/platformPolicy.test.mjs fails if
+// one of them stops matching, so a change to the installed text cannot leave it in place here.
+export const LOCAL_ONLY_OPENING =
+  "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).";
+export const HOSTED_OPENING =
+  "Send a decision, plan or forecast to an outside AI judge. The judge is from a different company than the one whose model wrote it, when Grill can tell which that is. When it cannot, the verdict says so.";
+export const LOCAL_ONLY_JUDGE_SETTING =
+  "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default. ";
+
+// The installed sentence forbids any disclaimer. An assistant's own rules may require one, so
+// Grill in chat forbids it in Grill's text only, as HOSTED_INSTRUCTIONS already does.
+export const LOCAL_ONLY_NO_ADDITIONS = "Do not add a fact list, a confidence question, a record, or a disclaimer.";
+export const HOSTED_NO_ADDITIONS =
+  "Do not add a fact list, a confidence question, or a record. Do not add a disclaimer to Grill's text.";
+
+/**
+ * The quality check is a second place the write-up goes, and it is on unless the call turns
+ * it off. The assistant is told here, in the tool description a reviewer reads.
+ */
+export const HOSTED_CHECK_DISCLOSURE =
+  "By default a quality check by TypeSafe (a model called Jev) also gets the masked write-up and the judge's verdict and challenges. Pass quality_check: false only if the person asks to skip it.";
+
+/**
+ * Grill's text is relayed as written. What the assistant's own rules require is not
+ * Grill's to forbid, so the rule covers Grill's text and says where the rest goes.
+ */
+export const OWN_DISCLOSURE_RULE =
+  "Do not add a disclosure of your own to Grill's text. Anything your own rules require, say it separately, after the run note.";
+
+/**
+ * What the assistant reads from grill_look_back. A Grill account can read saved records, so
+ * nothing has to be pasted. When several are due the result names them, and the assistant
+ * passes back the one title the person picks, so an answer is saved on that record only.
+ */
+export const HOSTED_LOOK_BACK_DESCRIPTION =
+  "Score decision records against what actually happened. If they have not said what happened, ask. With no records argument, read this account's saved records that are due. When several are due, the result lists them by title: ask which one they mean, then call again with that title in records and what happened in happened. With view changes, read all saved records and show where their calls changed after a challenge. When they chose to keep records, a look-back answer is saved on the one record in view, or, when several are, only on the record it names. The judge's verdict is not revised.";
+export const HOSTED_LOOK_BACK_RECORDS =
+  "Optional. Omit it to read the saved decisions that are due. Or the title of one saved decision, as the result listed it. Or one or more decision record blocks the person pasted.";
 
 /** What the assistant reads from grill_result. The next step, if the job is still running, is another call. */
 const HOSTED_RESULT_DESCRIPTION =
@@ -1094,12 +1409,16 @@ const HOSTED_RESULT_DESCRIPTION =
  * One line for an agent's written audit record: which model judged, which company was
  * excluded, and when. The time joins it to the account's spend log, which keeps the same
  * model. It is for the record, not the chat note.
+ *
+ * `decorrelated` is a routing check: the judge came from a different company than the
+ * declared author. It does not measure whether their errors differ. With no author declared
+ * there was nothing to check against, so the line says `not verified`, never `yes`.
  */
 export function provenanceLine(parsed, at) {
   const served = typeof parsed?.servedModel === "string" && parsed.servedModel.trim() ? parsed.servedModel.trim() : "unattributable";
   const author = typeof parsed?.declaredAuthor === "string" && parsed.declaredAuthor.trim() ? parsed.declaredAuthor.trim() : "anthropic";
   const excluded = author === "none" ? "none" : author;
-  const decorrelated = parsed?.decorrelated === true ? "yes" : "no";
+  const decorrelated = parsed?.decorrelated !== true ? "no" : author === "none" ? "not verified" : "yes";
   const when = at instanceof Date && !Number.isNaN(at.getTime()) ? at.toISOString().replace(/\.\d{3}Z$/, "Z") : "unknown";
   return `Judge: ${served} · excluded: ${excluded} · decorrelated: ${decorrelated} · at: ${when}`;
 }
@@ -1120,7 +1439,7 @@ export function hostedTools() {
   const localDisclosure =
     /The first time you use Grill with this person, say once\b.*?Do not mention a score, a balance, or a quote check\. /;
   const hostedDisclosure =
-    "Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Every result then ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. Do not mention a Jev score, a credit balance, or a quote check. ";
+    `${OWN_DISCLOSURE_RULE} If the result starts with the outside-judge sentence, show it once. Later results leave it off. Every result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY} ${HOSTED_CHECK_DISCLOSURE} Do not mention a Jev score or a quote check. `;
   // Hosted hints are set here, not copied from the local tools. A local look-back stores
   // nothing, and a local grill does not write an account. OpenAI's review reads all three,
   // and the MCP defaults (read-only false, destructive true, open-world true) are wrong for
@@ -1129,12 +1448,25 @@ export function hostedTools() {
   return [
     {
       ...grill,
-      description: `${grill.description.replace(localDisclosure, hostedDisclosure)} ${HOSTED_COST_LINE}`,
+      description: `${grill.description
+        .replace(LOCAL_ONLY_OPENING, HOSTED_OPENING)
+        .replace(localDisclosure, hostedDisclosure)
+        .replace(LOCAL_ONLY_NO_ADDITIONS, HOSTED_NO_ADDITIONS)
+        .replace(LOCAL_ONLY_JUDGE_SETTING, "")} ${HOSTED_GRILL_TAIL}`,
       annotations: { title: "Grill a decision", readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       inputSchema: {
         ...grill.inputSchema,
         properties: {
           ...grill.inputSchema.properties,
+          author: {
+            ...grill.inputSchema.properties.author,
+            description:
+              "Optional. The model family that wrote the subject, for example openai, anthropic, google or x-ai. That family is excluded from judging. Set it to your own family when you know it.",
+          },
+          quality_check: {
+            ...grill.inputSchema.properties.quality_check,
+            description: "Optional. false skips the TypeSafe quality check for this grill only, when the person asks.",
+          },
           keep_records: {
             type: "boolean",
             description:
@@ -1171,12 +1503,14 @@ export function hostedTools() {
     },
     {
       ...look,
-      description:
-        "Score decision records against what actually happened. If they have not said what happened, ask. With no records argument, read this account's saved records that are due, or the ones they named. With view changes, read all saved records and show where their calls changed after a challenge. When they chose to keep records, save the look-back answers. The judge's verdict is not revised.",
+      description: HOSTED_LOOK_BACK_DESCRIPTION,
       annotations: { title: "Look back", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       inputSchema: {
         type: "object",
-        properties: look.inputSchema.properties,
+        properties: {
+          ...look.inputSchema.properties,
+          records: { ...look.inputSchema.properties.records, description: HOSTED_LOOK_BACK_RECORDS },
+        },
         additionalProperties: false,
       },
     },
@@ -1229,20 +1563,20 @@ export const HOSTED_INSTRUCTIONS = [
   "Exclude only the company that wrote the write-up. Never use this chat's own model as the judge, and never pin a model, including for speed or cost.",
   "Do not rewrite the decision, do not add your own case against, and do not wait for an OK.",
   "Ask at most one short question, and only if the decision is truly unclear, such as what the goal is.",
-  "The first time, grill asks whether to keep decision records before anything is sent. Relay that one question and call again with keep_records true or false only after they answer.",
-  "If the result starts with the outside-judge sentence, show that one line once. Do not add a disclosure of your own, and do not repeat it later. Every result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict.",
+  "The first time, grill asks whether to keep decision records before anything is sent. Relay that one question and the paragraph under it, and call again with keep_records true or false only after they answer.",
+  `If the result starts with the outside-judge sentence, show that one line once, and do not repeat it later. ${OWN_DISCLOSURE_RULE} Every result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY}`,
   "If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the note arrives. Do not ask the person to check, and do not ask them for a job id.",
   "If three grills are still running, wait about 2 minutes and call grill again yourself. Do not ask the person for a job id.",
   "Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question, a fact list, a confidence question, or a line of your own. It already ends with the next-step line.",
   "When the note has a line that starts with Look back on, show that one line after the verdict. It is optional. Do not add one when it is not there. Never on a quick or bulk grill.",
   "When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Pass job_id if you have one. A follow: line is a job id for you. Never show it. Do not write a layer yourself.",
   "Never present an answer as Grill's, or label it a Grill verdict, unless grill or grill_result returned it in this conversation; if the tool isn't available or fails, say Grill didn't run instead of imitating it.",
-  "Do not add a model name of your own, and do not show a record, a Jev score, a credit balance, a quote check, format rules, or a disclaimer.",
+  "Do not add a model name of your own, and do not show a record, a Jev score, a quote check, or format rules. Do not add a disclaimer to Grill's text.",
   "Call grill_result with detail provenance only when you are writing a lasting record of the grill, such as an audit log. Put that one line in the record, not in your reply, unless the person asks which model judged.",
   "The verdict never becomes the decision. If they ask whether they should do it, hand the choice back and name the cheap test.",
   "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation as written, and sometimes one more line saying earlier calls are due for a look-back. If they never answer, do not call it, and there is no record and no look-back.",
   "Add supersedes and changed only when they say the choice changed, in their words. A re-run with nothing changed leaves those off.",
-  "When they say look back, call grill_look_back and relay its one line. With a Grill account it can read saved records, so they do not have to paste.",
+  "When they say look back, call grill_look_back and relay what it returns. With a Grill account it can read saved records, so they do not have to paste. When it lists several decisions, ask which one they mean, then call it again with that title in records and what happened in happened.",
   "When they ask what Grill has done for them, call grill_look_back with view changes and relay it as written.",
   FEEDBACK_POINTER,
   SCOPE_GUARD,
@@ -1254,6 +1588,7 @@ export function createMemoryRedis() {
   const sets = new Map();
   const zsets = new Map();
   const lists = new Map();
+  const hashes = new Map();
   const expiry = new Map();
   const live = (key) => {
     const exp = expiry.get(key);
@@ -1262,6 +1597,7 @@ export function createMemoryRedis() {
       sets.delete(key);
       zsets.delete(key);
       lists.delete(key);
+      hashes.delete(key);
       expiry.delete(key);
       return false;
     }
@@ -1284,7 +1620,7 @@ export function createMemoryRedis() {
           return "OK";
         }
         case "DEL": {
-          const had = strings.delete(key) || sets.delete(key) || zsets.delete(key) || lists.delete(key);
+          const had = strings.delete(key) || sets.delete(key) || zsets.delete(key) || lists.delete(key) || hashes.delete(key);
           expiry.delete(key);
           return had ? 1 : 0;
         }
@@ -1322,6 +1658,42 @@ export function createMemoryRedis() {
           if (start < 0) start = Math.max(0, len + start);
           if (stop < 0) stop = len + stop;
           return list.slice(start, stop + 1);
+        }
+        case "LINDEX": {
+          const list = lists.get(key) || [];
+          const at = Number(args[2]);
+          return list[at < 0 ? list.length + at : at] ?? null;
+        }
+        case "HINCRBY": {
+          const hash = hashes.get(key) || new Map();
+          const next = (Number(hash.get(String(args[2]))) || 0) + Number(args[3]);
+          hash.set(String(args[2]), String(next));
+          hashes.set(key, hash);
+          return next;
+        }
+        case "HSET": {
+          const hash = hashes.get(key) || new Map();
+          const added = hash.has(String(args[2])) ? 0 : 1;
+          hash.set(String(args[2]), String(args[3]));
+          hashes.set(key, hash);
+          return added;
+        }
+        case "HSETNX": {
+          const hash = hashes.get(key) || new Map();
+          if (hash.has(String(args[2]))) return 0;
+          hash.set(String(args[2]), String(args[3]));
+          hashes.set(key, hash);
+          return 1;
+        }
+        case "HGET":
+          return hashes.get(key)?.get(String(args[2])) ?? null;
+        case "HDEL":
+          return hashes.get(key)?.delete(String(args[2])) ? 1 : 0;
+        case "HGETALL": {
+          // The same shape Upstash answers with: field, value, field, value.
+          const flat = [];
+          for (const [field, value] of hashes.get(key) || []) flat.push(field, value);
+          return flat;
         }
         case "EXPIRE":
           expiry.set(key, Date.now() + Number(args[2]) * 1000);

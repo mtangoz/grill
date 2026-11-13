@@ -31,7 +31,7 @@ That URL is what you paste below. It will not be `https://mcp.grillyour.ai/mcp` 
 2. Go to **Customize → Connectors → Add custom connector**. Asking Claude in a chat to connect it does not work.
 3. Paste the preview URL ending in `/mcp`. Add it.
 4. Click **Connect**. A Grill sign-in popup opens. Use an email code. Google sign-in is off in production. Do not paste a key. There is no card.
-5. The first time you grill, Grill asks, before anything is sent: keep a record of your decisions, yes or no. Answer once.
+5. The first time you grill, Grill asks, before anything is sent: keep a record of your decisions, yes or no. Under the question, one paragraph says where the decision goes and what a yes keeps. Answer once.
 6. In a new chat, say: `Grill this: we will slip the launch by two weeks. I'm 60% sure that buys a cleaner release.`
 7. When Claude shows the write-up, say `go`.
 8. Wait. Do not type `check`, do not open another app, do not refresh. A two-minute grill should land in the chat by itself.
@@ -61,7 +61,7 @@ Start Claude Code, run `/mcp`, choose **grill**, then **Authenticate**. Sign in 
 
 Sign-in completes, and a grill of about two minutes finishes with **no user action** in at least **4 of the 5** web runs.
 
-Write down, for each run: did the verdict arrive on its own, about how long it took, and the last line (it should say whether the decision was saved, the look-back date, and about how many grills of credit are left).
+Write down, for each run: did the verdict arrive on its own, about how long it took, and how the reply ended. Every verdict ends with a two-line run note: the models that ran with the time it took, then one privacy sentence. No reply says how much is left this month.
 
 ## If it fails
 

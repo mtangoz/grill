@@ -7,7 +7,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAccount, handleCalendar, handleDecisions, handleMcp, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
-import { CLAUDE_WEB_REDIRECT, createMemoryRedis, FUNNEL_KEYS } from "./hostedCore.mjs";
+import { CLAUDE_WEB_REDIRECT, createMemoryRedis, DELETE_ALL_ALSO_WAITING, FUNNEL_KEYS, RECORDS_OFF_DELETES_WAITING, RECORDS_OFF_NOTE, WAITING_GRILL_HOW } from "./hostedCore.mjs";
+import { OUTSIDE_KEYS, hashCounts, hashFields } from "./outsideLoopCore.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -105,6 +106,53 @@ async function decide(ctx, fake, title, now, extra = {}) {
   const grilled = await send(call(1, "grill", { subject: `Decision: ${title}\nI'm 60% sure.`, keep_records: true, quality_check: false, ...extra }));
   assert.equal(grilled.result.isError, false, grilled.result?.content?.[0]?.text || "");
   await send(call(2, "grill_decided", { decided: `Go with ${title}.` }));
+}
+
+/** One tool call from the chat, as the signed-in person. */
+async function chat(ctx, fake, name, args, now) {
+  const token = signJwt({
+    iss: "https://clerk.example.test",
+    sub: "user_invitee",
+    aud: RESOURCE,
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    redirect_uri: CLAUDE_WEB_REDIRECT,
+  });
+  const deps = { judgeOpenRouterUrl: fake.env.JUDGE_OPENROUTER_URL, judgeDecisionsUrl: fake.env.JUDGE_DECISIONS_URL, now };
+  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } });
+  const res = await handleMcp(new Request(RESOURCE, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body }), { ...ctx, ...deps });
+  const json = await res.json();
+  return { text: json.result?.content?.[0]?.text || "", isError: json.result?.isError === true };
+}
+
+/** A grill that got its verdict and has no stated choice yet. With records on, that leaves a draft. */
+async function grillOnly(ctx, fake, title, now, extra = {}) {
+  const grilled = await chat(ctx, fake, "grill", { subject: `Decision: ${title}\nI'm 60% sure.`, keep_records: true, quality_check: false, ...extra }, now);
+  assert.equal(grilled.isError, false, grilled.text);
+  return grilled;
+}
+
+/** The drafts the store holds: the encrypted rows, and the list the server reads them from. */
+function draftsIn(ctx) {
+  const keys = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:pending:*"])[1];
+  const accounts = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1];
+  assert.equal(accounts.length, 1, "one account in this test world");
+  const id = accounts[0].slice("grill:hosted:acct:".length);
+  return { keys: keys.length, indexed: ctx.memory.command(["ZRANGE", `grill:hosted:pendings:${id}`, "0", "-1"]).length };
+}
+
+async function accountPost(ctx, body, now) {
+  return handleAccount(
+    new Request("https://grillyour.ai/account", {
+      method: "POST",
+      headers: { cookie: cookieHeader(), "content-type": "application/x-www-form-urlencoded" },
+      body,
+    }),
+    { ...ctx, now },
+  );
+}
+
+async function exportedRows(ctx, now) {
+  return JSON.parse((await getPage(ctx, "/decisions?export=json", { now })).html);
 }
 
 describe("pages a person sees", () => {
@@ -819,6 +867,501 @@ describe("the decisions page layout", () => {
       assert.match(row, /Chose: Go with Hire contractor\. · <strong>shaky<\/strong> · Due/);
       assert.equal(row.includes("unknown"), false);
       assert.equal(html.includes("2026-01-"), false);
+    } finally {
+      await fake.close();
+    }
+  });
+});
+
+describe("a grill that is waiting for a choice", () => {
+  it("is shown on Your grills as a count, with what to do, and nothing from the grill itself", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await grillOnly(ctx, fake, "Hire contractor", JAN);
+      const one = await getPage(ctx, "/decisions", { now: JAN });
+      assert.match(one.html, /<section id="waiting">\s*<p class="action"><strong>1 grill is waiting for your call\.<\/strong><\/p>/);
+      assert.ok(one.html.includes(`<p>${WAITING_GRILL_HOW}</p>`), "the page says what to do");
+      assert.equal(
+        WAITING_GRILL_HOW,
+        "In a chat where Grill is connected, tell your AI what you chose, for example “I’m going ahead”. It is saved here with a look-back date. A waiting grill is deleted after 14 days.",
+      );
+      assert.equal(one.html.includes("No decisions saved yet."), false, "an empty list is not the whole story when a grill waits");
+      assert.equal(one.html.includes("Hire contractor"), false, "a draft's title is not shown");
+      assert.doesNotMatch(one.html, /shaky|Shaky/, "nor its verdict");
+      assert.equal(one.html.includes("<script"), false);
+      assert.match(one.html, /A look-back is due 14 days after you choose/);
+
+      await grillOnly(ctx, fake, "Move office", JAN);
+      const two = await getPage(ctx, "/decisions", { now: JAN });
+      assert.match(two.html, /<strong>2 grills are waiting for your call\.<\/strong>/);
+
+      // Saying a choice saves the latest one. One still waits, and the line sits above the list.
+      const saved = await chat(ctx, fake, "grill_decided", { decided: "Go with the move." }, JAN);
+      assert.match(saved.text, /^Saved\./);
+      const mixed = await getPage(ctx, "/decisions", { now: JAN });
+      assert.match(mixed.html, /<strong>1 grill is waiting for your call\.<\/strong>/);
+      assert.match(mixed.html, /Move office/);
+      const waitingAt = mixed.html.indexOf('<section id="waiting">');
+      assert.ok(waitingAt > mixed.html.indexOf("<h1>") && waitingAt < mixed.html.indexOf('<section id="open">'), "waiting sits above the Open group");
+      assert.ok(waitingAt < mixed.html.indexOf("Keep my decision records"));
+      assert.equal(mixed.html.includes("Log your choice after a grill so it counts."), false, "the page does not say it twice");
+      // A filter is a view of saved decisions. A waiting grill belongs to none.
+      const filtered = await getPage(ctx, "/decisions?type=work", { now: JAN });
+      assert.equal(filtered.html.includes('id="waiting"'), false);
+
+      const last = await chat(ctx, fake, "grill_decided", { decided: "Hire the contractor." }, JAN);
+      assert.match(last.text, /^Saved\./);
+      const none = await getPage(ctx, "/decisions", { now: JAN });
+      assert.equal(none.html.includes('id="waiting"'), false);
+      assert.doesNotMatch(none.html, /grills? (?:is|are) waiting for your call/);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is deleted when records are switched off on Your grills, and saved records stay", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Cut prices", JAN);
+      await grillOnly(ctx, fake, "Hire contractor", JAN);
+      await grillOnly(ctx, fake, "Move office", JAN);
+      assert.deepEqual(draftsIn(ctx), { keys: 2, indexed: 2 });
+      const before = await getPage(ctx, "/decisions", { now: JAN });
+      assert.match(before.html, /2 grills are waiting for your call\./);
+      assert.ok(before.html.includes(`Turning this off leaves the ones already here until you delete them. ${RECORDS_OFF_DELETES_WAITING}`));
+      assert.equal(RECORDS_OFF_DELETES_WAITING, "A grill still waiting for your call is deleted.");
+
+      const off = await postForm(ctx, "action=records&value=off", JAN);
+      assert.equal(off.status, 303);
+      assert.deepEqual(draftsIn(ctx), { keys: 0, indexed: 0 }, "no draft and no list of drafts is left");
+      const after = await getPage(ctx, "/decisions", { now: JAN });
+      assert.equal(after.html.includes('id="waiting"'), false);
+      assert.match(after.html, /Cut prices/, "a saved record is not touched");
+      assert.equal((await exportedRows(ctx, JAN)).length, 1);
+      // Nothing is left for a later choice to pick up.
+      const late = await chat(ctx, fake, "grill_decided", { decided: "Hire the contractor." }, JAN);
+      assert.equal(late.isError, true);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is deleted when records are switched off on the account page", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await grillOnly(ctx, fake, "Hire contractor", JAN);
+      assert.deepEqual(draftsIn(ctx), { keys: 1, indexed: 1 });
+      // The account page says what its switch does, next to the switch.
+      const account = await (await handleAccount(new Request("https://grillyour.ai/account", { headers: { cookie: cookieHeader() } }), { ...ctx, now: JAN })).text();
+      assert.equal(RECORDS_OFF_NOTE, "Turning records off leaves the decisions already saved until you delete them. A grill still waiting for your call is deleted.");
+      assert.ok(account.includes(`<p class="small">${RECORDS_OFF_NOTE}</p>`));
+      assert.ok(account.indexOf("Don't keep records") < account.indexOf(RECORDS_OFF_NOTE));
+      // Keeping records on leaves it alone.
+      assert.equal((await accountPost(ctx, "action=records&value=keep", JAN)).status, 303);
+      assert.deepEqual(draftsIn(ctx), { keys: 1, indexed: 1 });
+      assert.equal((await accountPost(ctx, "action=records&value=off", JAN)).status, 303);
+      assert.deepEqual(draftsIn(ctx), { keys: 0, indexed: 0 });
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is deleted when the chat is told not to keep records", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await grillOnly(ctx, fake, "Hire contractor", JAN);
+      assert.deepEqual(draftsIn(ctx), { keys: 1, indexed: 1 });
+      const second = await grillOnly(ctx, fake, "Move office", JAN, { keep_records: false });
+      assert.match(second.text, /follow: /, "the grill itself still runs");
+      assert.deepEqual(draftsIn(ctx), { keys: 0, indexed: 0 }, "the earlier draft is gone, and this grill left none");
+      const page = await getPage(ctx, "/decisions", { now: JAN });
+      assert.equal(page.html.includes('id="waiting"'), false);
+      assert.match(page.html, /Records are off\./);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is not left behind by a grill that finishes after records were switched off", async () => {
+    // The judge answers only when the test lets it, so the switch lands while the grill runs.
+    let answer;
+    const held = new Promise((resolve) => (answer = resolve));
+    const usable = readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8");
+    const fake = await startFakeOpenRouter({
+      chat: async () => {
+        await held;
+        return { text: usable };
+      },
+    });
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      const backgrounds = [];
+      const started = await chat({ ...ctx, waitMs: 0, backgrounds }, fake, "grill", { subject: "Decision: Hire contractor\nI'm 60% sure.", keep_records: true, quality_check: false }, JAN);
+      assert.match(started.text, /^Still grilling \(job /);
+      assert.equal((await postForm(ctx, "action=records&value=off", JAN)).status, 303);
+      answer();
+      await Promise.all(backgrounds);
+      assert.deepEqual(draftsIn(ctx), { keys: 0, indexed: 0 }, "the grill finished after the switch and wrote no draft");
+      // The verdict is still there to collect, by the job id the chat holds.
+      const jobId = started.text.match(/job (g1\.[0-9a-f]{32}\.[A-Za-z0-9_-]+)/)[1];
+      const collected = await chat({ ...ctx, waitMs: 500 }, fake, "grill_result", { job_id: jobId }, JAN);
+      assert.equal(collected.isError, false, collected.text);
+      assert.match(collected.text, /\*\*Shaky\.\*\*/);
+    } finally {
+      answer();
+      await fake.close();
+    }
+  });
+
+  it("is deleted by Delete all, and only after the confirm page", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Cut prices", JAN);
+      await grillOnly(ctx, fake, "Hire contractor", JAN);
+      const ask = await getPage(ctx, "/decisions?confirm=delete-all", { now: JAN });
+      assert.ok(ask.html.includes(`This removes every saved decision on this page. ${DELETE_ALL_ALSO_WAITING} Export first if you want a copy. This cannot be undone.`));
+      assert.equal(DELETE_ALL_ALSO_WAITING, "It also removes any grill still waiting for your call.");
+      const unconfirmed = await postForm(ctx, "action=delete-all", JAN);
+      assert.equal(unconfirmed.status, 303);
+      assert.deepEqual(draftsIn(ctx), { keys: 1, indexed: 1 }, "a post without confirm deletes nothing");
+      assert.equal((await exportedRows(ctx, JAN)).length, 1);
+      const confirmed = await postForm(ctx, "action=delete-all&confirm=delete", JAN);
+      assert.equal(confirmed.status, 303);
+      assert.deepEqual(draftsIn(ctx), { keys: 0, indexed: 0 });
+      assert.equal((await exportedRows(ctx, JAN)).length, 0);
+      const empty = await getPage(ctx, "/decisions", { now: JAN });
+      assert.match(empty.html, /No decisions saved yet\./);
+      // Records are still on: the next grill waits as usual.
+      await grillOnly(ctx, fake, "Move office", JAN);
+      assert.deepEqual(draftsIn(ctx), { keys: 1, indexed: 1 });
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is described in the data ledger the way the code behaves", () => {
+    const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
+    const row = ledger.split("\n").find((line) => line.startsWith("| Draft, if you chose to keep records"));
+    assert.ok(row, "the ledger has a draft row");
+    assert.match(row, /14 days, or until you say what you chose, turn records off or press Delete all, whichever comes first/);
+    assert.match(row, /You, by turning records off \(in chat, on `\/decisions` or on `\/account`\) or with Delete all on `\/decisions`\./);
+    assert.match(row, /`\/decisions` shows how many are waiting, and nothing from the draft itself\./);
+  });
+});
+
+describe("the first time a decision is looked back on", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const iso = (ms) => new Date(ms).toISOString();
+
+  it("is kept once, whatever a later chat answer, tap or note changes", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Hire contractor", JAN);
+      const [fresh] = await exportedRows(ctx, FEB);
+      assert.equal(fresh.lookback, null);
+      assert.equal(fresh.lookback_first_at, "", "no look-back yet, so no first time");
+      const id = encodeURIComponent(fresh.id);
+
+      // The first answer, in chat.
+      const said = await chat(ctx, fake, "grill_look_back", { happened: "came_true: no\nhappened: The contractor left after a week." }, FEB);
+      assert.equal(said.isError, false, said.text);
+      let [row] = await exportedRows(ctx, FEB);
+      assert.equal(row.lookback.at, iso(FEB));
+      assert.equal(row.lookback_first_at, iso(FEB));
+
+      // A tap the next day replaces the outcome. Its own time moves. The first time does not.
+      await postForm(ctx, `action=outcome&id=${id}&value=held`, FEB + DAY);
+      [row] = await exportedRows(ctx, FEB + DAY);
+      assert.equal(row.lookback.at, iso(FEB + DAY));
+      assert.equal(row.lookback_first_at, iso(FEB));
+
+      // A note keeps the time of the tap it sits beside.
+      await postForm(ctx, `action=note&id=${id}&note=Two teams used it`, FEB + 2 * DAY);
+      [row] = await exportedRows(ctx, FEB + 2 * DAY);
+      assert.equal(row.lookback.at, iso(FEB + DAY));
+      assert.equal(row.lookback_first_at, iso(FEB));
+
+      // A second answer in chat, days later.
+      await chat(ctx, fake, "grill_look_back", { records: "Hire contractor", happened: "came_true: yes\nhappened: A new contractor finished the job." }, FEB + 3 * DAY);
+      [row] = await exportedRows(ctx, FEB + 3 * DAY);
+      assert.equal(row.lookback.at, iso(FEB + 3 * DAY));
+      assert.equal(row.lookback_first_at, iso(FEB), "the first completion time is never overwritten");
+      assert.match(row.lookback.happened, /new contractor finished/);
+
+      // The page still shows the day of the latest change, as it did before.
+      const detail = await getPage(ctx, `/decisions?id=${id}`, { now: FEB + 3 * DAY });
+      assert.match(detail.html, /Changed 4 Feb\./);
+      assert.equal(detail.html.includes("lookback_first_at"), false);
+      assert.equal(detail.html.includes(iso(FEB)), false, "the first time is not shown on the page");
+      // Each look-back was counted as done once: at the first one.
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksDone]), "1");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is set by a note alone and by an early tap, and outlives a cleared note", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      const early = Date.parse("2026-01-05T15:00:00Z");
+      await decide(ctx, fake, "Ship the beta", JAN);
+      const [fresh] = await exportedRows(ctx, early);
+      const id = encodeURIComponent(fresh.id);
+
+      // A note is a look-back with words, so it is the first one.
+      await postForm(ctx, `action=note&id=${id}&note=Half the team is on it`, early);
+      let [row] = await exportedRows(ctx, early);
+      assert.equal(row.lookback.happened, "note: Half the team is on it");
+      assert.equal(row.lookback_first_at, iso(early));
+
+      // Clearing the note clears the look-back. The first time stays.
+      await postForm(ctx, `action=note&id=${id}&note=`, early + DAY);
+      [row] = await exportedRows(ctx, early + DAY);
+      assert.equal(row.lookback, null);
+      assert.equal(row.lookback_first_at, iso(early));
+
+      // An early tap, before the look-back day, then a later one.
+      await postForm(ctx, `action=outcome&id=${id}&value=no`, early + 2 * DAY);
+      await postForm(ctx, `action=outcome&id=${id}&value=held`, FEB);
+      [row] = await exportedRows(ctx, FEB);
+      assert.equal(row.lookback.at, iso(FEB));
+      assert.equal(row.lookback_first_at, iso(early));
+
+      // A second decision, first answered by an early tap.
+      await decide(ctx, fake, "Move office", JAN);
+      const second = (await exportedRows(ctx, early)).find((item) => item.block.includes("title: Move office"));
+      await postForm(ctx, `action=outcome&id=${encodeURIComponent(second.id)}&value=mixed`, early);
+      const tapped = (await exportedRows(ctx, early)).find((item) => item.id === second.id);
+      assert.equal(tapped.lookback_first_at, iso(early));
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is described in the data ledger with the record", () => {
+    const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
+    const row = ledger.split("\n").find((line) => line.startsWith("| Decision record ("));
+    assert.ok(row, "the ledger has a decision record row");
+    assert.match(row, /look-back answers, with the time of the first one and of the latest change\)/);
+  });
+});
+
+describe("outside look-back counters, counted when the person acts", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  // The test person is invitee@example.com. They are not on this list, so they are an outside account.
+  const outsideWorld = () => {
+    const ctx = world();
+    ctx.env.GRILL_INTERNAL_EMAILS = "owner@grill.example";
+    return ctx;
+  };
+  /** A counter as day to whole number, with emptied days left out. */
+  const counts = (ctx, key) => hashCounts(ctx.memory.command(["HGETALL", key]));
+  const lookbackCounts = (ctx) => ({
+    due: counts(ctx, OUTSIDE_KEYS.lookbacksDue),
+    people: counts(ctx, OUTSIDE_KEYS.lookbackPeople),
+    done7: counts(ctx, OUTSIDE_KEYS.lookbacksDone7d),
+    done14: counts(ctx, OUTSIDE_KEYS.lookbacksDone14d),
+  });
+  const idOf = (rows, title) => encodeURIComponent(rows.find((row) => row.block.includes(`title: ${title}\n`)).id);
+
+  it("counts a look-back under the day it falls due, and only its first answer", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = outsideWorld();
+      await decide(ctx, fake, "Hire contractor", JAN);
+      assert.deepEqual(lookbackCounts(ctx), { due: { "2026-01-15": 1 }, people: { "2026-01-15": 1 }, done7: {}, done14: {} });
+      assert.deepEqual(counts(ctx, OUTSIDE_KEYS.choices), { "2026-01-01": 1 });
+      const [fresh] = await exportedRows(ctx, JAN);
+      assert.equal(fresh.lookback_counted_day, "2026-01-15", "the record holds the day it is counted under");
+      const id = encodeURIComponent(fresh.id);
+
+      // The first answer, a tap two days after the due day.
+      const answered = Date.parse("2026-01-17T10:00:00Z");
+      await postForm(ctx, `action=outcome&id=${id}&value=no`, answered);
+      const once = { due: { "2026-01-15": 1 }, people: { "2026-01-15": 1 }, done7: { "2026-01-15": 1 }, done14: { "2026-01-15": 1 } };
+      assert.deepEqual(lookbackCounts(ctx), once);
+
+      // A changed tap, a note, a second answer in chat, and a cleared note: none of them counts again.
+      await postForm(ctx, `action=outcome&id=${id}&value=held`, answered + DAY);
+      await postForm(ctx, `action=note&id=${id}&note=Two teams used it`, answered + 2 * DAY);
+      const said = await chat(ctx, fake, "grill_look_back", { records: "Hire contractor", happened: "came_true: yes\nhappened: A new contractor finished the job." }, answered + 3 * DAY);
+      assert.equal(said.isError, false, said.text);
+      await postForm(ctx, `action=note&id=${id}&note=`, answered + 4 * DAY);
+      await postForm(ctx, `action=outcome&id=${id}&value=mixed`, answered + 5 * DAY);
+      assert.deepEqual(lookbackCounts(ctx), once, "a second completion does not count");
+      const [row] = await exportedRows(ctx, answered + 5 * DAY);
+      assert.equal(row.lookback_first_at, new Date(answered).toISOString());
+
+      // The counters hold days and whole numbers. Nothing from the record.
+      for (const key of Object.values(OUTSIDE_KEYS)) {
+        for (const [field, value] of Object.entries(hashFields(ctx.memory.command(["HGETALL", key])))) {
+          assert.match(field, /^(\d{4}-\d{2}-\d{2}|claude)$/, `${key} ${field}`);
+          assert.match(value, /^\d+$/);
+        }
+      }
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("counts an answer by how long after the due day it came, and an early answer as done", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = outsideWorld();
+      // Four decisions on 1 January. Each look-back falls due on 15 January.
+      for (const title of ["Hire contractor", "Move office", "Cut prices", "Change supplier"]) await decide(ctx, fake, title, JAN);
+      const rows = await exportedRows(ctx, JAN);
+      const tap = (title, day) => postForm(ctx, `action=outcome&id=${idOf(rows, title)}&value=held`, Date.parse(`${day}T12:00:00Z`));
+      await tap("Hire contractor", "2026-01-05");
+      assert.deepEqual(lookbackCounts(ctx).done14, { "2026-01-15": 1 }, "an early answer counts as done");
+      assert.deepEqual(lookbackCounts(ctx).done7, { "2026-01-15": 1 });
+      await tap("Move office", "2026-01-21");
+      assert.deepEqual(lookbackCounts(ctx).done7, { "2026-01-15": 2 }, "the 7th day is within 7 days");
+      await tap("Cut prices", "2026-01-28");
+      assert.deepEqual(lookbackCounts(ctx).done7, { "2026-01-15": 2 });
+      assert.deepEqual(lookbackCounts(ctx).done14, { "2026-01-15": 3 }, "the 14th day is within 14 days");
+      await tap("Change supplier", "2026-01-29");
+      assert.deepEqual(lookbackCounts(ctx), { due: { "2026-01-15": 4 }, people: { "2026-01-15": 1 }, done7: { "2026-01-15": 2 }, done14: { "2026-01-15": 3 } }, "the 15th day is too late for both");
+      // The all-accounts funnel is unchanged by this work: it does not count the early read.
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksDone]), "3");
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksSet]), "4");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("moves a look-back that is moved before it falls due, and never lowers a count from that day on", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = outsideWorld();
+      const sunday = Date.parse("2026-11-08T15:00:00Z");
+      await decide(ctx, fake, "Ship the beta Friday", sunday);
+      assert.deepEqual(lookbackCounts(ctx), { due: { "2026-11-13": 1 }, people: { "2026-11-13": 1 }, done7: {}, done14: {} });
+      const [fresh] = await exportedRows(ctx, sunday);
+      const id = encodeURIComponent(fresh.id);
+      const review = (value, now) => postForm(ctx, `action=review&id=${id}&${value}`, now);
+      const counted = async (now) => (await exportedRows(ctx, now))[0].lookback_counted_day;
+
+      // Moved before it falls due: the count moves with it, and so does the person.
+      await review("value=set&review=2026-12-01", sunday);
+      assert.deepEqual(lookbackCounts(ctx), { due: { "2026-12-01": 1 }, people: { "2026-12-01": 1 }, done7: {}, done14: {} });
+      assert.equal(await counted(sunday), "2026-12-01");
+      // The same date again, and a date that is not a day, are not moves.
+      await review("value=set&review=2026-12-01", sunday);
+      await review("value=set&review=2026-02-31", sunday);
+      assert.deepEqual(lookbackCounts(ctx).due, { "2026-12-01": 1 });
+
+      // An early answer moves with it.
+      await postForm(ctx, `action=outcome&id=${id}&value=held`, sunday + DAY);
+      assert.deepEqual(lookbackCounts(ctx).done14, { "2026-12-01": 1 });
+      await review("value=set&review=2026-11-20", sunday + DAY);
+      assert.deepEqual(lookbackCounts(ctx), { due: { "2026-11-20": 1 }, people: { "2026-11-20": 1 }, done7: { "2026-11-20": 1 }, done14: { "2026-11-20": 1 } });
+
+      // Switched off before it falls due: it never comes due, so it is not counted.
+      await review("value=off", sunday + DAY);
+      assert.deepEqual(lookbackCounts(ctx), { due: {}, people: {}, done7: {}, done14: {} });
+      assert.equal(await counted(sunday + DAY), "");
+      // Switched on again: counted afresh, already answered.
+      await review("value=on", sunday + DAY);
+      assert.deepEqual(lookbackCounts(ctx), { due: { "2026-11-13": 1 }, people: { "2026-11-13": 1 }, done7: { "2026-11-13": 1 }, done14: { "2026-11-13": 1 } });
+
+      // From the day it falls due, nothing lowers the count: not a move, not switching it off.
+      const dueDay = Date.parse("2026-11-13T09:00:00Z");
+      const cameDue = { due: { "2026-11-13": 1 }, people: { "2026-11-13": 1 }, done7: { "2026-11-13": 1 }, done14: { "2026-11-13": 1 } };
+      await review("value=set&review=2026-12-20", dueDay);
+      assert.deepEqual(lookbackCounts(ctx), cameDue, "moved after it came due: still counted on the day it came due");
+      assert.equal(await counted(dueDay), "2026-11-13");
+      assert.match((await exportedRows(ctx, dueDay))[0].block, /^review: 2026-12-20$/m, "the person's own date did change");
+      await review("value=off", dueDay + DAY);
+      await review("value=on", dueDay + DAY);
+      assert.deepEqual(lookbackCounts(ctx), cameDue, "switched off and on after it came due: not counted twice");
+
+      // A deleted record still counts as due.
+      const gone = await postForm(ctx, `action=delete&confirm=delete&id=${id}`, dueDay + 2 * DAY);
+      assert.equal(gone.status, 303);
+      assert.deepEqual(await exportedRows(ctx, dueDay + 2 * DAY), []);
+      assert.deepEqual(lookbackCounts(ctx), cameDue);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("a record deleted before its look-back day still counts as due, and as not done", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = outsideWorld();
+      await decide(ctx, fake, "Hire contractor", JAN);
+      await decide(ctx, fake, "Move office", JAN);
+      const rows = await exportedRows(ctx, JAN);
+      const before = { due: { "2026-01-15": 2 }, people: { "2026-01-15": 1 }, done7: {}, done14: {} };
+      assert.deepEqual(lookbackCounts(ctx), before);
+      // One record deleted on its own, ten days before the look-back day. Then Delete all.
+      await postForm(ctx, `action=delete&confirm=delete&id=${idOf(rows, "Hire contractor")}`, JAN + 4 * DAY);
+      assert.deepEqual(lookbackCounts(ctx), before);
+      await postForm(ctx, "action=delete-all&confirm=delete", JAN + 5 * DAY);
+      assert.deepEqual(await exportedRows(ctx, JAN + 5 * DAY), []);
+      assert.deepEqual(lookbackCounts(ctx), before, "a deletion never lowers a count, and no record is opened to count it");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("files a person under their earliest look-back day, once", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = outsideWorld();
+      // Thursday 1 January. The first decision gets the default 14 days. The second names Friday.
+      await decide(ctx, fake, "Hire contractor", JAN);
+      assert.deepEqual(lookbackCounts(ctx).people, { "2026-01-15": 1 });
+      await decide(ctx, fake, "Ship the beta Friday", JAN);
+      assert.deepEqual(lookbackCounts(ctx).due, { "2026-01-02": 1, "2026-01-15": 1 });
+      assert.deepEqual(lookbackCounts(ctx).people, { "2026-01-02": 1 }, "one person, filed under the earlier day");
+      // A third, later one does not move them, and neither does anything after their day has come.
+      await decide(ctx, fake, "Move office", JAN + 3 * DAY);
+      assert.deepEqual(lookbackCounts(ctx).people, { "2026-01-02": 1 });
+      assert.deepEqual(lookbackCounts(ctx).due, { "2026-01-02": 1, "2026-01-15": 1, "2026-01-18": 1 });
+      assert.deepEqual(counts(ctx, OUTSIDE_KEYS.choices), { "2026-01-01": 2, "2026-01-04": 1 });
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("leaves the record and the counters alone for an account on the internal list", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = "owner@grill.example, invitee@example.com";
+      await decide(ctx, fake, "Hire contractor", JAN);
+      const [row] = await exportedRows(ctx, JAN);
+      await postForm(ctx, `action=review&id=${encodeURIComponent(row.id)}&value=set&review=2026-01-20`, JAN);
+      await postForm(ctx, `action=outcome&id=${encodeURIComponent(row.id)}&value=held`, FEB);
+      assert.deepEqual(lookbackCounts(ctx), { due: {}, people: {}, done7: {}, done14: {} });
+      assert.deepEqual(counts(ctx, OUTSIDE_KEYS.choices), {});
+      const [after] = await exportedRows(ctx, FEB);
+      assert.equal(after.lookback_counted_day, "");
+      assert.match(after.lookback.happened, /held/i);
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksDone]), "1", "the all-accounts funnel still counts it");
     } finally {
       await fake.close();
     }
