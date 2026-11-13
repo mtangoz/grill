@@ -299,7 +299,7 @@ describe("seed validation", () => {
 
   it("rejects an email address, a web address, a phone number and any long dash", () => {
     const withText = (text) => seedProblems(seed("f-oven", "oven", { user_ask: `${ASKS.oven("f-oven")} ${text}` })).join("\n");
-    assert.match(withText("Reach me at pat.lee@bakery-mail.org for more."), /looks like an email address/);
+    assert.match(withText("Reach me at pat.lee@bakery.example for more."), /looks like an email address/);
     assert.match(withText("The quote is on https://ovens.example/quote today."), /looks like a web address/);
     assert.match(withText("See www.second-oven-shop.net for the model."), /looks like a web address/);
     assert.match(withText("The seller is at ovenbarn.com and ships free."), /looks like a web address/);
@@ -1962,7 +1962,7 @@ describe("eval-four-arm.mjs validate-seeds and assign-authors", () => {
     const file = join(dir, "bad.jsonl");
     const rows = tinySet();
     rows[0] = { ...rows[0], kind: "odd", extra: "x" };
-    rows[1] = { ...rows[1], user_ask: `${rows[1].user_ask} Mail pat@print-shop.org today.` };
+    rows[1] = { ...rows[1], user_ask: `${rows[1].user_ask} Mail pat@print-shop.example today.` };
     writeFileSync(file, `${toJsonl(rows)}{broken\n`);
     const { code, stdout } = await runCli(["validate-seeds", file], envFor());
     assert.equal(code, 1);

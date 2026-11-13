@@ -1183,7 +1183,7 @@ describe("renderResults turns the counts into the page", () => {
     assert.equal(textOf(items[3]), "Output rules. 0 of 29 answers broke the output rules.");
     assert.equal(
       textOf(items[4]),
-      "A second reading. A separate quality check read the judge's answers and found the planted flaw named in 22 of 23 cases. These are the same cases, so this says nothing about how good the judge is either.",
+      "A second reading. A separate quality check read the judge's answers and found the planted flaw or loaded question named in 22 of 23 cases. These are the same cases, so this says nothing about how good the judge is either.",
     );
     assert.equal(items.length, 7);
     const section = textOf(html);

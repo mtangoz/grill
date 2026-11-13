@@ -976,7 +976,7 @@ export function renderRegression(json) {
     items.push(`<strong>Output rules.</strong> ${countWords(run.schema_violations.k, run.schema_violations.of)} answers broke the output rules.`);
     if (run.semantic.of > 0) {
       items.push(
-        `<strong>A second reading.</strong> A separate quality check read the judge's answers and found the planted flaw named in ${countWords(run.semantic.caught, run.semantic.of)} cases. These are the same cases, so this says nothing about how good the judge is either.`,
+        `<strong>A second reading.</strong> A separate quality check read the judge's answers and found the planted flaw or loaded question named in ${countWords(run.semantic.caught, run.semantic.of)} cases. These are the same cases, so this says nothing about how good the judge is either.`,
       );
     }
     items.push(
