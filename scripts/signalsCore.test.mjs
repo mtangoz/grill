@@ -48,6 +48,20 @@ describe("the form and the parser agree", () => {
     // A name the form does not offer is still dropped whole.
     assert.equal(parseSignal(body(rated("claude", "yes"))), null);
   });
+
+  it("the grill skill names every judge family the form offers for the signal link", () => {
+    // The skill fills the link's judge field. A family it does not name is filed as other.
+    const skill = readFileSync(join(ROOT, "skills/grill/SKILL.md"), "utf8");
+    const lines = skill.split("\n").filter((line) => line.startsWith("- `judge`:"));
+    assert.equal(lines.length, 1, "the skill has one judge line for the signal link");
+    const [line] = lines;
+    assert.match(line, /Use `other` for anything else, and `paste-route` for the paste route\./);
+    const named = line.slice(0, line.indexOf("Use `other`"));
+    const families = FIELDS.judge.options.filter((option) => option !== "other" && option !== "paste-route");
+    assert.equal(families.length, 9);
+    const missing = families.filter((family) => !new RegExp(`\\b${family}\\b`).test(named));
+    assert.deepEqual(missing, []);
+  });
 });
 
 describe("parseSignal", () => {

@@ -137,7 +137,7 @@ If they say yes, give them this link, filled in, to open and submit themselves:
 `https://github.com/mtangoz/grill/issues/new?template=grill-signal.yml&event=rated&category=…&judge=…&verdict=…&rating=…&client=…`
 
 - `category`: one of pricing, hiring, fundraising, product, timing, vendor, operations, personal, other.
-- `judge`: the served model's family, which is the part before the `/`, such as openai, google, deepseek, meta, mistral, qwen, xai or moonshot. Use `other` for anything else, and `paste-route` for the paste route.
+- `judge`: the served model's family, which is the part before the `/`, such as anthropic, openai, google, deepseek, meta, mistral, qwen, xai or moonshot. Use `other` for anything else, and `paste-route` for the paste route.
 - `verdict`: `solid`, `solid if`, `shaky`, or `doesn't hold up`, the same words as the verdict. In the link, encode a space as `%20` and the apostrophe as `%27`, so `solid if` is `solid%20if` and `doesn't hold up` is `doesn%27t%20hold%20up`.
 - `rating`: yes or no.
 - `client`: desktop, web, phone or code.
