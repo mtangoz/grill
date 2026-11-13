@@ -198,6 +198,30 @@ describe("grill without a key", () => {
     await c.close();
   });
 
+  it("does not point a person with no key at a paid plan", async () => {
+    const c = await initialized({});
+    let reply = "";
+    try {
+      reply = textOf(await c.request("tools/call", { name: "grill", arguments: { subject: "We will raise prices." } }));
+    } finally {
+      await c.close();
+    }
+    // Paid plans are off. The reply gives the steps that work today and nothing else.
+    assert.doesNotMatch(reply, /Grill Pro|\bPro\b|managed key/);
+    assert.doesNotMatch(reply, /grillyour\.ai\/(?:pro|pricing|checkout|notify)\b/);
+    assert.deepEqual(
+      reply.trim().split("\n").map((line) => line.replace(/https:\/\/\S+/g, "<link>")),
+      [
+        "Grill isn't set up yet: it needs a key for its model router, OpenRouter.",
+        "1. Create one at <link> Sign in, and add credit.",
+        "2. Paste it into Grill's settings where you installed it (Claude Desktop: Settings → Extensions → Grill).",
+        "   Or save it once for every app on this computer: run `npx -y grillyour --set-key` in a terminal, paste the key, press Enter, then Ctrl-D.",
+        "Step-by-step: <link>",
+        "Until then, the grill skill can write the subject as a prompt for you to paste into ChatGPT or Gemini instead.",
+      ],
+    );
+  });
+
   it("treats an unfilled install-dialog placeholder as no key", async () => {
     const c = await initialized({ GRILL_API_KEY: "${user_config.openrouter_api_key}" });
     const res = await c.request("tools/call", { name: "grill", arguments: { subject: "x" } });

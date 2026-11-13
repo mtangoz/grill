@@ -350,7 +350,6 @@ const SETUP_TEXT = [
   "2. Paste it into Grill's settings where you installed it (Claude Desktop: Settings → Extensions → Grill).",
   "   Or save it once for every app on this computer: run `npx -y grillyour --set-key` in a terminal, paste the key, press Enter, then Ctrl-D.",
   `Step-by-step: ${SETUP_URL}`,
-  "Have Grill Pro? Sign in at https://grillyour.ai/pro and paste the managed key into the same place. You can also set the judge model there.",
   "Until then, the grill skill can write the subject as a prompt for you to paste into ChatGPT or Gemini instead.",
 ].join("\n");
 
