@@ -4263,4 +4263,26 @@ describe("outside counters, written when the event happens", { concurrency: fals
       assert.doesNotMatch(readFileSync(join(ROOT, file), "utf8"), /GRILL_INTERNAL_EMAILS\s*[:=]\s*["'`][^"'`]*@/, file);
     }
   });
+
+  it("names the setting and the readout in the hosted notes, and both counter rows in the data ledger", () => {
+    const hostedDoc = readFileSync(join(ROOT, "docs/HOSTED.md"), "utf8");
+    assert.match(hostedDoc, /\| `GRILL_INTERNAL_EMAILS` \|/);
+    assert.match(hostedDoc, /node scripts\/outside-loop\.mjs/);
+    assert.match(hostedDoc, /not counted: internal list not set/);
+    const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
+    const counters = ledger.split("\n").find((line) => line.startsWith("| Outside-use counters"));
+    const marks = ledger.split("\n").find((line) => line.startsWith("| Outside-count marks"));
+    assert.ok(counters, "the ledger has a row for the counters");
+    assert.ok(marks, "the ledger has a row for the per-account marks");
+    assert.match(counters, /`grill:metric:outside:`/);
+    assert.match(counters, /They hold no title, text, verdict or account ID\./);
+    assert.match(counters, /Accounts on Grill's own list of maintainer, test and reviewer addresses are not counted\./);
+    assert.match(counters, /With few accounts these numbers describe a handful of people, and Grill's operators can tell who\./);
+    assert.match(counters, /No job opens a kept record to make them\./);
+    assert.match(marks, /`grill:hosted:outside:<account id>`/);
+    assert.match(marks, /Until you delete the account/);
+    for (const row of [counters, marks]) assert.doesNotMatch(row, /[\u2013\u2014]/);
+    // The approved privacy line is still there, byte for byte.
+    assert.ok(ledger.includes("Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us."));
+  });
 });
