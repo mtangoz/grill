@@ -840,6 +840,7 @@ describe("the /start page", () => {
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     const chat = readme.slice(readme.indexOf("### Grill in chat"), readme.indexOf("###", readme.indexOf("### Grill in chat") + 4));
     assert.match(chat, /https:\/\/grillyour\.ai\/start\//);
+    assert.match(chat, /The steps are at \[grillyour\.ai\/start\]\(https:\/\/grillyour\.ai\/start\/\?ref=readme\)\./, "the README setup link carries the readme tag");
     assert.match(chat, /https:\/\/claude\.ai\/customize\/connectors\?modal=add-custom-connector/);
     assert.match(chat, /Customize → Connectors → Add custom connector/);
     assert.doesNotMatch(chat, /Settings → Connectors → Add custom connector/);
@@ -984,8 +985,11 @@ describe("the /demo page", () => {
     const cta = demo.indexOf('class="cta"');
     const foot = demo.indexOf('class="footer"');
     assert.ok(lastDetails < cta && cta < foot, "the call to action follows the examples");
-    assert.match(demo, /<a class="button" href="\/start\/">Connect Grill<\/a>/);
-    assert.match(demo, /<a href="\/start\/">Anyone can sign up<\/a>/);
+    // Both links under the examples carry the demo tag, so /start can count who came from here.
+    assert.match(demo, /<a class="button" href="\/start\/\?ref=demo">Connect Grill<\/a>/);
+    assert.match(demo, /<a href="\/start\/\?ref=demo">Anyone can sign up<\/a>/);
+    assert.equal((demo.match(/href="\/start\/\?ref=demo"/g) ?? []).length, 2);
+    assert.equal((demo.match(/href="\/start\/"/g) ?? []).length, 1, "only the shared nav links /start/ without a tag");
   });
 
   it("builds to /demo/ and lands in the sitemap and llms.txt", () => {

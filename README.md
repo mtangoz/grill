@@ -28,7 +28,7 @@ When Grill is connected, most apps show a Grill tool call when it runs. If yours
 
 ### Grill in chat
 
-Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). Use the same email each time, the email you signed up with, every time.
+Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/start/?ref=readme). Use the same email each time, the email you signed up with, every time.
 
 - **Claude.ai**, verified working. Works on the web, the desktop app and the phone app. The free plan allows only one custom connector. On a Team plan, an owner adds Grill, then each person signs in to Grill themselves. [Add Grill to Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Grill&connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp). Check the name says Grill and the URL says `https://grillyour.ai/mcp`, then Add and Connect, and sign in. Link didn't open? Customize → Connectors → Add custom connector and paste `https://grillyour.ai/mcp`. Asking Claude in a chat to connect it does not work.
 - **ChatGPT**. On chatgpt.com, and in the desktop app where that is supported, in the same account or workspace where you add it. The iPhone and Android apps can't run custom connectors. Plugins → + → Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Tick I understand and want to continue, then Create, then Install, and sign in.
