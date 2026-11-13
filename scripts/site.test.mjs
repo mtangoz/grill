@@ -564,7 +564,7 @@ describe("the site build", () => {
       const sitemap = readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8");
       const pages = [...sitemap.matchAll(/<loc>https:\/\/grillyour\.ai\/([^<]*)<\/loc>/g)].map((match) => `${match[1]}index.html`);
       assert.ok(pages.length >= 14, `the sitemap lists ${pages.length} pages`);
-      for (const known of ["index.html", "terms/index.html", "contribute/index.html", "look-back/index.html", "privacy/index.html", "about/index.html", "contact/index.html", "miss/index.html", "faq/index.html", "start/index.html", "how-we-test/index.html"]) {
+      for (const known of ["index.html", "terms/index.html", "contribute/index.html", "look-back/index.html", "privacy/index.html", "about/index.html", "contact/index.html", "miss/index.html", "faq/index.html", "start/index.html", "how-we-test/index.html", "data-flow/index.html"]) {
         assert.ok(pages.includes(known), `the sitemap lists ${known}`);
       }
       return pages.map((p) => [p, readFileSync(join(ROOT, "_site", p), "utf8")]);
@@ -592,7 +592,7 @@ describe("the site build", () => {
   it("no page source has an em dash or an en dash, and every one keeps the Hold footer span", () => {
     const sources = readdirSync(join(ROOT, "site")).filter((name) => name.endsWith(".html")).sort();
     assert.ok(sources.length >= 14, `site/ holds ${sources.length} pages`);
-    for (const known of ["page.html", "terms.html", "privacy.html", "faq.html", "demo.html", "start.html", "miss.html", "how-we-test.html"]) {
+    for (const known of ["page.html", "terms.html", "privacy.html", "faq.html", "demo.html", "start.html", "miss.html", "how-we-test.html", "data-flow.html"]) {
       assert.ok(sources.includes(known), `site/${known} is read`);
     }
     const span = '<span>Made at <a href="https://hold.quest">Hold</a>';
@@ -1784,6 +1784,7 @@ describe("where saved grills are", () => {
     "site/contact.html",
     "site/check-your-ai.html",
     "site/contribute.html",
+    "site/data-flow.html",
     "site/demo.html",
     "site/how-we-test.html",
     "site/look-back.html",

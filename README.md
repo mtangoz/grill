@@ -119,6 +119,8 @@ Saved decisions and look-back reminders are free today with [Grill in your chat]
 - Grill news line: after a finished grill, at most once a session, and only within 7 days of a release or on the first 3 days of a month, a line with a link to hear when an optional Pro plan is ready. Showing the line sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own.
 - Anonymous usage stats: off by default. One metadata ping to Grill's website after the first successful grill, and never again. Never the decision, the question, the verdict, or your key.
 
+Where your decision goes on each route, and what is kept and for how long: [grillyour.ai/data-flow](https://grillyour.ai/data-flow/).
+
 What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
 
 ### Turn anonymous usage stats on

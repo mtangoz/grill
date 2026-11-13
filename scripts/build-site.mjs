@@ -3,7 +3,7 @@
  * Build the public onboarding site. The home page's one source is site/page.html. Every other page
  * is a file in site/ that one writePage call below registers, and it borrows the home page's styles.
  * Today those are terms, contribute, look-back, start, privacy, about, contact, support, demo, faq,
- * check-your-ai and how-we-test, plus miss when GRILL_MISS=1. The writePage calls are the list:
+ * check-your-ai, how-we-test and data-flow, plus miss when GRILL_MISS=1. The writePage calls are the list:
  * this comment is not.
  *
  * site/page.html is a page body (title, styles, markup, script) with no document skeleton, so the
@@ -570,6 +570,15 @@ writePage("how-we-test.html", {
   name: "How Grill tests its judge",
   blurb: "Not measured yet: whether an outside judge catches more than the same model starting fresh. What has been measured, as counts: a weekly regression check, one held-out check of a candidate rule, and how many people use Grill.",
 });
+// /data-flow/ says where a decision goes on each route, and what is kept and for how long.
+// scripts/dataFlow.test.mjs holds its whole text and checks its numbers against the code.
+writePage("data-flow.html", {
+  description: "Where your decision goes when you grill it, who sees it, and what Grill keeps and for how long, route by route.",
+  url: `${SITE_URL}data-flow/`,
+  outDir: "data-flow",
+  name: "Where your decision goes",
+  blurb: "Route by route: what leaves your assistant when you grill a decision, who sees it, and what Grill keeps and for how long.",
+});
 // The miss page is built only when GRILL_MISS=1, the same switch that opens /miss/send. Its fields
 // and its in-browser check come from scripts/missCore.mjs, the module the server checks with.
 if (process.env.GRILL_MISS === "1") {
@@ -695,4 +704,4 @@ writeBuilt(
     "",
   ].join("\n"),
 );
-console.log(`built _site/index.html and the terms, contribute, look-back, start, privacy and demo pages, plus about, contact, support, faq, check-your-ai and how-we-test${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);
+console.log(`built _site/index.html and the terms, contribute, look-back, start, privacy and demo pages, plus about, contact, support, faq, check-your-ai, how-we-test and data-flow${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);
