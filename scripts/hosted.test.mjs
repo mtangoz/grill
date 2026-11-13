@@ -69,7 +69,7 @@ import {
 import { testSigningKey } from "./testSigningKey.mjs";
 import { lookBack, parseRecords, recordBlock, sourceAppLabel } from "./reflection.mjs";
 import { readFeedbackRecords } from "./feedbackCore.mjs";
-import { OUTSIDE_KEYS, OUTSIDE_LIVE_KEY, OUTSIDE_SEEN_KEY, hashFields } from "./outsideLoopCore.mjs";
+import { OUTSIDE_KEYS, OUTSIDE_LIVE_KEY, OUTSIDE_SEEN_KEY, SEEN_STALE_DAYS, hashFields } from "./outsideLoopCore.mjs";
 import { outsideLoopLines } from "./outside-loop.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -4490,5 +4490,27 @@ describe("outside counters, written when the event happens", { concurrency: fals
     for (const row of [counters, marks]) assert.doesNotMatch(row, /[\u2013\u2014]/);
     // The approved privacy line is still there, byte for byte.
     assert.ok(ledger.includes("Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us."));
+  });
+
+  it("says in the hosted notes and the ledger what the readout can see once the list is unset, and names both day keys", () => {
+    const hostedDoc = readFileSync(join(ROOT, "docs/HOSTED.md"), "utf8");
+    const setting = hostedDoc.split("\n").find((line) => line.startsWith("| `GRILL_INTERNAL_EMAILS` |"));
+    assert.match(setting, /Keep it set: if it is unset later, counting stops from then on, and what happens in that stretch is never counted\./);
+    const notes = hostedDoc.split("\n").find((line) => line.startsWith("With `GRILL_INTERNAL_EMAILS` set, an account that is not on the list"));
+    assert.ok(notes, "the hosted notes have the paragraph on the outside counters");
+    assert.match(notes, /The readout reads the store, not the server, so it cannot see whether the list is still set\./);
+    assert.match(notes, /It prints the last day the server handled one of those events, from any account, with the list set\./);
+    assert.match(notes, /When that day is more than 7 days old it prints a warning: either no account has used Grill since, or the list was unset on the server and nothing has been counted since\./);
+    assert.match(notes, /If the list was unset for a stretch and then set again, the readout does not show the gap\./);
+    assert.match(notes, new RegExp(`more than ${SEEN_STALE_DAYS} days old`), "the notes give the number the readout uses");
+    // The rule for a look-back that is already answered when its date is counted.
+    assert.match(notes, /A look-back that already has its answer when its date is counted is counted as due and as done\. That covers an early answer, and a record answered before counting began whose date is moved later\./);
+    const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
+    const counters = ledger.split("\n").find((line) => line.startsWith("| Outside-use counters"));
+    assert.match(counters, /Two more keys each hold one UTC day: the day counting began, and the last day Grill's server handled one of these events, from any account, while that list was set\./);
+    assert.doesNotMatch(counters, /One more key holds/);
+    for (const text of [setting, notes, counters]) assert.doesNotMatch(text, /[–—]/);
+    // Both keys sit under the prefix that row names.
+    for (const key of [OUTSIDE_LIVE_KEY, OUTSIDE_SEEN_KEY]) assert.ok(key.startsWith("grill:metric:outside:"), key);
   });
 });
