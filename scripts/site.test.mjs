@@ -1075,6 +1075,9 @@ describe("the /check-your-ai page", () => {
     assert.match(source, /href="\/demo\/"/);
     assert.match(source, /href="\/start\/"/);
     assert.ok(source.includes(JUDGE_LINE));
+    // The sentence before the judge line does not say different company on its own.
+    assert.ok(source.includes(`<p class="note">The assistant you drafted with is checking its own draft. A second AI is there to argue the other side. ${JUDGE_LINE}</p>`));
+    assert.doesNotMatch(source, /A second AI from a different company/);
     assert.match(source, /Say [“"]grill this[”"]/);
     assert.match(source, /made-up/);
     assert.match(source, /Nothing in that example is a real decision/);
@@ -1127,6 +1130,7 @@ describe("the /check-your-ai page", () => {
     assert.equal(rest.match(/<script\b/gi)?.length ?? 0, 0, "/check-your-ai has a script of its own");
     assert.ok(md.includes(H1));
     assert.ok(md.includes(JUDGE_LINE));
+    assert.ok(md.includes(`A second AI is there to argue the other side. ${JUDGE_LINE}`), "the Markdown twin carries the same paragraph");
     assert.ok(md.includes("https://grillyour.ai/demo/"));
     assert.ok(md.includes("https://grillyour.ai/start/"));
     assert.doesNotMatch(md, /<script/i);
@@ -1216,7 +1220,9 @@ describe("the about and contact pages", () => {
     });
     assert.match(text, /Hear the strongest case against your plan, then decide for yourself\./);
     assert.doesNotMatch(text, /Get a second opinion before you decide\./);
-    assert.match(text, /A model from another company gives a verdict and one cheap test\./);
+    // "A model from another company" said different company with no condition. The next line carries it.
+    assert.match(text, /An outside judge gives a verdict and one cheap test\./);
+    assert.doesNotMatch(text, /A model from another company/);
     assert.ok(
       text.includes("The judge did not write your plan. When Grill can tell which AI did, the judge comes from a different company. When it cannot, the verdict says so."),
       "about should say the judge is from a different company only when Grill can tell which AI wrote the plan",

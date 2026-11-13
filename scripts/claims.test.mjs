@@ -5,8 +5,10 @@
 //
 // This file guards the pages, docs, skills and prompt listed below, and the built
 // llms.txt that agents read. In llms.txt it also reads sentence by sentence: one that
-// says "different company" has to keep the condition. It does not read the hosted tool
-// strings, the judge's notes, or docs/PRINCIPLES.md and docs/STRATEGY.md yet.
+// says "different company" has to keep the condition. It reads the built about,
+// check-your-ai, demo and FAQ pages the same way, as HTML and as their Markdown twins.
+// It does not read the hosted tool strings, the judge's notes, or docs/PRINCIPLES.md
+// and docs/STRATEGY.md yet.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -63,6 +65,8 @@ function bannedIn(text) {
 // "different company" has to stand on its own. It keeps the condition, or it says what
 // has not been measured, or it names the routing check by its plain name.
 const STANDS_ALONE = [/\bwhen grill can tell\b/, /\bnot yet measured\b/, /\bnot measured yet\b/, /\bthan the declared author\b/];
+// "Another company" says the same thing as "a different company", so it is read the same way.
+const COMPANY_CLAIM = /\b(different|another) company\b/;
 
 /** The sentences that say "different company" and would mislead if quoted alone. */
 function unconditionalIn(text) {
@@ -70,8 +74,21 @@ function unconditionalIn(text) {
     .split(/\n+/)
     .flatMap((line) => line.split(/(?<=[.?!])\s+/))
     .map((sentence) => sentence.trim())
-    .filter((sentence) => flatten(sentence).includes("different company"))
+    .filter((sentence) => COMPANY_CLAIM.test(flatten(sentence)))
     .filter((sentence) => !STANDS_ALONE.some((shape) => shape.test(flatten(sentence))));
+}
+
+// The built pages this file answers for. Each has a Markdown twin that agents read.
+const BUILT_PAGES = ["about", "check-your-ai", "demo", "faq"];
+
+/** What a built page says: styles and scripts dropped, a line break where a block ends, tags removed. */
+function pageText(html) {
+  return String(html)
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, (block) => (/application\/ld\+json/i.test(block) ? block : " "))
+    .replace(/<\/(p|li|h[1-6]|div|title|td|th|dd|dt|summary)>|<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[ \t]+/g, " ");
 }
 
 describe("claims Grill does not make before they are measured", () => {
@@ -125,5 +142,39 @@ describe("claims Grill does not make before they are measured", () => {
     const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
     assert.match(llms, /different company/, "llms.txt still says when the judge is from a different company");
     assert.deepEqual(unconditionalIn(llms), []);
+  });
+
+  it("every sentence on the built pages that says different company keeps the condition, in the HTML and in the Markdown twin", () => {
+    // The check itself: the two sentences these pages used to carry are caught, alone and inside
+    // a paragraph whose next sentence has the condition. A tag in the middle does not hide one.
+    assert.deepEqual(unconditionalIn("A model from another company gives a verdict and one cheap test."), [
+      "A model from another company gives a verdict and one cheap test.",
+    ]);
+    assert.deepEqual(
+      unconditionalIn(
+        pageText(
+          '<h2>Why a second AI helps</h2>\n<p class="note">A second AI from a <em>different company</em> is there to argue the other side. The judge did not write your draft. When Grill can tell which AI did, the judge comes from a different company. When it cannot, the verdict says so.</p>',
+        ),
+      ),
+      ["A second AI from a different company is there to argue the other side."],
+    );
+    assert.deepEqual(unconditionalIn("An outside judge gives a verdict and one cheap test. A second AI is there to argue the other side."), []);
+    assert.deepEqual(unconditionalIn(pageText("<style>p::after { content: 'a different company.'; }</style><p>You decide.</p>")), []);
+
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+    const hits = [];
+    let conditional = 0;
+    for (const page of BUILT_PAGES) {
+      const html = pageText(readFileSync(join(ROOT, "_site", page, "index.html"), "utf8"));
+      const md = readFileSync(join(ROOT, "_site", page, "index.md"), "utf8");
+      assert.ok(md.length > 200 && html.length > 200, `${page} was built, with its Markdown twin`);
+      for (const [file, text] of [[`${page}/index.html`, html], [`${page}/index.md`, md]]) {
+        if (COMPANY_CLAIM.test(flatten(text))) conditional += 1;
+        for (const sentence of unconditionalIn(text)) hits.push(`${file}: ${sentence}`);
+      }
+    }
+    assert.deepEqual(hits, []);
+    // About, check-your-ai and the FAQ still say when the judge is from a different company. The demo does not say it.
+    assert.equal(conditional, 6);
   });
 });
