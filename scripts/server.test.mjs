@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import {
   AUTHOR_VENDORS,
+  GRILL_OPENING,
+  GRILL_OPENING_GUESSED,
   GUESSED_AUTHOR_LINE,
   INDEPENDENCE_NOT_VERIFIED,
   INDEPENDENCE_RELAY,
@@ -898,6 +900,10 @@ describe("MCP initialize: the company behind the client", () => {
           // The once-only line and the instructions claim a different company only when the session knows the author.
           assert.equal(description.includes(ONCE_DISCLOSURE), sessionKnows, label);
           assert.equal(description.includes(ONCE_DISCLOSURE_UNVERIFIED), !sessionKnows, label);
+          // The opening sentence follows the same rule: no company claim on a guess.
+          assert.equal(description.includes("a model from a different company than the assistant that wrote it"), sessionKnows, label);
+          assert.equal(description.startsWith(`${GRILL_OPENING} The judge is picked by openrouter/auto.`), sessionKnows, label);
+          assert.equal(description.startsWith(`${GRILL_OPENING_GUESSED} The judge is picked by openrouter/auto.`), !sessionKnows, label);
           assert.equal(instructions.startsWith("Grill sends the decision as the user stated it to an outside judge from a different company. "), sessionKnows, label);
           assert.equal(instructions.startsWith("Grill sends the decision as the user stated it to an outside judge. "), !sessionKnows, label);
           assert.ok(description.includes(INDEPENDENCE_RELAY), label);
@@ -1030,6 +1036,32 @@ describe("naming the author", () => {
     assert.ok(countWords(ONCE_DISCLOSURE_UNVERIFIED) >= 12 && countWords(ONCE_DISCLOSURE_UNVERIFIED) <= 25, countWords(ONCE_DISCLOSURE_UNVERIFIED));
     assert.equal(INDEPENDENCE_RELAY, "If a line that starts with Independence not verified follows the run note, show that line as written.");
     for (const text of [GUESSED_AUTHOR_LINE, ONCE_DISCLOSURE_UNVERIFIED, INDEPENDENCE_RELAY]) assert.doesNotMatch(text, /[\u2013\u2014]/);
+  });
+
+  it("opens the tool description without a company claim when the author is a guess", () => {
+    // A directory scan, and any app the server does not recognise, reads the guessed form.
+    assert.equal(
+      GRILL_OPENING,
+      "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).",
+    );
+    assert.equal(
+      GRILL_OPENING_GUESSED,
+      "Send a decision, plan or forecast to an outside AI judge. Grill cannot tell which company's model you are, so it rules out Anthropic only. Set author to your own model family and that company is ruled out instead.",
+    );
+    assert.doesNotMatch(GRILL_OPENING_GUESSED, /different company|Claude|[\u2013\u2014]/);
+    for (const checkOn of [true, false]) {
+      const known = buildGrillTools({ checkOn }).find((tool) => tool.name === "grill").description;
+      const guessed = buildGrillTools({ checkOn, authorGuessed: true }).find((tool) => tool.name === "grill").description;
+      assert.ok(known.startsWith(`${GRILL_OPENING} `), known.slice(0, 200));
+      assert.ok(guessed.startsWith(`${GRILL_OPENING_GUESSED} `), guessed.slice(0, 240));
+      assert.equal(guessed.includes(GRILL_OPENING), false);
+      assert.equal(known.includes(GRILL_OPENING_GUESSED), false);
+      // Nothing else differs but the opening and the once-only line.
+      assert.equal(
+        guessed.replace(GRILL_OPENING_GUESSED, GRILL_OPENING).replace(ONCE_DISCLOSURE_UNVERIFIED, ONCE_DISCLOSURE),
+        known,
+      );
+    }
   });
 });
 

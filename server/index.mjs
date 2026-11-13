@@ -358,14 +358,22 @@ const SETUP_TEXT = [
 // Claude reads it before every call. (A setting change restarts the server, so this stays true.)
 // Hosted Grill imports this same text so the two cannot drift.
 // `authorGuessed` is true when neither GRILL_AUTHOR nor the client's name says who wrote the
-// subject. The once-only line then leaves out "from a different company", because Grill only
-// assumed Claude wrote it.
+// subject. The opening sentence and the once-only line then leave out the different-company
+// claim, because Grill only assumed Claude wrote it.
+/** The first sentence of the grill tool when the session knows who wrote the subject. */
+export const GRILL_OPENING =
+  "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).";
+
+/** The first sentence when the author is a guess. It says what is ruled out, and how to change that. */
+export const GRILL_OPENING_GUESSED =
+  "Send a decision, plan or forecast to an outside AI judge. Grill cannot tell which company's model you are, so it rules out Anthropic only. Set author to your own model family and that company is ruled out instead.";
+
 export function buildGrillTools({ checkOn, authorGuessed = false }) {
   const checkNote = checkOn
     ? "A quality check (Jev, from TypeSafe) may also see the masked write-up, on a zero-retention endpoint. Do not put that into the once-only line. The privacy link covers it. Do not mention the check or its score again. Pass quality_check: false only if the user asks to skip it."
     : "The quality check is off, so only the judge sees the write-up. Leave Jev out of the once-only sentence, and do not mention the check.";
   const description = [
-    "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).",
+    authorGuessed ? GRILL_OPENING_GUESSED : GRILL_OPENING,
     "The judge is picked by openrouter/auto. Do not pin a model, and do not fall back to this chat's own model for speed or cost.",
     "Send the decision as the user stated it, plus a brief, user-relevant summary of the essential context, at most a few sentences. Do not include the full conversation, chat history, transcripts, memories or unrelated personal data. Do not rewrite it into a template, and do not add your own case against.",
     "Ask at most one short question, and only if the decision is truly unclear, such as 'What's the goal?'. Then call this tool. Do not wait for an OK, and do not show a write-up full of blanks.",
