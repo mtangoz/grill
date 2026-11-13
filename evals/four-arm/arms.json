@@ -1,0 +1,27 @@
+{
+  "about": "Which models stand in the comparison arms. Every id here is a placeholder until the owner confirms it. The product judge is not set here: arm D runs the product as shipped, which asks only the Auto Router. See README.md in this folder.",
+  "status": "draft",
+  "registered": null,
+  "catalog_checked": "2026-11-13",
+  "families": {
+    "anthropic": {
+      "author_model": "anthropic/claude-sonnet-5.5",
+      "author_model_status": "owner to confirm",
+      "stronger_model": "anthropic/claude-opus-5.5",
+      "stronger_model_status": "owner to confirm"
+    },
+    "openai": {
+      "author_model": "openai/gpt-6.1-terra",
+      "author_model_status": "owner to confirm",
+      "stronger_model": "openai/gpt-6.1-sol",
+      "stronger_model_status": "owner to confirm"
+    }
+  },
+  "graders": [
+    { "model": "google/gemini-3.1-flash-lite", "status": "owner to confirm" },
+    { "model": "deepseek/deepseek-chat-v3.1", "status": "owner to confirm" },
+    { "model": "mistralai/mistral-large", "status": "owner to confirm" },
+    { "model": "minimax/minimax-m3.1-flash", "status": "owner to confirm" },
+    { "model": "moonshotai/kimi-k3.1-pro", "status": "owner to confirm" }
+  ]
+}
