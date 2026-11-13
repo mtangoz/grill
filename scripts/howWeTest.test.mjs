@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { latestRun, renderResults, validateResults } from "./resultsCore.mjs";
+import { START_REF_LABELS } from "./weeklyMetricsCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (file) => readFileSync(join(ROOT, file), "utf8");
@@ -818,6 +819,42 @@ describe("the /how-we-test page", () => {
       assert.equal((built.md.match(/\?ref=how-we-test/g) ?? []).length, 1);
     }
   });
+});
+
+// ---------------------------------------------------------------------------
+// What the page leans on in other code.
+//
+// Two things on the page are true only if code outside the page makes them so:
+//   - "When it cannot, the verdict says so." The installed tool and the hosted connector have
+//     to add a line that says independence was not verified when Grill could not tell who
+//     wrote the plan.
+//   - The button's label, ?ref=how-we-test. The weekly report reads a label only when it is
+//     in START_REF_LABELS.
+// Both come with the change to the hosted and installed code, which is made apart from this
+// page. While none of it is in this tree, neither holds and the page must not ship from it.
+// The test then runs as a to-do: it fails in the report without failing the run. Once any
+// part of that change is here, the test is an ordinary one and all of it must be here.
+const NOT_VERIFIED = /independence[ _]not[ _]verified/i;
+const VERDICT_CODE = ["server/index.mjs", "scripts/hostedCore.mjs"];
+const saysSoIn = (file) => NOT_VERIFIED.test(read(file));
+const labelIsRead = START_REF_LABELS.includes("how-we-test");
+const notBackedYet = !labelIsRead && !VERDICT_CODE.some(saysSoIn);
+
+describe("what /how-we-test/ leans on in other code", () => {
+  it(
+    "the verdict says when independence was not verified, and the weekly report reads this page's label",
+    { todo: notBackedYet ? "the hosted and installed code that makes both true is not merged here yet, so do not ship the page from this tree" : false },
+    () => {
+      assert.ok(textOf(mainOf(first.html)).includes("When it cannot, the verdict says so."), "the page says it");
+      assert.ok(mainOf(first.html).includes('href="/start/?ref=how-we-test"'), "the button carries the label");
+      const missing = [];
+      for (const file of VERDICT_CODE) {
+        if (!saysSoIn(file)) missing.push(`${file} has no line that says independence was not verified`);
+      }
+      if (!labelIsRead) missing.push("START_REF_LABELS in scripts/weeklyMetricsCore.mjs does not hold how-we-test");
+      assert.deepEqual(missing, []);
+    },
+  );
 });
 
 describe("the way to /how-we-test/", () => {
