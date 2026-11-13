@@ -26,6 +26,7 @@ import {
   companyIdOf,
   isCommitHash,
   isIsoDate,
+  Z_95,
   mcnemarExactP,
   validateFourArm,
   validateResults,
@@ -135,6 +136,24 @@ export const OUTCOME_WORDS = Object.freeze({
 export const GAP_SEEN_WORDS = `a gap of ${EFFECT_POINTS} points or more was seen, and no direction is claimed`;
 /** The reason given when that gap was seen and its own test was not under ALPHA. */
 export const GAP_SEEN_REASON = `a gap of ${EFFECT_POINTS} points or more was seen, and the test could not tell it from chance`;
+/**
+ * Said beside the plain words of the middle branch when the 95% interval for D minus B, on
+ * either way of counting, reaches EFFECT_POINTS in either direction. "None of that size was
+ * found" and "one of that size was ruled out" are different things, and the reader is told which.
+ */
+export const NOT_RULED_OUT_REASON = `a difference of ${EFFECT_POINTS} points was not ruled out`;
+/**
+ * The reason for Not measured when the decision rule is not given D minus B for each author
+ * family. The sign flip is the one line of the rule that the pooled counts cannot show, so a
+ * caller that passes only the pooled counts gets no result.
+ */
+export const SPLIT_MISSING_REASON = "the split by author family is missing";
+/**
+ * Printed wherever the report says the sign flips. With about 60 flawed cases in each family
+ * and arm B catching about 70 in 100, the two families land on opposite sides about 41 to 42
+ * times in 100 when there is no true difference. A test works the figure out again.
+ */
+export const SIGN_FLIP_CHANCE_NOTE = "With no true difference this happens about 4 times in 10 by chance. It is not a finding that the families differ.";
 
 // == Seeds ======================================================================
 
@@ -185,6 +204,14 @@ export const FLAW_TYPES = Object.freeze([
   // type named for it would pull the flaw sentences toward the arms that carry the brief.
   "irreversible-no-trial",
 ]);
+/**
+ * The flaw types that sit close to what Grill's brief asks the judge to look for by name: a
+ * decision that defeats its own goal or crosses a guardrail, a small sample read too far, and
+ * a hard-to-undo step with no cheap try first. On these, arms B, C and D carry an instruction
+ * arm A does not, so D against A and B against A are shown by flaw type. D against B is not
+ * touched: both carry the brief.
+ */
+export const BRIEF_NAMED_FLAW_TYPES = Object.freeze(["contradicts-own-goal", "dropped-requirement", "small-sample", "irreversible-no-trial"]);
 /** The flaw type of every loaded seed, and of nothing else. */
 export const LOADED_FLAW_TYPE = "loaded-question";
 /** The flaw type of every sound seed, and of nothing else. */
@@ -1106,6 +1133,7 @@ export function analysedCases(seeds, writeUps, split) {
     cases.push({
       id: seed.id,
       kind: seed.kind,
+      flaw_type: seed.flaw_type,
       author_family: seed.author_family,
       drafter_family: seed.drafter_family,
       visible: seed.kind === "flawed" && (row.visible === "yes" || row.visible === "no") ? row.visible : null,
@@ -1283,7 +1311,24 @@ export function holm(pValues) {
   return out;
 }
 
-/** One way of counting a paired table: the two discordant cells, the exact p and the gap in points. */
+/**
+ * A 95% interval for the gap between two paired arms, in points: the first arm minus the second.
+ * `firstOnly` and `secondOnly` are the two cells where the arms disagree, and `n` is every
+ * paired case. It is the plain interval for a difference of two paired shares, so a page can
+ * work it out again from the cells in the public block. With no cases nothing is ruled out.
+ */
+export function pairedDiffInterval(firstOnly, secondOnly, n) {
+  for (const [value, name] of [[firstOnly, "firstOnly"], [secondOnly, "secondOnly"], [n, "n"]]) {
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new RangeError(`${name} must be a whole number, 0 or more`);
+  }
+  if (firstOnly + secondOnly > n) throw new RangeError("the two cells cannot add up to more than n");
+  if (n === 0) return { low: -100, high: 100 };
+  const gap = (firstOnly - secondOnly) / n;
+  const half = (Z_95 * Math.sqrt(Math.max(0, firstOnly + secondOnly - (firstOnly - secondOnly) ** 2 / n))) / n;
+  return { low: Math.max(-100, (gap - half) * 100), high: Math.min(100, (gap + half) * 100) };
+}
+
+/** One way of counting a paired table: the two discordant cells, the exact p, the gap in points and its 95% interval (low, high). */
 function pairedReading(firstOnly, secondOnly, n) {
   return {
     first_only: firstOnly,
@@ -1291,6 +1336,7 @@ function pairedReading(firstOnly, secondOnly, n) {
     n,
     p: mcnemarExactP(firstOnly, secondOnly),
     points: n > 0 ? ((firstOnly - secondOnly) / n) * 100 : 0,
+    ...pairedDiffInterval(firstOnly, secondOnly, n),
   };
 }
 
@@ -1353,13 +1399,22 @@ export function usableFloorMet(arms) {
  *   1. not-measured        too few usable write-ups, too few usable answers, or the grader
  *                          check was not passed.
  *   2. too-few-cases       fewer than MIN_ANALYSED_FLAWED flawed cases were analysed.
- *   3. no-pooled-headline  D minus B has opposite signs in the two author families.
+ *   3. no-pooled-headline  D minus B has opposite signs in the two author families. When D
+ *                          minus B is not given for each author family the sign cannot be
+ *                          checked, and the outcome is not-measured (SPLIT_MISSING_REASON).
+ *                          The pooled counts never stand in for the split.
  *   4. d-better            D caught more than B, under ALPHA, both ways of counting.
  *   5. d-worse             B caught more than D, under ALPHA, both ways of counting.
  *   6. no-difference-of-15-found   anything else. When the gap seen is EFFECT_POINTS or more
  *                          on either way of counting, the outcome is the same and its words
  *                          are GAP_SEEN_WORDS: the page never says none was found beside a
- *                          row that shows one.
+ *                          row that shows one. When the plain words stand and the 95% interval
+ *                          for D minus B still reaches EFFECT_POINTS, NOT_RULED_OUT_REASON is
+ *                          given beside them.
+ *
+ * `fifteen_not_ruled_out` is true when that interval, on either way of counting, reaches
+ * EFFECT_POINTS in either direction. It is a fact on every outcome that read a test, and a
+ * reason only in the middle branch.
  *
  * A public sentence about quality is allowed only on d-better, only when D is not worse
  * than C (D caught at least as many as C, both ways of counting), and never from a
@@ -1369,7 +1424,8 @@ export function usableFloorMet(arms) {
  *   analysed_flawed, write_up_floor_met, usable_floor_met, audit: {agree, of, labels_by},
  *   primary: {both, first_only, second_only, neither, usable_...},             first is D, second is B
  *   product_vs_stronger: the same cells,                                       first is D, second is C
- *   by_author: [{family, first_only, second_only}],                            D minus B, misses counted
+ *   by_author: [{family, first_only, second_only}],                            D minus B, misses counted,
+ *                                                                              one row for each author family
  *   single_drafter
  * }
  */
@@ -1382,6 +1438,7 @@ export function decideFourArm(facts) {
     sign_flip: null,
     d_not_worse_than_c: null,
     gap_seen: null,
+    fifteen_not_ruled_out: null,
     single_drafter: facts?.single_drafter === true,
     quality_sentence_allowed: false,
     changes: "none",
@@ -1395,6 +1452,14 @@ export function decideFourArm(facts) {
   if (facts.usable_floor_met !== true) return done("not-measured", { reasons: ["too few usable answers"] });
   if (!graderCheckPassed(facts.audit)) return done("not-measured", { reasons: ["the grader check was not passed"] });
   if (!Number.isInteger(facts.analysed_flawed) || facts.analysed_flawed < MIN_ANALYSED_FLAWED) return done("too-few-cases");
+  // The sign flip is the one line of this rule the pooled counts cannot show. A caller that
+  // does not pass D minus B for each author family, in whole numbers, gets no result.
+  const split = Array.isArray(facts.by_author) ? facts.by_author : [];
+  const wholeNumber = (value) => Number.isInteger(value) && value >= 0;
+  const splitGiven = AUTHOR_FAMILIES.every((family) =>
+    split.some((row) => isRecord(row) && row.family === family && wholeNumber(row.first_only) && wholeNumber(row.second_only)),
+  );
+  if (!splitGiven) return done("not-measured", { reasons: [SPLIT_MISSING_REASON] });
 
   const primary = pairedReadings(facts.primary);
   const versusStronger = pairedReadings(facts.product_vs_stronger);
@@ -1402,7 +1467,9 @@ export function decideFourArm(facts) {
   const dirs = readings.map(direction);
   // In whole numbers, so a gap of exactly EFFECT_POINTS is never lost to rounding.
   const gapSeen = readings.map((r) => r.n > 0 && Math.abs(r.first_only - r.second_only) * 100 >= EFFECT_POINTS * r.n);
-  const flip = signFlip(facts.by_author);
+  // A gap that was seen is inside its own interval, so it is never called ruled out.
+  const notRuledOut = gapSeen.includes(true) || readings.some((r) => r.high >= EFFECT_POINTS || r.low <= -EFFECT_POINTS);
+  const flip = signFlip(split);
   const notWorse =
     versusStronger.misses.first_only >= versusStronger.misses.second_only && versusStronger.usable.first_only >= versusStronger.usable.second_only;
   const shared = {
@@ -1410,6 +1477,7 @@ export function decideFourArm(facts) {
     sign_flip: flip,
     d_not_worse_than_c: notWorse,
     gap_seen: gapSeen.includes(true),
+    fifteen_not_ruled_out: notRuledOut,
     p: { misses: primary.misses.p, usable: primary.usable.p },
   };
 
@@ -1424,6 +1492,8 @@ export function decideFourArm(facts) {
   if (dirs[0] === -1 && dirs[1] === -1) return done("d-worse", { ...shared, changes: "no-quality-sentence-and-judge-quality-floor" });
   const reasons = shared.counts_agree ? [] : ["the two ways of counting disagree, so no direction is claimed"];
   if (gapSeen.some((seen, i) => seen && dirs[i] === 0)) reasons.push(GAP_SEEN_REASON);
+  // The plain words say none of that size was found. Beside them, say when one was not ruled out either.
+  if (!shared.gap_seen && notRuledOut) reasons.push(NOT_RULED_OUT_REASON);
   const middle = done("no-difference-of-15-found", { ...shared, reasons, changes: "no-quality-sentence" });
   return shared.gap_seen ? { ...middle, words: GAP_SEEN_WORDS } : middle;
 }
@@ -1450,7 +1520,8 @@ function comparisonCells(block, firstId, secondId) {
 /**
  * The facts decideFourArm needs, read from a public block. The split by author family, the
  * grader check and whether the write-up floor was met are not in that block, so the caller
- * passes them. Left out, the write-up floor counts as not met.
+ * passes them. Left out, the write-up floor counts as not met and the split counts as
+ * missing, and either one is Not measured: the block alone never gives a result.
  */
 export function factsFromBlock(block, { by_author = [], audit = null, write_up_floor_met = false } = {}) {
   const empty = { both: 0, first_only: 0, second_only: 0, neither: 0, usable_both: 0, usable_first_only: 0, usable_second_only: 0, usable_neither: 0 };
@@ -1507,6 +1578,11 @@ function rateOf(k, n) {
   return { k, n, low: interval.low, high: interval.high };
 }
 
+/** Row names in the split by flaw type: a case row with no flaw type, and the two sums. */
+export const FLAW_TYPE_NOT_RECORDED = "not recorded";
+export const BRIEF_NAMED_KEY = "close to what the brief names";
+export const OTHER_FLAW_TYPES_KEY = "other flaw types";
+
 function splitBy(cases, items, keyOf, first, second) {
   const keys = [];
   for (const c of cases) {
@@ -1521,10 +1597,29 @@ function splitBy(cases, items, keyOf, first, second) {
 }
 
 /**
+ * The two things the public block has no place for yet, in the form it could take them: the
+ * outcome as one id from OUTCOMES, and D minus B for each author family in whole numbers.
+ * The sign flip cannot be worked out from the pooled counts, so a page needs these two to
+ * print a result line. Its by_author rows are the rows decideFourArm takes.
+ */
+export function publicResult(decision, byAuthor) {
+  return {
+    outcome: decision.outcome,
+    by_author: (Array.isArray(byAuthor) ? byAuthor : []).map((row) => ({
+      family: row.key,
+      first_only: row.first_only,
+      second_only: row.second_only,
+      usable_first_only: row.usable_first_only,
+      usable_second_only: row.usable_second_only,
+    })),
+  };
+}
+
+/**
  * Everything the report prints. Not public: it carries rates, intervals and p values, which
  * the public block leaves to whoever reads the counts.
  *
- * cases: [{id, kind, author_family, drafter_family, visible}] the analysed cases
+ * cases: [{id, kind, flaw_type, author_family, drafter_family, visible}] the analysed cases
  * items: [{id, arm, usable, label, words, objections, served_company}] one per case and arm
  * write_up_floor_met: writeUpFloorMet(...).met for the split. Anything but true is Not measured.
  */
@@ -1565,6 +1660,10 @@ export function summarize({ cases, items, date, commit, single_drafter, audit, w
   const byDrafter = splitBy(list, all, (c) => c.drafter_family, "D", "B");
   const visibleKey = (c) => (c.visible === "yes" ? "visible in the write-up" : c.visible === "no" ? "not visible in the write-up" : "not settled");
   const byVisible = { product_vs_fresh_brief: splitBy(list, all, visibleKey, "D", "B"), product_vs_same_chat: splitBy(list, all, visibleKey, "D", "A") };
+  // Shown, not tested. On the types in BRIEF_NAMED_FLAW_TYPES arms B, C and D carry an instruction arm A does not.
+  const typeKey = (c) => (typeof c.flaw_type === "string" && c.flaw_type ? c.flaw_type : FLAW_TYPE_NOT_RECORDED);
+  const briefKey = (c) => (typeKey(c) === FLAW_TYPE_NOT_RECORDED ? FLAW_TYPE_NOT_RECORDED : BRIEF_NAMED_FLAW_TYPES.includes(c.flaw_type) ? BRIEF_NAMED_KEY : OTHER_FLAW_TYPES_KEY);
+  const againstSameChat = (keyOf) => ({ product_vs_same_chat: splitBy(list, all, keyOf, "D", "A"), fresh_brief_vs_same_chat: splitBy(list, all, keyOf, "B", "A") });
 
   const servedBy = tally(
     all.filter((item) => item.arm === "D" && item.usable === true),
@@ -1588,19 +1687,25 @@ export function summarize({ cases, items, date, commit, single_drafter, audit, w
     primary,
     secondary,
     alarm: alarmRanking(block.arms),
-    splits: { by_author: byAuthor, by_drafter: byDrafter, by_visible: byVisible },
+    splits: { by_author: byAuthor, by_drafter: byDrafter, by_visible: byVisible, by_flaw_type: againstSameChat(typeKey), by_brief_named: againstSameChat(briefKey) },
     product_served_by: servedBy,
     audit: audit ?? null,
     single_drafter: single_drafter === true,
     deviations,
     decision,
     public_block: block,
+    public_result: publicResult(decision, byAuthor),
   };
 }
 
 const pct = (rate) => (rate.n === 0 ? "n/a" : `${rate.k} of ${rate.n} (${Math.round((rate.k / rate.n) * 100)}%, 95% interval ${Math.round(rate.low * 100)}% to ${Math.round(rate.high * 100)}%)`);
 const pText = (p) => (p < 0.001 ? "under 0.001" : p.toFixed(3));
+const signed = (n) => {
+  const text = n.toFixed(1);
+  return Number(text) === 0 ? "0.0" : `${n > 0 ? "+" : ""}${text}`;
+};
 const pointsText = (n) => `${n > 0 ? "+" : ""}${n.toFixed(1)} points`;
+const intervalText = (reading) => `95% interval ${signed(reading.low)} to ${signed(reading.high)} points`;
 
 /** The report as plain text. It names no model and no case. */
 export function renderReport(report) {
@@ -1618,6 +1723,13 @@ export function renderReport(report) {
     return lines.join("\n");
   }
   if (d.outcome === "too-few-cases") lines.push(`Fewer than ${MIN_ANALYSED_FLAWED} flawed cases were analysed. This changes no claim.`);
+  if (d.outcome === "no-pooled-headline") lines.push(SIGN_FLIP_CHANCE_NOTE);
+  // The interval sits under the result line wherever a pooled result is read, so the words are never read
+  // without it. A sign flip voids the pooled headline, so no pooled gap is put under that one.
+  if (d.p !== null && d.outcome !== "no-pooled-headline") {
+    const gapText = (reading) => `${pointsText(reading.points)}, ${intervalText(reading)}`;
+    lines.push(`D minus B: ${gapText(report.primary.misses)}, with unusable answers counted as misses. On usable answers only: ${gapText(report.primary.usable)}.`);
+  }
   lines.push(`A public sentence about quality is ${d.quality_sentence_allowed ? "allowed to be proposed" : "not allowed"} on this result.`);
   if (report.single_drafter) lines.push("Single-drafter set: this result may remove a quality claim. It cannot restore one.");
   if (report.deviations.length) lines.push(`Deviations from the registered protocol: ${report.deviations.join("; ")}.`);
@@ -1629,9 +1741,9 @@ export function renderReport(report) {
   }
 
   const row = (test, holmP) =>
-    `| ${test.first} against ${test.second}: ${test.name} | ${test.misses.first_only} to ${test.misses.second_only} (${pointsText(test.misses.points)}, p ${pText(test.misses.p)}) | ${test.usable.first_only} to ${test.usable.second_only} (${pointsText(test.usable.points)}, p ${pText(test.usable.p)}) | ${holmP === null ? "primary" : pText(holmP)} |`;
+    `| ${test.first} against ${test.second}: ${test.name} | ${test.misses.first_only} to ${test.misses.second_only} (${pointsText(test.misses.points)}, p ${pText(test.misses.p)}), ${intervalText(test.misses)} | ${test.usable.first_only} to ${test.usable.second_only} (${pointsText(test.usable.points)}, p ${pText(test.usable.p)}), ${intervalText(test.usable)} | ${holmP === null ? "primary" : pText(holmP)} |`;
   lines.push("", "## Paired tests (exact McNemar, two-sided)", "");
-  lines.push("Each cell reads: cases only the first arm caught, to cases only the second arm caught.", "");
+  lines.push("Each cell reads: cases only the first arm caught, to cases only the second arm caught. The 95% interval is for the gap between the two arms, in points.", "");
   lines.push("| Test | Misses counted | Usable only | Holm p (misses counted) |", "| --- | --- | --- | --- |");
   lines.push(row(report.primary, null));
   for (const test of report.secondary) lines.push(row(test, test.p_holm));
@@ -1646,15 +1758,27 @@ export function renderReport(report) {
   lines.push("", "## Loaded cases (described, not tested)", "");
   for (const arm of report.arms) lines.push(`- ${arm.arm}: ${arm.loaded.caught} of ${arm.loaded.usable} usable answers named how the question was loaded (${arm.loaded.of} cases).`);
 
+  const splitRow = (name, r) => `- ${name}. Flawed cases: ${r.cases}. Only the first arm caught: ${r.first_only}. Only the second arm caught: ${r.second_only}. On usable answers only: ${r.usable_first_only} and ${r.usable_second_only}.`;
   const splitLines = (title, rows) => {
     lines.push("", `## ${title}`, "");
-    for (const r of rows) lines.push(`- ${r.key}. Flawed cases: ${r.cases}. Only the first arm caught: ${r.first_only}. Only the second arm caught: ${r.second_only}. On usable answers only: ${r.usable_first_only} and ${r.usable_second_only}.`);
+    for (const r of rows) lines.push(splitRow(r.key, r));
   };
   splitLines("D against B by author family", report.splits.by_author);
-  if (d.sign_flip) lines.push("", "The sign flips between the two author families, so there is no pooled headline.");
+  if (d.sign_flip) lines.push("", `The sign flips between the two author families, so there is no pooled headline. ${SIGN_FLIP_CHANCE_NOTE}`);
   splitLines("D against B by seed drafter family", report.splits.by_drafter);
   splitLines("D against B by whether the flaw is visible in the write-up alone", report.splits.by_visible.product_vs_fresh_brief);
   splitLines("D against A by whether the flaw is visible in the write-up alone", report.splits.by_visible.product_vs_same_chat);
+
+  // The two sums first, then each type. No test is run on these rows.
+  const sumNames = { [BRIEF_NAMED_KEY]: "The four types close to what the brief names, together", [OTHER_FLAW_TYPES_KEY]: "The other flaw types, together" };
+  const flawTypeLines = (title, pair) => {
+    lines.push("", `## ${title} by flaw type (shown, not tested)`, "");
+    lines.push(`Four flaw types sit close to what Grill's brief asks for by name: ${BRIEF_NAMED_FLAW_TYPES.join(", ")}. On those, arms B, C and D carry the brief and arm A does not.`, "");
+    for (const r of report.splits.by_brief_named[pair]) if (sumNames[r.key]) lines.push(splitRow(sumNames[r.key], r));
+    for (const r of report.splits.by_flaw_type[pair]) lines.push(splitRow(BRIEF_NAMED_FLAW_TYPES.includes(r.key) ? `${r.key} (${BRIEF_NAMED_KEY})` : r.key, r));
+  };
+  flawTypeLines("D against A", "product_vs_same_chat");
+  flawTypeLines("B against A", "fresh_brief_vs_same_chat");
 
   lines.push("", "## Which companies served the product arm", "");
   const served = sortedEntries(report.product_served_by);

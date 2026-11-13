@@ -125,16 +125,18 @@ A catch is a yes from the graders to one question: does the critique point out t
 
 The test is exact McNemar on the paired cases, two-sided 0.05.
 
+Beside the test, the report gives a 95% interval for D minus B, in points, both ways of counting. Write b for the cases only D caught, c for the cases only B caught and n for all the paired cases. The gap is (b - c) / n. The interval is the gap, plus and minus 1.96 times the square root of (b + c - (b - c) squared / n), divided by n. All three numbers are in the published counts, so anyone can work it out again.
+
 ## The decision rule
 
 The rule is one ordered list. The first line that applies is the result.
 
 1. Not measured. See "What Not measured means".
 2. If fewer than 110 flawed cases are analysed, the result is "too few cases to test". It changes no claim.
-3. If there is a sign flip between the two author families, there is no pooled headline. See "Splits".
+3. If there is a sign flip between the two author families, there is no pooled headline. See "Splits". If D minus B is missing for either family, the sign cannot be checked and the result is Not measured.
 4. D better: D caught more than B, and the test is under 0.05.
 5. D worse: B caught more than D, and the test is under 0.05. This sends work to a judge quality floor, a rule for which models the router may pick, before anything else.
-6. Otherwise: no difference of 15 points or more was found. It is never "no difference". A smaller one could be there and this run could not see it. If the gap seen is 15 points or more and the test is still not under 0.05, the report says a gap of that size was seen and could not be told from chance. It does not say none was found. The result line then reads "a gap of 15 points or more was seen, and no direction is claimed". What it changes is the same.
+6. Otherwise: no difference of 15 points or more was found. It is never "no difference". A smaller one could be there and this run could not see it. The report gives the 95% interval for D minus B. When that interval reaches 15 points, the report says a difference of 15 points was not ruled out. A difference of 15 points can be missed too: with 120 cases, a true one of that size is not found about 11 to 24 times in 100. If the gap seen is 15 points or more and the test is still not under 0.05, the report says a gap of that size was seen and could not be told from chance. It does not say none was found. The result line then reads "a gap of 15 points or more was seen, and no direction is claimed". What it changes is the same.
 
 Two more conditions:
 
@@ -149,7 +151,7 @@ What each result changes:
 | too few cases to test | No claim changes. |
 | D better | A sentence about quality may be put to the owner, only if D is not worse than C and the set is not a single-drafter set. It states the difference, the number of cases, and that the cases are made up. Nothing stronger. |
 | no difference of 15 points or more was found, or a gap was seen and no direction is claimed | No sentence about quality. Public copy keeps to the rule and says no more. |
-| no pooled headline | The same as the line above. The two author families are shown apart. |
+| no pooled headline | The same as the line above. The run's report shows the two author families apart. |
 | D worse | No sentence about quality. The next work is a judge quality floor. |
 
 ## Secondary analyses
@@ -161,7 +163,7 @@ Four tests, listed here by name so none can be added later:
 3. B against A: a fresh context and Grill's brief against the same chat, same model.
 4. C against B: a stronger model against the same model, both from the author's lab, both with Grill's brief.
 
-Each is exact McNemar on catch, with unusable answers counted as misses. The four p values are corrected together by Holm's method and read at 0.05. The usable-only numbers are shown beside them.
+Each is exact McNemar on catch, with unusable answers counted as misses. The four p values are corrected together by Holm's method and read at 0.05. The usable-only numbers are shown beside them. Each row carries its 95% interval, worked out as for D minus B.
 
 There is no outcome where a person or a model says which of two answers they like more.
 
@@ -213,7 +215,11 @@ Arms B, C and D are graded on the full report, the longest layer a person can as
 
 D minus B is also shown split two ways: by author family, and by seed drafter family.
 
-A sign flip is when D minus B is above zero for one author family and below zero for the other, with unusable answers counted as misses. A sign flip voids a pooled headline: the two families are reported apart, and no sentence about quality follows.
+A sign flip is when D minus B is above zero for one author family and below zero for the other, with unusable answers counted as misses. A sign flip voids a pooled headline: the run's report shows the two families apart, and no sentence about quality follows.
+
+A sign flip is common by chance. With about 60 flawed cases in each family and no true difference, the two families land on opposite sides about 4 times in 10. With a true difference of 10 points it is about 1 time in 10. So a sign flip is not a finding that the two families differ. It means only that this run gives no pooled headline. These figures assume arm B catches about 70 in 100.
+
+D against A and B against A are also shown by flaw type. Four types sit close to what Grill's brief asks for by name: `contradicts-own-goal`, `dropped-requirement`, `small-sample` and `irreversible-no-trial`. On those, arms B, C and D carry the brief and arm A does not. D against B is not touched by this. The graded text of arms B, C and D also puts a cheap test under every challenge, and a grader may take that for naming an `irreversible-no-trial` flaw, whatever the judge found. The report shows the four types together, the other types together, and then each type. No test is run on this split.
 
 ## The single-drafter rule
 
@@ -250,7 +256,8 @@ It happens when:
 - there is no router key, on the frozen split or when `--require-key` was given;
 - fewer than 9 in 10 write-ups were usable;
 - any arm gave a usable answer on fewer than 9 in 10 of the analysed flawed cases;
-- the grader check was not done, or was not passed.
+- the grader check was not done, or was not passed;
+- 110 or more flawed cases were analysed, and D minus B is missing for either author family.
 
 The floors are held more than once. If the write-ups fall under 9 in 10, the author step says so, and the run, score and report steps each say it again. No arm is asked, no grader is asked and no block is written. The floor for each arm is checked when the arms have run, and again by `report`. So a run cannot carry on to a result past a step that said Not measured, whether or not the shell stops at the first exit code 2.
 
@@ -270,7 +277,9 @@ No rates, no p values, no model names, no dollar amounts and no text. A page wor
 
 It is published whichever way it falls. That includes "too few cases to test" and a result that goes against Grill.
 
-Raw answers stay under `evals/results/four-arm/`, which git ignores. Each row keeps what the arm returned before blinding: the reply for arm A, and the judge's whole result for arms B, C and D. The public block has no place yet for the split by author family, the grader check or the result line. Until the results shape is widened, those are in the run's own report.
+Raw answers stay under `evals/results/four-arm/`, which git ignores. Each row keeps what the arm returned before blinding: the reply for arm A, and the judge's whole result for arms B, C and D. The public block has no place yet for the split by author family, the grader check or the result line. Until the results shape is widened, those are in the run's own report. Its `report.json` holds the result and D minus B for each author family under `public_result`, as one id and whole numbers.
+
+The result line cannot be worked out from the public block alone. A sign flip shows only in the split by author family, and that split is not in the block. So the decision rule in `scripts/fourArmCore.mjs` gives no result to a caller that does not pass the split, and no page may print a result line from the pooled counts. Before a frozen run is merged, the block needs two more fields: the result, as one id from a fixed list, and D minus B for each author family, as whole numbers.
 
 A rehearsal is never written into `data/results.json`. A rehearsal is any run on the dev split, on a loopback endpoint, or with a seed, arms or checksum file other than the committed one.
 
@@ -294,6 +303,7 @@ About twenty-five to forty-five US dollars for one frozen run, and about two dol
 - The graders are models, checked against one person on 40 items.
 - The seeds sit in a public repository before the run.
 - A difference under about 15 points cannot be seen.
+- Some planted flaws are ones Grill's brief names. See Splits.
 
 ## Deviations from the registered protocol
 

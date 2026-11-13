@@ -24,6 +24,7 @@ import {
   AUDIT_ITEMS,
   AUTHOR_FAMILIES,
   BRAND_WORDS,
+  BRIEF_NAMED_FLAW_TYPES,
   COMPARISONS,
   DRAFTER_FAMILIES,
   EFFECT_POINTS,
@@ -34,6 +35,7 @@ import {
   LOADED_FLAW_TYPE,
   MIN_ANALYSED_FLAWED,
   NAME_REMOVED,
+  NOT_RULED_OUT_REASON,
   NO_SEEDS_LINE,
   OUTCOMES,
   OUTCOME_WORDS,
@@ -43,6 +45,8 @@ import {
   SECONDARY_COMPARISONS,
   SEED_CATEGORIES,
   SEED_KEYS,
+  SIGN_FLIP_CHANCE_NOTE,
+  SPLIT_MISSING_REASON,
   TEMPLATE_PHRASES,
   TWIN_MIN_OVERLAP,
   WRITE_UP_WORDS,
@@ -80,11 +84,14 @@ import {
   mergeFourArmIntoResultsText,
   namesFound,
   pairTable,
+  pairedDiffInterval,
+  pairedReadings,
   parseFlagReply,
   parseGradeReply,
   parseOwnerLabels,
   parseSeedsJsonl,
   productChainUntouched,
+  publicResult,
   readmeSeedCounts,
   registrationProblems,
   renderReport,
@@ -583,6 +590,80 @@ describe("evals/four-arm: the draft protocol and its files", () => {
     assert.match(readme, /the reply for arm A, and the judge's whole result for arms B, C and D/);
   });
 
+  it("says what the result line needs that the public block does not carry", () => {
+    const published = readme.slice(readme.indexOf("## What is published"), readme.indexOf("## The model ids are placeholders"));
+    assert.match(published, /The result line cannot be worked out from the public block alone\. A sign flip shows only in the split by author family, and that split is not in the block\./);
+    assert.match(published, /gives no result to a caller that does not pass the split, and no page may print a result line from the pooled counts\./);
+    assert.match(published, /Its `report\.json` holds the result and D minus B for each author family under `public_result`, as one id and whole numbers\./);
+    assert.match(published, /Before a frozen run is merged, the block needs two more fields: the result, as one id from a fixed list, and D minus B for each author family, as whole numbers\./);
+    const rule = readme.slice(readme.indexOf("## The decision rule"), readme.indexOf("## Secondary analyses"));
+    assert.match(rule, /^3\. If there is a sign flip between the two author families, there is no pooled headline\. See "Splits"\. If D minus B is missing for either family, the sign cannot be checked and the result is Not measured\.$/m);
+    const notMeasured = readme.slice(readme.indexOf("## What Not measured means"), readme.indexOf("## What is published"));
+    assert.ok(notMeasured.includes(`- ${MIN_ANALYSED_FLAWED} or more flawed cases were analysed, and D minus B is missing for either author family.`));
+    // The block cannot show the two families apart, so the protocol does not say it does.
+    assert.doesNotMatch(readme, /the two families are reported apart/);
+    assert.match(readme, /the run's report shows the two families apart, and no sentence about quality follows\./);
+  });
+
+  it("puts the 95% interval beside the null wording, and says how it is worked out", () => {
+    assert.ok(
+      readme.includes(
+        "A smaller one could be there and this run could not see it. The report gives the 95% interval for D minus B. When that interval reaches 15 points, the report says a difference of 15 points was not ruled out.",
+      ),
+    );
+    assert.ok(readme.includes(`the report says ${NOT_RULED_OUT_REASON}.`), "the README uses the report's own words");
+    assert.match(readme, /A difference of 15 points can be missed too: with 120 cases, a true one of that size is not found about 11 to 24 times in 100\./);
+    assert.match(readme, /with 120, a paired test finds a true difference of 15 points about 76 to 89 times in 100\./, "the figure it is the other side of");
+    // Both figures, worked out exactly: how often the paired test comes out under 0.05 with D ahead, when B catches
+    // 70 in 100 and D 85 in 100, at the two ends the README names.
+    const logChoose = (n, k) => {
+      let sum = 0;
+      for (let i = 1; i <= k; i += 1) sum += Math.log(n - k + i) - Math.log(i);
+      return sum;
+    };
+    const chanceOf = (n, k, p) => Math.exp(logChoose(n, k) + k * Math.log(p) + (n - k) * Math.log(1 - p));
+    const found = (n, shareB, shareD, together) => {
+      const both = shareB * shareD + together * Math.sqrt(shareB * (1 - shareB) * shareD * (1 - shareD));
+      const onlyD = shareD - both;
+      const apart = onlyD + (shareB - both);
+      let total = 0;
+      for (let m = 1; m <= n; m += 1) {
+        const pm = chanceOf(n, m, apart);
+        if (pm < 1e-12) continue;
+        for (let k = Math.floor(m / 2) + 1; k <= m; k += 1) if (mcnemarExactP(k, m - k) < 0.05) total += pm * chanceOf(m, k, onlyD / apart);
+      }
+      return total;
+    };
+    const low = found(120, 0.7, 0.85, 0);
+    const high = found(120, 0.7, 0.85, 0.3);
+    assert.ok(low > 0.75 && low < 0.77, `arms that miss unrelated cases: ${low}`);
+    assert.ok(high > 0.88 && high < 0.895, `arms that find the same cases hard: ${high}`);
+    assert.match(readme, /The interval is the gap, plus and minus 1\.96 times the square root of \(b \+ c - \(b - c\) squared \/ n\), divided by n\./);
+    // The README's recipe, followed by hand, is the harness's own interval.
+    const [b, c, n] = [25, 14, 120];
+    const gap = (b - c) / n;
+    const half = (1.96 * Math.sqrt(b + c - (b - c) ** 2 / n)) / n;
+    const got = pairedDiffInterval(b, c, n);
+    assert.ok(Math.abs(got.low - (gap - half) * 100) < 0.001 && Math.abs(got.high - (gap + half) * 100) < 0.001);
+  });
+
+  it("says which planted flaws Grill's brief names, and where that shows", () => {
+    assert.deepEqual(BRIEF_NAMED_FLAW_TYPES, ["contradicts-own-goal", "dropped-requirement", "small-sample", "irreversible-no-trial"]);
+    for (const type of BRIEF_NAMED_FLAW_TYPES) assert.ok(FLAW_TYPES.includes(type), `${type} is a flaw type a seed can have`);
+    const splits = readme.slice(readme.indexOf("## Splits"), readme.indexOf("## The single-drafter rule"));
+    const sentence = /Four types sit close to what Grill's brief asks for by name: ([^.]+)\./.exec(splits);
+    assert.notEqual(sentence, null, "the Splits section names the four types in one sentence");
+    for (const type of BRIEF_NAMED_FLAW_TYPES) assert.ok(sentence[1].includes(`\`${type}\``), `${type} is in that sentence`);
+    assert.equal(sentence[1].split("`").length - 1, 2 * BRIEF_NAMED_FLAW_TYPES.length, "those four and no other");
+    assert.ok(
+      splits.includes(
+        `D against A and B against A are also shown by flaw type. ${sentence[0]} On those, arms B, C and D carry the brief and arm A does not. D against B is not touched by this.`,
+      ),
+    );
+    const limits = readme.slice(readme.indexOf("## Limits"), readme.indexOf("## Deviations from the registered protocol"));
+    assert.ok(limits.includes("- Some planted flaws are ones Grill's brief names. See Splits."));
+  });
+
   it("keeps to the wording rules for public copy", () => {
     for (const phrase of [
       "guarantee",
@@ -1068,6 +1149,17 @@ describe("counting", () => {
     assert.equal(analysedCases(seeds, writeUps, "dev").cases.length, 1);
   });
 
+  it("keeps each case's flaw type when the analysed cases are decided", () => {
+    const seeds = tinySet().map((row) => (row.id === "f-oven" ? { ...row, flaw_type: "small-sample" } : row));
+    const writeUps = seeds.map((row) => ({ id: row.id, usable: true, visible: "yes", flagged: "no" }));
+    const { cases: analysed } = analysedCases(seeds, writeUps, "frozen");
+    assert.equal(analysed.find((c) => c.id === "f-oven").flaw_type, "small-sample");
+    assert.equal(analysed.find((c) => c.id === "f-hire").flaw_type, "hidden-dependency");
+    assert.equal(analysed.find((c) => c.id === "s-oven").flaw_type, "none");
+    assert.equal(analysed.find((c) => c.id === "l-job").flaw_type, LOADED_FLAW_TYPE);
+    assert.ok(analysed.every((c) => typeof c.flaw_type === "string" && c.flaw_type !== ""));
+  });
+
   it("lets the owner's labels replace the graders' when the owner labelled everything", () => {
     const answers = [{ id: "f1", arm: "A", usable: true, words: 50, served_company: null }];
     const grades = [{ id: "f1", arm: "A", label: "no", objections: 4 }];
@@ -1215,7 +1307,9 @@ describe("the decision rule", () => {
     assert.equal(under.outcome, "no-difference-of-15-found");
     assert.equal(under.gap_seen, false);
     assert.equal(under.words, "no difference of 15 points or more was found");
-    assert.deepEqual(under.reasons, []);
+    // The plain words stand, and beside them the report says what they do not rule out: the interval runs from +0.1 to +28.3.
+    assert.equal(under.fifteen_not_ruled_out, true);
+    assert.deepEqual(under.reasons, [NOT_RULED_OUT_REASON]);
 
     // The same holds when B is ahead, and when the gap shows only on usable answers.
     const behind = decideFourArm(facts({ primary: cells(20, 30, 48, 22), by_author: even(30, 48) }));
@@ -1284,6 +1378,207 @@ describe("the decision rule", () => {
     assert.equal(d.changes, "no-quality-sentence");
   });
 
+  it("says how often a sign flip happens by chance, and the figures hold", () => {
+    assert.equal(SIGN_FLIP_CHANCE_NOTE, "With no true difference this happens about 4 times in 10 by chance. It is not a finding that the families differ.");
+    const readme = read(README);
+    const splits = readme.slice(readme.indexOf("## Splits"), readme.indexOf("## The single-drafter rule"));
+    const stated =
+      "A sign flip is common by chance. With about 60 flawed cases in each family and no true difference, the two families land on opposite sides about 4 times in 10. With a true difference of 10 points it is about 1 time in 10. So a sign flip is not a finding that the two families differ. It means only that this run gives no pooled headline.";
+    assert.ok(splits.includes(stated), "the Splits section gives the base rate");
+    assert.ok(splits.indexOf("A sign flip is when") < splits.indexOf(stated), "straight after what a sign flip is");
+    assert.ok(splits.indexOf("A sign flip is when") > -1);
+
+    // The exact chance that D minus B is above zero in one family and below zero in the other, by a walk over
+    // the cases of one family: each case is caught by D only, by B only, or by both or neither. `together` is how
+    // far the two arms find the same cases hard, the two ends the README's own figures use.
+    const chance = (perFamily, shareB, shareD, together) => {
+      const both = shareB * shareD + together * Math.sqrt(shareB * (1 - shareB) * shareD * (1 - shareD));
+      const steps = [[1, shareD - both], [-1, shareB - both], [0, 1 - (shareD - both) - (shareB - both)]];
+      let walk = new Map([[0, 1]]);
+      for (let i = 0; i < perFamily; i += 1) {
+        const next = new Map();
+        for (const [gap, p] of walk) for (const [step, q] of steps) next.set(gap + step, (next.get(gap + step) ?? 0) + p * q);
+        walk = next;
+      }
+      let ahead = 0;
+      let behind = 0;
+      for (const [gap, p] of walk) {
+        if (gap > 0) ahead += p;
+        else if (gap < 0) behind += p;
+      }
+      return 2 * ahead * behind;
+    };
+    for (const together of [0, 0.3]) {
+      const none = chance(60, 0.7, 0.7, together);
+      const ten = chance(60, 0.7, 0.8, together);
+      const fifteen = chance(60, 0.7, 0.85, together);
+      assert.ok(none > 0.38 && none < 0.45, `no true difference: ${none}`);
+      assert.ok(ten > 0.08 && ten < 0.16, `a true difference of 10 points: ${ten}`);
+      assert.ok(fifteen < 0.05, `a true difference of 15 points: ${fifteen}`);
+    }
+  });
+
+  it("prints the chance of a sign flip under the result it voids, and beside the split", () => {
+    const cases = [];
+    const items = [];
+    const add = (n, hits, prefix, family) => {
+      for (let i = 0; i < n; i += 1) {
+        const id = `${prefix}-${family}-${i}`;
+        cases.push({ id, kind: "flawed", flaw_type: "arithmetic", author_family: family, drafter_family: "owner", visible: "yes" });
+        for (const arm of ARMS) items.push({ id, arm, usable: true, label: hits.includes(arm) ? "yes" : "no", words: 120, objections: 3, served_company: arm === "D" ? "google" : null });
+      }
+    };
+    // Pooled: 25 to 8, which alone reads D better. By family: 22 to 2, and 3 to 6.
+    add(35, ["A", "B", "C", "D"], "all", "anthropic");
+    add(22, ["C", "D"], "product-only", "anthropic");
+    add(2, ["A", "B"], "fresh-only", "anthropic");
+    add(9, [], "none", "anthropic");
+    add(35, ["A", "B", "C", "D"], "all", "openai");
+    add(3, ["C", "D"], "product-only", "openai");
+    add(6, ["A", "B"], "fresh-only", "openai");
+    add(8, [], "none", "openai");
+    const given = { date: "2026-12-01", commit: "abc1234", single_drafter: false, audit: { agree: 38, of: 40, labels_by: "graders" }, write_up_floor_met: true };
+    const report = summarize({ cases, items, ...given });
+    assert.deepEqual([report.primary.misses.first_only, report.primary.misses.second_only], [25, 8]);
+    assert.equal(report.decision.outcome, "no-pooled-headline");
+    const text = renderReport(report);
+    assert.match(text, /^## Result: no pooled headline: D minus B has opposite signs in the two author families$/m);
+    assert.ok(
+      text.includes(`The sign flips between the two author families, so there is no pooled headline. ${SIGN_FLIP_CHANCE_NOTE}`),
+      "the line under the split by author family carries the base rate",
+    );
+    const top = text.slice(text.indexOf("## Result"), text.indexOf("## Catch on flawed cases"));
+    assert.ok(top.includes(SIGN_FLIP_CHANCE_NOTE), "and it is said straight under the result line, where a reader looks first");
+    assert.equal(text.split(SIGN_FLIP_CHANCE_NOTE).length - 1, 2);
+    assert.match(top, /A public sentence about quality is not allowed on this result\./);
+    assert.doesNotMatch(top, /D minus B: /, "no pooled gap is put under a result that voids the pooled headline");
+
+    // With no sign flip the note is not printed at all.
+    const level = summarize({ cases: cases.map((c) => ({ ...c, author_family: AUTHOR_FAMILIES[Number(c.id.split("-").pop()) % 2] })), items, ...given });
+    assert.equal(level.decision.outcome, "d-better");
+    assert.equal(renderReport(level).includes(SIGN_FLIP_CHANCE_NOTE), false);
+    assert.ok(renderReport(level).includes("D minus B: +14.2 points, 95% interval +5.1 to +23.2 points, with unusable answers counted as misses."), "a direction carries its interval too");
+  });
+
+  it("gives a 95% interval for the gap between two paired arms, in points", () => {
+    const near = (got, want) => assert.ok(Math.abs(got - want) < 0.0001, `${got} is not ${want}`);
+    // 25 v 14 of 120. The gap is 11 of 120, 9.17 points. Half the width is 1.96 x sqrt(39 - 121/120) / 120, 10.07 points.
+    near(pairedDiffInterval(25, 14, 120).low, -0.9006);
+    near(pairedDiffInterval(25, 14, 120).high, 19.2339);
+    // 15 v 12 of 120. The gap is 2.5 points and half the width is 8.48 points.
+    near(pairedDiffInterval(15, 12, 120).low, -5.9751);
+    near(pairedDiffInterval(15, 12, 120).high, 10.9751);
+    // The other way round is the mirror image.
+    near(pairedDiffInterval(14, 25, 120).low, -19.2339);
+    near(pairedDiffInterval(14, 25, 120).high, 0.9006);
+    near(pairedDiffInterval(48, 30, 120).low, 0.8269);
+    near(pairedDiffInterval(48, 30, 120).high, 29.1731);
+    assert.deepEqual(pairedDiffInterval(0, 0, 0), { low: -100, high: 100 }, "with no cases, nothing is ruled out");
+    assert.deepEqual(pairedDiffInterval(2, 0, 2), { low: 100, high: 100 });
+    assert.equal(pairedDiffInterval(1, 0, 2).high, 100, "never past 100 points");
+    assert.equal(pairedDiffInterval(0, 1, 2).low, -100);
+    const none = pairedDiffInterval(0, 0, 120);
+    assert.ok(none.low === 0 && none.high === 0);
+    for (const bad of [[1.5, 0, 10], [-1, 0, 10], [1, "2", 10], [6, 5, 10], [1, 1, Number.NaN]]) assert.throws(() => pairedDiffInterval(...bad), RangeError, JSON.stringify(bad));
+
+    // Both ways of counting carry their own interval.
+    const both = pairedReadings(cells(60, 25, 14, 21, [50, 15, 12, 21]));
+    near(both.misses.low, -0.9006);
+    near(both.misses.high, 19.2339);
+    assert.equal(both.usable.n, 98);
+    assert.deepEqual({ low: both.usable.low, high: both.usable.high }, pairedDiffInterval(15, 12, 98));
+    assert.ok(both.usable.high > 10.9751, "fewer cases, a wider interval");
+  });
+
+  it("says a difference of 15 points was not ruled out when the interval for D minus B reaches it", () => {
+    assert.equal(NOT_RULED_OUT_REASON, "a difference of 15 points was not ruled out");
+    const split = (first, second) => [
+      { family: "anthropic", first_only: Math.ceil(first / 2), second_only: Math.ceil(second / 2) },
+      { family: "openai", first_only: Math.floor(first / 2), second_only: Math.floor(second / 2) },
+    ];
+    // 25 v 14 of 120: p 0.108, a gap of 9.2 points, and an interval from -0.9 to +19.2.
+    assert.ok(mcnemarExactP(25, 14) > 0.1);
+    const open = decideFourArm(facts({ primary: cells(60, 25, 14, 21), by_author: split(25, 14) }));
+    assert.equal(open.outcome, "no-difference-of-15-found");
+    assert.equal(open.words, "no difference of 15 points or more was found");
+    assert.equal(open.gap_seen, false);
+    assert.equal(open.fifteen_not_ruled_out, true);
+    assert.deepEqual(open.reasons, [NOT_RULED_OUT_REASON]);
+    assert.equal(open.quality_sentence_allowed, false);
+    assert.equal(open.changes, "no-quality-sentence");
+
+    // 15 v 12 of 120: the interval runs from -6.0 to +11.0, so 15 points is outside it.
+    const shut = decideFourArm(facts({ primary: cells(70, 15, 12, 23), by_author: split(15, 12) }));
+    assert.equal(shut.outcome, "no-difference-of-15-found");
+    assert.equal(shut.fifteen_not_ruled_out, false);
+    assert.deepEqual(shut.reasons, []);
+
+    // The same in the other direction, with B ahead.
+    const behind = decideFourArm(facts({ primary: cells(60, 14, 25, 21), by_author: split(14, 25) }));
+    assert.equal(behind.outcome, "no-difference-of-15-found");
+    assert.equal(behind.fifteen_not_ruled_out, true);
+    assert.deepEqual(behind.reasons, [NOT_RULED_OUT_REASON]);
+
+    // Either way of counting is enough. On the 80 cases both arms answered, 15 v 8 runs to +20.
+    assert.ok(pairedDiffInterval(15, 8, 80).high > 15 && mcnemarExactP(15, 8) > 0.05);
+    const usableOnly = decideFourArm(facts({ primary: cells(70, 15, 12, 23, [40, 15, 8, 17]), by_author: split(15, 12) }));
+    assert.equal(usableOnly.gap_seen, false);
+    assert.equal(usableOnly.fifteen_not_ruled_out, true);
+    assert.deepEqual(usableOnly.reasons, [NOT_RULED_OUT_REASON]);
+
+    // When a gap of 15 points was seen, the result line already says so, and the reason is not said twice.
+    const seen = decideFourArm(facts({ primary: cells(20, 48, 30, 22), by_author: split(48, 30) }));
+    assert.equal(seen.words, GAP_SEEN_WORDS);
+    assert.equal(seen.fifteen_not_ruled_out, true);
+    assert.deepEqual(seen.reasons, [GAP_SEEN_REASON]);
+
+    // On a direction it is a fact and not a reason: the reasons there say why no quality sentence is allowed.
+    const better = decideFourArm(facts());
+    assert.equal(better.outcome, "d-better");
+    assert.equal(better.fifteen_not_ruled_out, true, "25 v 8 of 120 runs from +5.1 to +23.2");
+    assert.deepEqual(better.reasons, []);
+    assert.equal(better.quality_sentence_allowed, true);
+
+    // No interval is read where no test is read.
+    assert.equal(decideFourArm(facts({ analysed_flawed: 50 })).fifteen_not_ruled_out, null);
+    assert.equal(decideFourArm(facts({ usable_floor_met: false })).fifteen_not_ruled_out, null);
+    assert.equal(decideFourArm(null).fifteen_not_ruled_out, null);
+  });
+
+  it("prints the 95% interval beside every paired test, and under the null wording", () => {
+    const cases = [];
+    const items = [];
+    const add = (n, hits, prefix) => {
+      for (let i = 0; i < n; i += 1) {
+        const id = `${prefix}-${i}`;
+        cases.push({ id, kind: "flawed", flaw_type: "arithmetic", author_family: AUTHOR_FAMILIES[i % 2], drafter_family: "owner", visible: "yes" });
+        for (const arm of ARMS) items.push({ id, arm, usable: true, label: hits.includes(arm) ? "yes" : "no", words: 120, objections: 3, served_company: arm === "D" ? "google" : null });
+      }
+    };
+    add(60, ["A", "B", "C", "D"], "all");
+    add(25, ["C", "D"], "product-only");
+    add(14, ["A", "B"], "fresh-only");
+    add(21, [], "none");
+    const report = summarize({ cases, items, date: "2026-12-01", commit: "abc1234", single_drafter: false, audit: { agree: 38, of: 40, labels_by: "graders" }, write_up_floor_met: true });
+    assert.equal(report.decision.outcome, "no-difference-of-15-found");
+    assert.equal(report.decision.fifteen_not_ruled_out, true);
+    assert.ok(Math.abs(report.primary.misses.low + 0.9006) < 0.0001 && Math.abs(report.primary.misses.high - 19.2339) < 0.0001);
+    const text = renderReport(report);
+    assert.match(text, /^## Result: no difference of 15 points or more was found$/m);
+    assert.match(text, /^Why: a difference of 15 points was not ruled out\.$/m);
+    const top = text.slice(text.indexOf("## Result"), text.indexOf("## Catch on flawed cases"));
+    assert.ok(
+      top.includes("D minus B: +9.2 points, 95% interval -0.9 to +19.2 points, with unusable answers counted as misses. On usable answers only: +9.2 points, 95% interval -0.9 to +19.2 points."),
+      top,
+    );
+    assert.ok(text.includes("25 to 14 (+9.2 points, p 0.108), 95% interval -0.9 to +19.2 points"), "the primary row");
+    const rows = text.split("\n").filter((line) => /^\| [A-D] against [A-D]: /.test(line));
+    assert.equal(rows.length, 5, "the primary test and the four secondary ones");
+    for (const line of rows) assert.equal((line.match(/95% interval [+-]?\d+\.\d to [+-]?\d+\.\d points/g) ?? []).length, 2, line);
+    assert.ok(text.includes("0 to 0 (0.0 points, p 1.000), 95% interval 0.0 to 0.0 points"), "D against C: no sign on a zero");
+    assert.match(text, /The 95% interval is for the gap between the two arms, in points\./);
+  });
+
   it("is not measured when too few answers are usable or the grader check was not passed", () => {
     for (const over of [{ usable_floor_met: false }, { audit: null }, { audit: { agree: 33, of: 40, labels_by: "graders" } }]) {
       const d = decideFourArm(facts(over));
@@ -1346,17 +1641,157 @@ describe("the decision rule", () => {
       ],
       single_drafter: false,
     };
-    const got = factsFromBlock(block, { by_author: [], audit: { agree: 40, of: 40, labels_by: "graders" }, write_up_floor_met: true });
+    const byAuthor = [
+      { family: "anthropic", first_only: 13, second_only: 4 },
+      { family: "openai", first_only: 12, second_only: 4 },
+    ];
+    const got = factsFromBlock(block, { by_author: byAuthor, audit: { agree: 40, of: 40, labels_by: "graders" }, write_up_floor_met: true });
     assert.equal(got.primary.first_only, 25, "the product's cell, though the block lists it second");
     assert.equal(got.primary.second_only, 8);
     assert.equal(got.analysed_flawed, 120);
     assert.equal(got.usable_floor_met, true);
     assert.equal(got.write_up_floor_met, true);
+    assert.deepEqual(got.by_author, byAuthor);
     assert.equal(decideFourArm(got).outcome, "d-better");
     // The write-up floor is not in the public block. A caller that does not pass it gets no result.
-    const unchecked = factsFromBlock(block, { by_author: [], audit: { agree: 40, of: 40, labels_by: "graders" } });
+    const unchecked = factsFromBlock(block, { by_author: byAuthor, audit: { agree: 40, of: 40, labels_by: "graders" } });
     assert.equal(unchecked.write_up_floor_met, false);
     assert.equal(decideFourArm(unchecked).outcome, "not-measured");
+    assert.deepEqual(decideFourArm(unchecked).reasons, ["too few usable write-ups"]);
+  });
+
+  it("the public block alone gives no result: the split by author family is not in it", () => {
+    const block = {
+      cases: { flawed: 120, sound: 40, loaded: 20 },
+      arms: FOUR_ARM_IDS.map((id) => ({ arm: id, flawed: 120, usable_flawed: 118 })),
+      comparisons: [
+        { first: "product", second: "fresh-brief", ...cells(70, 25, 8, 17) },
+        { first: "product", second: "stronger-same-lab", ...cells(80, 15, 10, 15) },
+      ],
+      single_drafter: false,
+    };
+    const checked = { audit: { agree: 40, of: 40, labels_by: "graders" }, write_up_floor_met: true };
+    // Everything a page could read from the block, and the two checks it would have to be told. Still no result.
+    const alone = factsFromBlock(block, checked);
+    assert.deepEqual(alone.by_author, []);
+    const d = decideFourArm(alone);
+    assert.equal(d.outcome, "not-measured");
+    assert.deepEqual(d.reasons, [SPLIT_MISSING_REASON]);
+    assert.equal(d.quality_sentence_allowed, false);
+    // These pooled counts hide a sign flip. Only the split shows it.
+    const flipped = [{ family: "anthropic", first_only: 22, second_only: 2 }, { family: "openai", first_only: 3, second_only: 6 }];
+    assert.equal(decideFourArm(factsFromBlock(block, { ...checked, by_author: flipped })).outcome, "no-pooled-headline");
+    assert.equal(decideFourArm(factsFromBlock(block)).outcome, "not-measured");
+  });
+
+  it("a caller that never passed the split by author family gets no result", () => {
+    assert.equal(SPLIT_MISSING_REASON, "the split by author family is missing");
+    const { by_author: split, ...without } = facts();
+    assert.equal(split.length, 2);
+    assert.equal(decideFourArm(facts()).outcome, "d-better", "with the split, these counts are D better");
+    const noResult = (given, why) => {
+      const d = decideFourArm(given);
+      assert.equal(d.outcome, "not-measured", why);
+      assert.equal(d.words, "Not measured", why);
+      assert.deepEqual(d.reasons, [SPLIT_MISSING_REASON], why);
+      assert.equal(d.sign_flip, null, why);
+      assert.equal(d.p, null, why);
+      assert.equal(d.quality_sentence_allowed, false, why);
+      assert.equal(d.changes, "none", why);
+    };
+    noResult(without, "left out");
+    noResult(facts({ by_author: [] }), "an empty list");
+    noResult(facts({ by_author: null }), "null");
+    noResult(facts({ by_author: "anthropic openai" }), "text");
+    noResult(facts({ by_author: [split[0]] }), "one family only");
+    noResult(facts({ by_author: [split[1], split[1]] }), "the same family twice");
+    noResult(facts({ by_author: [split[0], { ...split[1], family: "google" }] }), "a family that writes no case");
+    noResult(facts({ by_author: [split[0], null] }), "a row that is not a row");
+    noResult(facts({ by_author: [split[0], { family: "openai", first_only: 12 }] }), "a cell left out");
+    noResult(facts({ by_author: [split[0], { family: "openai", first_only: 12.5, second_only: 4 }] }), "not a whole number");
+    noResult(facts({ by_author: [split[0], { family: "openai", first_only: "12", second_only: 4 }] }), "a number written as text");
+    noResult(facts({ by_author: [split[0], { family: "openai", first_only: -1, second_only: 4 }] }), "under zero");
+    // A family where the two arms caught the same cases is there, with zeros. That is not a missing split.
+    assert.equal(decideFourArm(facts({ by_author: [{ family: "anthropic", first_only: 25, second_only: 8 }, { family: "openai", first_only: 0, second_only: 0 }] })).outcome, "d-better");
+    // Too few cases is still said first. It changes no claim either way.
+    assert.equal(decideFourArm({ ...without, analysed_flawed: 109 }).outcome, "too-few-cases");
+    // The floors still come before it.
+    assert.deepEqual(decideFourArm({ ...without, usable_floor_met: false }).reasons, ["too few usable answers"]);
+  });
+
+  it("120 flawed cases from one author family alone are no result, and the report says why", () => {
+    const cases = [];
+    const items = [];
+    const add = (n, hits, prefix) => {
+      for (let i = 0; i < n; i += 1) {
+        const id = `${prefix}-${i}`;
+        cases.push({ id, kind: "flawed", flaw_type: "arithmetic", author_family: "anthropic", drafter_family: "owner", visible: "yes" });
+        for (const arm of ARMS) items.push({ id, arm, usable: true, label: hits.includes(arm) ? "yes" : "no", words: 120, objections: 3, served_company: arm === "D" ? "google" : null });
+      }
+    };
+    add(60, ["A", "B", "C", "D"], "all");
+    add(30, ["C", "D"], "product-only");
+    add(8, ["A", "B"], "fresh-only");
+    add(22, [], "none");
+    const report = summarize({ cases, items, date: "2026-12-01", commit: "abc1234", single_drafter: false, audit: { agree: 38, of: 40, labels_by: "graders" }, write_up_floor_met: true });
+    assert.deepEqual([report.primary.misses.first_only, report.primary.misses.second_only], [30, 8]);
+    assert.ok(report.primary.misses.p < 0.001, "the pooled counts alone would read D better");
+    assert.deepEqual(report.splits.by_author.map((row) => row.key), ["anthropic"]);
+    assert.equal(report.decision.outcome, "not-measured");
+    assert.deepEqual(report.decision.reasons, [SPLIT_MISSING_REASON]);
+    assert.match(renderReport(report), /## Result: Not measured\n\nWhy: the split by author family is missing\.\nNothing here is a result\. No counts are published\./);
+  });
+
+  it("carries the result and the split by author family in whole numbers, enough for a page to reach the same result", () => {
+    const cases = [];
+    const items = [];
+    const add = (n, hits, prefix, family) => {
+      for (let i = 0; i < n; i += 1) {
+        const id = `${prefix}-${family}-${i}`;
+        cases.push({ id, kind: "flawed", flaw_type: "arithmetic", author_family: family, drafter_family: "owner", visible: "yes" });
+        for (const arm of ARMS) items.push({ id, arm, usable: !(arm === "B" && prefix === "product-only" && i === 0), label: hits.includes(arm) ? "yes" : "no", words: 120, objections: 3, served_company: arm === "D" ? "google" : null });
+      }
+    };
+    const fill = (flip) => {
+      cases.length = 0;
+      items.length = 0;
+      add(35, ["A", "B", "C", "D"], "all", "anthropic");
+      add(flip ? 22 : 13, ["C", "D"], "product-only", "anthropic");
+      add(flip ? 2 : 4, ["A", "B"], "fresh-only", "anthropic");
+      add(flip ? 1 : 8, [], "none", "anthropic");
+      add(35, ["A", "B", "C", "D"], "all", "openai");
+      add(flip ? 3 : 12, ["C", "D"], "product-only", "openai");
+      add(flip ? 6 : 4, ["A", "B"], "fresh-only", "openai");
+      add(flip ? 16 : 9, [], "none", "openai");
+    };
+    const audit = { agree: 38, of: 40, labels_by: "graders" };
+    for (const [flip, outcome] of [[false, "d-better"], [true, "no-pooled-headline"]]) {
+      fill(flip);
+      const report = summarize({ cases, items, date: "2026-12-01", commit: "abc1234", single_drafter: false, audit, write_up_floor_met: true });
+      assert.equal(report.public_block.cases.flawed, 120);
+      assert.deepEqual([report.primary.misses.first_only, report.primary.misses.second_only], [25, 8], "the pooled counts are the same both times");
+      assert.equal(report.decision.outcome, outcome);
+      assert.deepEqual(report.public_result, publicResult(report.decision, report.splits.by_author));
+      assert.equal(report.public_result.outcome, outcome);
+      assert.ok(OUTCOMES.includes(report.public_result.outcome));
+      assert.deepEqual(
+        report.public_result.by_author,
+        flip
+          ? [
+              { family: "anthropic", first_only: 22, second_only: 2, usable_first_only: 21, usable_second_only: 2 },
+              { family: "openai", first_only: 3, second_only: 6, usable_first_only: 2, usable_second_only: 6 },
+            ]
+          : [
+              { family: "anthropic", first_only: 13, second_only: 4, usable_first_only: 12, usable_second_only: 4 },
+              { family: "openai", first_only: 12, second_only: 4, usable_first_only: 11, usable_second_only: 4 },
+            ],
+      );
+      assert.doesNotMatch(JSON.stringify(report.public_result), /\d\.\d/, "whole numbers and ids only");
+      // A page that has the block and these two fields reaches the harness's own result. The block alone does not.
+      const told = { audit, write_up_floor_met: true };
+      assert.equal(decideFourArm(factsFromBlock(report.public_block, { ...told, by_author: report.public_result.by_author })).outcome, outcome);
+      assert.equal(decideFourArm(factsFromBlock(report.public_block, told)).outcome, "not-measured");
+    }
   });
 
   it("ranks arms on alarm only at 30 points or more, and never ranks arm A", () => {
@@ -1950,6 +2385,31 @@ describe("a full loopback run of a tiny set", () => {
     assert.match(listed.stdout, /Deviations from the registered protocol: the model ids at a step of the run were not the ones registered now\./);
   });
 
+  it("writes D against A and B against A by flaw type into report.json and the printed report", async () => {
+    const out = copyOut("out-flaw-types");
+    const report = await runCli(["report", ...argsWith({ [paths.out]: out }), "--owner-labels", ownerReplies(0)], env);
+    assert.equal(report.code, 0, report.stdout + report.stderr);
+    const full = JSON.parse(read(join(out, "report.json")));
+    const pair = (id) => JSON.parse(read(join(out, "public-block.json"))).comparisons.find((row) => `${row.first}-vs-${row.second}` === id);
+    const cellsOf = ({ first, second, ...cells }) => cells;
+    // Every flawed seed of the tiny set has one flaw type, so each split is one row, and it is the pooled table.
+    assert.deepEqual(full.splits.by_flaw_type.product_vs_same_chat, [{ key: "hidden-dependency", cases: 6, ...cellsOf(pair("product-vs-same-chat")) }]);
+    assert.deepEqual(full.splits.by_flaw_type.fresh_brief_vs_same_chat, [{ key: "hidden-dependency", cases: 6, ...cellsOf(pair("fresh-brief-vs-same-chat")) }]);
+    assert.deepEqual(full.splits.by_brief_named.product_vs_same_chat.map((row) => [row.key, row.cases]), [["other flaw types", 6]]);
+    // The result and D minus B for each author family, in the form the public block could take them.
+    assert.equal(full.public_result.outcome, "too-few-cases");
+    assert.deepEqual(full.public_result.by_author.map((row) => row.family), ["anthropic", "openai"]);
+    assert.deepEqual(
+      full.public_result.by_author.reduce((sum, row) => [sum[0] + row.first_only, sum[1] + row.second_only], [0, 0]),
+      [pair("product-vs-fresh-brief").first_only, pair("product-vs-fresh-brief").second_only],
+      "the two families add up to the pooled cells",
+    );
+    assert.match(report.stdout, /^## D against A by flaw type \(shown, not tested\)$/m);
+    assert.match(report.stdout, /^## B against A by flaw type \(shown, not tested\)$/m);
+    assert.match(report.stdout, /- hidden-dependency\. Flawed cases: 6\. Only the first arm caught: 2\. Only the second arm caught: 1\./);
+    assert.ok(report.stdout.includes("2 to 1 (+16.7 points, p 1.000), 95% interval -38.3 to +71.7 points"), "the interval is printed on a real run too");
+  });
+
   it("leaves the product judge and the committed results as they were", () => {
     assert.deepEqual(productHashes(), hashesBefore);
   });
@@ -2119,6 +2579,63 @@ describe("Not measured", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it("a run with flawed cases left from one author family only is Not measured, whatever the pooled counts say", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "four-arm-one-family-"));
+    // 222 made-up flawed seeds, each ask its own string of plain words, so 111 fall to each author family.
+    const words = "amber basket candle drift ember garden harbor island jacket kettle lantern meadow needle orchard pebble quarry ribbon saddle timber umbrella valley willow yonder anchor bramble cinder dapple elm thistle hollow".split(" ");
+    const ask = (i) => {
+      let x = i * 7919 + 13;
+      const picked = [];
+      for (let k = 0; k < 70; k += 1) {
+        x = (x * 1103515245 + 12345) % 2147483648;
+        picked.push(words[Math.floor(x / 65536) % words.length]);
+      }
+      return `Plan number ${i} for our shop goes like this. ${picked.join(" ")}. Please write about 200 words on it.`;
+    };
+    const many = assignAuthors(
+      Array.from({ length: 222 }, (_, i) => ({ ...seed(`f-many-${i}`, "oven"), user_ask: ask(i), category: SEED_CATEGORIES[i % SEED_CATEGORIES.length], flaw_type: FLAW_TYPES[i % FLAW_TYPES.length] })),
+    );
+    assert.deepEqual(parseSeedsJsonl(toJsonl(many)).problems, []);
+    const sum = seedsChecksum(many);
+    const out = join(dir, "out");
+    const results = join(dir, "results.json");
+    const labels = join(dir, "labels.txt");
+    mkdirSync(out);
+    writeFileSync(join(dir, "seeds.jsonl"), toJsonl(many));
+    writeFileSync(join(dir, "arms.json"), JSON.stringify(fixtureArms({ seeds_sha256: sum, judge_prompt_sha256: judgePromptFingerprint() })));
+    writeFileSync(join(dir, "seeds.sha256"), `${sum}\n`);
+    writeFileSync(results, read(COMMITTED_RESULTS));
+    // The run folder as the steps would have left it. Every write-up is usable, and every one from one family
+    // already points its flaw out, so those cases are left out by rule and 111 flawed cases from the other remain.
+    const kept = many.filter((row) => row.author_family === "openai");
+    assert.equal(kept.length, 111);
+    assert.ok(kept.length >= MIN_ANALYSED_FLAWED);
+    // The product caught 60 of them and the fresh-context arm 30 of the same 60: pooled, 30 to 0.
+    const grades = kept.flatMap((row, i) => ARMS.map((arm) => ({ id: row.id, arm, label: i < (arm === "C" || arm === "D" ? 60 : 30) ? "yes" : "no", objections: 2 })));
+    writeFileSync(join(out, "meta.json"), JSON.stringify({ split: "frozen", rehearsal: [], seeds_sha256: sum, steps: {} }));
+    writeFileSync(join(out, "writeups.jsonl"), toJsonl(many.map((row) => ({ id: row.id, usable: true, visible: "yes", flagged: row.author_family === "anthropic" ? "yes" : "no" }))));
+    writeFileSync(join(out, "answers.jsonl"), toJsonl(kept.flatMap((row) => ARMS.map((arm) => ({ id: row.id, arm, usable: true, words: 120, served_company: arm === "D" ? "google" : null })))));
+    writeFileSync(join(out, "grades.jsonl"), toJsonl(grades));
+    writeFileSync(join(out, "audit-map.jsonl"), toJsonl(grades.slice(0, 40).map((row, n) => ({ n: n + 1, id: row.id, arm: row.arm, sample: true, graders: row.label }))));
+    writeFileSync(labels, grades.slice(0, 40).map((row, n) => `${n + 1}: ${row.label}`).join("\n"));
+    assert.ok(mcnemarExactP(30, 0) < 0.001, "the pooled counts alone would read D better");
+
+    const args = ["--split", "frozen", "--seeds", join(dir, "seeds.jsonl"), "--arms", join(dir, "arms.json"), "--checksum", join(dir, "seeds.sha256"), "--out", out, "--date", "2026-12-01", "--commit", "abc1234"];
+    const report = await runCli(["report", ...args, "--owner-labels", labels, "--results", results], envFor());
+    assert.equal(report.code, 2, report.stdout + report.stderr);
+    assert.match(report.stdout, /\| D: the product as shipped \| 111 \| 111 \| 111 \| 0 \|/, "the answers were all there and all graded");
+    assert.match(
+      report.stdout,
+      /::error::Not measured: the split by author family is missing\. Flawed cases were analysed for: openai\. D minus B is needed for each of anthropic and openai, so a sign flip can be checked\./,
+    );
+    assert.match(report.stdout, /No score is reported and no results file was changed\./);
+    assert.doesNotMatch(report.stdout, /## Result|Public block|Catch on flawed cases|D better|p 0\./);
+    assert.equal(existsSync(join(out, "public-block.json")), false);
+    assert.equal(existsSync(join(out, "report.json")), false);
+    assert.equal(read(results), read(COMMITTED_RESULTS), "the results file is byte for byte as it was");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("a report before the arms have run is Not measured: no arm answers", async () => {
     const { dir, router, env, args, results } = await setup({});
     const author = await runCli(["author", ...args], env);
@@ -2200,5 +2717,90 @@ describe("the full report on a set large enough to test", () => {
     assert.match(renderReport(noFloor), /## Result: Not measured\n\nWhy: too few usable write-ups\.\nNothing here is a result\. No counts are published\./);
     validateFourArm(JSON.parse(JSON.stringify(report.public_block)));
     assert.equal(countWords("one two  three"), 3);
+  });
+});
+
+describe("D against A and B against A by flaw type", () => {
+  const cases = [];
+  const items = [];
+  const add = (n, type, hits) => {
+    for (let i = 0; i < n; i += 1) {
+      const id = `${type ?? "untyped"}-${hits.join("") || "none"}-${i}`;
+      cases.push({ id, kind: "flawed", ...(type ? { flaw_type: type } : {}), author_family: AUTHOR_FAMILIES[i % 2], drafter_family: "owner", visible: "yes" });
+      for (const arm of ARMS) items.push({ id, arm, usable: !(arm === "A" && type === "sunk-cost" && i === 0), label: hits.includes(arm) ? "yes" : "no", words: 120, objections: 3, served_company: arm === "D" ? "google" : null });
+    }
+  };
+  // On the two types close to the brief, the arms that carry the brief catch what arm A misses.
+  add(3, "small-sample", ["B", "C", "D"]);
+  add(2, "contradicts-own-goal", ["A", "B", "C", "D"]);
+  add(1, "contradicts-own-goal", ["D"]);
+  // On the others they are level.
+  add(1, "arithmetic", ["D"]);
+  add(1, "arithmetic", ["A"]);
+  add(2, "arithmetic", []);
+  add(2, "sunk-cost", ["A", "B"]);
+  // A case row written before the flaw type was kept.
+  add(1, null, ["A", "D"]);
+  const report = summarize({ cases, items, date: "2026-12-01", commit: "abc1234", single_drafter: false, audit: { agree: 38, of: 40, labels_by: "graders" }, write_up_floor_met: true });
+  const brief = (row) => [row.key, row.cases, row.both, row.first_only, row.second_only, row.neither];
+
+  it("splits both comparisons by flaw type, one row per type, in the type's own name", () => {
+    assert.deepEqual(report.splits.by_flaw_type.product_vs_same_chat.map(brief), [
+      ["arithmetic", 4, 0, 1, 1, 2],
+      ["contradicts-own-goal", 3, 2, 1, 0, 0],
+      ["not recorded", 1, 1, 0, 0, 0],
+      ["small-sample", 3, 0, 3, 0, 0],
+      ["sunk-cost", 2, 0, 0, 1, 1],
+    ]);
+    assert.deepEqual(report.splits.by_flaw_type.fresh_brief_vs_same_chat.map(brief), [
+      ["arithmetic", 4, 0, 0, 1, 3],
+      ["contradicts-own-goal", 3, 2, 0, 0, 1],
+      ["not recorded", 1, 0, 0, 1, 0],
+      ["small-sample", 3, 0, 3, 0, 0],
+      ["sunk-cost", 2, 1, 1, 0, 0],
+    ]);
+    // Arm A gave no usable answer on one sunk-cost case. That is a miss for arm A, and the usable-only cells leave the case out.
+    const sunk = report.splits.by_flaw_type.fresh_brief_vs_same_chat.find((row) => row.key === "sunk-cost");
+    assert.deepEqual([sunk.usable_both, sunk.usable_first_only, sunk.usable_second_only, sunk.usable_neither], [1, 0, 0, 0]);
+  });
+
+  it("adds the four types close to the brief together, and the other types together", () => {
+    assert.deepEqual(report.splits.by_brief_named.product_vs_same_chat.map(brief), [
+      ["close to what the brief names", 6, 2, 4, 0, 0],
+      ["not recorded", 1, 1, 0, 0, 0],
+      ["other flaw types", 6, 0, 1, 2, 3],
+    ]);
+    assert.deepEqual(report.splits.by_brief_named.fresh_brief_vs_same_chat.map(brief), [
+      ["close to what the brief names", 6, 2, 3, 0, 1],
+      ["not recorded", 1, 0, 0, 1, 0],
+      ["other flaw types", 6, 1, 1, 1, 3],
+    ]);
+    // Every analysed flawed case is in exactly one row of each split.
+    for (const split of [report.splits.by_flaw_type, report.splits.by_brief_named]) {
+      for (const rows of [split.product_vs_same_chat, split.fresh_brief_vs_same_chat]) assert.equal(rows.reduce((sum, row) => sum + row.cases, 0), cases.length);
+    }
+  });
+
+  it("prints both splits, marks the four types, and runs no test on them", () => {
+    assert.equal(report.decision.outcome, "too-few-cases");
+    const text = renderReport(report);
+    const section = (title, next) => text.slice(text.indexOf(title), text.indexOf(next));
+    const dA = section("## D against A by flaw type (shown, not tested)", "## B against A by flaw type (shown, not tested)");
+    const bA = section("## B against A by flaw type (shown, not tested)", "## Which companies served the product arm");
+    for (const part of [dA, bA]) {
+      assert.ok(part.length > 0);
+      assert.ok(
+        part.includes(`Four flaw types sit close to what Grill's brief asks for by name: ${BRIEF_NAMED_FLAW_TYPES.join(", ")}. On those, arms B, C and D carry the brief and arm A does not.`),
+        part,
+      );
+      assert.doesNotMatch(part, /p \d|95% interval/, "shown, not tested");
+      assert.match(part, /^- small-sample \(close to what the brief names\)\. Flawed cases: 3\. Only the first arm caught: 3\. Only the second arm caught: 0\. On usable answers only: 3 and 0\.$/m);
+      assert.match(part, /^- arithmetic\. Flawed cases: 4\./m);
+      assert.match(part, /^- not recorded\. Flawed cases: 1\./m);
+    }
+    assert.match(dA, /^- The four types close to what the brief names, together\. Flawed cases: 6\. Only the first arm caught: 4\. Only the second arm caught: 0\. On usable answers only: 4 and 0\.$/m);
+    assert.match(dA, /^- The other flaw types, together\. Flawed cases: 6\. Only the first arm caught: 1\. Only the second arm caught: 2\. On usable answers only: 1 and 2\.$/m);
+    assert.match(bA, /^- The four types close to what the brief names, together\. Flawed cases: 6\. Only the first arm caught: 3\. Only the second arm caught: 0\./m);
+    assert.ok(dA.indexOf("together.") < dA.indexOf("- arithmetic."), "the two sums come first, then each type");
   });
 });

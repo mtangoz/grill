@@ -59,8 +59,8 @@
  *   0   the step finished, or a dev step was skipped for lack of a key without --require-key
  *   1   a problem with the seeds, the arms file, the registration or the arguments
  *   2   Not measured: no key on the frozen split or under --require-key, too few usable
- *       write-ups, too few usable answers, or the grader check was not passed. No score is
- *       printed and no results file is changed.
+ *       write-ups, too few usable answers, the grader check was not passed, or D minus B
+ *       is missing for an author family. No score is printed and no results file is changed.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -80,6 +80,7 @@ import {
   ID_CONFIRMED,
   MIN_ANALYSED_FLAWED,
   SEED_KEYS,
+  SPLIT_MISSING_REASON,
   USABLE_FLOOR,
   analysedCases,
   armAMessages,
@@ -1048,6 +1049,10 @@ function reportCommand(opts) {
     const usable = items.filter((item) => itemUsable(item)).length;
     const why = report.decision.reasons.join("; ");
     if (why.includes("write-ups")) notMeasured(`only ${floor.usable} of ${floor.of} write-ups are usable.`);
+    if (why.includes(SPLIT_MISSING_REASON)) {
+      const families = report.splits.by_author.map((row) => row.key).join(", ") || "none";
+      notMeasured(`${SPLIT_MISSING_REASON}. Flawed cases were analysed for: ${families}. D minus B is needed for each of ${AUTHOR_FAMILIES.join(" and ")}, so a sign flip can be checked.`);
+    }
     if (why.includes("grader")) {
       notMeasured(
         audit
