@@ -541,7 +541,7 @@ describe("the pull request template", () => {
   });
 
   it("has no em dash or en dash", () => {
-    assert.doesNotMatch(template, /[–—]/);
+    assert.doesNotMatch(template, /[\u2013\u2014]/);
   });
 });
 
@@ -583,6 +583,6 @@ describe("CONTRIBUTING.md and docs/PR-AUTOMATION.md say what the template says",
   });
 
   it("neither has an em dash or an en dash", () => {
-    for (const [name, text] of Object.entries(docs)) assert.doesNotMatch(text, /[–—]/, name);
+    for (const [name, text] of Object.entries(docs)) assert.doesNotMatch(text, /[\u2013\u2014]/, name);
   });
 });
