@@ -19,6 +19,7 @@ The judge is a model from a different company.
 Grill uses OpenRouter's Auto Router, and it does not pin models.
 Only the write-up you approve leaves your machine.
 Every promise, and the code and test that enforce it: [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
+What has been measured about the judge, and what has not: [grillyour.ai/how-we-test](https://grillyour.ai/how-we-test/).
 
 ## Set up
 

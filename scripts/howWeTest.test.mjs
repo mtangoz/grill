@@ -708,6 +708,35 @@ describe("the /how-we-test page", () => {
   });
 });
 
+describe("the way to /how-we-test/", () => {
+  it("is linked once from the about page, the FAQ and the README, and each says what the page holds", () => {
+    const about = read("site/about.html");
+    const aboutLink = 'What has been measured about the judge, and what has not, is on <a href="/how-we-test/">How Grill tests its judge</a>.';
+    assert.equal(about.split(aboutLink).length - 1, 1);
+    assert.equal((about.match(/how-we-test/g) ?? []).length, 1, "one link, and nothing else about the page");
+    assert.ok(today.out("about/index.md").includes("is on [How Grill tests its judge](https://grillyour.ai/how-we-test/)."));
+
+    const faq = read("site/faq.html");
+    assert.equal((faq.match(/href="\/how-we-test\/"/g) ?? []).length, 1);
+    assert.ok(today.out("faq/index.md").includes("[grillyour.ai/how-we-test/](https://grillyour.ai/how-we-test/)"));
+
+    const readme = read("README.md");
+    const readmeLink = "What has been measured about the judge, and what has not: [grillyour.ai/how-we-test](https://grillyour.ai/how-we-test/).";
+    assert.equal(readme.split(readmeLink).length - 1, 1);
+    assert.equal((readme.match(/how-we-test/g) ?? []).length, 2, "the link's words and its address, once");
+    const promises = readme.slice(readme.indexOf("## What Grill promises"), readme.indexOf("## Set up"));
+    assert.ok(promises.includes(readmeLink), "it sits with the promises");
+
+    // The page is in the list an assistant reads, between the other pages and the FAQ answers.
+    const pagesAt = today.llms.indexOf("## Pages\n");
+    const faqAt = today.llms.indexOf("## FAQ\n");
+    const lineAt = today.llms.indexOf(`- [How Grill tests its judge](${CANONICAL}): `);
+    assert.ok(pagesAt > 0 && lineAt > pagesAt && faqAt > lineAt);
+    // Three places in llms.txt name the page: its own line, and the address and the name in the FAQ answer.
+    assert.ok(today.llms.slice(faqAt).includes("are at grillyour.ai/how-we-test/ (How Grill tests its judge)."));
+  });
+});
+
 describe("the site build stops rather than publish a broken /how-we-test/", () => {
   const editPage = (edit) => (dir) => {
     const path = join(dir, "site", "how-we-test.html");
