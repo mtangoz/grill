@@ -518,7 +518,7 @@ writePage("privacy.html", {
   url: `${SITE_URL}privacy/`,
   outDir: "privacy",
   name: "Privacy",
-  blurb: "The free tool has no account. Grill keeps a grill from it only when you send that one. Grill in chat keeps only what you choose, encrypted, and you can delete it.",
+  blurb: "The free tool has no account. Grill keeps a grill from it only when you send that one. Grill in chat keeps your account, a 15-minute encrypted copy of each grill that gets a verdict, and a log and counts of your use. It keeps a record of a decision only if you say yes, encrypted, and you can delete it.",
 });
 writePage("about.html", {
   description: "Hear the strongest case against your plan, then decide for yourself. Grill is made by Hold.",

@@ -16,7 +16,7 @@ const privacyPage = readFileSync(join(ROOT, "site/privacy.html"), "utf8");
 // The standalone sentence "Grill keeps nothing." A word boundary keeps this from matching
 // "The free tool has no account and keeps nothing." on /privacy.
 const GRILL_KEEPS_NOTHING = /\bGrill keeps nothing\./;
-const CHAT_KEEPS_CHOSEN = "Grill in chat keeps only what you choose";
+const CHAT_KEEPS_CHOSEN = "Grill in chat keeps your account, a 15-minute encrypted copy of each grill that gets a verdict";
 
 describe("site/page.html", () => {
   it("is a body with no document skeleton, so it publishes as an artifact unchanged", () => {
@@ -400,7 +400,7 @@ describe("the site build", () => {
         assert.match(llms, new RegExp(`\\[[^\\]]+\\]\\(${escaped}\\): \\S`), `llms.txt links ${url}`);
       }
       // The privacy link keeps that page's own limit. Chat keeps a record only when you choose.
-      assert.match(llms, /https:\/\/grillyour\.ai\/privacy\/\): [^\n]*keeps only what you choose/);
+      assert.match(llms, /https:\/\/grillyour\.ai\/privacy\/\): [^\n]*It keeps a record of a decision only if you say yes, encrypted, and you can delete it\./);
     };
     check(build());
     const withMiss = build({ GRILL_MISS: "1" });
@@ -933,11 +933,11 @@ describe("the privacy page", () => {
     ]) {
       assert.ok(block.includes(line), line);
     }
-    const keys = "Only you see your records on the site. Grill's maintainers hold the encryption keys, so they could technically decrypt records you chose to keep. A grill you choose to send can be read by them, so Grill can learn what is working. They don't publish it, and they don't read a grill you did not send.";
+    const keys = "Only you see your records on the site. Grill's maintainers hold the encryption keys, so they could technically decrypt records and drafts you chose to keep, the 15-minute copy of each grill, and reactions. A grill you choose to send can be read by them, so Grill can learn what is working. They don't publish it, and they don't read a grill you did not send.";
     assert.ok(privacyPage.includes(keys), "encryption-keys line");
     assert.match(privacyPage, /<h2>Using Grill in chat \(the connector\)<\/h2>/);
-    assert.match(privacyPage, /The free tool has no account\. Grill keeps a grill from it only when you send that one\. Grill in chat keeps only what you choose, encrypted, and you can delete it\./);
-    assert.match(privacyPage, /We don't keep what you decide unless you choose to keep decision records \(Grill in chat\) or saved report copies \(Pro\), and you can delete them\./);
+    assert.match(privacyPage, /The free tool has no account\. Grill keeps a grill from it only when you send that one\. Grill in chat keeps your account, a 15-minute encrypted copy of each grill that gets a verdict, and a log and counts of your use\. It keeps a record of a decision only if you say yes, encrypted, and you can delete it\./);
+    assert.match(privacyPage, /Apart from the 15-minute encrypted copy of each grill in chat and a grill you send after a reaction, we don't keep what you decide unless you choose to keep decision records \(Grill in chat\) or saved report copies \(Pro\), and you can delete them\./);
   });
 });
 
@@ -1472,7 +1472,7 @@ describe("markdown for agents", () => {
     assert.doesNotMatch(md, GRILL_KEEPS_NOTHING);
     assert.equal(GRILL_KEEPS_NOTHING.test("The free tool has no account and keeps nothing."), false);
     assert.doesNotMatch(privacyPage, GRILL_KEEPS_NOTHING);
-    assert.match(privacyPage, /The free tool has no account\. Grill keeps a grill from it only when you send that one\. Grill in chat keeps only what you choose, encrypted, and you can delete it\./);
+    assert.match(privacyPage, /The free tool has no account\. Grill keeps a grill from it only when you send that one\. Grill in chat keeps your account, a 15-minute encrypted copy of each grill that gets a verdict, and a log and counts of your use\. It keeps a record of a decision only if you say yes, encrypted, and you can delete it\./);
     for (const url of [
       "https://grillyour.ai/start/",
       "https://grillyour.ai/terms",
@@ -1643,7 +1643,8 @@ describe("markdown for agents", () => {
         "We never sell your data.",
         "We never train AI on your decisions.",
         "The free tool has no account. Grill keeps a grill from it only when you send that one.",
-        "Grill in chat keeps only what you choose, encrypted, and you can delete it.",
+        "Grill in chat keeps your account, a 15-minute encrypted copy of each grill that gets a verdict, and a log and counts of your use.",
+        "It keeps a record of a decision only if you say yes, encrypted, and you can delete it.",
       ]) {
         assert.ok(privacy.includes(line), `privacy markdown is missing: ${line}`);
       }

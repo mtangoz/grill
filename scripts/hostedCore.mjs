@@ -74,7 +74,7 @@ export const RECORDS_QUESTION = "Keep a record of your decisions on your Grill a
  * holds one question. It makes no claim about which company the judge is from, because this
  * is shown before Grill has looked at who is asking.
  */
-export const RECORDS_NOTE = `Either way, your decision goes through Grill's server to an outside AI judge that OpenRouter picks, and to a quality check by TypeSafe. If you say yes, Grill keeps an encrypted record that its operators could open, and emails you on Mondays when a look-back is due unless you turn that off. What is kept and for how long: ${DATA_FLOW_URL}`;
+export const RECORDS_NOTE = `Either way, your decision goes through Grill's server to an outside AI judge that OpenRouter picks, and to a quality check by TypeSafe. If you say yes, Grill keeps an encrypted record that its operators could open, and, while the Monday email test runs, may email you on a Monday when a look-back is due, unless you turn that off. What is kept and for how long: ${DATA_FLOW_URL}`;
 
 export const CONSENT_TEXT = [
   RECORDS_QUESTION,

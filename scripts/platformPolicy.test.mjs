@@ -565,7 +565,7 @@ describe("the records question, asked before the first send", () => {
   const lines = hostedCore.CONSENT_TEXT.split("\n");
   // The paragraph under the question, word for word.
   const NOTE =
-    "Either way, your decision goes through Grill's server to an outside AI judge that OpenRouter picks, and to a quality check by TypeSafe. If you say yes, Grill keeps an encrypted record that its operators could open, and emails you on Mondays when a look-back is due unless you turn that off. What is kept and for how long: https://grillyour.ai/data-flow/";
+    "Either way, your decision goes through Grill's server to an outside AI judge that OpenRouter picks, and to a quality check by TypeSafe. If you say yes, Grill keeps an encrypted record that its operators could open, and, while the Monday email test runs, may email you on a Monday when a look-back is due, unless you turn that off. What is kept and for how long: https://grillyour.ai/data-flow/";
 
   it("keeps the question byte for byte, and asks one question only", () => {
     assert.equal(lines[0], "Keep a record of your decisions on your Grill account? Yes / No");
