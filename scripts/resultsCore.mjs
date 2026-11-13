@@ -939,7 +939,7 @@ export function renderRegression(json) {
   const out = ["<h2>A weekly regression check, not a measure of quality</h2>"];
   out.push(
     note(
-      "Each week Grill runs its judge on a public set of made-up cases. Some hold a planted flaw, some ask a loaded question, and some are sound plans. The check can show the judge going quiet or breaking its output rules. It cannot rank one critic against another.",
+      "Grill's weekly check runs its judge on a public set of made-up cases. Some hold a planted flaw, some ask a loaded question, and some are sound plans. The check can show the judge going quiet or breaking its output rules. It cannot rank one critic against another.",
     ),
   );
   const run = latestRun(json);
