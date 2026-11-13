@@ -745,6 +745,11 @@ export const MCP_CONNECT_KEY = "grill:metric:mcp_connect";
 export const MCP_SIGNED_IN_KEY = "grill:metric:mcp_signed_in";
 /** An initialize is a short JSON-RPC message. A larger body is not counted, and it is not read. */
 export const MCP_CONNECT_BODY_MAX = 8192;
+/**
+ * How long the connect counter may wait on a body read or a Redis write.
+ * A stream or a store that never answers does not hold the 401 or the initialize.
+ */
+export const MCP_METRIC_BUDGET_MS = 100;
 
 /**
  * Streamable HTTP requires both types. A scanner that only asks for JSON,

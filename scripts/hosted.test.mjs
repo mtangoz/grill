@@ -57,6 +57,7 @@ import {
   sourceAppFromClient,
   wwwAuthenticate,
   MCP_CONNECT_KEY,
+  MCP_METRIC_BUDGET_MS,
   MCP_SIGNED_IN_KEY,
   HOSTED_LOOK_BACK_DESCRIPTION,
   HOSTED_LOOK_BACK_RECORDS,
@@ -528,6 +529,66 @@ describe("hosted Grill", { concurrency: false }, () => {
     assert.match(ledger, /grill:metric:mcp_signed_in/);
     assert.match(ledger, /text\/event-stream/);
     assert.match(ledger, /no cookie/i);
+  });
+
+  it("does not hold the 401 or the initialize when the body or the counter never finishes", async () => {
+    const limit = MCP_METRIC_BUDGET_MS + 400;
+    const within = async (work) => {
+      let timer;
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`still waiting after ${limit}ms`)), limit);
+      });
+      try {
+        return await Promise.race([work(), timeout]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    const accept = "application/json, text/event-stream";
+    const stalled = new ReadableStream({
+      pull() {
+        return new Promise(() => {});
+      },
+    });
+    const ctx = world();
+    const refused = await within(() =>
+      handleMcp(
+        new Request(RESOURCE, {
+          method: "POST",
+          duplex: "half",
+          headers: { accept, "content-type": "application/json" },
+          body: stalled,
+        }),
+        ctx,
+      ),
+    );
+    assert.equal(refused.status, 401);
+    assert.equal(refused.headers.get("www-authenticate"), wwwAuthenticate("https://mcp.example"));
+    assert.equal(await refused.text(), JSON.stringify({ error: "unauthorized" }));
+    assert.equal(ctx.memory.command(["GET", MCP_CONNECT_KEY]), null);
+
+    const hung = world();
+    hung.redis = () => new Promise(() => {});
+    const init = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } });
+    const stillRefused = await within(() =>
+      handleMcp(
+        new Request(RESOURCE, {
+          method: "POST",
+          headers: { accept, "content-type": "application/json" },
+          body: init,
+        }),
+        hung,
+      ),
+    );
+    assert.equal(stillRefused.status, 401);
+    assert.equal(await stillRefused.text(), JSON.stringify({ error: "unauthorized" }));
+
+    const token = signJwt(claims());
+    const ok = await within(() =>
+      postMcp(hung, { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } }, { token }),
+    );
+    assert.equal(ok.res.status, 200);
+    assert.equal(ok.json.result.protocolVersion, "2025-06-18");
   });
 
   it("rejects a bad signature, the wrong issuer, an expired token, a missing token, and a query-string token", async () => {

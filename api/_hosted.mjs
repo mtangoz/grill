@@ -108,6 +108,7 @@ import {
   FUNNEL_KEYS,
   MCP_CONNECT_BODY_MAX,
   MCP_CONNECT_KEY,
+  MCP_METRIC_BUDGET_MS,
   MCP_SIGNED_IN_KEY,
   acceptsMcpStream,
   isMcpInitialize,
@@ -2570,10 +2571,22 @@ export async function handleFeedback(request, deps) {
   return new Response(null, { status: 204, headers });
 }
 
+const METRIC_WAIT = Symbol("metric-wait");
+
+/** Resolves with the value, or METRIC_WAIT when the budget runs out. The timer is cleared either way. */
+function withinBudget(promise, budgetMs) {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(METRIC_WAIT), budgetMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 /**
  * A chat app's first POST, before sign-in. The body is read only when the
- * Accept header is already the MCP pair, and only up to a short cap. The
- * counter is one INCR. A failure here still returns the same 401.
+ * Accept header is already the MCP pair, only up to a short cap, and only
+ * for a short time. The counter is one INCR, also on that clock. A failure
+ * or a wait that runs out still returns the same 401.
  */
 async function mcpConnectBody(request) {
   const declared = Number(request.headers.get("content-length"));
@@ -2583,9 +2596,14 @@ async function mcpConnectBody(request) {
   const reader = body.getReader();
   const chunks = [];
   let total = 0;
+  const started = Date.now();
   try {
     for (;;) {
-      const { done, value } = await reader.read();
+      const left = MCP_METRIC_BUDGET_MS - (Date.now() - started);
+      if (left <= 0) return "";
+      const step = await withinBudget(reader.read(), left);
+      if (step === METRIC_WAIT) return "";
+      const { done, value } = step;
       if (done) break;
       total += value.byteLength;
       if (total > MCP_CONNECT_BODY_MAX) return "";
@@ -2594,13 +2612,16 @@ async function mcpConnectBody(request) {
   } catch {
     return "";
   } finally {
-    try {
-      await reader.cancel();
-    } catch {
-      // The bytes already copied are the whole prefix.
-    }
+    reader.cancel().catch(() => {});
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+/** One INCR. A throw is ignored. A store that never answers is abandoned after the budget. */
+async function countMetricBounded(deps, key) {
+  const pending = countFunnel(deps, key);
+  const result = await withinBudget(pending, MCP_METRIC_BUDGET_MS);
+  if (result === METRIC_WAIT) pending.catch(() => {});
 }
 
 async function noteMcpConnect(request, deps) {
@@ -2608,7 +2629,7 @@ async function noteMcpConnect(request, deps) {
     if (!acceptsMcpStream(request.headers.get("accept"))) return;
     const raw = await mcpConnectBody(request);
     if (!isMcpInitialize(raw)) return;
-    await countFunnel(deps, MCP_CONNECT_KEY);
+    await countMetricBounded(deps, MCP_CONNECT_KEY);
   } catch {
     // A missed counter is not a blocked connect. The 401 is unchanged.
   }
@@ -2661,7 +2682,7 @@ export async function handleMcp(request, deps) {
     if (rpcId === undefined || rpcId === null) return new Response(null, { status: 202 });
     if (msg.method === "initialize") {
       rememberClientCompany(who.payload, msg.params, userAgent);
-      await countFunnel(deps, MCP_SIGNED_IN_KEY);
+      await countMetricBounded(deps, MCP_SIGNED_IN_KEY);
       return rpcResponse(
         rpcId,
         {
