@@ -280,7 +280,7 @@ describe("the site build", () => {
     assert.match(html, /^<!doctype html>/);
     assert.match(head, /<title>Grill: grill your AI before you send it to your boss<\/title>/);
     assert.match(head, /<meta property="og:title" content="Grill: grill your AI before you send it to your boss">/);
-    assert.match(head, /<meta name="description" content="Grill your AI before you send it to your boss\. A model from another company finds the weak spots in your plan and one cheap way to test them\. Works with ChatGPT, Claude, Gemini and more\.">/);
+    assert.match(head, /<meta name="description" content="Grill your AI before you send it to your boss\. A different AI argues the case against your plan and names one cheap test\. Works with ChatGPT, Claude, Gemini and more\.">/);
     assert.match(head, /<link rel="canonical" href="https:\/\/grillyour\.ai\/">/);
     assert.match(head, /<meta name="color-scheme" content="light dark">/);
     assert.match(head, /<meta name="theme-color" content="#f7f4ef" media="\(prefers-color-scheme: light\)">/);

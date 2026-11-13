@@ -25,7 +25,7 @@ const GITHUB_URL = "https://github.com/mtangoz/grill";
 const TAGLINE = "Grill your AI before you send it to your boss.";
 const HOME_TITLE = "Grill: grill your AI before you send it to your boss";
 const DESCRIPTION =
-  `${TAGLINE} A model from another company finds the weak spots in your plan and one cheap way to test them. Works with ChatGPT, Claude, Gemini and more.`;
+  `${TAGLINE} A different AI argues the case against your plan and names one cheap test. Works with ChatGPT, Claude, Gemini and more.`;
 // One schema.org block on the homepage. The description is the meta description above.
 // ProductivityApplication is the closer category: Grill challenges a plan before you act.
 // Nothing here is an offer, a rating, a review, or a claim the homepage does not already make.
