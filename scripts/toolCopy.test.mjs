@@ -142,5 +142,13 @@ describe("MCP tool copy does not ask for the conversation", () => {
       prompt.includes("**Send the decision as I stated it,** plus a brief summary of the essential context, at most a few sentences."),
       "prompts/grill.md should ask for a brief summary of the essential context",
     );
+    // The cap alone is half the rule. The paste prompt carries the prohibition every other route carries.
+    assert.ok(prompt.includes(DO_NOT_INCLUDE));
+    assert.ok(
+      prompt.includes(
+        `**Send the decision as I stated it,** plus a brief summary of the essential context, at most a few sentences. ${DO_NOT_INCLUDE} Do not rewrite it into a template.`,
+      ),
+      "prompts/grill.md should say what not to include right after the cap, in the step that says what to send",
+    );
   });
 });
