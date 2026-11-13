@@ -3,8 +3,13 @@
 // the context that matters. They must not ask for the conversation itself.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { buildGrillTools } from "../server/index.mjs";
 import { hostedTools } from "./hostedCore.mjs";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 // Phrases that ask an assistant to hand over chat contents. A sentence that
 // forbids them ("do not include the full conversation") is not a request.
@@ -39,6 +44,18 @@ function assistantCopy(tool) {
     }
   }
   return rows;
+}
+
+/** The requesting phrases a text uses without forbidding them, sentence by sentence. */
+function requestingPhrasesIn(text) {
+  const found = [];
+  for (const sentence of sentences(text)) {
+    const lower = sentence.toLowerCase();
+    for (const phrase of REQUESTING_PHRASES) {
+      if (lower.includes(phrase) && !negatedBefore(sentence, phrase)) found.push(`"${phrase}": ${sentence}`);
+    }
+  }
+  return found;
 }
 
 function requestingHits(tools) {
@@ -102,5 +119,28 @@ describe("MCP tool copy does not ask for the conversation", () => {
     const others = hosted.filter((tool) => tool.name !== "grill");
     assert.equal(others.length, 4);
     assert.deepEqual(requestingHits(others), []);
+  });
+
+  // The skill and the copy-and-paste prompt are instructions an assistant follows too.
+  // They are not tool descriptions, but they say what to send, so the same phrases are out.
+  it("the grill skill and the copy-and-paste prompt do not ask for the conversation either", () => {
+    const old = "1. **Send the decision as I stated it,** with whatever context is already in the chat.";
+    assert.equal(requestingPhrasesIn(old).length, 2, "the check catches the sentence the prompt used to carry");
+    assert.deepEqual(requestingPhrasesIn("Do not include whatever context is already in the chat."), []);
+    const skill = readFileSync(join(ROOT, "skills/grill/SKILL.md"), "utf8");
+    const prompt = readFileSync(join(ROOT, "prompts/grill.md"), "utf8");
+    for (const [file, text] of [
+      ["skills/grill/SKILL.md", skill],
+      ["prompts/grill.md", prompt],
+    ]) {
+      assert.deepEqual(requestingPhrasesIn(text), [], `${file} asks for the conversation`);
+      assert.match(text, FEW_SENTENCES, `${file} does not cap the context at a few sentences`);
+    }
+    assert.match(skill, BRIEF_CONTEXT);
+    assert.ok(skill.includes(DO_NOT_INCLUDE));
+    assert.ok(
+      prompt.includes("**Send the decision as I stated it,** plus a brief summary of the essential context, at most a few sentences."),
+      "prompts/grill.md should ask for a brief summary of the essential context",
+    );
   });
 });
