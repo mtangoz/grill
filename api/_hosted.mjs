@@ -222,9 +222,12 @@ const userCache = new Map();
 const creditCache = new Map();
 // Clerk's authorization-server documents, keyed by the upstream URL. Public metadata only.
 const authMetadataCache = new Map();
-// Company named on initialize, keyed by the sign-in subject. This process only.
-// The grill request also reads User-Agent, so a different instance still sees that.
+// Company named on initialize, kept per sign-in subject and, under it, per client: the token's
+// client id plus the User-Agent. A handshake is reused only by the client that made it.
+// This process only. The grill request also reads User-Agent, so a different instance still sees that.
 const clientHintBySub = new Map();
+// The most clients remembered for one person. The oldest goes first.
+const CLIENT_HINTS_PER_PERSON = 8;
 // Whether this process has already written the day the outside counters went live.
 let outsideLiveNoted = false;
 export const AUTH_METADATA_CACHE_MS = 60_000;
@@ -1535,28 +1538,45 @@ function clientInfoOf(params) {
   return params?._meta?.clientInfo || params?.clientInfo || null;
 }
 
+function tokenClientId(payload) {
+  return typeof payload?.client_id === "string" ? payload.client_id : typeof payload?.azp === "string" ? payload.azp : "";
+}
+
+/** Which client a handshake belongs to: the token's client id and the User-Agent. */
+function clientHintKey(payload, userAgent) {
+  return JSON.stringify([tokenClientId(payload), String(userAgent || "")]);
+}
+
 function clientFromToken(payload, params, deps) {
   const sub = typeof payload?.sub === "string" ? payload.sub : "";
+  const userAgent = deps?.userAgent || "";
   return sourceAppFromClient({
     redirectUri: typeof payload.redirect_uri === "string" ? payload.redirect_uri : "",
-    clientId: typeof payload.client_id === "string" ? payload.client_id : typeof payload.azp === "string" ? payload.azp : "",
+    clientId: tokenClientId(payload),
     clientInfo: clientInfoOf(params),
-    userAgent: deps?.userAgent || "",
-    remembered: sub ? clientHintBySub.get(sub) : null,
+    userAgent,
+    remembered: sub ? clientHintBySub.get(sub)?.get(clientHintKey(payload, userAgent)) : null,
   });
 }
 
-/** Keep the initialize handshake's company for later tool calls in this process. */
+/** Keep the initialize handshake's company for this same client's later tool calls in this process. */
 function rememberClientCompany(payload, params, userAgent) {
   const sub = typeof payload?.sub === "string" ? payload.sub : "";
   if (!sub) return;
   const hint = sourceAppFromClient({
     redirectUri: typeof payload?.redirect_uri === "string" ? payload.redirect_uri : "",
-    clientId: typeof payload?.client_id === "string" ? payload.client_id : typeof payload?.azp === "string" ? payload.azp : "",
+    clientId: tokenClientId(payload),
     clientInfo: clientInfoOf(params),
     userAgent,
   });
-  if (hint.company) clientHintBySub.set(sub, hint);
+  const key = clientHintKey(payload, userAgent);
+  const mine = clientHintBySub.get(sub) || new Map();
+  mine.delete(key);
+  if (hint.company) {
+    if (mine.size >= CLIENT_HINTS_PER_PERSON) mine.delete(mine.keys().next().value);
+    mine.set(key, hint);
+  }
+  if (mine.size) clientHintBySub.set(sub, mine);
   else clientHintBySub.delete(sub);
 }
 

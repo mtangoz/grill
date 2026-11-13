@@ -933,14 +933,58 @@ describe("hosted Grill", { concurrency: false }, () => {
           },
           { token: remembered, userAgent: "Google-Discovery-Engine/1.0" },
         );
-        const later = await postMcp(ctx, grill(5), { token: remembered, deps });
+        // The same client sends the same User-Agent on its later calls.
+        const later = await postMcp(ctx, grill(5), { token: remembered, userAgent: "Google-Discovery-Engine/1.0", deps });
         assert.equal(later.json.result.isError, false, textOf(later.json));
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
+        // A call under the same sign-in without that User-Agent is another client. The handshake is not its own.
+        const other = await postMcp(ctx, grill(7), { token: remembered, deps });
+        assert.equal(other.json.result.isError, false, textOf(other.json));
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
+        assert.ok(textOf(other.json).includes(INDEPENDENCE_NOT_VERIFIED), textOf(other.json));
 
         const claude = signJwt(claims({ sub: "user_claude_ua", redirect_uri: CLAUDE_WEB_REDIRECT }));
         const claudeCall = await postMcp(ctx, grill(6), { token: claude, userAgent: "Google-Discovery-Engine/1.0", deps });
         assert.equal(claudeCall.json.result.isError, false, textOf(claudeCall.json));
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
+      } finally {
+        await fake.close();
+      }
+    });
+
+    it("remembers at most eight clients for one person, and forgets a client that connects again without a name it knows", async () => {
+      const fake = await startFakeOpenRouter();
+      try {
+        const ctx = world();
+        const token = signJwt(claims());
+        const deps = { ...judgeDeps(fake), waitMs: 20_000 };
+        const connect = (userAgent, name) =>
+          postMcp(
+            ctx,
+            { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name, version: "1" } } },
+            { token, userAgent },
+          );
+        const excludedFor = async (userAgent) => {
+          const out = await postMcp(
+            ctx,
+            { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: wait a week.", keep_records: false, quality_check: false } } },
+            { token, userAgent, deps },
+          );
+          assert.equal(out.json.result.isError, false, textOf(out.json));
+          return fake.seen.chat.at(-1).body.plugins[0].excluded_models;
+        };
+        for (let i = 0; i < 9; i += 1) await connect(`client-${i}`, "gemini-cli");
+        assert.deepEqual(await excludedFor("client-0"), [], "the ninth client pushed the first one out");
+        assert.deepEqual(await excludedFor("client-1"), ["google/*"]);
+        assert.deepEqual(await excludedFor("client-8"), ["google/*"]);
+        await connect("client-8", "unknown-client");
+        assert.deepEqual(await excludedFor("client-8"), [], "a handshake with no known name clears what was kept for that client");
+        assert.deepEqual(await excludedFor("client-1"), ["google/*"], "and leaves the person's other clients alone");
+        // The hosted notes say the same.
+        const notes = readFileSync(join(ROOT, "docs/HOSTED.md"), "utf8");
+        assert.ok(notes.includes("for that client only: the same sign-in, the same OAuth client id and the same User-Agent."), "docs/HOSTED.md");
+        assert.ok(notes.includes("Another client of the same person does not get it, and at most eight clients are kept for one person."), "docs/HOSTED.md");
+        assert.ok(notes.includes("A User-Agent that says Cursor is read before a kept name, so a kept company is never used for Cursor."), "docs/HOSTED.md");
       } finally {
         await fake.close();
       }
@@ -1120,14 +1164,43 @@ describe("hosted Grill", { concurrency: false }, () => {
         ["unknown, a judge from a company Grill has no name for", NONE, "", undefined, [], "none", plain, "moonshotai/kimi-k2"],
         ["unknown, a real company", NONE, "", "google", ["google/*"], "google", ""],
         ["unknown, a real company under another name", NONE, "", "meta", ["meta-llama/*"], "meta-llama", ""],
+        // The same person signed in from two clients. One named itself when it connected.
+        // That name is kept for the client that gave it, and for no other client of theirs.
+        ["the client that named itself when it connected", NONE, "", undefined, ["google/*"], "google", "", "", { handshake: "gemini-cli", handshakeAgent: "node", userAgent: "node" }],
+        ["Cursor by User-Agent, after another client named itself", NONE, "", undefined, [], "none", plain, "", { handshake: "gemini-cli", userAgent: "Cursor/1.7.3 (darwin arm64)" }],
+        ["no client name, after another client named itself", NONE, "", undefined, [], "none", named("OpenAI"), "", { handshake: "gemini-cli", userAgent: "node" }],
+        [
+          "no client name and the same User-Agent, from a different OAuth client",
+          { client_id: "client_two" },
+          "",
+          undefined,
+          [],
+          "none",
+          named("OpenAI"),
+          "",
+          { handshake: "gemini-cli", handshakeClaims: { client_id: "client_one" }, handshakeAgent: "node", userAgent: "node" },
+        ],
       ];
       try {
-        for (const [label, claim, clientName, author, excluded, auditCompany, line, served = ""] of rows) {
+        for (const [label, claim, clientName, author, excluded, auditCompany, line, served = "", earlier = null] of rows) {
           resetHostedCaches();
           serve = served;
           const ctx = world();
           const token = signJwt(claims(claim));
           const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse(AT) };
+          if (earlier) {
+            const connected = await postMcp(
+              ctx,
+              {
+                jsonrpc: "2.0",
+                id: 9,
+                method: "initialize",
+                params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: earlier.handshake, version: "1" } },
+              },
+              { token: signJwt(claims(earlier.handshakeClaims || claim)), userAgent: earlier.handshakeAgent },
+            );
+            assert.equal(connected.json.result.serverInfo.name, "grill", label);
+          }
           const out = await postMcp(
             ctx,
             {
@@ -1145,7 +1218,7 @@ describe("hosted Grill", { concurrency: false }, () => {
                 ...(clientName ? { _meta: { clientInfo: { name: clientName } } } : {}),
               },
             },
-            { token, deps },
+            { token, deps, userAgent: earlier?.userAgent },
           );
           const text = textOf(out.json);
           assert.equal(out.json.result.isError, false, `${label}: ${text}`);
@@ -2538,6 +2611,16 @@ describe("hosted mappings and ledger pins", () => {
         },
         "google",
         "gemini",
+      ],
+      // A User-Agent that says Cursor is read before a company kept from a handshake.
+      [
+        {
+          redirectUri: "https://unknown.example/cb",
+          remembered: { company: "google", sourceApp: "gemini" },
+          userAgent: "Cursor/1.2",
+        },
+        "",
+        "cursor",
       ],
     ];
     for (const [input, company, sourceApp] of table) {

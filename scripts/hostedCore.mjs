@@ -215,8 +215,9 @@ function rememberedHint(remembered) {
 /**
  * Map an OAuth client to the company to exclude and the source_app to store.
  * The OAuth client wins. Otherwise the same name list as the local server:
- * clientInfo from initialize, then a hint remembered from that handshake,
- * then the User-Agent. An unknown client still excludes nothing.
+ * clientInfo from initialize, then a User-Agent that says Cursor, then a hint
+ * remembered from this client's own handshake, then the rest of the User-Agent
+ * list. An unknown client still excludes nothing.
  */
 export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInfo = null, userAgent = "", remembered = null } = {}) {
   const redirect = String(redirectUri || "").trim();
@@ -265,9 +266,10 @@ export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInf
   if (/\b(?:muse|meta)\b/i.test(named)) return { company: "meta-llama", sourceApp: "muse" };
   const fromName = clientCompanyHint({ clientInfo });
   if (fromName) return fromName;
+  // Read before the remembered hint, so a company kept from a handshake is never used for Cursor.
+  if (/\bcursor\b/i.test(String(userAgent || ""))) return { company: "", sourceApp: "cursor" };
   const kept = rememberedHint(remembered);
   if (kept) return kept;
-  if (/\bcursor\b/i.test(String(userAgent || ""))) return { company: "", sourceApp: "cursor" };
   const fromAgent = clientCompanyHint({ userAgent });
   if (fromAgent) return fromAgent;
   return { company: "", sourceApp: "unknown" };
