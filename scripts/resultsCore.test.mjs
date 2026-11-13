@@ -952,7 +952,8 @@ describe("formatResults writes the file in the layout it is kept in", () => {
   });
 
   it("after a run is added, every line of the old text is still there in order, but for `updated`", () => {
-    const before = read("data/results.json");
+    // From the file as first recorded, so this test does not move when the committed file gains a run.
+    const before = formatResults(seed());
     const after = formatResults(mergeRegressionRun(JSON.parse(before), laterRun()));
     assert.equal(validateResults(JSON.parse(after)).regression.runs.length, 2);
     assert.ok(after.endsWith("}\n") && !after.endsWith("\n\n"));
@@ -1076,7 +1077,7 @@ describe("renderResults turns the counts into the page", () => {
   });
 
   it("the weekly run: a regression check by title, the caveat in the same sentence as the catches, and no rate", () => {
-    const html = renderRegression(committed());
+    const html = renderRegression(seed());
     assert.ok(html.startsWith("<h2>A weekly regression check, not a measure of quality</h2>"));
     const items = itemsUnder(html, "<h2>A weekly regression check");
     assert.equal(
@@ -1101,7 +1102,7 @@ describe("renderResults turns the counts into the page", () => {
   });
 
   it("the weekly run: one run, with its date, its commit and a link to its Actions run", () => {
-    const html = renderRegression(committed());
+    const html = renderRegression(seed());
     assert.ok(
       html.includes(
         '<p class="note">One run is shown, the latest that measured: 13 November 2026, commit <a href="https://github.com/mtangoz/grill/commit/303a77f">303a77f</a>, <a href="https://github.com/mtangoz/grill/actions/runs/43354935479">Actions run 43354935479</a>. All 29 cases reached a judge.</p>',
@@ -1139,7 +1140,7 @@ describe("renderResults turns the counts into the page", () => {
   });
 
   it("the routing figure is worded as a routing check, with its count, and never as decorrelated", () => {
-    const items = itemsUnder(renderRegression(committed()), "<h2>A weekly regression check").map(textOf);
+    const items = itemsUnder(renderRegression(seed()), "<h2>A weekly regression check").map(textOf);
     assert.equal(
       items[5],
       "Routing. The judge came from a different company than the declared author in 29 of 29 cases. That is a routing check. It is not a measure of whether the two make different mistakes. This check names no author, so the default applies and the author is taken to be Anthropic.",
@@ -1152,7 +1153,7 @@ describe("renderResults turns the counts into the page", () => {
   });
 
   it("says plainly which weeks measured nothing, as dates", () => {
-    const text = textOf(renderRegression(committed()));
+    const text = textOf(renderRegression(seed()));
     assert.ok(
       text.includes(
         "Weeks that measured nothing. The weekly runs on 2 November 2026 and 9 November 2026 failed as not measured. The runs on 19 October 2026 and 26 October 2026 passed while skipping every case, so a pass on those days measured nothing.",
@@ -1180,7 +1181,7 @@ describe("renderResults turns the counts into the page", () => {
   });
 
   it("the held-out check: what it compared, version 1 with its counts, and version 2 not run", () => {
-    const html = renderHoldouts(committed());
+    const html = renderHoldouts(seed());
     assert.ok(html.startsWith("<h2>A held-out check of one candidate rule</h2>"));
     const text = textOf(html);
     assert.ok(
@@ -1209,12 +1210,12 @@ describe("renderResults turns the counts into the page", () => {
   });
 
   it("the comparison, while it is a draft or registered, holds no number at all", () => {
-    const draft = renderFourArm(committed());
+    const draft = renderFourArm(seed());
     assert.ok(draft.startsWith("<h2>The comparison with the same model starting fresh</h2>"));
     // The heading tag is the one place a digit is allowed: it is markup, not a number on the page.
     const withoutHeadingTags = (html) => html.replace(/<\/?h2>/g, "");
     assert.doesNotMatch(withoutHeadingTags(draft), /\d/, "not a digit, in the words or in a link");
-    assert.match(withoutHeadingTags(renderRegression(committed())), /\d/, "the same reading does find the counts in a block that has them");
+    assert.match(withoutHeadingTags(renderRegression(seed())), /\d/, "the same reading does find the counts in a block that has them");
     const text = textOf(draft);
     assert.ok(text.includes("Draft protocol, not run. Grill has written a plan for one measurement and has not run it. Any part of the plan can still change."));
     assert.deepEqual(itemsUnder(draft, "<h2>The comparison").map(textOf), [
@@ -1269,7 +1270,7 @@ describe("renderResults turns the counts into the page", () => {
   });
 
   it("people: real users, the two look-back counts under their two names, and signals", () => {
-    const html = renderPeople(committed());
+    const html = renderPeople(seed());
     assert.deepEqual(itemsUnder(html, "<h2>People</h2>").map(textOf), [
       "Real users. 1, as of 9 November 2026. What counts as a real user is set out in Grill's strategy notes .",
       "Evidenced look-backs. 0, as of the same day. What counts as one is set out in Grill's principles .",
@@ -1299,6 +1300,17 @@ describe("renderResults turns the counts into the page", () => {
       "People",
     ]);
     assert.equal(html, [renderFourArm(committed()), renderRegression(committed()), renderHoldouts(committed()), renderPeople(committed())].join("\n\n"));
+  });
+
+  it("renders the committed file, whatever it holds by now, with no rate sign and no model name", () => {
+    // The figures are pinned above on the file as first recorded. Here only what must hold for any valid file.
+    const html = renderResults(committed());
+    const text = textOf(html);
+    assert.ok(text.length > 1500, "the committed file renders to a full block");
+    assert.doesNotMatch(text, /%|\bpercent\b|per cent/i);
+    assert.doesNotMatch(text, MODEL_WORDS);
+    assert.doesNotMatch(html, LONG_DASH);
+    assert.equal(renderResults(seed()), renderResults(JSON.parse(formatResults(seed()))), "the same counts give the same page");
   });
 });
 
@@ -1346,7 +1358,8 @@ describe("scripts/results.mjs", () => {
     const dir = mkdtempSync(join(tmpdir(), "grill-results-"));
     const file = join(dir, "results.json");
     const block = join(dir, "latest.public.json");
-    writeFileSync(file, read("data/results.json"));
+    // The copy starts from the file as first recorded, so these tests do not move when the committed file gains a run.
+    writeFileSync(file, formatResults(seed()));
     writeFileSync(block, `${JSON.stringify(laterRun(), null, 2)}\n`);
     mkdirSync(join(dir, "bin"));
     writeFileSync(join(dir, "bin", "git"), GIT_STUB);
@@ -1368,16 +1381,22 @@ describe("scripts/results.mjs", () => {
     const before = read("data/results.json");
     assert.deepEqual(fileProblems(join(ROOT, "data", "results.json")), []);
     const { dir, file } = scratch();
+    // A copy of the committed file, and the default path with no --file: both pass, and neither is written.
+    writeFileSync(file, before);
     const done = run(dir, ["check", "--file", file]);
     assert.equal(done.code, 0);
     assert.match(done.stdout, /^ok: .*results\.json is valid\n$/);
     assert.equal(readFileSync(file, "utf8"), before, "check writes nothing");
+    const inPlace = run(dir, ["check"]);
+    assert.equal(inPlace.code, 0);
+    assert.equal(inPlace.stdout, `ok: ${join(ROOT, "data", "results.json")} is valid\n`);
+    assert.equal(read("data/results.json"), before, "the committed file is as it was");
     rmSync(dir, { recursive: true, force: true });
   });
 
   it("check exits 1 and prints every problem, one a line", () => {
     const { dir, file } = scratch();
-    const broken = committed();
+    const broken = seed();
     broken.regression.runs[0].sound.false_alarms = 7;
     broken.holdouts[0].decided = 8;
     broken.signals.resolved = 0.5;
@@ -1397,7 +1416,7 @@ describe("scripts/results.mjs", () => {
     assert.equal(run(dir, ["check", "--file", file]).code, 1);
     assert.deepEqual(fileProblems(join(dir, "missing.json")), [`results: cannot be read at ${join(dir, "missing.json")}`]);
     // A key written twice: JSON keeps the second value, so the first would be hidden.
-    writeFileSync(file, read("data/results.json").replace('"real": 1,', '"real": 100,\n    "real": 1,'));
+    writeFileSync(file, formatResults(seed()).replace('"real": 1,', '"real": 100,\n    "real": 1,'));
     assert.deepEqual(fileProblems(file), [
       "results: the text is not the plain JSON of its own values (a key written twice, or a number written another way)",
     ]);
@@ -1415,7 +1434,7 @@ describe("scripts/results.mjs", () => {
       "next: node scripts/build-site.mjs, then the tests, then commit the file",
     ]);
     const written = readFileSync(file, "utf8");
-    assert.equal(written, formatResults(mergeRegressionRun(committed(), laterRun())));
+    assert.equal(written, formatResults(mergeRegressionRun(seed(), laterRun())));
     assert.deepEqual(fileProblems(file), []);
     assert.equal(read("data/results.json"), committedText, "the committed file was not written");
 
@@ -1501,7 +1520,7 @@ describe("scripts/results.mjs", () => {
 
   it("mergeRunFile drops the oldest run after the first past the limit, and says which", () => {
     const { dir, file, block } = scratch();
-    const full = committed();
+    const full = seed();
     full.updated = dayAfter(400);
     for (let i = 1; i < MAX_REGRESSION_RUNS; i += 1) full.regression.runs.push(laterRun({ date: dayAfter(7 * i), run_id: 43400000000 + i }));
     writeFileSync(file, formatResults(full));
