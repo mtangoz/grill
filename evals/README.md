@@ -6,12 +6,15 @@ runs each one through the real judge CLI and scores the result against `threshol
 
 **These thresholds are sanity floors, not precise scores.** Twenty-nine cases is not a statistically
 powered benchmark, and the judge is a stochastic third-party model reached through OpenRouter's
-Auto Router — the same case can score differently run to run. The numbers are loose on purpose:
+Auto Router, so the same case can score differently run to run. The numbers are loose on purpose:
 `catchRate`/`loadedCatchRate` only require catching 11 of 15 / 3 of 4 of the cases that
 were already here. `figureCatchRate` requires all 4 wrong-figure cases. `decorrelatedRate`
-(at least 1.0: every run judged outside Claude's family) and `schemaViolationRate` (at most 0.1) are strict. The goal is to
-catch a *regression* — the judge going quiet, or the output contract breaking — not to grade its
-reasoning precisely. Treat a red run as "go look," not a graded score.
+(at least 1.0: every run judged outside Claude's family) and `schemaViolationRate` (at most 0.1) are strict.
+`decorrelatedRate` is a routing check: it says the judge came from a different company than the
+declared author (here the default, Claude's company). It does not say the judge's errors differ
+from the writer's. The goal is to catch a *regression*, such as the judge going quiet or the output
+contract breaking. It is not to grade its reasoning precisely. Treat a red run as "go look," not a
+graded score.
 
 **Three cases cover write-ups that lean toward their own decision,** the usual reason a grill comes
 back kinder than it should. `one-sided-writeup-database-cutover` answers its own case against with

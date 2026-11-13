@@ -1333,4 +1333,17 @@ describe("evals/README.md: the first measured run, as counts and with its limits
   it("uses no em dash or en dash in what was written on 2026-11-13", () => {
     assert.doesNotMatch(between("**The eval gates only run with a key.**", "**A held-out set keeps the score honest.**"), new RegExp(`[${String.fromCharCode(0x2013, 0x2014)}]`));
   });
+
+  it("uses no em dash or en dash anywhere in the file", () => {
+    assert.doesNotMatch(readme, new RegExp(`[${String.fromCharCode(0x2013, 0x2014)}]`));
+  });
+
+  it("calls decorrelatedRate a routing check, not a measure of whether errors differ", () => {
+    const flat = readme.replace(/\s+/g, " ");
+    assert.ok(
+      flat.includes(
+        "`decorrelatedRate` is a routing check: it says the judge came from a different company than the declared author (here the default, Claude's company). It does not say the judge's errors differ from the writer's.",
+      ),
+    );
+  });
 });
