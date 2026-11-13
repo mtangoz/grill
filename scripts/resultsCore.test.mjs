@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -1353,9 +1353,16 @@ process.exit(129);
 describe("scripts/results.mjs", () => {
   const CLI = join(ROOT, "scripts", "results.mjs");
 
-  /** A temp folder with a copy of the committed file, a run block, and a stand-in git. */
+  // Removed when the tests end, so a test that fails part way leaves nothing behind.
+  const scratchDirs = [];
+  after(() => {
+    for (const dir of scratchDirs) rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A temp folder with a results file as first recorded, a run block, and a stand-in git. */
   function scratch() {
     const dir = mkdtempSync(join(tmpdir(), "grill-results-"));
+    scratchDirs.push(dir);
     const file = join(dir, "results.json");
     const block = join(dir, "latest.public.json");
     // The copy starts from the file as first recorded, so these tests do not move when the committed file gains a run.
