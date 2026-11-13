@@ -7,6 +7,10 @@
  * details. Counts are numbers only, reported as Pro interest, never as users.
  *
  * The launch email itself is a template in this file. Nothing here sends it.
+ *
+ * Saved history and look-back reminders, which this list was first opened for, now work
+ * with Grill in your chat, free. The form, the confirmation email and the on-the-list page
+ * say so and link to /start. The list itself is still only for news of a paid plan.
  */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { normalizeEmail, redisCommand } from "./_account.mjs";
@@ -23,6 +27,10 @@ export const LAUNCH_SUBJECT = "Grill Pro is ready: saved history and look-back r
 export const CONFIRM_SUBJECT = "Confirm: tell me when Grill Pro is ready";
 const PRIVACY_URL = "https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md#the-pro-launch-list";
 const VIAS = ["tool", "paste", "site"];
+/** Where the record already works. The label lets the weekly readout count arrivals from these pages. It carries nothing about the person. */
+export const START_URL = "https://grillyour.ai/start/?ref=notify";
+/** One sentence, the same on every surface, so the three cannot drift apart. */
+const WORKS_TODAY = "Saved history and look-back reminders work today, free, with Grill in your chat";
 
 const HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
@@ -139,7 +147,9 @@ Confirm here: ${url}
 
 That link works for 48 hours. If you don't click it, nothing is saved and you won't hear from us again.
 
-What you'll get: one email when saved history and look-back reminders are available. No newsletter.
+What you'll get: one email when Grill Pro is ready. No newsletter.
+
+${WORKS_TODAY}: ${START_URL}
 
 Grill, made by Hold. Questions: support@grillyour.ai
 `;
@@ -148,6 +158,9 @@ Grill, made by Hold. Questions: support@grillyour.ai
 /**
  * The launch email, for a later Resend broadcast. This function only fills in the text.
  * It does not send. The postal line stays the env var name until NOTIFY_POSTAL_ADDRESS is set.
+ *
+ * Written before saved history and look-back reminders shipped free in chat. It still lists
+ * them as what Pro adds, so it must be rewritten before anyone sends it.
  */
 export function launchEmailText(env = {}) {
   const postal = trimmed(env, "NOTIFY_POSTAL_ADDRESS") || POSTAL_PLACEHOLDER;
@@ -243,9 +256,10 @@ function tryAgainPage() {
 }
 
 function formCopy() {
-  return `<h1>Coming later: saved history and look-back reminders</h1>
-<p>An optional Pro plan will keep your decision records across the assistants you use (Claude, ChatGPT, Gemini, Grok), remind you when a look-back is due, and send a monthly look-back report. The free tool stays free, with no account.</p>
-<p>Email me when Pro ships:</p>`;
+  return `<h1>Saved history and look-back reminders work today</h1>
+<p>They are free with Grill in your chat. You can save your decisions there, and Grill reminds you when a look-back is due. <a href="${START_URL}">Set up Grill in your chat</a>.</p>
+<p>Grill Pro, a paid plan, is not live. The tool you install stays free, with no account.</p>
+<p>Email me when Pro is ready:</p>`;
 }
 
 function formPage({ via, email = "", issued = "", message = "", error = "" }) {
@@ -389,7 +403,7 @@ function confirmButton(token) {
     page(
       "Confirm · Grill",
       `<h1>Confirm you want to hear when Grill Pro is ready.</h1>
-<p>One email when saved history and look-back reminders are available. No newsletter. Nothing is saved until you press the button.</p>
+<p>One email when Grill Pro is ready. No newsletter. Nothing is saved until you press the button.</p>
 <form method="post" action="/notify/confirm">
 <input type="hidden" name="t" value="${esc(token)}">
 <p class="row"><button type="submit">Confirm</button></p>
@@ -413,7 +427,7 @@ function onTheListPage() {
     200,
     page(
       "You're on the list · Grill",
-      `<h1>You're on the list.</h1><p>We'll email you once when Pro is ready. Changed your mind? Use the unsubscribe link in that email, or write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p><p class="small"><a href="${PRIVACY_URL}" rel="noreferrer">Privacy</a></p>`,
+      `<h1>You're on the list.</h1><p>We'll email you once when Pro is ready. Changed your mind? Use the unsubscribe link in that email, or write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p><p>${WORKS_TODAY}. <a href="${START_URL}">Set up Grill in your chat</a>.</p><p class="small"><a href="${PRIVACY_URL}" rel="noreferrer">Privacy</a></p>`,
     ),
   );
 }

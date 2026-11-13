@@ -6,10 +6,64 @@ A change may add one optional line when someone has agreed to be named. Leave th
 
 ## Unreleased
 
-- When Grill inside your chat can't tell which AI you're using, the verdict adds one line after the privacy note. It names the judge's company and says to grill again and name your assistant if that's the same company. A chat Grill recognises, including Cursor, gets no extra line.
+Which channel each change reaches. **At merge and deploy:** Grill in your chat and the website change when the branch is deployed, and the plugin installed from git and the Docker image change at merge. **At the next release:** npm (`npx -y grillyour`), the `.mcpb` bundle and the skill zip still ship 0.1.1 until a new release is cut. No version number changes here.
+
+**Before this deploys:** `GRILL_INTERNAL_EMAILS` must be set in production, listing the maintainer, test, reviewer and agent addresses. While it is unset, no outside counter is written and `node scripts/outside-loop.mjs` prints "not counted: internal list not set".
+
+### At merge and deploy: Grill in your chat
+
+- When Grill cannot tell which company's model wrote a decision, the verdict ends with one line that starts "Independence not verified:". This covers Cursor, an app Grill does not recognise, a judge from a company Grill has no name for, and an app that sends no User-Agent and no OAuth client id. An unknown app is told which company judged, when Grill has a name for it. On those runs the first-use line no longer says "from a different company", and the audit line says "decorrelated: not verified". This replaces the earlier line for unknown apps.
+- The company you or your assistant name as the author is matched to the router's own names, so `xai`, `grok`, `claude`, `gemini`, `chatgpt` and `meta` now exclude the right company. `none`, or a name that is not a model company, is ignored and can no longer switch the exclusion off.
+- The /judge page accepts `from=muse` and `from=meta`. With no usable `from`, the page and the verdict say independence was not verified.
+- The first-use line links to grillyour.ai/data-flow/ instead of the privacy section of the home page. The same link is in the skill and the paste prompt.
+- The first grill on a new account shows one paragraph under the records question: where the decision goes, that a kept record is encrypted and Grill's operators could open it, the Monday email, and a link to grillyour.ai/data-flow/. The /judge page shows the same paragraph.
+- After a reaction, the reply says what Grill keeps: the rating, your one-line reason, the verdict label and the judge model, for 180 days. Not the decision.
+- Limit messages no longer say "credit" or offer more. The grill tool description is the same for every assistant, says the author's company is excluded only when Grill can tell which it is, names the quality check by TypeSafe, and forbids a disclaimer in Grill's own text only.
+- A refused same-company verdict is no longer called biased.
+- Saying "look back" with two or more decisions due lists them by title and saves your answer only on the one you name. Before, one answer was saved on all of them. With one saved decision in view, the reply no longer says nothing is stored when your answer was saved.
+- Your grills shows a grill that is waiting for your choice, and what to do.
+- Turning records off, in chat or on a page, and Delete all now also delete grills still waiting for a choice.
+- Each saved decision keeps the time of its first look-back. The JSON export shows it, and for a counted account the day its look-back is counted under (`lookback_first_at`, `lookback_counted_day`).
+- A /judge link with a decision over 4000 characters is no longer passed to the sign-in company on any path.
+- A shared link to grillyour.ai/start shows a preview card. /start sets no cookie while sign-up is open. Crawlers, link-preview fetches, requests that are not GET, and seven more automated clients are no longer counted as start views.
+- Grill in chat counts outside use as whole numbers once the operator's internal list is set: first grills by day and app, come-backs, records answers, choices, and look-backs by the day they fall due. No title, text, verdict or account ID. What is counted is in docs/DATA-LEDGER.md.
+- /notify, its confirmation email and the on-the-list page say saved history and look-back reminders work today, free, with Grill in your chat, and link to /start.
+
+### At merge and deploy: the website
+
+- A new page, grillyour.ai/data-flow/, says route by route where a decision goes, who sees it, and what Grill keeps and for how long, written from the code. The privacy page, the about page and the README link it.
+- A new page, grillyour.ai/how-we-test/, says what Grill has and has not measured about its judge. It opens with what is not measured yet: whether an outside judge catches more than the same model starting fresh. It shows one run of the weekly regression check as counts, with the false alarms and the quotes not found beside the catches, one held-out check of a candidate rule, the comparison as a draft that has not run, and how many real users there are. The about page and the README link it.
+- The FAQ no longer says no benchmarks are published. It says what has and has not been measured and points to that page.
+- The about page, the check-your-ai guide, the FAQ, the contribute page, llms.txt and WHY.md say the judge is from a different company when Grill can tell which AI wrote the plan, and no longer say it does not share your AI's blind spots. The home page description no longer promises to find the weak spots.
+- The privacy page and the terms say what Grill in chat keeps: the 15-minute encrypted copy of every grill, records on or off; the account row with your email; the counts; drafts; and the Monday email, including that a job opens kept records to write it. "If you say no, nothing is kept" is gone. The quality check request is no longer described as zero-retention.
+- The README says saved decisions and look-back reminders are free today with Grill in your chat, and that paid plans are off. Its setup link and both /demo links carry a source tag.
+
+### At merge: the plugin from git and the Docker image (at the next release: npm, .mcpb and the skill zip)
+
+- Author names are mapped to the router's own prefixes: `xai` and `grok` to `x-ai`, `claude` to `anthropic`, `gemini` to `google`, `chatgpt`, `gpt` and `codex` to `openai`, `meta`, `muse` and `llama` to `meta-llama`. `GRILL_AUTHOR=xai` used to exclude nobody and now excludes `x-ai`.
+- `none`, or an author outside the 16 router vendor names, is ignored on the call and in `GRILL_AUTHOR`. It no longer turns the exclusion off. A real vendor that is not on the list is no longer excluded.
+- When the author is a guess (no recognised app, no `GRILL_AUTHOR`, no company on the call), every verdict adds a line that starts "Independence not verified:" and says Anthropic was the only company ruled out. In those sessions the grill description and the once-only line no longer say "from a different company".
+- A pinned Anthropic judge with `GRILL_AUTHOR=none` is refused as a same-company pin.
+- The reaction reply says what was sent to Grill and that it is kept 180 days. The no-key reply no longer mentions Grill Pro.
+- The same-company refusal says the judge was from the author's own family, so the run is not an outside review.
+- The plugin's description, and the Desktop extension's description and settings (in the `.mcpb`, so at the release), say the judge is from a different company when Grill can tell, describe the quality check without calling it zero-retention, and drop the Grill Pro key line.
+- The Claude skill uses the conditional company line, no longer shows a Pro news line on the paste route, and lists anthropic as a judge family for the signal link.
+- The copy-and-paste prompt sends the decision plus a brief summary of the essential context, not whatever is in the chat.
+- The Docker image starts again. It was missing one file, and that is the image Glama builds.
+
+### At merge: GitHub and maintainer tooling
+
+- The judge self-eval says "Not measured" and exits 2 when no case gets a verdict back, as with a dead key or one that is out of credit. The summary says how many cases reached a judge and lists the cases by judge company as counts. A measured run in CI writes a counts-only file beside its results, and the next measured run closes the "Judge self-eval is not measuring" issue. A pull request runs the eval only when it changes the judge, a case or a threshold.
+- `node scripts/results.mjs` checks the public counts file and adds a measured weekly run to it (`merge-run`), which /how-we-test/ then shows.
+- `node scripts/outside-loop.mjs` prints the outside usage ladder and the kill threshold for the record bet. The weekly metrics line is dated and counts opt-in install pings.
+- The signal form lists Anthropic as a judge family. The monthly learning report goes to one rolling issue, and a month with no signals posts nothing.
+- A draft protocol and a harness for comparing the judge with three simpler critics are in `evals/four-arm`. Nothing has been run and no claim changes.
+
+### Earlier, not yet released
+
 - You can tell Grill a grill helped or was meh. `grill_feedback` stores the rating, an optional one-line reason, the time, the judge model, the verdict label and a hash of the account. The grill text is stored only if you say yes for that grill. It is encrypted, kept 180 days, and removed when the account is deleted. Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us. A grill you send is that case.
 - A grill leads with the verdict. When the judge names no crux, the "question that would change this" line is left off, and it is never built by quoting the opening words of the write-up. A quote that does not fit in 25 words is dropped whole; the judge's paraphrase stays when it fits. When the judge names no cheap test, that line is left off too. The two-line run note (models and time, then privacy) comes after "Say 'more', 'options', or your call." Never drop the run note.
-- The homepage Connect button links to /start/?ref=home. Every /start view is counted, and the weekly metrics print start views and start refs. Those are numbers, not people. The /start page still sends no client analytics. Plan: [docs/experiments/analytics-loop.md](docs/experiments/analytics-loop.md).
+- The homepage Connect button links to /start/?ref=home. Every browser view of /start is counted, and the weekly metrics print start views and start refs. Those are numbers, not people. The /start page still sends no client analytics. Plan: [docs/experiments/analytics-loop.md](docs/experiments/analytics-loop.md).
 - Your grills and the Monday email use one short count under the impact headline. It says how many are unknown (impact not confirmed), called out (not a confirmed change), and flagged (not proof). A zero count is left out. The line that counts decisions and the percent looked back sits in that same block, and is not repeated under the due list.
 - When a decision is cheap and easy to undo, lack of data or a small sample is not, by itself, grounds for shaky or doesn't hold up. The judge names the concrete risk and the cheapest, fastest way to measure it, and may say solid if that measurement is in place. An expensive or hard-to-undo decision can still be challenged for missing evidence. A cheap try is framed as an experiment (try this, watch that). A fatal defect or an irreversible hazard can still say stop, and an unsupported claim that one option beats another can still be shaky. Three synthetic cases lock that: `sound-cheap-revert-subject-line`, `missing-failure-mode-unlabeled-pecan-glaze`, and `unsupported-claim-short-line-beats-long`.
 - The Monday email test ends on people reached, not weeks: 30 people and 60 sends, then a week to read the result, and no later than 25 Jan 2027. About one in four accounts is held out and gets no note, so the result can be compared. Plan: [docs/experiments/weekly-email.md](docs/experiments/weekly-email.md).

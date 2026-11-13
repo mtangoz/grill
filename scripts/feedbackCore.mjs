@@ -8,6 +8,8 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
 export const FEEDBACK_TTL_SECONDS = 180 * 24 * 60 * 60;
+/** The same time in days. The reply after a reaction says this number, on both routes. */
+export const FEEDBACK_KEEP_DAYS = FEEDBACK_TTL_SECONDS / (24 * 60 * 60);
 export const FEEDBACK_PREFIX = "grill:hosted:feedback:";
 export const FEEDBACK_OF_PREFIX = "grill:hosted:feedbackof:";
 export const REACT_PREFIX = "grill:hosted:react:";
@@ -24,7 +26,7 @@ export const FEEDBACK_POINTER =
 
 /** What the assistant reads before it calls grill_feedback. */
 export const FEEDBACK_TOOL_DESCRIPTION =
-  "Call when the user reacts to a grill ('meh', 'not useful', 'that helped', 'great'). rating is helped or meh. reason is optional, one line in their words. job_id or record_ref is optional and defaults to the latest grill in this session. Ask once, 'Want to send this grill to Grill so we can improve it?', only when they gave a meh or a reason, and only after the verdict. Pass share_grill true only after they say yes for this grill. Never ask before the verdict. Never ask on a quick or bulk grill unless they reacted first.";
+  "Call when the user reacts to a grill ('meh', 'not useful', 'that helped', 'great'). rating is helped or meh. reason is optional, one line in their words. job_id or record_ref is optional and defaults to the latest grill in this session. Ask once, 'Want to send this grill to Grill so we can improve it?', only when they gave a meh or a reason, and only after the verdict. Pass share_grill true only after they say yes for this grill. Never ask before the verdict. Never ask on a quick or bulk grill unless they reacted first. Show the reply as written. It says what Grill keeps.";
 
 export function hashAccount(id) {
   return createHash("sha256").update(String(id)).digest("hex");

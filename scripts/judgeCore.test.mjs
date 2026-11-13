@@ -1050,6 +1050,39 @@ describe("the decorrelation guard", () => {
     assert.equal(decorrelationOf("anthropic/claude-opus-5", "   ").decorrelated, false);
     assert.equal(decorrelationOf("anthropic/claude-opus-5", "openai").decorrelated, true);
   });
+
+  it("says a same-family judge is not an outside review, and claims nothing about how it reasons", () => {
+    const assumed = decorrelationOf("anthropic/claude-opus-5");
+    const declared = decorrelationOf("openai/gpt-5.6-sol", "openai");
+    assert.match(assumed.note, /the same model family the subject is assumed to be written by\. /);
+    assert.match(declared.note, /the same family the caller declared wrote this subject \(`openai`\)\. /);
+    for (const d of [assumed, declared]) {
+      assert.equal(d.reason, "author-family");
+      assert.ok(d.note.endsWith("The judge is from the author's own family, so this run is not an outside review"), d.note);
+      assert.doesNotMatch(d.note, /re-derive|premises|bought no independent judgment|biased/i);
+    }
+    // The same rule for the judge's own log lines and the comment that explains the tool.
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    for (const file of ["scripts/judge.mjs", "scripts/judgeCore.mjs"]) {
+      const source = readFileSync(join(root, file), "utf8");
+      assert.doesNotMatch(source, /buys nothing|re-derive|bought no independent judgment|structurally agreeable|different priors/, file);
+    }
+    assert.match(readFileSync(join(root, "scripts/judge.mjs"), "utf8"), /so the judge is not from the subject's own family/);
+  });
+
+  it("joins the same-family note with a comma, and uses no dash", () => {
+    const assumed = decorrelationOf("anthropic/claude-opus-5");
+    const declared = decorrelationOf("openai/gpt-5.6-sol", "openai");
+    assert.equal(
+      assumed.note,
+      "served by `anthropic/claude-opus-5`, the same model family the subject is assumed to be written by. The judge is from the author's own family, so this run is not an outside review",
+    );
+    assert.equal(
+      declared.note,
+      "served by `openai/gpt-5.6-sol`, the same family the caller declared wrote this subject (`openai`). The judge is from the author's own family, so this run is not an outside review",
+    );
+    for (const d of [assumed, declared]) assert.doesNotMatch(d.note, /[\u2013\u2014]/, d.note);
+  });
 });
 
 // ---------------------------------------------------------------------------

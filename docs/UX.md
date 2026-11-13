@@ -106,7 +106,7 @@ The first 100 people let in are founding members. `/start` and `/redeem` say "Fi
 
 `/judge` is for a person whose assistant cannot add a connector. `/judge?q=` opens a signed-in page with that decision filled in. The page does not run a grill on GET. The button POSTs, and that runs the same hosted grill as the connector: the same judge, the same caps, and the same choice about records. The first time, the page asks whether to keep records and does not send the decision until they answer. A later grill uses that answer. The verdict is plain text to copy back. A decision over 4000 characters is refused and not sent. The page runs no script.
 
-An optional `from` names the assistant that wrote the decision. It uses the same client list as a connector, including `gemini`, `gemini-cli`, `antigravity`, `Google-Discovery-Engine`, `claude`, `chatgpt` and `grok`. The page says which company the judge is not from, and the POST excludes that company. The value is a hidden field, so it is sent with the decision. A missing or unknown `from` excludes nobody. `from=signin` is still only the sign-in return.
+An optional `from` names the assistant that wrote the decision. It uses the same client list as a connector, including `gemini`, `gemini-cli`, `antigravity`, `Google-Discovery-Engine`, `claude`, `chatgpt`, `grok`, `muse` and `meta`. The page says which company the judge is not from, and the POST excludes that company. The value is a hidden field, so it is sent with the decision. A missing or unknown `from` excludes nobody. The page then shows one line above the button that starts "Independence not verified:", and the copied verdict carries its own line. `from=signin` is still only the sign-in return.
 
 Enforced by: [api/_hosted.mjs](../api/_hosted.mjs) (`handleJudge`), test "shows a prefilled form and does not grill on GET", test "asks before the first send, then grills on the answer and not before", and test "excludes the company named by from, and carries that hint in the form" in [scripts/judgePage.test.mjs](../scripts/judgePage.test.mjs).
 
@@ -115,6 +115,36 @@ Enforced by: [api/_hosted.mjs](../api/_hosted.mjs) (`handleJudge`), test "shows 
 On `/contribute`, shipped changes people asked for are listed from `data/contributors.json`. The page source runs no script. The list is written when the site is built. A name or handle is shown only when that entry's `consent` is exactly true. Otherwise the line says "suggested by a tester." Credit names the product feedback only, never a person's own decisions. The list starts empty. A name is added only after that person agrees.
 
 Enforced by: [scripts/contributorsCore.mjs](../scripts/contributorsCore.mjs), test "never renders a name when consent is not exactly true" in [scripts/contributors.test.mjs](../scripts/contributors.test.mjs).
+
+## A public page
+
+A public page is one file in `site/` and one `writePage` call in the build script. It opens with its `<title>`, and the title has the word Grill in it. It has one `<h1>`. It borrows the home page's styles. A new page has no `<style>` and no `<script>` of its own. Three older pages, look-back, start and miss, keep one script each, and a test names them. Its address is one segment with no dot, such as `/how-we-test/`, so the routes that already exist serve it and its Markdown twin. Registering it puts it in the sitemap and in `llms.txt`. The steps are in [CONTRIBUTING.md](../CONTRIBUTING.md), under "Add a page".
+
+Enforced by: [scripts/build-site.mjs](../scripts/build-site.mjs) (`writePage`), test "names Grill in the title of every sitemap page" in [scripts/site.test.mjs](../scripts/site.test.mjs), test "publishes one SoftwareApplication JSON-LD block and no other script" in [scripts/site.test.mjs](../scripts/site.test.mjs), test "writes a markdown twin for every sitemap page, from that page's own words" in [scripts/site.test.mjs](../scripts/site.test.mjs) and test "negotiates markdown for every sitemap page and adds Vary: Accept to the HTML" in [scripts/site.test.mjs](../scripts/site.test.mjs).
+
+No page has an em dash or an en dash. Every page keeps the footer span that says Made at Hold. On a deploy the build writes the live commit into that span, and the build stops if a page has lost it.
+
+Enforced by: test "no page source has an em dash or an en dash, and every one keeps the Hold footer span" in [scripts/site.test.mjs](../scripts/site.test.mjs), test "names the live commit in every public page footer when the deploy provides one, and nothing otherwise" in [scripts/site.test.mjs](../scripts/site.test.mjs) and test "when any page has lost the footer span the live commit is written into" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs).
+
+A number on a page comes from a committed file and is written in when the site is built. It is not typed into the page. `/how-we-test/` shows [data/results.json](../data/results.json) through one marker, and the build stops if the marker or the file is wrong. Counts go in a list, not a table: a list reads well on a phone and in the Markdown twin. A count is written "2 of 6". A rate is shown only when 10 cases or more are behind it.
+
+Enforced by: [scripts/resultsCore.mjs](../scripts/resultsCore.mjs) (`renderResults`), test "is a script-free prose page in the shared chrome, with one marker for the results" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs), test "when the results marker is missing, or is there twice" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs), test "when the results file breaks a rule of its shape, and it names where" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs) and test "shows a rate only when 10 cases or more are behind it, and refuses one under that" in [scripts/resultsCore.test.mjs](../scripts/resultsCore.test.mjs).
+
+A page about a measurement opens with what has not been measured. A count that looks bad sits in the same list as one that looks good, in the same markup. The page ends with one call to action: a link to `/start/` that carries the page's own name, such as `/start/?ref=how-we-test`.
+
+Enforced by: test "opens with what has not been measured yet, and the description, the blurb and llms.txt lead with it" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs), test "gives the false alarms and the quotes not found the same weight as the catches" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs) and test "ends with exactly one call to action, tagged for this page" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs).
+
+A sentence that says the judge is from a different company keeps its condition: when Grill can tell which company wrote the plan. A page does not carry a claim about how good the judge is that has not been measured. A list of words not to say cannot catch a new claim in other words. So the whole text of `/how-we-test/` is kept in its test, and a sentence cannot be added to the page without that text being changed too.
+
+Enforced by: test "states the rule in its conditional shape, and no sentence says different company without the condition" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs), test "uses none of the words Grill does not say, promises no date, and shows no rate sign anywhere" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs), test "says these lines and no others, on the page and in its Markdown twin" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs), test "with a later run and a measured comparison, changes these lines and adds no others" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs) and, for the other pages, test "public copy does not claim the judge is more accurate before it is measured" in [scripts/claims.test.mjs](../scripts/claims.test.mjs).
+
+`/data-flow/` says where a decision goes on each route, who sees it, and what Grill keeps and for how long. It is written from the code. Each number on it is checked against the constant it comes from, and its whole text is kept in its test, as on `/how-we-test/`, so a sentence cannot be added or dropped without the test changing too. The once-only line in the tool text, the skill and the paste prompt links to it.
+
+Enforced by: test "says these lines and no others, on the page and in its Markdown twin" in [scripts/dataFlow.test.mjs](../scripts/dataFlow.test.mjs), test "has no long dash and none of the words Grill does not say, and every different-company sentence keeps its condition" in [scripts/dataFlow.test.mjs](../scripts/dataFlow.test.mjs) and test "points the once-only line at /data-flow/ in all four places, and keeps the unverified form built from it" in [scripts/dataFlow.test.mjs](../scripts/dataFlow.test.mjs).
+
+A new page is looked at 390 px wide, in light and in dark, before it ships.
+
+Enforced by: prompt text + review.
 
 ## No script
 

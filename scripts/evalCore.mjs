@@ -16,6 +16,7 @@
 // Zero dependencies. Node >= 20. ESM throughout.
 
 import { GOOD_NOUL, PLANTED_FLAW_QUESTION } from "./checkCore.mjs";
+import { companyIdOf } from "./resultsCore.mjs";
 
 /** Severities ranked so "no more severe than X" is a numeric comparison. Mirrors judgeCore's SEVERITIES. */
 const SEVERITY_RANK = Object.freeze({ minor: 0, moderate: 1, serious: 2, fatal: 3 });
@@ -540,17 +541,136 @@ function tally(list, pick) {
   return total;
 }
 
+/** A wrong-figure case: a flawed case that passes only on a stated correction. */
+function isFigureCase(s) {
+  return s?.expect?.catch_in === "checked-or-verdict";
+}
+
+/** A verdict came back for this case. This is what "reached a judge" counts. */
+function hasVerdict(s) {
+  return typeof s?.verdict === "string";
+}
+
+/**
+ * The counts behind one run, as whole numbers and company ids. No rate, no cost, no model
+ * name, no case id and no text.
+ *
+ * `reachedJudge` counts the cases a verdict came back for. A case with no verdict is still
+ * scored (a miss, or a false alarm), so a run can be read as bad when it was only cut off;
+ * this number is what tells the two apart. When it is 0 nothing was measured.
+ *
+ * `byCompany` has one row per company whose model answered, in the order each company first
+ * appears. A case with no verdict is in no row, so the rows add up to `reachedJudge`.
+ * `planted` is the flawed, wrong-figure and loaded cases together. A served model that
+ * resultsCore.companyIdOf cannot place is counted under "other".
+ */
+export function countRun(scores) {
+  const list = Array.isArray(scores) ? scores.filter((s) => s && typeof s === "object") : [];
+  const flawed = list.filter((s) => s.kind === "flawed");
+  const figure = flawed.filter(isFigureCase);
+  const plain = flawed.filter((s) => !isFigureCase(s));
+  const loaded = list.filter((s) => s.kind === "loaded");
+  const sound = list.filter((s) => s.kind === "sound");
+  const caughtIn = (group) => ({ caught: group.filter((s) => s.caught === true).length, of: group.length });
+
+  const quotes = tally(list, (s) => s.grounding && { good: s.grounding.found, n: s.grounding.checked });
+  // Over the flawed and loaded cases Jev actually scored, so the phrase match beside it can be
+  // counted on exactly the same cases.
+  const semanticScored = [...flawed, ...loaded].filter((s) => typeof s.semanticCaught === "boolean");
+
+  const byCompany = [];
+  for (const s of list) {
+    if (!hasVerdict(s)) continue;
+    const company = companyIdOf(s.servedModel);
+    let row = byCompany.find((r) => r.company === company);
+    if (!row) {
+      row = { company, cases: 0, planted: 0, caught: 0, sound: 0, falseAlarms: 0 };
+      byCompany.push(row);
+    }
+    row.cases += 1;
+    if (s.kind === "flawed" || s.kind === "loaded") {
+      row.planted += 1;
+      if (s.caught === true) row.caught += 1;
+    } else if (s.kind === "sound") {
+      row.sound += 1;
+      if (s.falseAlarm === true) row.falseAlarms += 1;
+    }
+  }
+
+  return {
+    cases: list.length,
+    reachedJudge: list.filter(hasVerdict).length,
+    flawed: caughtIn(plain),
+    wrongFigure: caughtIn(figure),
+    loaded: caughtIn(loaded),
+    sound: { falseAlarms: sound.filter((s) => s.falseAlarm === true).length, of: sound.length },
+    schemaViolations: { k: list.filter((s) => (s.schemaIssues || 0) > 0).length, of: list.length },
+    differentCompany: { k: list.filter((s) => s.decorrelated === true).length, of: list.length },
+    quotes: { found: quotes.good, of: quotes.n },
+    semantic: {
+      caught: semanticScored.filter((s) => s.semanticCaught).length,
+      of: semanticScored.length,
+      phraseCaught: semanticScored.filter((s) => s.caught === true).length,
+    },
+    byCompany,
+  };
+}
+
+/**
+ * The run number and commit GitHub Actions gives a job, or null when either is missing or
+ * malformed. A public block needs both: without them a count cannot be traced to a run.
+ * The commit is cut to its first 7 characters, the short form data/results.json uses.
+ */
+export function actionsRunOf(env) {
+  const rawId = typeof env?.GITHUB_RUN_ID === "string" ? env.GITHUB_RUN_ID.trim() : "";
+  const rawSha = typeof env?.GITHUB_SHA === "string" ? env.GITHUB_SHA.trim().toLowerCase() : "";
+  if (!/^[1-9][0-9]*$/.test(rawId) || !Number.isSafeInteger(Number(rawId))) return null;
+  if (!/^[0-9a-f]{7,40}$/.test(rawSha)) return null;
+  return { runId: Number(rawId), commit: rawSha.slice(0, 7) };
+}
+
+/**
+ * One run as the counts-only block data/results.json keeps under `regression.runs`: whole
+ * numbers, one date, one run number, one short commit hash, and company ids from a fixed
+ * list. Nothing else. eval.mjs writes it beside the results file and checks the written text
+ * with resultsCore.validateRegressionRun before it does.
+ *
+ * `date` is the UTC day of the run, written YYYY-MM-DD. `runId` and `commit` come from
+ * actionsRunOf.
+ */
+export function publicRunBlock(scores, { date, runId, commit } = {}) {
+  const c = countRun(scores);
+  return {
+    date,
+    run_id: runId,
+    commit,
+    cases: c.cases,
+    reached_judge: c.reachedJudge,
+    flawed: { caught: c.flawed.caught, of: c.flawed.of },
+    wrong_figure: { caught: c.wrongFigure.caught, of: c.wrongFigure.of },
+    loaded: { caught: c.loaded.caught, of: c.loaded.of },
+    sound: { false_alarms: c.sound.falseAlarms, of: c.sound.of },
+    schema_violations: { k: c.schemaViolations.k, of: c.schemaViolations.of },
+    different_company: { k: c.differentCompany.k, of: c.differentCompany.of },
+    quotes: { found: c.quotes.found, of: c.quotes.of },
+    semantic: { caught: c.semantic.caught, of: c.semantic.of },
+    by_company: c.byCompany.map(({ company, cases }) => ({ company, cases })),
+  };
+}
+
 /**
  * Roll a list of `scoreCase` results (each optionally carrying a `latencyMs` eval.mjs measured
  * around the subprocess call — a timing concern that belongs to the I/O layer, not here) up
  * into the metrics table and a pass/fail check against `thresholds`.
  *
- * Returns `{metrics, regressions, checks, informational}`. `metrics` is the flat table of actual
- * values. `regressions` is human-readable strings, one per failed threshold, suitable for a CI
- * annotation or an issue body — this is what `eval.mjs` uses to decide its exit code.
- * `checks` echoes the threshold actually applied to each metric alongside the outcome, purely
- * so `renderSummary` — which receives no separate `thresholds` argument — can render a
- * pass/fail table without recomputing or re-parsing anything.
+ * Returns `{metrics, regressions, checks, informational, counts}`. `metrics` is the flat table
+ * of actual values. `regressions` is human-readable strings, one per failed threshold, suitable
+ * for a CI annotation or an issue body. It is what `eval.mjs` uses to decide its exit code.
+ * `checks` echoes the threshold actually applied to each metric, the outcome, and the count
+ * behind the rate (`k` of `of`). `renderSummary` receives no separate `thresholds` argument,
+ * so this is what lets it render a pass/fail table without recomputing anything. `counts` is
+ * countRun's result: the same run as whole numbers, with how many cases reached a judge and
+ * which company's model answered each.
  *
  * `informational` does the same for the quality metrics (grounding, and the Jev scores), with
  * the counts behind each rate. They are NEVER gated: they are not in CHECKS, so no threshold,
@@ -560,35 +680,37 @@ function tally(list, pick) {
 export function summarize(scores, thresholds) {
   const list = Array.isArray(scores) ? scores : [];
   const n = list.length;
+  const counts = countRun(list);
 
-  const flawed = list.filter((s) => s.kind === "flawed");
-  // Wrong-figure cases have their own floor. They stay out of catchRate, which is the
-  // floor the other flawed cases already had.
-  const figureFlawed = flawed.filter((s) => s.expect?.catch_in === "checked-or-verdict");
-  const legacyFlawed = flawed.filter((s) => s.expect?.catch_in !== "checked-or-verdict");
-  const loaded = list.filter((s) => s.kind === "loaded");
-  const sound = list.filter((s) => s.kind === "sound");
+  // The count behind each gated rate. Wrong-figure cases have their own floor. They stay out
+  // of catchRate, which is the floor the other flawed cases already had.
+  const behind = {
+    catchRate: { k: counts.flawed.caught, of: counts.flawed.of },
+    figureCatchRate: { k: counts.wrongFigure.caught, of: counts.wrongFigure.of },
+    falseAlarmRate: { k: counts.sound.falseAlarms, of: counts.sound.of },
+    loadedCatchRate: { k: counts.loaded.caught, of: counts.loaded.of },
+    decorrelatedRate: { k: counts.differentCompany.k, of: counts.differentCompany.of },
+    schemaViolationRate: { k: counts.schemaViolations.k, of: counts.schemaViolations.of },
+  };
+  const gated = (key) => rate(behind[key].k, behind[key].of, key);
 
-  const grounded = tally(list, (s) => s.grounding && { good: s.grounding.found, n: s.grounding.checked });
+  const grounded = { good: counts.quotes.found, n: counts.quotes.of };
   const concrete = tally(list, (s) => s.quality?.concrete);
   const engages = tally(list, (s) => s.quality?.engages);
   const verdictFit = tally(
     list,
     (s) => typeof s.quality?.verdictFits === "number" && { good: s.quality.verdictFits >= GOOD_NOUL ? 1 : 0, n: 1 },
   );
-  // Over the flawed and loaded cases Jev actually scored, so the phrase match beside it can be
-  // counted on exactly the same cases.
-  const semanticScored = [...flawed, ...loaded].filter((s) => typeof s.semanticCaught === "boolean");
-  const semantic = { good: semanticScored.filter((s) => s.semanticCaught).length, n: semanticScored.length };
-  const phraseOnSame = semanticScored.filter((s) => s.caught === true).length;
+  const semantic = { good: counts.semantic.caught, n: counts.semantic.of };
+  const phraseOnSame = counts.semantic.phraseCaught;
 
   const metrics = {
-    catchRate: rate(legacyFlawed.filter((s) => s.caught === true).length, legacyFlawed.length, "catchRate"),
-    figureCatchRate: rate(figureFlawed.filter((s) => s.caught === true).length, figureFlawed.length, "figureCatchRate"),
-    falseAlarmRate: rate(sound.filter((s) => s.falseAlarm === true).length, sound.length, "falseAlarmRate"),
-    loadedCatchRate: rate(loaded.filter((s) => s.caught === true).length, loaded.length, "loadedCatchRate"),
-    decorrelatedRate: rate(list.filter((s) => s.decorrelated === true).length, n, "decorrelatedRate"),
-    schemaViolationRate: rate(list.filter((s) => (s.schemaIssues || 0) > 0).length, n, "schemaViolationRate"),
+    catchRate: gated("catchRate"),
+    figureCatchRate: gated("figureCatchRate"),
+    falseAlarmRate: gated("falseAlarmRate"),
+    loadedCatchRate: gated("loadedCatchRate"),
+    decorrelatedRate: gated("decorrelatedRate"),
+    schemaViolationRate: gated("schemaViolationRate"),
     groundedRate: share(grounded),
     concreteRate: share(concrete),
     engagesRate: share(engages),
@@ -628,7 +750,7 @@ export function summarize(scores, thresholds) {
     if (typeof threshold !== "number") continue; // nothing configured for this metric — nothing to check
     const actual = metrics[key];
     const pass = direction === "atLeast" ? actual >= threshold : actual <= threshold;
-    checks.push({ key, direction, threshold, actual, pass });
+    checks.push({ key, direction, threshold, actual, pass, k: behind[key].k, of: behind[key].of });
     if (!pass) {
       regressions.push(
         direction === "atLeast"
@@ -638,7 +760,7 @@ export function summarize(scores, thresholds) {
     }
   }
 
-  return { metrics, regressions, checks, informational };
+  return { metrics, regressions, checks, informational, counts };
 }
 
 const METRIC_LABEL = Object.freeze({
@@ -646,7 +768,9 @@ const METRIC_LABEL = Object.freeze({
   figureCatchRate: "Catch rate (wrong figure)",
   falseAlarmRate: "False alarm rate (sound)",
   loadedCatchRate: "Catch rate (loaded)",
-  decorrelatedRate: "Decorrelated rate",
+  // A routing check: the model that answered is outside the declared author's company. It
+  // says nothing about whether the judge's errors differ from the writer's.
+  decorrelatedRate: "Judge from a different company than the declared author",
   schemaViolationRate: "Schema violation rate",
 });
 
@@ -664,6 +788,12 @@ const METRIC_LABEL = Object.freeze({
  * A HELD-OUT RUN (`heldOut: true`) SHOWS NO CASE AT ALL: no id, no expect phrase, no per-case
  * result. Only the rates and a count of failures, so its score can be published beside the
  * public set's without teaching anyone the test. The full scores stay in the private results file.
+ *
+ * COUNTS, WHEN THE SUMMARY CARRIES THEM (summarize's `counts`): one line saying how many cases
+ * reached a judge, a Count column beside each gated rate, and a table of cases by judge
+ * company. The table holds company ids and whole numbers only, so a held-out run shows it too.
+ * It is never gated and never prints a pass or a fail: one run is too few cases to compare
+ * companies.
  */
 export function renderSummary(summary, scores, { heldOut = false } = {}) {
   const { metrics = {}, regressions = [], checks = [], informational = [] } = summary ?? {};
@@ -678,10 +808,23 @@ export function renderSummary(summary, scores, { heldOut = false } = {}) {
     "",
   );
 
-  out.push("| Metric | Value | Threshold | Status |", "| --- | --- | --- | --- |");
+  const counts = summary?.counts && typeof summary.counts === "object" ? summary.counts : null;
+  const unreached = counts ? counts.cases - counts.reachedJudge : 0;
+  if (counts) {
+    const rest =
+      unreached === 1
+        ? " 1 case got no verdict. It is scored below as a miss or a false alarm."
+        : unreached > 1
+          ? ` ${unreached} cases got no verdict. They are scored below as misses or false alarms.`
+          : "";
+    out.push(`Reached a judge: ${counts.reachedJudge} of ${counts.cases} cases.${rest}`, "");
+  }
+
+  out.push("| Metric | Value | Threshold | Status | Count |", "| --- | --- | --- | --- | --- |");
   for (const c of checks) {
     const cmp = c.direction === "atLeast" ? `>= ${c.threshold}` : `<= ${c.threshold}`;
-    out.push(`| ${METRIC_LABEL[c.key] ?? c.key} | ${c.actual.toFixed(2)} | ${cmp} | ${c.pass ? "PASS" : "FAIL"} |`);
+    const behind = Number.isInteger(c.k) && Number.isInteger(c.of) ? `${c.k} of ${c.of}` : "";
+    out.push(`| ${METRIC_LABEL[c.key] ?? c.key} | ${c.actual.toFixed(2)} | ${cmp} | ${c.pass ? "PASS" : "FAIL"} | ${behind} |`);
   }
   out.push("");
 
@@ -695,6 +838,22 @@ export function renderSummary(summary, scores, { heldOut = false } = {}) {
       out.push(`| ${row.label} | ${value} | ${basis} |`);
     }
     out.push("");
+  }
+
+  // Counts only, after everything that can fail a run. No status column: nothing here is gated.
+  if (counts && Array.isArray(counts.byCompany) && counts.byCompany.length > 0) {
+    out.push(
+      "## By judge company (counts, not gated)",
+      "",
+      "| Judge company | Cases | Planted flaws caught | False alarms on sound cases |",
+      "| --- | --- | --- | --- |",
+    );
+    for (const row of counts.byCompany) {
+      out.push(`| ${row.company} | ${row.cases} | ${row.caught} of ${row.planted} | ${row.falseAlarms} of ${row.sound} |`);
+    }
+    const absent =
+      unreached === 1 ? " 1 case got no verdict and is in no row." : unreached > 1 ? ` ${unreached} cases got no verdict and are in no row.` : "";
+    out.push("", `_One run. Too few cases to compare companies.${absent}_`, "");
   }
 
   const failedCases = list.filter((s) =>

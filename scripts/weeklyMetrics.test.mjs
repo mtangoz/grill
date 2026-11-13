@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FUNNEL_KEYS as HOSTED_FUNNEL_KEYS, MCP_CONNECT_KEY as HOSTED_MCP_CONNECT_KEY, MCP_SIGNED_IN_KEY as HOSTED_MCP_SIGNED_IN_KEY } from "./hostedCore.mjs";
 import { IMPACT_LOOKBACKS_KEY, IMPACT_UNSUB_KEY } from "./impactDigest.mjs";
-import { FOUNDING_COUNT_KEY, FREE_TO_PAID_KEY, FUNNEL_KEYS, IMPACT_EMAIL_KEYS, MCP_CONNECT_KEY, MCP_SIGNED_IN_KEY, PAID_INTENT_KEYS, START_VIEWS_KEY, WAITLIST_SIGNUPS_KEY, readWeeklyMetrics, weeklyMetricLines } from "./weeklyMetricsCore.mjs";
+import { FOUNDING_COUNT_KEY, FREE_TO_PAID_KEY, FUNNEL_KEYS, IMPACT_EMAIL_KEYS, INSTALL_PINGS_KEY, MCP_CONNECT_KEY, MCP_SIGNED_IN_KEY, PAID_INTENT_KEYS, START_REF_LABELS, START_VIEWS_KEY, WAITLIST_SIGNUPS_KEY, readWeeklyMetrics, startRefLine, weeklyMetricLines } from "./weeklyMetricsCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV = {
@@ -85,6 +85,69 @@ describe("weekly metrics", () => {
     assert.equal(missing.connectAttempts, 0);
     assert.equal(missing.signedInConnects, 0);
     await assert.rejects(readWeeklyMetrics({}, fetchFor({})), (err) => err.code === "unconfigured");
+  });
+
+  it("dates the JSON line, reads the newer ref labels, and adds one line for opt-in install pings", async () => {
+    const now = Date.parse("2026-11-13T23:59:00Z");
+    const seen = [];
+    const values = {
+      [START_VIEWS_KEY]: "40",
+      "grill:metric:start_ref:home": "9",
+      "grill:metric:start_ref:demo": "3",
+      "grill:metric:start_ref:readme": "6",
+      "grill:metric:start_ref:notify": "2",
+      "grill:metric:start_ref:data-flow": "4",
+      "grill:metric:start_ref:how-we-test": "1",
+      // A tag off the list is still not read: there is no SCAN.
+      "grill:metric:start_ref:someone-else": "50",
+      [INSTALL_PINGS_KEY]: "12",
+      [FUNNEL_KEYS.grills]: "11",
+    };
+    const report = await readWeeklyMetrics(
+      ENV,
+      async (url, init) => {
+        seen.push(JSON.parse(init.body));
+        return fetchFor(values)(url, init);
+      },
+      now,
+    );
+    assert.deepEqual(START_REF_LABELS, ["home", "askgrill", "hn", "smithery", "demo", "x", "readme", "notify", "data-flow", "how-we-test"]);
+    assert.equal(INSTALL_PINGS_KEY, "grill:ping:unique");
+    assert.equal(report.date, "2026-11-13");
+    assert.equal(report.installPings, 12);
+    assert.equal(report.users, undefined);
+    // Each new read is a GET of one fixed key, like the reads before it. The fake fetch refuses anything else.
+    assert.deepEqual(seen.filter((args) => args[1] === INSTALL_PINGS_KEY), [["GET", INSTALL_PINGS_KEY]]);
+    for (const label of START_REF_LABELS) {
+      assert.deepEqual(seen.filter((args) => args[1] === `grill:metric:start_ref:${label}`), [["GET", `grill:metric:start_ref:${label}`]], label);
+    }
+    assert.equal(seen.some((args) => String(args[1]).includes("someone-else")), false);
+    assert.equal(seen.some((args) => /^(SCAN|KEYS|HGETALL|PFCOUNT)$/.test(args[0])), false);
+
+    const lines = weeklyMetricLines(report);
+    // Start views and start refs keep their places. The two connect lines sit after them.
+    assert.equal(lines[6], "start views: 40");
+    assert.equal(lines[7], "start refs: home 9 · demo 3 · readme 6 · notify 2 · data-flow 4 · how-we-test 1");
+    assert.equal(lines[8], "connect attempts: 0");
+    assert.equal(lines[9], "signed-in connects: 0");
+    assert.equal(lines[10], "grills: 11");
+    assert.equal(lines[15], "email unsubscribes: 0");
+    // The new line sits after them, just above the JSON line.
+    assert.equal(lines.at(-2), "opt-in install pings: 12");
+    assert.equal(lines.indexOf("opt-in install pings: 12") > 13, true);
+    const json = JSON.parse(lines.at(-1));
+    assert.equal(json.date, "2026-11-13");
+    assert.equal(json.installPings, 12);
+    assert.equal(json.startRefs.readme, 6);
+    assert.equal(json.startRefs["how-we-test"], 1);
+    assert.doesNotMatch(lines.at(-1), /decision|title|verdict/);
+    assert.equal(startRefLine({ readme: 2, notify: 0 }), "start refs: readme 2");
+    // A report made before these fields existed still prints.
+    assert.equal(weeklyMetricLines({ paidIntentPricing: 0, paidIntentCheckout: 0, paidIntentNotify: 0, freeToPaid: 0 }).at(-2), "opt-in install pings: 0");
+    // With no clock passed in, the date is today's UTC day.
+    const today = await readWeeklyMetrics(ENV, fetchFor({}));
+    assert.match(today.date, /^\d{4}-\d{2}-\d{2}$/);
+    assert.equal(today.date, new Date().toISOString().slice(0, 10));
   });
 
   it("snapshot.sh appends the weekly lines after the Pro-interest line", () => {

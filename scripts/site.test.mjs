@@ -16,7 +16,7 @@ const privacyPage = readFileSync(join(ROOT, "site/privacy.html"), "utf8");
 // The standalone sentence "Grill keeps nothing." A word boundary keeps this from matching
 // "The free tool has no account and keeps nothing." on /privacy.
 const GRILL_KEEPS_NOTHING = /\bGrill keeps nothing\./;
-const CHAT_KEEPS_CHOSEN = "Grill in chat keeps only what you choose";
+const CHAT_KEEPS_CHOSEN = "Grill in chat keeps your account, a 15-minute encrypted copy of each grill that gets a verdict";
 
 describe("site/page.html", () => {
   it("is a body with no document skeleton, so it publishes as an artifact unchanged", () => {
@@ -132,6 +132,19 @@ describe("site/page.html", () => {
     assert.ok(readFileSync(join(ROOT, "docs/DECISION-RECORD.md"), "utf8").includes("version: 1"));
   });
 
+  it("the README says saved decisions and look-back reminders are free today, and paid plans are off", () => {
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    const costs = readme.slice(readme.indexOf("## What it costs"), readme.indexOf("## Privacy"));
+    assert.ok(costs.length > 0 && costs.length < 1000, "the What it costs section sits right before Privacy");
+    assert.ok(
+      costs.includes("Saved decisions and look-back reminders are free today with [Grill in your chat](https://grillyour.ai/start/?ref=readme). Paid plans are off."),
+      "the README should say what is free today and that paid plans are off",
+    );
+    assert.match(costs, /Grill is free\. On your own key you pay the router\./);
+    assert.match(costs, /The free tool stays free and account-free\./);
+    assert.doesNotMatch(costs, /Coming later|Pro plan|Hear when|notify\?via=/);
+  });
+
   it("counts reflection use as a number of records and never the words", () => {
     assert.match(lookBack, /reflection_record_shown/);
     assert.match(lookBack, /reflection_record_copied/);
@@ -239,7 +252,9 @@ describe("the contribute page", () => {
 
   it("says why help matters, the ways to help, and how a change is reviewed", () => {
     assert.match(contribute, /<title>Contribute to Grill<\/title>/);
-    assert.match(contribute, /one model, from a different company/);
+    assert.match(contribute, /The judge is one model that did not write your plan\. When Grill can tell which AI did, the judge is from a different company\. When it cannot, the verdict says so\./);
+    assert.match(contribute, /The judge stays one outside model, from a different company when Grill can tell which AI wrote the plan\./);
+    assert.doesNotMatch(contribute, /one model, from a different company/);
     assert.match(contribute, /no ads, no selling your data, and no training on your decisions\. Grill is paid for by subscriptions only\./);
     assert.match(contribute, /<h2>Ways to help<\/h2>/);
     assert.match(contribute, /issues\/new\?template=idea\.yml/);
@@ -280,7 +295,7 @@ describe("the site build", () => {
     assert.match(html, /^<!doctype html>/);
     assert.match(head, /<title>Grill: grill your AI before you send it to your boss<\/title>/);
     assert.match(head, /<meta property="og:title" content="Grill: grill your AI before you send it to your boss">/);
-    assert.match(head, /<meta name="description" content="Grill your AI before you send it to your boss\. A model from another company finds the weak spots in your plan and one cheap way to test them\. Works with ChatGPT, Claude, Gemini and more\.">/);
+    assert.match(head, /<meta name="description" content="Grill your AI before you send it to your boss\. A different AI argues the case against your plan and names one cheap test\. Works with ChatGPT, Claude, Gemini and more\.">/);
     assert.match(head, /<link rel="canonical" href="https:\/\/grillyour\.ai\/">/);
     assert.match(head, /<meta name="color-scheme" content="light dark">/);
     assert.match(head, /<meta name="theme-color" content="#f7f4ef" media="\(prefers-color-scheme: light\)">/);
@@ -368,7 +383,7 @@ describe("the site build", () => {
       assert.match(llms, /^# Grill\n/);
       assert.match(
         llms,
-        /^> Grill your AI before you send it to your boss\. An outside judge, a model from a different company, gives the strongest case against a decision\.\n/m,
+        /^> Grill your AI before you send it to your boss\. An outside judge gives the strongest case against a decision\. When Grill can tell which AI wrote the plan, the judge is from a different company\.\n/m,
       );
       assert.match(llms, /https:\/\/grillyour\.ai\/mcp/);
       assert.match(llms, /Anyone can sign up and connect Grill to the AI they use at https:\/\/grillyour\.ai\/mcp\./);
@@ -376,6 +391,8 @@ describe("the site build", () => {
       assert.doesNotMatch(llms, /invite-only/);
       assert.doesNotMatch(llms, /Join the waitlist/);
       assert.match(llms, /\[GitHub\]\(https:\/\/github\.com\/mtangoz\/grill\): \S/);
+      // The GitHub line says what is in the repo. It makes no claim about the judge.
+      assert.match(llms, /^- \[GitHub\]\(https:\/\/github\.com\/mtangoz\/grill\): The code, the tests and the judge prompt\.$/m);
       const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
       for (const path of ["", "start/", "privacy/", "terms/", "look-back/", "contribute/", "demo/"]) {
         assert.ok(locs.includes(`https://grillyour.ai/${path}`), `sitemap lists /${path}`);
@@ -385,7 +402,7 @@ describe("the site build", () => {
         assert.match(llms, new RegExp(`\\[[^\\]]+\\]\\(${escaped}\\): \\S`), `llms.txt links ${url}`);
       }
       // The privacy link keeps that page's own limit. Chat keeps a record only when you choose.
-      assert.match(llms, /https:\/\/grillyour\.ai\/privacy\/\): [^\n]*keeps only what you choose/);
+      assert.match(llms, /https:\/\/grillyour\.ai\/privacy\/\): [^\n]*It keeps a record of a decision only if you say yes, encrypted, and you can delete it\./);
     };
     check(build());
     const withMiss = build({ GRILL_MISS: "1" });
@@ -539,12 +556,19 @@ describe("the site build", () => {
   });
 
   it("names the live commit in every public page footer when the deploy provides one, and nothing otherwise", () => {
-    const pages = ["index.html", "terms/index.html", "contribute/index.html", "look-back/index.html", "privacy/index.html", "about/index.html", "contact/index.html", "miss/index.html"];
+    // Every page the build just listed in the sitemap, the miss page included. A page added later
+    // is read here with no edit to this test.
     const build = (sha) => {
       const env = { ...process.env, GRILL_MISS: "1" };
       if (sha === undefined) delete env.VERCEL_GIT_COMMIT_SHA;
       else env.VERCEL_GIT_COMMIT_SHA = sha;
       execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env });
+      const sitemap = readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8");
+      const pages = [...sitemap.matchAll(/<loc>https:\/\/grillyour\.ai\/([^<]*)<\/loc>/g)].map((match) => `${match[1]}index.html`);
+      assert.ok(pages.length >= 14, `the sitemap lists ${pages.length} pages`);
+      for (const known of ["index.html", "terms/index.html", "contribute/index.html", "look-back/index.html", "privacy/index.html", "about/index.html", "contact/index.html", "miss/index.html", "faq/index.html", "start/index.html", "how-we-test/index.html", "data-flow/index.html"]) {
+        assert.ok(pages.includes(known), `the sitemap lists ${known}`);
+      }
       return pages.map((p) => [p, readFileSync(join(ROOT, "_site", p), "utf8")]);
     };
     const sha = "0123456789abcdef0123456789abcdef01234567";
@@ -562,6 +586,24 @@ describe("the site build", () => {
       }
     }
     assert.doesNotMatch(page, /Live commit/, "the artifact source never carries a commit");
+  });
+
+  // The two page rules a review used to carry. They hold for every file in site/, so a page
+  // added later is checked the day it is added: the brand's no-dash rule, and the footer span
+  // the build writes the live commit into.
+  it("no page source has an em dash or an en dash, and every one keeps the Hold footer span", () => {
+    const sources = readdirSync(join(ROOT, "site")).filter((name) => name.endsWith(".html")).sort();
+    assert.ok(sources.length >= 14, `site/ holds ${sources.length} pages`);
+    for (const known of ["page.html", "terms.html", "privacy.html", "faq.html", "demo.html", "start.html", "miss.html", "how-we-test.html", "data-flow.html"]) {
+      assert.ok(sources.includes(known), `site/${known} is read`);
+    }
+    const span = '<span>Made at <a href="https://hold.quest">Hold</a>';
+    for (const name of sources) {
+      const source = readFileSync(join(ROOT, "site", name), "utf8");
+      assert.ok(!source.includes("\u2014"), `site/${name} has an em dash`);
+      assert.ok(!source.includes("\u2013"), `site/${name} has an en dash`);
+      assert.equal(source.split(span).length - 1, 1, `site/${name} keeps the Hold footer span, once`);
+    }
   });
 
   // A chat preview reads og:title, and X reads twitter:title. Both have to be the page's own
@@ -827,6 +869,7 @@ describe("the /start page", () => {
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     const chat = readme.slice(readme.indexOf("### Grill in chat"), readme.indexOf("###", readme.indexOf("### Grill in chat") + 4));
     assert.match(chat, /https:\/\/grillyour\.ai\/start\//);
+    assert.match(chat, /The steps are at \[grillyour\.ai\/start\]\(https:\/\/grillyour\.ai\/start\/\?ref=readme\)\./, "the README setup link carries the readme tag");
     assert.match(chat, /https:\/\/claude\.ai\/customize\/connectors\?modal=add-custom-connector/);
     assert.match(chat, /Customize → Connectors → Add custom connector/);
     assert.doesNotMatch(chat, /Settings → Connectors → Add custom connector/);
@@ -892,11 +935,11 @@ describe("the privacy page", () => {
     ]) {
       assert.ok(block.includes(line), line);
     }
-    const keys = "Only you see your records on the site. Grill's maintainers hold the encryption keys, so they could technically decrypt records you chose to keep. A grill you choose to send can be read by them, so Grill can learn what is working. They don't publish it, and they don't read a grill you did not send.";
+    const keys = "Only you see your records on the site. Grill's maintainers hold the encryption keys, so they could technically decrypt records and drafts you chose to keep, the 15-minute copy of each grill, and reactions. A grill you choose to send can be read by them, so Grill can learn what is working. They don't publish it, and they don't read a grill you did not send.";
     assert.ok(privacyPage.includes(keys), "encryption-keys line");
     assert.match(privacyPage, /<h2>Using Grill in chat \(the connector\)<\/h2>/);
-    assert.match(privacyPage, /The free tool has no account\. Grill keeps a grill from it only when you send that one\. Grill in chat keeps only what you choose, encrypted, and you can delete it\./);
-    assert.match(privacyPage, /We don't keep what you decide unless you choose to keep decision records \(Grill in chat\) or saved report copies \(Pro\), and you can delete them\./);
+    assert.match(privacyPage, /The free tool has no account\. Grill keeps a grill from it only when you send that one\. Grill in chat keeps your account, a 15-minute encrypted copy of each grill that gets a verdict, and a log and counts of your use\. It keeps a record of a decision only if you say yes, encrypted, and you can delete it\./);
+    assert.match(privacyPage, /Apart from the 15-minute encrypted copy of each grill in chat and a grill you send after a reaction, we don't keep what you decide unless you choose to keep decision records \(Grill in chat\) or saved report copies \(Pro\), and you can delete them\./);
   });
 });
 
@@ -971,8 +1014,11 @@ describe("the /demo page", () => {
     const cta = demo.indexOf('class="cta"');
     const foot = demo.indexOf('class="footer"');
     assert.ok(lastDetails < cta && cta < foot, "the call to action follows the examples");
-    assert.match(demo, /<a class="button" href="\/start\/">Connect Grill<\/a>/);
-    assert.match(demo, /<a href="\/start\/">Anyone can sign up<\/a>/);
+    // Both links under the examples carry the demo tag, so /start can count who came from here.
+    assert.match(demo, /<a class="button" href="\/start\/\?ref=demo">Connect Grill<\/a>/);
+    assert.match(demo, /<a href="\/start\/\?ref=demo">Anyone can sign up<\/a>/);
+    assert.equal((demo.match(/href="\/start\/\?ref=demo"/g) ?? []).length, 2);
+    assert.equal((demo.match(/href="\/start\/"/g) ?? []).length, 1, "only the shared nav links /start/ without a tag");
   });
 
   it("builds to /demo/ and lands in the sitemap and llms.txt", () => {
@@ -1023,7 +1069,8 @@ describe("the /check-your-ai page", () => {
   const H1 = "Check your AI's work before you send it to your boss.";
   const DESCRIPTION = "Plain checks for an AI draft before you send it to your boss: the assumption, the facts, and one cheap test.";
   const CANONICAL = "https://grillyour.ai/check-your-ai/";
-  const JUDGE_BLIND_SPOTS = "The judge never comes from the company behind your AI, so it won\u2019t share its blind spots.";
+  // The judge line is conditional: a different company only when Grill can tell which AI wrote the draft.
+  const JUDGE_LINE = "The judge did not write your draft. When Grill can tell which AI did, the judge comes from a different company. When it cannot, the verdict says so.";
   const nav = (html) => html.match(/<nav aria-label="Sections">[\s\S]*?<\/nav>/)?.[0];
   const footer = (html) => html.match(/<div class="footer">[\s\S]*?<\/div>/)?.[0];
 
@@ -1054,7 +1101,10 @@ describe("the /check-your-ai page", () => {
     assert.equal(footer(source), footer(about));
     assert.match(source, /href="\/demo\/"/);
     assert.match(source, /href="\/start\/"/);
-    assert.ok(source.includes(JUDGE_BLIND_SPOTS));
+    assert.ok(source.includes(JUDGE_LINE));
+    // The sentence before the judge line does not say different company on its own.
+    assert.ok(source.includes(`<p class="note">The assistant you drafted with is checking its own draft. A second AI is there to argue the other side. ${JUDGE_LINE}</p>`));
+    assert.doesNotMatch(source, /A second AI from a different company/);
     assert.match(source, /Say [“"]grill this[”"]/);
     assert.match(source, /made-up/);
     assert.match(source, /Nothing in that example is a real decision/);
@@ -1106,7 +1156,8 @@ describe("the /check-your-ai page", () => {
     const rest = built.replace(analyticsSnippet(process.env), "");
     assert.equal(rest.match(/<script\b/gi)?.length ?? 0, 0, "/check-your-ai has a script of its own");
     assert.ok(md.includes(H1));
-    assert.ok(md.includes(JUDGE_BLIND_SPOTS));
+    assert.ok(md.includes(JUDGE_LINE));
+    assert.ok(md.includes(`A second AI is there to argue the other side. ${JUDGE_LINE}`), "the Markdown twin carries the same paragraph");
     assert.ok(md.includes("https://grillyour.ai/demo/"));
     assert.ok(md.includes("https://grillyour.ai/start/"));
     assert.doesNotMatch(md, /<script/i);
@@ -1196,8 +1247,15 @@ describe("the about and contact pages", () => {
     });
     assert.match(text, /Hear the strongest case against your plan, then decide for yourself\./);
     assert.doesNotMatch(text, /Get a second opinion before you decide\./);
-    assert.match(text, /A model from another company gives a verdict and one cheap test\./);
-    assert.match(text, /An AI from a different company argues the other side\. You decide\. Later you can look back and see how your judgement did\./);
+    // "A model from another company" said different company with no condition. The next line carries it.
+    assert.match(text, /An outside judge gives a verdict and one cheap test\./);
+    assert.doesNotMatch(text, /A model from another company/);
+    assert.ok(
+      text.includes("The judge did not write your plan. When Grill can tell which AI did, the judge comes from a different company. When it cannot, the verdict says so."),
+      "about should say the judge is from a different company only when Grill can tell which AI wrote the plan",
+    );
+    // The line above carries the condition, so this one does not say different company on its own.
+    assert.match(text, /An outside AI argues the other side\. You decide\. Later you can look back and see how your judgement did\./);
     assert.doesNotMatch(text, /The verdict never becomes the decision\./);
     assert.ok(source.includes(CHAT_KEEPS_CHOSEN), "about source should say what Grill in chat keeps");
     assert.ok(text.includes(CHAT_KEEPS_CHOSEN), "about page should say what Grill in chat keeps");
@@ -1416,7 +1474,7 @@ describe("markdown for agents", () => {
     assert.doesNotMatch(md, GRILL_KEEPS_NOTHING);
     assert.equal(GRILL_KEEPS_NOTHING.test("The free tool has no account and keeps nothing."), false);
     assert.doesNotMatch(privacyPage, GRILL_KEEPS_NOTHING);
-    assert.match(privacyPage, /The free tool has no account\. Grill keeps a grill from it only when you send that one\. Grill in chat keeps only what you choose, encrypted, and you can delete it\./);
+    assert.match(privacyPage, /The free tool has no account\. Grill keeps a grill from it only when you send that one\. Grill in chat keeps your account, a 15-minute encrypted copy of each grill that gets a verdict, and a log and counts of your use\. It keeps a record of a decision only if you say yes, encrypted, and you can delete it\./);
     for (const url of [
       "https://grillyour.ai/start/",
       "https://grillyour.ai/terms",
@@ -1587,7 +1645,8 @@ describe("markdown for agents", () => {
         "We never sell your data.",
         "We never train AI on your decisions.",
         "The free tool has no account. Grill keeps a grill from it only when you send that one.",
-        "Grill in chat keeps only what you choose, encrypted, and you can delete it.",
+        "Grill in chat keeps your account, a 15-minute encrypted copy of each grill that gets a verdict, and a log and counts of your use.",
+        "It keeps a record of a decision only if you say yes, encrypted, and you can delete it.",
       ]) {
         assert.ok(privacy.includes(line), `privacy markdown is missing: ${line}`);
       }
@@ -1728,7 +1787,9 @@ describe("where saved grills are", () => {
     "site/contact.html",
     "site/check-your-ai.html",
     "site/contribute.html",
+    "site/data-flow.html",
     "site/demo.html",
+    "site/how-we-test.html",
     "site/look-back.html",
     "site/miss.html",
     "site/privacy.html",

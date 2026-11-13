@@ -70,14 +70,18 @@ import {
   CONSENT_TEXT,
   CREDIT_CACHE_MS,
   DAILY_GRILL_LIMIT,
+  DATA_FLOW_URL,
+  EMAIL_CLAIMED_TEXT,
   HOSTED_INSTRUCTIONS,
   JOB_TTL_SECONDS,
   MAX_PASTE_CHARS,
   MAX_QUESTION_CHARS,
   JUDGE_PACKET_MAX,
   MAX_SUBJECT_CHARS,
-  ONCE_DISCLOSURE,
+  JUDGE_PAGE_UNVERIFIED_LINE,
   OUT_OF_CREDIT,
+  RECORDS_NOTE,
+  RECORDS_QUESTION,
   RUNNING_JOB_LIMIT,
   CAP_COUNTER_TTL_SECONDS,
   allowlistAllows,
@@ -91,7 +95,10 @@ import {
   storedInviteListed,
   storedInvitesEnabled,
   authorForJudge,
-  unknownClientJudgeLine,
+  hostedFeedbackReply,
+  companyLabel,
+  independenceLine,
+  onceDisclosureFor,
   calendarFeed,
   calendarTokenHash,
   calendarTokenShape,
@@ -158,6 +165,19 @@ import {
   publicOrigin,
   queryHasToken,
   recordsForLookBack,
+  lookBackTargets,
+  lookbackAskText,
+  lookbackSavedOneText,
+  lookbackSavedText,
+  lookbackSaves,
+  lookbackWhichText,
+  setLookback,
+  PENDING_KEEP_DAYS,
+  waitingGrillLine,
+  WAITING_GRILL_HOW,
+  RECORDS_OFF_DELETES_WAITING,
+  RECORDS_OFF_NOTE,
+  DELETE_ALL_ALSO_WAITING,
   savedConfirmation,
   serviceFailureText,
   signInUrl,
@@ -175,6 +195,21 @@ import {
   reactionKey,
   storeFeedback,
 } from "../scripts/feedbackCore.mjs";
+import {
+  OUTSIDE_LIVE_KEY,
+  OUTSIDE_SEEN_KEY,
+  cameBackOps,
+  choiceOps,
+  countsAsOutside,
+  firstGrillOps,
+  firstGrillTime,
+  hashFields,
+  internalEmails,
+  lookbackDateChange,
+  lookbackDoneOps,
+  lookbackPeopleChange,
+  recordsAnswerOps,
+} from "../scripts/outsideLoopCore.mjs";
 
 const JUDGE = fileURLToPath(new URL("../scripts/judge.mjs", import.meta.url));
 const CLERK_API = "https://api.clerk.com";
@@ -193,9 +228,16 @@ const userCache = new Map();
 const creditCache = new Map();
 // Clerk's authorization-server documents, keyed by the upstream URL. Public metadata only.
 const authMetadataCache = new Map();
-// Company named on initialize, keyed by the sign-in subject. This process only.
-// The grill request also reads User-Agent, so a different instance still sees that.
+// Company named on initialize, kept per sign-in subject and, under it, per client: the token's
+// client id plus the User-Agent. A handshake is reused only by the client that made it.
+// This process only. The grill request also reads User-Agent, so a different instance still sees that.
 const clientHintBySub = new Map();
+// The most clients remembered for one person. The oldest goes first.
+const CLIENT_HINTS_PER_PERSON = 8;
+// Whether this process has already written the day the outside counters went live.
+let outsideLiveNoted = false;
+// The last UTC day this process wrote as a day it handled an event with the internal list set.
+let outsideSeenDay = "";
 export const AUTH_METADATA_CACHE_MS = 60_000;
 
 export function resetHostedCaches() {
@@ -204,6 +246,8 @@ export function resetHostedCaches() {
   creditCache.clear();
   authMetadataCache.clear();
   clientHintBySub.clear();
+  outsideLiveNoted = false;
+  outsideSeenDay = "";
 }
 
 class Coded extends Error {
@@ -369,7 +413,7 @@ function pendingIndex(userId) {
 function pendingRedisKey(userId, id) {
   return `grill:hosted:pending:${userId}:${id}`;
 }
-const PENDING_TTL_SECONDS = 14 * 24 * 60 * 60;
+const PENDING_TTL_SECONDS = PENDING_KEEP_DAYS * 24 * 60 * 60;
 /**
  * Fields that a running grill changes live in their own keys, written with atomic
  * commands, so two grills finishing at once can't overwrite each other's copy of
@@ -380,6 +424,15 @@ function spendLogKey(userId) {
 }
 function disclosedKey(userId) {
   return `grill:hosted:disclosed:${userId}`;
+}
+/**
+ * Marks that keep the outside counters to one count per person: the time of the account's first
+ * grill that got a verdict, a yes once it was counted as having come back, and the day its
+ * first look-back is counted under. A hash, written with atomic commands, like the keys above.
+ * Never written for an account on the internal list, or while that list is unset.
+ */
+function outsideMarkKey(userId) {
+  return `grill:hosted:outside:${userId}`;
 }
 function recordKeyRedisKey(userId) {
   return `grill:hosted:rkey:${userId}`;
@@ -478,7 +531,7 @@ async function claimRun(account, subject, runId, deps) {
 }
 
 /** One completed grill. A second finish of the same run, a follow-up and a poll do not get here. */
-async function countCompletedCheck(account, deps, runId) {
+async function countCompletedCheck(account, deps, runId, { sourceApp = "", spendRows = 0 } = {}) {
   if (!runId) return;
   const once = await redis(deps, ["SET", checkOnceKey(runId), "1", "NX", "EX", String(JOB_TTL_SECONDS)]);
   if (once !== "OK") return;
@@ -491,12 +544,173 @@ async function countCompletedCheck(account, deps, runId) {
   await redis(deps, ["EXPIRE", dayKey, String(2 * 24 * 60 * 60)]);
   await countFunnel(deps, FUNNEL_KEYS.grills);
   await markEmailReturn(account, deps, "grill");
+  await countOutsideGrill(account, deps, { sourceApp, spendRows });
 }
 
 /** A funnel step. The value is 1. The key is a fixed name. A missed count does not fail the grill. */
 async function countFunnel(deps, key) {
   try {
     await redis(deps, ["INCR", key]);
+  } catch {
+    // ignored on purpose
+  }
+}
+
+// ── Outside counters ─────────────────────────────────────────────────────────
+// Whole numbers, written when the event happens, inside the person's own request, and only for
+// an account that is not on the operator's internal list. With that list unset, nothing below
+// writes anything. The rules are in scripts/outsideLoopCore.mjs. Every write is best effort:
+// a missed count never fails the request it rides on.
+
+function nowOf(deps) {
+  return typeof deps.now === "number" ? deps.now : Date.now();
+}
+
+/**
+ * Whether this account's events are counted. Once per process it also writes the day the
+ * counters went live, so the readout can tell "nobody yet" from "the list was never set".
+ * Once per process per day it writes that day as the last one an event was handled with the
+ * list set. The readout cannot see the server's settings: if the list is unset later, that
+ * day stops moving, and the readout can show it. Both are a day and nothing else.
+ */
+async function outsideGate(account, deps) {
+  if (!internalEmails(deps.env)) return false;
+  const today = isoDay(nowOf(deps));
+  if (!outsideLiveNoted) {
+    try {
+      await redis(deps, ["SET", OUTSIDE_LIVE_KEY, today, "NX"]);
+      outsideLiveNoted = true;
+    } catch {
+      // Tried again on the next event. A missed mark does not stop the count.
+    }
+  }
+  if (today > outsideSeenDay) {
+    try {
+      await redis(deps, ["SET", OUTSIDE_SEEN_KEY, today]);
+      outsideSeenDay = today;
+    } catch {
+      // Tried again on the next event.
+    }
+  }
+  return countsAsOutside(account, deps.env);
+}
+
+async function addOutside(deps, ops) {
+  await Promise.all(
+    ops.map(async ([key, field, by]) => {
+      try {
+        await redis(deps, ["HINCRBY", key, field, String(by)]);
+      } catch {
+        // ignored on purpose
+      }
+    }),
+  );
+}
+
+/**
+ * A grill that got a verdict. The first one files the person under that day and that app.
+ * A later one, 20 hours or more after it, files them once as having come back.
+ */
+async function countOutsideGrill(account, deps, { sourceApp = "", spendRows = 0 } = {}) {
+  try {
+    if (!(await outsideGate(account, deps))) return;
+    const now = nowOf(deps);
+    const key = outsideMarkKey(account.id);
+    const marks = hashFields(await redis(deps, ["HGETALL", key]));
+    let firstAt = Date.parse(marks.first || "");
+    if (!Number.isFinite(firstAt)) {
+      // An account that grilled before counting began is filed under the day it started.
+      // Its own spend log holds that time already. A new account has only the row just added.
+      let oldest = "";
+      if (spendRows > 1) {
+        try {
+          oldest = JSON.parse(await redis(deps, ["LINDEX", spendLogKey(account.id), "0"]))?.at || "";
+        } catch {
+          oldest = "";
+        }
+      }
+      firstAt = firstGrillTime(now, oldest);
+      const won = await redis(deps, ["HSETNX", key, "first", new Date(firstAt).toISOString()]);
+      // Two grills finishing together: the one that set the mark counts.
+      if (Number(won) !== 1) return;
+      await addOutside(deps, firstGrillOps(deps.env, account, { firstAt, app: sourceApp }));
+    }
+    if (marks.back) return;
+    const back = cameBackOps(deps.env, account, { firstAt, now });
+    if (!back.length) return;
+    if (Number(await redis(deps, ["HSETNX", key, "back", "1"])) !== 1) return;
+    await addOutside(deps, back);
+  } catch {
+    // ignored on purpose
+  }
+}
+
+/** The first yes or no to the records question. */
+async function countOutsideRecordsAnswer(account, deps, keep) {
+  try {
+    if (!(await outsideGate(account, deps))) return;
+    await addOutside(deps, recordsAnswerOps(deps.env, account, { keep, now: nowOf(deps) }));
+  } catch {
+    // ignored on purpose
+  }
+}
+
+async function countOutsideChoice(account, deps) {
+  try {
+    if (!(await outsideGate(account, deps))) return;
+    await addOutside(deps, choiceOps(deps.env, account, { now: nowOf(deps) }));
+  } catch {
+    // ignored on purpose
+  }
+}
+
+/**
+ * A look-back date was set, moved or switched off on `row`. This sets the day the look-back is
+ * counted under on the row, and returns the counter writes to run once the row is saved.
+ * `rows` is every saved record of this person, with this row among them: all already open for
+ * the person's own request.
+ */
+async function outsideLookbackDate(account, deps, row, review, rows) {
+  const nothing = async () => {};
+  try {
+    if (!(await outsideGate(account, deps))) return nothing;
+    const now = nowOf(deps);
+    const left = row.lookbackDueDay || "";
+    // A record answered before the first-answer time was kept has a look-back and no such time.
+    // It is done all the same: its next answer is a second one, and would never be counted.
+    const done = Boolean(row.lookbackFirstAt) || hasLookback(row);
+    const change = lookbackDateChange(deps.env, account, { counted: left, review, done, now });
+    if (change.counted === left) return nothing;
+    if (change.counted) row.lookbackDueDay = change.counted;
+    else delete row.lookbackDueDay;
+    return async () => {
+      try {
+        await addOutside(deps, change.ops);
+        const key = outsideMarkKey(account.id);
+        const mark = String((await redis(deps, ["HGET", key, "lookback"])) || "");
+        const days = rows.map((item) => item.lookbackDueDay || "");
+        const people = lookbackPeopleChange(deps.env, account, { mark, days, left, now });
+        if (people.mark === mark) return;
+        if (!mark) {
+          if (Number(await redis(deps, ["HSETNX", key, "lookback", people.mark])) !== 1) return;
+        } else if (people.mark) await redis(deps, ["HSET", key, "lookback", people.mark]);
+        else await redis(deps, ["HDEL", key, "lookback"]);
+        await addOutside(deps, people.ops);
+      } catch {
+        // ignored on purpose
+      }
+    };
+  } catch {
+    return nothing;
+  }
+}
+
+/** The first look-back answer on a record. `first` is what setLookback returned. */
+async function countOutsideLookbackDone(account, deps, row, first) {
+  try {
+    if (first !== true || !row.lookbackDueDay) return;
+    if (!(await outsideGate(account, deps))) return;
+    await addOutside(deps, lookbackDoneOps(deps.env, account, { first, counted: row.lookbackDueDay, now: nowOf(deps) }));
   } catch {
     // ignored on purpose
   }
@@ -1348,28 +1562,52 @@ function clientInfoOf(params) {
   return params?._meta?.clientInfo || params?.clientInfo || null;
 }
 
+function tokenClientId(payload) {
+  return typeof payload?.client_id === "string" ? payload.client_id : typeof payload?.azp === "string" ? payload.azp : "";
+}
+
+/**
+ * Which client a handshake belongs to: the token's client id and the User-Agent. Empty when
+ * the request has neither. Two clients like that under one sign-in cannot be told apart, so
+ * no company is remembered for them and none is read for them.
+ */
+function clientHintKey(payload, userAgent) {
+  const clientId = tokenClientId(payload);
+  const agent = String(userAgent || "");
+  return clientId || agent ? JSON.stringify([clientId, agent]) : "";
+}
+
 function clientFromToken(payload, params, deps) {
   const sub = typeof payload?.sub === "string" ? payload.sub : "";
+  const userAgent = deps?.userAgent || "";
+  const key = clientHintKey(payload, userAgent);
   return sourceAppFromClient({
     redirectUri: typeof payload.redirect_uri === "string" ? payload.redirect_uri : "",
-    clientId: typeof payload.client_id === "string" ? payload.client_id : typeof payload.azp === "string" ? payload.azp : "",
+    clientId: tokenClientId(payload),
     clientInfo: clientInfoOf(params),
-    userAgent: deps?.userAgent || "",
-    remembered: sub ? clientHintBySub.get(sub) : null,
+    userAgent,
+    remembered: sub && key ? clientHintBySub.get(sub)?.get(key) : null,
   });
 }
 
-/** Keep the initialize handshake's company for later tool calls in this process. */
+/** Keep the initialize handshake's company for this same client's later tool calls in this process. */
 function rememberClientCompany(payload, params, userAgent) {
   const sub = typeof payload?.sub === "string" ? payload.sub : "";
-  if (!sub) return;
+  const key = clientHintKey(payload, userAgent);
+  if (!sub || !key) return;
   const hint = sourceAppFromClient({
     redirectUri: typeof payload?.redirect_uri === "string" ? payload.redirect_uri : "",
-    clientId: typeof payload?.client_id === "string" ? payload.client_id : typeof payload?.azp === "string" ? payload.azp : "",
+    clientId: tokenClientId(payload),
     clientInfo: clientInfoOf(params),
     userAgent,
   });
-  if (hint.company) clientHintBySub.set(sub, hint);
+  const mine = clientHintBySub.get(sub) || new Map();
+  mine.delete(key);
+  if (hint.company) {
+    if (mine.size >= CLIENT_HINTS_PER_PERSON) mine.delete(mine.keys().next().value);
+    mine.set(key, hint);
+  }
+  if (mine.size) clientHintBySub.set(sub, mine);
   else clientHintBySub.delete(sub);
 }
 
@@ -1441,6 +1679,26 @@ async function deletePending(account, deps, id) {
   await redis(deps, ["ZREM", pendingIndex(account.id), id]);
 }
 
+/**
+ * Every draft this account holds: a grill that got a verdict and has no stated choice yet.
+ * They go when records are switched off, on Delete all, and with the account.
+ */
+async function deletePendings(account, deps) {
+  const ids = (await redis(deps, ["ZRANGE", pendingIndex(account.id), "0", "-1"])) || [];
+  for (const id of ids) await deletePending(account, deps, id);
+  await redis(deps, ["DEL", pendingIndex(account.id)]);
+}
+
+/** Whether records are on for this account in the store right now, not only when the call began. */
+async function recordsStillOn(account, deps) {
+  if (account.records !== "keep") return false;
+  try {
+    return JSON.parse(await redis(deps, ["GET", acctKey(account.id)]))?.records === "keep";
+  } catch {
+    return false;
+  }
+}
+
 /** The person the starter credit and the per-person cap belong to. */
 function capPerson(account) {
   return account.human || account.email || account.id;
@@ -1470,7 +1728,7 @@ async function firstDisclosure(account, deps) {
   return won === "OK";
 }
 
-async function composeReport({ outcome, subject, sourceApp, authorGiven = false, account, credit, supersedes, changed, deps, depthJob, big, runId }) {
+async function composeReport({ outcome, subject, sourceApp, author = "none", account, credit, supersedes, changed, deps, depthJob, big, runId }) {
   const stderr = String(outcome?.stderr || "");
   const parsed = outcome?.parsed || null;
   if (!outcome || outcome.code !== 0 || (!parsed && !String(outcome.report || "").trim())) {
@@ -1490,7 +1748,11 @@ async function composeReport({ outcome, subject, sourceApp, authorGiven = false,
     const depthOutcome = await depthJob.promise;
     if (big === true && deepenTestEnabled(deps.env)) layers.deepen = renderDeepen(depthOutcome?.parsed?.depth) || "";
   }
-  const keep = account.records === "keep";
+  // A grill can finish minutes after it started. If records were switched off in between, or
+  // the account was deleted, that already removed the drafts, and this grill must not add one
+  // after it. So the stored choice is read again here, and the rest of this call follows it.
+  const keep = await recordsStillOn(account, deps);
+  if (!keep && account.records === "keep") account.records = "off";
   const thin = isThinGrill(parsed, subject);
   if (keep && offer) layers.brief = `${layers.brief.trim()}\n\n${offer}`;
   let pendingId = "";
@@ -1516,14 +1778,16 @@ async function composeReport({ outcome, subject, sourceApp, authorGiven = false,
   const verdict = thin ? "quick take" : plainVerdict(parsed?.verdict);
   // Atomic appends and counters only. The account record itself is not rewritten
   // here, so a grill finishing in the background can't undo another one's changes.
-  await redis(deps, ["RPUSH", spendLogKey(account.id), JSON.stringify({ at: new Date().toISOString(), costUsd: cost, model })]);
+  const spendRows = Number(await redis(deps, ["RPUSH", spendLogKey(account.id), JSON.stringify({ at: new Date().toISOString(), costUsd: cost, model })])) || 0;
   await redis(deps, ["LTRIM", spendLogKey(account.id), String(-SPEND_LOG_MAX), "-1"]);
   await countSpend(account, deps, cost);
-  if (completedGrill(parsed)) await countCompletedCheck(account, deps, runId);
+  if (completedGrill(parsed)) await countCompletedCheck(account, deps, runId, { sourceApp, spendRows });
   let text = appendRunNote(layers.brief, parsed || {}, Number(outcome.ms));
-  const gapLine = unknownClientJudgeLine({ sourceApp, authorGiven, servedModel: model });
+  // `author` is the company the judge was told to leave out, or "none". With "none" nobody was
+  // excluded: the verdict says so on its own line, and the first-use line makes no company claim.
+  const gapLine = independenceLine({ author, sourceApp, servedModel: model });
   if (gapLine) text = `${text}\n${gapLine}`;
-  if (await firstDisclosure(account, deps)) text = `${ONCE_DISCLOSURE}\n\n${text}`;
+  if (await firstDisclosure(account, deps)) text = `${onceDisclosureFor(author)}\n\n${text}`;
   creditCache.delete(account.id);
   return {
     text: `${text.trim()}\n`,
@@ -1580,7 +1844,7 @@ function layerFromStored(stored, detail) {
 
 async function callGrill(args, account, payload, params, deps) {
   if (account.creditBlocked === "email") {
-    return toolText("This email already has Grill's free starter credit on another sign-in. Sign in with that account instead, or write to support@grillyour.ai if you've lost it.", true);
+    return toolText(EMAIL_CLAIMED_TEXT, true);
   }
   const capped = await capReached(account, deps);
   if (capped) {
@@ -1594,8 +1858,12 @@ async function callGrill(args, account, payload, params, deps) {
     return toolText(CONSENT_TEXT);
   }
   if (typeof keepArg === "boolean" && account.records !== (keepArg ? "keep" : "off")) {
+    const firstAnswer = needsRecordChoice(account);
     account.records = keepArg ? "keep" : "off";
     await saveAccount(account, deps);
+    // Saying no to records also drops any draft still waiting for a choice.
+    if (!keepArg) await deletePendings(account, deps);
+    if (firstAnswer) await countOutsideRecordsAnswer(account, deps, keepArg);
   }
   const subject = typeof args.subject === "string" ? args.subject : "";
   const question = typeof args.question === "string" ? args.question.trim() : "";
@@ -1605,7 +1873,6 @@ async function callGrill(args, account, payload, params, deps) {
   const client = clientFromToken(payload, params, deps);
   const author = authorForJudge({ explicit: args.author, company: client.company });
   if (author.error) return toolText(author.error, true);
-  const authorGiven = Boolean(String(args.author || "").trim());
   if (account.records === "keep" && !keyFromEnv(deps.env, "GRILL_RECORD_KEY")) {
     logHosted(deps.requestId, "record-key");
     return toolText("Grill can't save decision records right now because of a setup problem on our side. Turn records off on your account page to grill without saving, or write to support@grillyour.ai.", true);
@@ -1651,7 +1918,7 @@ async function callGrill(args, account, payload, params, deps) {
       outcome: job.outcome,
       subject,
       sourceApp: client.sourceApp,
-      authorGiven,
+      author: author.author,
       account,
       credit,
       supersedes: args.supersedes,
@@ -1678,7 +1945,7 @@ async function callGrill(args, account, payload, params, deps) {
           outcome,
           subject,
           sourceApp: client.sourceApp,
-          authorGiven,
+          author: author.author,
           account,
           credit,
           supersedes: args.supersedes,
@@ -1765,12 +2032,6 @@ async function loadReaction(account, deps, slot) {
   }
 }
 
-function feedbackReply(share, record) {
-  if (share && (record.subject || record.layer1)) return "Noted. This grill was sent so Grill can learn from it.";
-  if (share) return "Noted. The rating was stored. That grill's text was no longer available to send.";
-  return "Noted.";
-}
-
 async function callFeedback(args, account, deps) {
   const rating = typeof args.rating === "string" ? args.rating.trim() : "";
   if (rating !== "helped" && rating !== "meh") return toolText("rating is helped or meh.", true);
@@ -1817,7 +2078,7 @@ async function callFeedback(args, account, deps) {
     logHosted(deps.requestId, "feedback");
     return toolText("Grill couldn't store that reaction.", true);
   }
-  return toolText(feedbackReply(share, built.record));
+  return toolText(hostedFeedbackReply(share, built.record));
 }
 
 async function callLookBack(args, account, deps) {
@@ -1833,32 +2094,49 @@ async function callLookBack(args, account, deps) {
   }
   const now = typeof deps.now === "number" ? deps.now : Date.now();
   const picked = recordsForLookBack(saved, { records, now });
-  if (!picked.text.trim()) {
+  // The saved decisions this call is about: the ones due, the ones named, or the ones a paste matches.
+  const targets = lookBackTargets(saved, picked, records);
+  const pasted = picked.mode === "pasted";
+  const recordText = pasted ? picked.text : targets.map((row) => row.block).join("\n\n");
+  if (!recordText.trim()) {
     if (picked.mode === "due") return toolText("No saved decision is due for a look-back yet. Name one by its title, or paste a record.");
     if (picked.mode === "named") return toolText("No saved decision matched that name.");
     return toolText("Paste one or more decision records. Grill stores nothing until you choose to keep them.", true);
   }
-  const text = lookBack({ records: picked.text, happened });
-  let savedAny = false;
-  if (happened.trim() && account.records === "keep") {
-    const scored = parseRecords(picked.text);
-    for (const row of saved) {
-      const hit = scored.some((item) => item.date === row.date && item.title === row.title);
-      if (!hit) continue;
-      const firstLook = !hasLookback(row);
-      row.lookback = {
-        at: new Date(now).toISOString(),
-        happened: happened.replace(/\s+/g, " ").trim().slice(0, 2000),
-      };
-      await writeRecord(account, deps, row);
-      if (firstLook) {
-        await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
-        await markEmailReturn(account, deps, "lookback");
-      }
-      savedAny = true;
+  const several = targets.length > 1;
+  // Several saved decisions and one prompt: name each, so the person can say which one they mean.
+  if (several && !pasted && !happened.trim()) return toolText(lookbackAskText(targets));
+  const plan = account.records === "keep" ? lookbackSaves(targets, happened) : { saves: [], unmatched: [] };
+  // An answer that names none of several decisions is not scored against all of them either.
+  if (several && !pasted && !plan.saves.length) return toolText(lookbackWhichText(targets));
+  const savedRows = [];
+  for (const save of plan.saves) {
+    const row = save.row;
+    const firstLook = !hasLookback(row);
+    const firstEver = setLookback(row, save.happened, now);
+    await writeRecord(account, deps, row);
+    if (firstLook) {
+      await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
+      await markEmailReturn(account, deps, "lookback");
     }
+    await countOutsideLookbackDone(account, deps, row, firstEver);
+    savedRows.push(row);
   }
-  return toolText(savedAny ? `${text}\n\nSaved with your decision record.` : text);
+  if (!several || pasted) {
+    const text = lookBack({ records: recordText, happened });
+    // Nothing was saved: the paste route's reading as it is, and it says nothing is stored.
+    if (!savedRows.length) return toolText(text);
+    // One decision, and its answer was saved: the same reading without those words.
+    if (!several) return toolText(lookbackSavedOneText(text));
+    return toolText(lookbackSavedText({ reading: text, saved: savedRows, pasted: true }));
+  }
+  // Read back only the decisions the answer named, each against its own lines.
+  const reading = lookBack({
+    records: plan.saves.map((save) => save.row.block).join("\n\n"),
+    happened: plan.saves.map((save) => `title: ${parseRecords(save.row.block || "")[0]?.title || save.row.title}\n${save.lines}`).join("\n"),
+  });
+  const remaining = targets.filter((row) => !savedRows.includes(row) && !hasLookback(row));
+  return toolText(lookbackSavedText({ reading, saved: savedRows, unmatched: plan.unmatched, remaining }));
 }
 
 /** How many saved records the changes view reads. Older ones are left out. */
@@ -1914,6 +2192,7 @@ async function callDecided(args, account, deps) {
     saved.decided = decided;
     await writeRecord(account, deps, saved);
     await countFunnel(deps, FUNNEL_KEYS.choices);
+    await countOutsideChoice(account, deps);
     return toolText(withReminder(savedConfirmation(parsed.review), await reminderLine(account, deps, rows, saved.id)));
   }
   const pendings = await loadPendings(account, deps);
@@ -1938,7 +2217,7 @@ async function callDecided(args, account, deps) {
     changed: pending.changed || "",
   };
   const block = recordBlock(fields);
-  await writeRecord(account, deps, {
+  const row = {
     id: pending.id,
     createdAt: pending.createdAt || now.toISOString(),
     block,
@@ -1952,10 +2231,14 @@ async function callDecided(args, account, deps) {
     review,
     supersedes: fields.supersedes,
     decided,
-  });
+  };
+  const countLookbackDate = await outsideLookbackDate(account, deps, row, review, [...rows, row]);
+  await writeRecord(account, deps, row);
   await deletePending(account, deps, pending.id);
   await countFunnel(deps, FUNNEL_KEYS.choices);
   if (review) await countFunnel(deps, FUNNEL_KEYS.lookbacksSet);
+  await countOutsideChoice(account, deps);
+  await countLookbackDate();
   return toolText(withReminder(savedConfirmation(review), await reminderLine(account, deps, rows, pending.id)));
 }
 
@@ -2091,12 +2374,31 @@ function seeOther(location, cookies = []) {
   return new Response(null, { status: 303, headers });
 }
 
-/** The page path and query this request was for, on the public origin, without handshake leftovers. */
+/**
+ * The page path and query this request was for, on the public origin, without handshake leftovers.
+ * This address is handed to the sign-in company as the place to come back to, so on /judge it
+ * follows the same rule as returnTo: only the first `q` is kept, and one over JUDGE_PACKET_MAX
+ * is dropped and marked `over=1`. A decision too long to grill is never passed along.
+ */
 function cleanPageUrl(request, { keepMark = false } = {}) {
   const url = pageUrl(request);
   const clean = new URL(`${publicOrigin(request)}${url.pathname}`);
+  const judge = url.pathname === "/judge";
+  let sawPacket = false;
   for (const [k, v] of url.searchParams) {
     if (CLERK_HANDSHAKE_PARAMS.includes(k) || k === HANDSHAKE_MARK) continue;
+    if (judge && k === "q") {
+      if (sawPacket) continue;
+      sawPacket = true;
+      if (v.length > JUDGE_PACKET_MAX) {
+        clean.searchParams.set("over", "1");
+        continue;
+      }
+    }
+    if (judge && k === "over") {
+      clean.searchParams.set(k, v);
+      continue;
+    }
     clean.searchParams.append(k, v);
   }
   if (keepMark) clean.searchParams.set(HANDSHAKE_MARK, "done");
@@ -2767,6 +3069,16 @@ function renderDueAction(rows, byId, now, query) {
   </section>`;
 }
 
+/** A grill with a verdict and no stated choice. A count and what to do; nothing from the draft itself. */
+function renderWaiting(count) {
+  const line = waitingGrillLine(count);
+  if (!line) return "";
+  return `<section id="waiting">
+    <p class="action"><strong>${esc(line)}</strong></p>
+    <p>${esc(WAITING_GRILL_HOW)}</p>
+  </section>`;
+}
+
 function renderNamedGroup(id, label, rows, byId, now, query) {
   if (!rows.length) return "";
   const items = rows.map((row) => renderListRow(row, byId, now, query)).join("");
@@ -2988,25 +3300,28 @@ function renderDecisions(account, rows, _credit, habits, extra = {}) {
     .filter((row) => decisionGroup(row, now) === "closed")
     .sort((a, b) => String(b.lookback?.at || b.createdAt || b.date || "").localeCompare(String(a.lookback?.at || a.createdAt || a.date || "")));
   const narrowed = Boolean(type || source);
-  const empty = shown.length ? "" : narrowed ? `<p>${esc(emptyInView(type, source))}</p>` : EMPTY_DECISIONS;
-  const how = shown.length < 3 && !(narrowed && !shown.length) ? `<p class="small">${LOOKBACK_HOW}</p>` : "";
   const keeping = account.records === "keep";
+  // A grill can wait for a choice only while records are on, and it belongs to no filter.
+  const waiting = keeping && !narrowed ? renderWaiting(habits?.waiting || 0) : "";
+  const empty = shown.length ? "" : narrowed ? `<p>${esc(emptyInView(type, source))}</p>` : waiting ? "" : EMPTY_DECISIONS;
+  const how = shown.length < 3 && !(narrowed && !shown.length) ? `<p class="small">${LOOKBACK_HOW}</p>` : "";
   return page(
     "Your grills",
     `${LIST_STYLE}
     <h1>Your grills</h1>
     ${renderImpact(shown, type, source)}
     ${renderDueAction(shown, byId, now, query)}
+    ${waiting}
     ${filterRow(linked, type, source)}
     ${renderNamedGroup("open", "Open", open, byId, now, query)}
     ${renderNamedGroup("closed", "Closed", closed, byId, now, query)}
     ${empty}
     ${how}
-    ${renderNudge(shown, { waiting: habits?.waiting || 0, now, type, source })}
+    ${renderNudge(shown, { waiting: waiting ? 0 : habits?.waiting || 0, now, type, source })}
     ${renderFooter(linked.length, narrowed)}
     <details class="settings">
     <summary>Settings</summary>
-    <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them.</p>
+    <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them. ${esc(RECORDS_OFF_DELETES_WAITING)}</p>
     <form method="post" action="/decisions" class="row">
       <input type="hidden" name="action" value="records">
       <button type="submit" name="value" value="keep">Keep my decision records</button>
@@ -3065,7 +3380,7 @@ function renderDeleteAllConfirm() {
     "Delete all records? · Grill",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Delete all records?</h1>
-    <p>This removes every saved decision on this page. Export first if you want a copy. This cannot be undone.</p>
+    <p>This removes every saved decision on this page. ${esc(DELETE_ALL_ALSO_WAITING)} Export first if you want a copy. This cannot be undone.</p>
     <form method="post" action="/decisions">
       <input type="hidden" name="action" value="delete-all">
       <button type="submit" name="confirm" value="delete">Delete all records</button>
@@ -3091,6 +3406,7 @@ function renderAccount(account, credit, extra = {}) {
       <button type="submit" name="value" value="keep">Keep my decision records</button>
       <button type="submit" name="value" value="off">Don't keep records</button>
     </form>
+    <p class="small">${esc(RECORDS_OFF_NOTE)}</p>
     <p><a href="/decisions">Your grills</a></p>
     ${renderCalendar("/account", extra.calendar, extra.freshUrl || "")}
     ${renderImpactEmail(account)}
@@ -3180,6 +3496,8 @@ async function exportRecords(account, deps, kind) {
         challenge_kinds: row.challengeKinds || [],
         impact: row.impact === "changed" || row.impact === "kept" ? row.impact : "",
         lookback: row.lookback || null,
+        lookback_first_at: row.lookbackFirstAt || "",
+        lookback_counted_day: row.lookbackDueDay || "",
         block: row.block,
       })),
       null,
@@ -3224,12 +3542,11 @@ async function deleteAccount(account, deps, sub) {
   const ids = (await redis(deps, ["ZRANGE", recordIndex(account.id), "0", "-1"])) || [];
   await deleteRecordIds(account, deps, ids);
   await redis(deps, ["DEL", recordIndex(account.id)]);
-  const pendingIds = (await redis(deps, ["ZRANGE", pendingIndex(account.id), "0", "-1"])) || [];
-  for (const id of pendingIds) await deletePending(account, deps, id);
-  await redis(deps, ["DEL", pendingIndex(account.id)]);
+  await deletePendings(account, deps);
   await redis(deps, ["DEL", acctKey(account.id)]);
   await redis(deps, ["DEL", spendLogKey(account.id)]);
   await redis(deps, ["DEL", disclosedKey(account.id)]);
+  await redis(deps, ["DEL", outsideMarkKey(account.id)]);
   await redis(deps, ["DEL", recordKeyRedisKey(account.id)]);
   await deleteFeedbackForAccount((command) => redis(deps, command), account.id);
   await calendarOff(account, deps);
@@ -3446,27 +3763,21 @@ export async function handleRedeem(request, deps) {
 
 const JUDGE_BODY_MAX = 60_000;
 
-/** Company names for the one line on /judge. The keys are clientCompanyHint's companies. */
-const JUDGE_FROM_LABEL = {
-  google: "Google",
-  anthropic: "Anthropic",
-  openai: "OpenAI",
-  "x-ai": "xAI",
-};
-
 function needsRecordChoice(account) {
   return account?.records !== "keep" && account?.records !== "off";
 }
 
 /**
- * A /judge `from` run through the same clientCompanyHint list as a connector.
- * `signin` is the sign-in return, not an assistant. Anything else excludes nobody.
+ * A /judge `from` run through the same client name list as a connector, so `muse` and
+ * `meta` name Meta the way a connector's client name does. The page names the company
+ * with companyLabel. `signin` is the sign-in return, not an assistant. Anything else
+ * excludes nobody, and the page says independence is not verified.
  */
 function judgeHint(raw) {
   const name = String(raw || "").trim();
   if (!name || name.toLowerCase() === "signin") return null;
   const mapped = sourceAppFromClient({ clientInfo: { name } });
-  const label = JUDGE_FROM_LABEL[mapped.company];
+  const label = companyLabel(mapped.company);
   if (!mapped.company || !label) return null;
   return { name, company: mapped.company, label };
 }
@@ -3497,10 +3808,16 @@ function personVerdict(text) {
   return raw.replace(/\n*follow:\s*\S+\s*$/g, "").trim();
 }
 
+/** The records note as HTML, with its address as a link. The words are the ones the chat shows. */
+function recordsNoteHtml() {
+  const [before, after = ""] = RECORDS_NOTE.split(DATA_FLOW_URL);
+  return `${esc(before)}<a href="${esc(DATA_FLOW_URL)}">${esc(DATA_FLOW_URL)}</a>${esc(after)}`;
+}
+
 function renderJudge({ packet, tooLong, askRecords, verdict, note, hint }) {
   const capped = tooLong ? `<p>That decision is over ${JUDGE_PACKET_MAX} characters. Shorten it, then try again.</p>` : "";
   const empty = note ? `<p>${esc(note)}</p>` : "";
-  const fromLine = hint ? `<p class="small">Judge: not from ${esc(hint.label)}</p>` : "";
+  const fromLine = hint ? `<p class="small">Judge: not from ${esc(hint.label)}</p>` : `<p class="small">${esc(JUDGE_PAGE_UNVERIFIED_LINE)}</p>`;
   const fromField = hint ? `<input type="hidden" name="from" value="${esc(hint.name)}">` : "";
   const result = verdict
     ? `<h2>Verdict</h2>
@@ -3508,7 +3825,8 @@ function renderJudge({ packet, tooLong, askRecords, verdict, note, hint }) {
     <pre id="verdict" class="config">${esc(verdict)}</pre>`
     : "";
   const buttons = askRecords
-    ? `<p>${esc(CONSENT_TEXT.split("\n")[0])}</p>
+    ? `<p>${esc(RECORDS_QUESTION)}</p>
+    <p class="small">${recordsNoteHtml()}</p>
     <div class="row"><button type="submit" name="keep" value="yes">Yes</button> <button type="submit" name="keep" value="no">No</button></div>`
     : `<p class="row"><button type="submit">Grill this</button></p>`;
   return page(
@@ -3568,7 +3886,9 @@ export async function handleJudge(request, deps) {
     else if (keep === "no") args.keep_records = false;
     const waited = { ...deps, waitMs: Number.isInteger(deps.waitMs) ? deps.waitMs : 240_000 };
     const params = hint ? { clientInfo: { name: hint.name } } : {};
-    const result = await callGrill(args, session.account, { sub: session.sub }, params, waited);
+    // No `sub` here on purpose. A company remembered from this person's connector handshake
+    // belongs to another assistant. On this page only `from` names who wrote the decision.
+    const result = await callGrill(args, session.account, {}, params, waited);
     const text = result?.content?.[0]?.text || "";
     if (text.trim() === CONSENT_TEXT) {
       return pageFor({ packet: posted, askRecords: true });
@@ -3631,8 +3951,11 @@ export async function handleDecisions(request, deps) {
       if (action === "records") {
         const value = form.get("value");
         if (value === "keep" || value === "off") {
+          const firstAnswer = needsRecordChoice(session.account);
           session.account.records = value;
           await saveAccount(session.account, deps);
+          if (value === "off") await deletePendings(session.account, deps);
+          if (firstAnswer) await countOutsideRecordsAnswer(session.account, deps, value === "keep");
         }
       } else if (action === "delete" && form.get("confirm") === "delete") {
         await deleteRecordIds(session.account, deps, [form.get("id") || ""]);
@@ -3642,6 +3965,8 @@ export async function handleDecisions(request, deps) {
       } else if (action === "delete-all" && form.get("confirm") === "delete") {
         const rows = await loadRecords(session.account, deps);
         await deleteRecordIds(session.account, deps, rows.map((row) => row.id));
+        // A draft is a decision too, waiting for a choice. Delete all means all.
+        await deletePendings(session.account, deps);
       } else if (action === "share" && form.get("confirm") === "share") {
         const recordId = form.get("id") || "";
         await createShare(session.account, deps, recordId);
@@ -3662,8 +3987,9 @@ export async function handleDecisions(request, deps) {
             const now = typeof deps.now === "number" ? deps.now : Date.now();
             const finished = hasLookback(row) && !earlyRead(row, now);
             const happened = composeOutcome(row.lookback?.happened, form.get("value") || "");
-            row.lookback = { at: new Date(now).toISOString(), happened };
+            const firstEver = setLookback(row, happened, now);
             await writeRecord(session.account, deps, row);
+            await countOutsideLookbackDone(session.account, deps, row, firstEver);
             if (!finished && !earlyRead(row, now)) {
               await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
               await markEmailReturn(session.account, deps, "lookback");
@@ -3691,10 +4017,10 @@ export async function handleDecisions(request, deps) {
         const row = rows.find((item) => item.id === recordId);
         if (row) {
           const now = typeof deps.now === "number" ? deps.now : Date.now();
-          const happened = composeNote(row.lookback?.happened, form.get("note"));
-          if (happened) row.lookback = { at: row.lookback?.at || new Date(now).toISOString(), happened };
-          else row.lookback = null;
+          // A note keeps the time of the tap it sits beside. Clearing the note clears the look-back.
+          const firstEver = setLookback(row, composeNote(row.lookback?.happened, form.get("note")), now, { keepAt: true });
           await writeRecord(session.account, deps, row);
+          await countOutsideLookbackDone(session.account, deps, row, firstEver);
         }
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
       } else if (action === "review") {
@@ -3714,10 +4040,14 @@ export async function handleDecisions(request, deps) {
               const posted = validDay(form.get("review"));
               if (posted) review = posted;
             }
+            // Only a real change of date is an event for the outside counters.
+            const dateChanged = review !== String(row.review || "");
             row.block = recordBlock({ ...parsed, review });
             row.review = review;
+            const countLookbackDate = dateChanged ? await outsideLookbackDate(session.account, deps, row, review, rows) : null;
             await writeRecord(session.account, deps, row);
             if (!hadReview && /^\d{4}-\d{2}-\d{2}$/.test(review)) await countFunnel(deps, FUNNEL_KEYS.lookbacksSet);
+            if (countLookbackDate) await countLookbackDate();
           }
         }
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
@@ -3799,8 +4129,11 @@ export async function handleAccount(request, deps) {
       if (form.get("action") === "records") {
         const value = form.get("value");
         if (value === "keep" || value === "off") {
+          const firstAnswer = needsRecordChoice(session.account);
           session.account.records = value;
           await saveAccount(session.account, deps);
+          if (value === "off") await deletePendings(session.account, deps);
+          if (firstAnswer) await countOutsideRecordsAnswer(session.account, deps, value === "keep");
         }
       }
       if (form.get("action") === "impact-email") {
@@ -4028,5 +4361,5 @@ export async function handleShare(request, deps) {
 
 /** Test hook: the list page with no session or store. */
 export function renderDecisionsForTest(account, rows, extra = {}) {
-  return renderDecisions(account, rows, null, { waiting: 0 }, extra);
+  return renderDecisions(account, rows, null, { waiting: extra.waiting || 0 }, extra);
 }

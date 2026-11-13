@@ -1,0 +1,93 @@
+<title>Where your decision goes | Grill</title>
+<main id="top" class="prose">
+  <div class="top">
+    <a class="mark" href="/"><img src="/brand/favicon-32.png" alt="" width="24" height="24">grill</a>
+    <nav aria-label="Sections">
+      <a href="/start/">Connect Grill</a>
+      <a href="https://github.com/mtangoz/grill#set-up">How it works</a>
+      <a href="/privacy/">Privacy</a>
+      <a href="/decisions">Your grills</a>
+      <a href="/about/">About</a>
+      <a href="/contact/">Contact</a>
+      <a href="/contribute/">Contribute</a>
+      <a href="https://github.com/mtangoz/grill">GitHub</a>
+    </nav>
+  </div>
+
+  <h1>Where your decision goes.</h1>
+  <p class="lede">What leaves your assistant when you grill a decision, who sees it, and what Grill keeps and for how long. Route by route, written from Grill's code.</p>
+
+  <h2>Grill in chat</h2>
+  <p class="note">This is Grill connected to the AI you already use, with a Grill account, at grillyour.ai/mcp.</p>
+  <ul class="steps">
+    <li><strong>What your assistant sends.</strong> Your assistant sends the decision in a Grill tool call. Grill tells it to send the decision as you stated it, with at most a few sentences of context, and not to wait for a second OK. Grill accepts up to 200,000 characters and does not check that the assistant kept to a few sentences.</li>
+    <li><strong>Not masked on Grill's server.</strong> Grill's server gets your decision as your assistant sent it, not masked. Masking is applied to the copy sent on to the model router: email addresses, phone numbers, card and bank numbers, ID numbers, labelled dates of birth, street addresses, postcodes and IP addresses are hidden, and anything that looks like a key, a token or a password stops the run. What Grill keeps is not masked.</li>
+    <li><strong>The line that starts "Private:".</strong> The line under each verdict that starts "Private:" is about the request to the judge. It does not describe what Grill keeps.</li>
+    <li><strong>15 minutes, records on or off.</strong> Every grill that gets a verdict, records on or off, leaves an encrypted copy of the full decision and the short verdict for 15 minutes, so that a reaction can include it. Grill's operators hold the key. For the same 15 minutes Grill keeps a salted one-way fingerprint of the decision, so that a retry of the same grill is counted once. When records are off, or the judge takes longer than 45 seconds, the result also waits 15 minutes, encrypted with a key that is in the job ID your assistant gets back.</li>
+    <li><strong>The records question.</strong> The first grill on a new account asks once whether to keep records, with one paragraph on where the decision goes. Grill tells your assistant to ask you once before keeping records. Grill's server does not check that it asked. It acts on the yes or no the assistant sends. If the assistant sends a yes or no with its first call, you do not see the question or the paragraph. Until there is an answer, the decision is not sent on and not kept.</li>
+    <li><strong>If you keep records.</strong> Grill saves a draft when the verdict comes back, before you say what you chose. The draft holds the first line of your decision (up to 2,000 characters, so all of it when it is one line), the verdict, the cheap test, the first two challenges, any prediction, goal or guardrail in your words, the app it came from, and the longer versions of the verdict. It is deleted after 14 days if you never state a choice, or when you turn records off or press Delete all. When you state a choice, it becomes your decision record, which stays until you delete it. Records and drafts are encrypted, and Grill's operators could open them.</li>
+    <li><strong>The Monday email.</strong> It is on unless you turn it off. It goes on a Monday when your account saved a decision that week or a look-back came due. It is sent through Resend. It carries your email address, how many of that week's grills changed your call, counts of unclear or flagged verdicts, and for each look-back that came due, the first sentence of that decision with three links to say how it went. To write it, a job opens kept records each Monday. One account in four, fixed by its account ID, is held out and gets no email, to test whether the email helps. Lists of account IDs, of who was sent the email, who was held out and who came back within a week, are kept 180 days. Sending is set to stop after 25 January 2027.</li>
+    <li><strong>The address that starts the Monday job.</strong> The web address that starts the Monday job is public and needs no sign-in. Anyone can call it, and it returns three counts: emails sent, held out and skipped. A second call on the same Monday does not send anyone a second email.</li>
+    <li><strong>The quality check.</strong> Unless you say skip the check, the decision also goes to one fixed model at TypeSafe, called Jev, through OpenRouter, to check the judge's work. It gets the masked decision (the first 60,000 characters), your question, the verdict and the top five challenges. That request carries no zero-retention flag. What Grill relies on instead: TypeSafe is the only provider of that model on OpenRouter, a weekly check flags it if any endpoint serving it is not on OpenRouter's zero-retention list, and Grill reads an answer only if TypeSafe served it. By then the request has gone. In chat there is no account setting that turns it off. You say skip the check, one grill at a time.</li>
+    <li><strong>A reaction.</strong> If you tell your assistant a grill helped or did not, Grill keeps the rating, your one-line reason, the verdict label, the judge model, the time and a one-way hash of your account ID, for 180 days, encrypted with a key Grill's operators hold. The decision is added only if you say yes to sending that grill.</li>
+    <li><strong>The counters.</strong> When a grill on your account first gets a verdict, when you grill again 20 hours or more later, when you first answer the records question, and when you save a choice or a look-back, Grill adds one to a counter. The counters hold whole numbers, each filed under a day (your first grill, your answer, your choice, or the day a look-back falls due) or under the name of the app. They hold no title, text, verdict or account ID. Accounts on Grill's own list of maintainer, test and reviewer addresses are not counted. With few accounts these numbers describe a handful of people, and Grill's operators can tell who.</li>
+    <li><strong>What goes with the counters.</strong> Nobody is counted while that list is not set. No job opens a kept record to make these counts, and deleting a record or the account does not lower one. A counted account has a few marks under its account ID: the time of its first grill with a verdict, a mark once it has been counted as coming back, and the day its first look-back is counted under. They are deleted with the account. A saved decision also holds the time of its first look-back answer and the day its look-back is counted under. The export shows them as lookback_first_at and lookback_counted_day. Two more keys each hold one day: the day counting began, and the last day Grill's server handled one of these events, from any account, while that list was set.</li>
+    <li><strong>Kept either way.</strong> Your account, with your email address. The time, cost and judge model of your last 400 grills. Daily and monthly counts of your use, counts of active people made from one-way hashes, and Grill-wide counts of grills, choices and look-backs. Deleting your account removes your records, drafts, reactions, account and that list of grills. It does not lower any count, and your account ID stays in the Monday email lists until they expire.</li>
+    <li><strong>Cookies.</strong> /start sets no cookie while sign-up is open. While sign-up is invite-only, a link with a source tag sets one cookie holding that tag for 30 days. Signing in sets sign-in cookies.</li>
+    <li><strong>Which company judges.</strong> The judge is from a different company than the one that wrote the plan, when Grill can tell which that is. Grill can tell when it recognises the app you connected from, or when your assistant names its company on the call. A company your assistant names replaces the one Grill recognised. In Cursor, or in an app Grill does not recognise, nobody is ruled out, and the verdict ends with a line that starts "Independence not verified:", such as "Independence not verified: Grill couldn't tell which company's model wrote this, so no company was ruled out."</li>
+  </ul>
+
+  <h2>The installed tool</h2>
+  <p class="note">This is Grill in Claude Desktop, in Claude Code, or run with npx, on your own OpenRouter key.</p>
+  <ul class="steps">
+    <li><strong>What leaves your computer.</strong> Your decision goes from your computer to OpenRouter, masked as above, then to the judge model, and to the quality check unless you switch it off in Grill's settings or say skip the check. Grill's server does not see it, unless you later say yes to sending that grill with a reaction. Grill tells your assistant to send the decision without waiting for a second OK, and it accepts up to 200,000 characters.</li>
+    <li><strong>Read-only.</strong> The installed grill tool is marked read-only, so some apps run it without asking first. A judge model named in Grill's settings is used instead of the router's pick. One from the company Grill rules out is refused.</li>
+    <li><strong>A reaction.</strong> A reaction is a call to Grill's server. It keeps the same things as in chat, for 180 days, with a one-way hash of a random ID for that session in place of an account. The decision is added only if you say yes to sending that grill.</li>
+    <li><strong>Usage stats.</strong> Off unless you turn them on. Then one ping goes to Grill's website after the first grill that works, with no words from the decision.</li>
+    <li><strong>Which company judges.</strong> The judge is from a different company than the one that wrote the plan, when Grill can tell which that is. Grill can tell when GRILL_AUTHOR is set in its settings, when the app gives a name Grill recognises, such as Claude, ChatGPT, Grok or Gemini, or when your assistant names its company on the call. Otherwise it rules out Anthropic only, and the verdict ends with: "Independence not verified: Grill couldn't tell which AI you're using, so it ruled out Anthropic only. Set GRILL_AUTHOR, or name your assistant's company next time."</li>
+  </ul>
+  <p class="note">The version you can install today is 0.1.1, released on 29 September 2026. It differs from what this section describes:</p>
+  <ul class="steps">
+    <li><strong>It asks for your OK.</strong> It tells your assistant to show you the write-up and to send it only after you approve.</li>
+    <li><strong>It masks less.</strong> It hides email addresses, phone numbers and card numbers only. A key, a token or a password still stops the run.</li>
+    <li><strong>No reaction and no usage stats.</strong> It has no reaction tool and no usage ping, so it sends nothing to Grill's server.</li>
+    <li><strong>It says less about the judge.</strong> Only a company named on the call changes who is ruled out. It does not read GRILL_AUTHOR or the app's name. With no company named, it rules out Anthropic and adds no line about it. An author of none on the call rules out nobody.</li>
+  </ul>
+
+  <h2>Copy and paste, and the skill</h2>
+  <ul class="steps">
+    <li><strong>No Grill server.</strong> Grill's server gets none of your decision. Your assistant writes a prompt with your decision in it. You choose where to paste it, and it goes to that assistant under its own settings.</li>
+    <li><strong>A link, if you use it.</strong> Under 6,000 characters the skill can also give an Open in ChatGPT link. That puts the decision in a web address and in your browser history.</li>
+    <li><strong>Masking is asked for, not done by code.</strong> Your assistant is asked to hide email addresses, phone numbers and card numbers before it gives you the prompt.</li>
+    <li><strong>Which company judges.</strong> The prompt asks the judge to name its maker, and your assistant warns you if it is the same company as your assistant, or if it cannot tell. Nothing stops you pasting it into the same company's assistant.</li>
+    <li><strong>The skill.</strong> In a chat with no Grill tool, the Grill skill uses this route. Where the installed tool is there, it uses the tool, as above. The skill in the 0.1.1 release asks you to approve the write-up before you paste it or before the tool sends it.</li>
+    <li><strong>The look-back page.</strong> It reads records you paste in your browser. It counts how many you pasted, and sends no words.</li>
+  </ul>
+
+  <h2>The /judge link</h2>
+  <ul class="steps">
+    <li><strong>The decision is in the address.</strong> The /judge link is for an assistant that cannot connect Grill. The link carries your decision in its address. Opening it delivers the decision to Grill's server and to the host's request log before you press anything, and it stays in your browser history.</li>
+    <li><strong>Signing in.</strong> If you are not signed in, the address you come back to, with the decision in it, goes to Clerk, the sign-in company. Grill refuses a decision over 4,000 characters and does not pass it on.</li>
+    <li><strong>The button.</strong> The judge runs only when you press the button. From then on it is the same as Grill in chat: the same masking, the same 15-minute copy, and the same records question and draft.</li>
+    <li><strong>Which company judges.</strong> The judge is from a different company than the one that wrote the plan, when Grill can tell which that is. Here it can tell only from the link's from name. With no from name it knows, nobody is ruled out, and the page shows a line above the button that starts "Independence not verified:". The verdict carries a line that starts the same way.</li>
+  </ul>
+
+  <h2>Who else is involved</h2>
+  <ul class="steps">
+    <li><strong>OpenRouter.</strong> The model router. It gets the masked decision and your question, on a key Grill holds for your account in chat, or on your own key for the installed tool. On every judge request Grill asks it to use only zero-retention endpoints and not to collect the data. Grill also uses it to make and limit the key for your account, named with a random ID, not your email.</li>
+    <li><strong>The judge model's provider.</strong> Whichever company's model the router picks. It sees the masked decision and your question, under that same request.</li>
+    <li><strong>TypeSafe.</strong> The quality check. It sees the masked decision, your question, the verdict and the top five challenges, with no zero-retention flag on that request.</li>
+    <li><strong>Clerk.</strong> It runs sign-in with an emailed code, and keeps your email and the sign-in events. On the /judge link it can get the address with your decision in it.</li>
+    <li><strong>Upstash.</strong> It stores what Grill keeps. Records, drafts, the 15-minute copy and reactions are encrypted before they reach it. Your account, with your email address, and the counts are not.</li>
+    <li><strong>Resend.</strong> It sends the Monday email, so it sees your address, the week's counts and the first sentence of each decision that came due. It also sends the launch list emails.</li>
+    <li><strong>Vercel.</strong> It hosts this site and Grill's server. Its request log sees each address asked for, including a /judge link with a decision in it. It counts website visits without cookies.</li>
+    <li><strong>Only in some setups.</strong> AgentID, when an agent signs in for a person, tells Grill that person's verified email. PostHog counts website visits too, only if Grill's operators switch it on.</li>
+  </ul>
+
+  <p class="cta"><a class="button" href="/start/?ref=data-flow">Connect Grill</a></p>
+
+  <div class="footer">
+    <span>Open source · <a href="/contribute/">Contribute</a> · <a href="https://github.com/mtangoz/grill">GitHub</a> · <a href="/privacy/">Privacy</a> · <a href="/about/">About</a> · <a href="/contact/">Contact</a></span>
+    <span>Made at <a href="https://hold.quest">Hold</a></span>
+  </div>
+</main>

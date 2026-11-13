@@ -6,7 +6,7 @@ The installed free tool has no account, no sign-in and no server of its own. Gri
 
 The in-chat account needs a sign-in the chats already know how to open: OAuth, with an emailed code and a verified email. Google sign-in is off in production. Clerk does that. Grill does not store a password.
 
-The trade-off is a sign-in company. Clerk sees the email address and the sign-in. It does not see the write-up. Grill checks the token itself (signature, issuer, audience, expiry) and does not send the decision to Clerk.
+The trade-off is a sign-in company. Clerk sees the email address and the sign-in. It does not see the write-up. Grill checks the token itself (signature, issuer, audience, expiry) and does not send the decision to Clerk. The one exception is a `/judge` link: if you have to sign in first, the address you come back to, with the decision in it, goes to Clerk.
 
 The Pro pages already in this repo still use an email link, below. A person has to come back later, to rotate a lost key, see usage against the cap, or cancel. That link and the session cookie are HMAC-signed with `GRILL_SESSION_SECRET`. We don't keep a session table. The cookie is HttpOnly. The raw key is shown when it is created or rotated, then dropped. We store the router's key hash, and a SHA-256 of the key so a later paste can be checked. We never store the key. That path will move to the same Clerk sign-in when those pages and the in-chat account are one account.
 

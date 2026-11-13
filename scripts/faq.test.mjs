@@ -19,15 +19,19 @@ const QUESTIONS = [
 ];
 
 const ANSWERS = [
-  "A pre-mortem imagines the plan has already failed and asks why. A decision matrix scores options on criteria you pick. Grill sends the decision, in your words, to a model from a different company. You get a verdict, the sharpest challenge, one cheap test, and the one question whose answer would change the call. You still decide.",
-  "Asking the same assistant to critique its own draft uses the same company, and often the same model, that wrote it. Grill’s judge is from a different company, so it does not share that blind spot. A second pass in the same chat is a same-model check. It is not a grill.",
-  "A crux finder, such as Cruxes at cruxes.io, looks for the one question that would change a decision, and it can quote your own words. Grill does that too, in one short line after the verdict. Grill also gives a verdict from a different company and one cheap test. Cruxes is built for a team or an agent, with a decision owner, and it runs in Claude Code, Claude and Google Docs. Grill is one person and one decision, and the call stays yours. They overlap, and neither replaces the other.",
+  "A pre-mortem imagines the plan has already failed and asks why. A decision matrix scores options on criteria you pick. Grill sends the decision, in your words, to an outside judge. When Grill can tell which AI wrote the plan, the judge is from a different company. You get a verdict, the sharpest challenge, one cheap test, and the one question whose answer would change the call. You still decide.",
+  "Asking the same assistant to critique its own draft uses the same company, and often the same model, that wrote it. Grill’s judge is from a different company when Grill can tell which AI wrote it. A second pass in the same chat is a same-model check. It is not a grill.",
+  "A crux finder, such as Cruxes at cruxes.io, looks for the one question that would change a decision, and it can quote your own words. Grill does that too, in one short line after the verdict. Grill also gives a verdict from an outside judge and one cheap test. Cruxes is built for a team or an agent, with a decision owner, and it runs in Claude Code, Claude and Google Docs. Grill is one person and one decision, and the call stays yours. They overlap, and neither replaces the other.",
   "Live. Copy and paste into ChatGPT, Copilot, DeepSeek, Gemini, Grok or Muse. No install, no key. The Claude skill, Claude Desktop and Claude Code. Cursor, VS Code and npx. Anyone can sign up for Grill in chat. Claude.ai, ChatGPT and Grok Bot are verified working. In Claude, open Customize → Connectors → Add custom connector and paste https://grillyour.ai/mcp. Asking Claude in a chat to connect it does not work.",
   "Preview. Adding Grill as a connector inside Gemini or Muse is not verified. You can try it. Gemini: US only, a personal Google account, Keep Activity on. Muse: the steps are in the README.",
   "Planned. No further way in is listed here. The free tool stays free.",
   "If you say yes to keeping records, choices you make are saved at grillyour.ai/decisions (Your grills), with a 14-day look-back and an optional calendar link. You can also say \"look back\" in chat. It stays private, and off until you opt in.",
-  "No benchmarks are published. Examples on this site use invented numbers. They are not a benchmark.",
+  "No. Whether an outside judge catches more than the same model starting fresh is not measured yet. Grill’s weekly check of its judge is a regression check on made-up cases. Those cases were used to write the judge’s instructions, so a full score says nothing about how good the judge is. The counts from that check, and what has not been measured, are at grillyour.ai/how-we-test/ (How Grill tests its judge). Examples on this site use invented numbers. They are not a benchmark.",
 ];
+
+// The page lede. The one-line summary the build gives the page, in its head and in llms.txt,
+// is checked on a built page in scripts/howWeTest.test.mjs.
+const LEDE = "Plain answers, including what has not been measured yet.";
 
 function textOf(html) {
   return html
@@ -59,6 +63,30 @@ describe("the FAQ", () => {
     assert.doesNotMatch(plain, /worse than|better than|inferior|beats Cruxes|behind Cruxes/i);
     const support = readFileSync(join(ROOT, "site/support.html"), "utf8");
     assert.match(support, /href="\/faq\/"/);
+  });
+
+  // The benchmarks answer is copied into llms.txt, so it is what an assistant quotes. It says what
+  // has and has not been measured, claims no result, and sends the reader to the page with the counts.
+  //
+  // This test reads the page source and nothing that was built. The built page, its Markdown
+  // twin and llms.txt are checked in scripts/howWeTest.test.mjs, which builds in a folder of its
+  // own. A build here goes into _site, where other test files build at the same time, so what
+  // is read back from it is not always this test's own build. A test there fails if a built
+  // file is read here.
+  it("says what has and has not been measured, and points at /how-we-test/ for the counts", () => {
+    const faq = readFileSync(faqPath, "utf8");
+    assert.ok(faq.includes(`<p class="lede">${LEDE}</p>`));
+    const answer = faq.slice(faq.indexOf("<h2>Are there benchmarks?</h2>"), faq.indexOf('<div class="footer">'));
+    assert.equal((answer.match(/<p class="note">/g) || []).length, 1, "one answer under the last question");
+    assert.equal(textOf(answer), `Are there benchmarks? ${ANSWERS[7]}`);
+    assert.ok(answer.includes('are at <a href="/how-we-test/">grillyour.ai/how-we-test/</a> (How Grill tests its judge).'));
+    assert.ok(existsSync(join(ROOT, "site/how-we-test.html")), "the page it points at exists");
+    assert.ok(ANSWERS[7].startsWith("No. Whether an outside judge catches more than the same model starting fresh is not measured yet."));
+    const plain = textOf(faq);
+    assert.doesNotMatch(plain, /No benchmarks are published/);
+    assert.doesNotMatch(plain, /%|\bpercent\b/i, "the FAQ quotes no rate");
+    assert.doesNotMatch(ANSWERS[7], /\d/, "the counts live on the page, not in the answer");
+    assert.doesNotMatch(ANSWERS[7], /different company|accura|guarantee|proves?\b|outperform|more reliable/i);
   });
 
   it("copies the same answers into llms.txt after the page list, and the page has no script of its own", () => {

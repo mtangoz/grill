@@ -2,9 +2,9 @@
 
 ## Mission
 
-An AI from a different company argues the other side. You decide. Later you can look back and see how your judgement did.
+An outside AI argues the other side. You decide. Later you can look back and see how your judgement did.
 
-Enforced by: a different company is [scripts/judgeCore.mjs](../scripts/judgeCore.mjs), test "excludes the author's company on that router, and only that company" in [scripts/judgeCore.test.mjs](../scripts/judgeCore.test.mjs), and test "excludes the host's company when the call leaves author empty, and a call's own author still wins" in [scripts/server.test.mjs](../scripts/server.test.mjs). You decide is prompt text + review in [skills/grill/SKILL.md](../skills/grill/SKILL.md). Looking back is [scripts/reflection.mjs](../scripts/reflection.mjs), test "the skill and the prompt ask for the call in one line, and the site still shows a record" in [scripts/reflection.test.mjs](../scripts/reflection.test.mjs).
+Enforced by: an outside AI is [scripts/judgeCore.mjs](../scripts/judgeCore.mjs), test "excludes the author's company on that router, and only that company" in [scripts/judgeCore.test.mjs](../scripts/judgeCore.test.mjs), and test "excludes the host's company when the call leaves author empty, and a call's own author still wins" in [scripts/server.test.mjs](../scripts/server.test.mjs). You decide is prompt text + review in [skills/grill/SKILL.md](../skills/grill/SKILL.md). Looking back is [scripts/reflection.mjs](../scripts/reflection.mjs), test "the skill and the prompt ask for the call in one line, and the site still shows a record" in [scripts/reflection.test.mjs](../scripts/reflection.test.mjs).
 
 ## Vision
 
@@ -18,19 +18,23 @@ The goal for now is 100 real users. A real user is a person who ran a grill. We 
 
 Evidenced look-backs are reported alongside the 100, and never added to it. The count is public signal issues with `Event: resolved`, plus outreach replies that confirm a look-back. It uses those existing reports. It does not add tracking or collect anything new.
 
+Separately, Grill counts look-backs saved on Grill accounts as whole numbers ([DATA-LEDGER.md](DATA-LEDGER.md)). That count is reported under its own name. It is not an evidenced look-back and is never added to the 100.
+
 Enforced by: prompt text + review. A launch-list sign-up is interest, not a user, in [api/_notify.mjs](../api/_notify.mjs), test "GET shows a button and does not confirm; POST is what adds the contact" in [scripts/notify.test.mjs](../scripts/notify.test.mjs).
 
 ## Privacy
 
-Only the write-up you approve leaves your machine for the judge. It goes to OpenRouter on your own key, and to the judge model.
+What leaves your machine is what your assistant puts in a Grill tool call. For a grill that is the decision and, at most, a few sentences of context. Grill tells the assistant to send it as you stated it and not to wait for a second OK. Grill's code cannot check what the assistant included or whether it showed you first. A stated choice, a look-back answer and a reaction are sent the same way, only when you give them. On the copy-and-paste route nothing leaves until you paste it.
 
-Enforced by: [scripts/judge.mjs](../scripts/judge.mjs) sends that write-up to OpenRouter, test "secrets never leave" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs), and test "that one fetch can reach only the two OpenRouter endpoints, or loopback in tests, and nothing else" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs). Showing it and waiting for approval is prompt text + review in [skills/grill/SKILL.md](../skills/grill/SKILL.md).
+On the installed tool the decision goes to OpenRouter on your own key. With a Grill account in chat it goes through Grill's server, on a key Grill holds. Both send it to the judge model and, unless you skip it, to the quality check.
 
-If you turn on anonymous usage stats (off by default), the tool also sends a metadata-only ping to Grill's website after a grill. That ping is a random install ID, the version, the client, whether the grill succeeded, coarse timing, and the UTC day. It never includes decision text. With the setting off, the tool does not call Grill's servers. `GRILL_PING=off` and `DO_NOT_TRACK=1` stop the ping even when the setting is on.
+Enforced by: [scripts/judge.mjs](../scripts/judge.mjs) sends the decision to OpenRouter, test "secrets never leave" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs), and test "that one fetch can reach only the two OpenRouter endpoints, or loopback in tests, and nothing else" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs). Sending without a second OK is prompt text, test "tells Claude to send the decision as stated, and not to wait for an OK" in [scripts/server.test.mjs](../scripts/server.test.mjs).
+
+If you turn on anonymous usage stats (off by default), the tool also sends a metadata-only ping to Grill's website after a grill. That ping is a random install ID, the version, the client, whether the grill succeeded, coarse timing, and the UTC day. It never includes decision text. With the setting off, the tool does not call Grill's servers unless you react to a grill. `GRILL_PING=off` and `DO_NOT_TRACK=1` stop the ping even when the setting is on.
 
 Enforced by: [scripts/usageStats.mjs](../scripts/usageStats.mjs), test "posts exactly the allowed keys to the ping URL, with no decision text" in [scripts/usageStats.test.mjs](../scripts/usageStats.test.mjs), and test "when off, a finished grill makes no request to grillyour.ai and creates no state file" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs).
 
-The Jev quality check is on by default. It sees the masked write-up and the report. Say "skip the check" to skip it for one grill, or switch it off in Grill's settings. That check is zero-retention. It keeps nothing.
+The Jev quality check is on by default. It is one fixed model at TypeSafe, not the judge. It sees the masked decision, your question, the verdict and the top five challenges. Its request carries no zero-retention flag. Grill relies instead on three things: TypeSafe is the only provider of that model on OpenRouter, a weekly check flags it if any endpoint serving it is not on OpenRouter's zero-retention list, and Grill reads an answer only if TypeSafe served it. Say "skip the check" to skip it for one grill. On the installed tool you can also switch it off in Grill's settings.
 
 Enforced by: [scripts/upstreamCore.mjs](../scripts/upstreamCore.mjs), test "flags a second endpoint from the same provider that is not zero-retention" in [scripts/upstreamCore.test.mjs](../scripts/upstreamCore.test.mjs). The judge request itself is zero-retention, test "shows the privacy fields on the payload it would send" in [scripts/judge.test.mjs](../scripts/judge.test.mjs).
 
@@ -38,11 +42,11 @@ The HTTP-Referer header lets OpenRouter count Grill usage in aggregate. It adds 
 
 Enforced by: [scripts/judge.mjs](../scripts/judge.mjs), test "that one fetch can reach only the two OpenRouter endpoints, or loopback in tests, and nothing else" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs).
 
-The website counts visits without cookies. It never counts the words of a decision. The installed tool can optionally send anonymous usage metadata to this site if you turn that on at install; off by default; never decision words.
+The website counts visits without cookies. It never counts the words of a decision. While sign-up is invite-only, a /start link with a source tag sets one cookie holding that tag for 30 days. Signing in sets sign-in cookies. The installed tool can optionally send anonymous usage metadata to this site if you turn that on at install; off by default; never decision words.
 
 Enforced by: test "says the website counts visits anonymously, and the tool's usage ping is opt-in" in [scripts/site.test.mjs](../scripts/site.test.mjs).
 
-Grill never collects decision text, notes, reflections, or keys, except a grill you send after a reaction so we can learn what is working. It does not collect anything that identifies you unless you opt in to anonymous usage stats, and then only a random install ID. With a Grill account in chat, the decision, as you stated it, passes through Grill's server in memory. It is never logged. It is stored for 180 days only when you send that grill after a reaction. Decision records are kept only if you choose, and you can export or delete them.
+On the tool you install, Grill never collects decision text, notes, reflections, or keys, except a grill you send after a reaction so we can learn what is working. There it does not collect anything that identifies you unless you opt in to anonymous usage stats, and then only a random install ID. With a Grill account in chat, the decision, as your assistant sent it, passes through Grill's server in memory. It is never logged, except that a /judge link carries the decision in its address, so the host's request log sees it. Every grill that gets a verdict, records on or off, leaves an encrypted copy of the decision and the short verdict for 15 minutes, so a reaction can include it. Grill's operators hold that key. The decision is stored for 180 days only when you send that grill after a reaction. A Grill account holds your email address. Decision records are kept only if you choose, and you can export or delete them.
 
 Enforced by: [scripts/usageStats.mjs](../scripts/usageStats.mjs), test "posts exactly the allowed keys to the ping URL, with no decision text" in [scripts/usageStats.test.mjs](../scripts/usageStats.test.mjs), and test "secrets never leave" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs).
 
@@ -54,13 +58,15 @@ The free tool has no account. It stores nothing about a decision unless you send
 
 Enforced by: [scripts/usageStats.mjs](../scripts/usageStats.mjs), test "sends on the first success and never again, including on a later day" in [scripts/usageStats.test.mjs](../scripts/usageStats.test.mjs).
 
-Any telemetry is opt-in. It is off by default. It is disclosed in [docs/PRIVACY.md](PRIVACY.md). It never includes decision text. It uses only a random install ID.
+On the tool you install, any telemetry is opt-in. It is off by default. It is disclosed in [docs/PRIVACY.md](PRIVACY.md). It never includes decision text. It uses only a random install ID.
+
+A Grill account in chat does not meet this yet. By default it keeps the time, cost and model of your last 400 grills under your account, counts of use, and, while the Monday email test runs, lists of account IDs showing who was sent the email, who was held out and who came back. None of that holds decision text. The Monday email is on unless you turn it off, and it names a decision whose look-back came due. Whether it becomes opt-in is an open owner decision. Every hosted counter is listed in [docs/DATA-LEDGER.md](DATA-LEDGER.md).
 
 Enforced by: [scripts/usageStats.mjs](../scripts/usageStats.mjs), test "defaults to off in every install config" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs). The disclosure is [docs/PRIVACY.md](PRIVACY.md).
 
-A Grill account is opt-in. Anyone can sign up. It can keep your decision records if you choose, encrypted, with export and delete. It stores your sign-in, your credit, and the cost, time and model of each grill. It stores the write-up only when you send that grill after a reaction, for 180 days. The short note is kept for at most 15 minutes. You never see the model-router key; Grill holds it for you. Details: [docs/PRIVACY.md](PRIVACY.md) and [docs/DATA-LEDGER.md](DATA-LEDGER.md).
+A Grill account is opt-in. Anyone can sign up. It can keep your decision records if you choose, encrypted, with export and delete. It stores your sign-in, your monthly allowance, and the cost, time and model of each grill. It keeps an encrypted copy of the decision and the short verdict for 15 minutes after every grill, and stores the decision for 180 days only when you send that grill after a reaction. The short note is kept for at most 15 minutes, or in a draft for up to 14 days if you keep records. You never see the model-router key; Grill holds it for you. Details: [docs/PRIVACY.md](PRIVACY.md) and [docs/DATA-LEDGER.md](DATA-LEDGER.md).
 
-Grill Pro is accounts and stored history. It is not live. It will be disclosed in [docs/PRIVACY.md](PRIVACY.md) and on the site before launch. It will be opt-in.
+Paid plans are not live. Accounts and saved decision records are live and free with Grill in your chat. A paid plan will be disclosed in [docs/PRIVACY.md](PRIVACY.md) and on the site before launch, and it will be opt-in.
 
 Enforced by: prompt text + review in [docs/PRIVACY.md](PRIVACY.md).
 
@@ -80,11 +86,11 @@ Enforced by: [TRADEMARKS.md](../TRADEMARKS.md) and review.
 
 ## Product guardrails
 
-The judge is always from a different company than the model being judged. Only that company is excluded.
+When Grill knows which company's model wrote the write-up, the judge is from a different company, checked on the model that answered. Only that company is excluded. When Grill cannot tell, the verdict says independence was not verified.
 
-Enforced by: [scripts/judgeCore.mjs](../scripts/judgeCore.mjs) (DEFAULT_CHAIN), test "excludes the author's company on that router, and only that company" in [scripts/judgeCore.test.mjs](../scripts/judgeCore.test.mjs), test "asks only the auto router, excludes the default company, and names no pinned fallback" in [scripts/judge.test.mjs](../scripts/judge.test.mjs), and test "errors when every retry is still the excluded company, and never calls a pinned fallback" in [scripts/judge.test.mjs](../scripts/judge.test.mjs).
+Enforced by: [scripts/judgeCore.mjs](../scripts/judgeCore.mjs) (DEFAULT_CHAIN), test "excludes the author's company on that router, and only that company" in [scripts/judgeCore.test.mjs](../scripts/judgeCore.test.mjs), test "says whether independence was verified, for each client and author, and on /judge with and without from" in [scripts/hosted.test.mjs](../scripts/hosted.test.mjs), test "says independence is not verified when the author was a guess, for each client, setting and author" in [scripts/server.test.mjs](../scripts/server.test.mjs), test "asks only the auto router, excludes the default company, and names no pinned fallback" in [scripts/judge.test.mjs](../scripts/judge.test.mjs), and test "errors when every retry is still the excluded company, and never calls a pinned fallback" in [scripts/judge.test.mjs](../scripts/judge.test.mjs).
 
-Grill uses OpenRouter's Auto Router. It does not pin models.
+Grill uses OpenRouter's Auto Router for the judge. It does not pin models. The quality check is one fixed model, and on the installed tool you can name a judge model yourself in settings.
 
 Enforced by: [scripts/judgeCore.mjs](../scripts/judgeCore.mjs) (`export const DEFAULT_CHAIN = "openrouter/auto";`), test "is only the Auto Router — no pinned vendor model" in [scripts/judgeCore.test.mjs](../scripts/judgeCore.test.mjs), and test "asks only the auto router, excludes the default company, and names no pinned fallback" in [scripts/judge.test.mjs](../scripts/judge.test.mjs).
 
@@ -116,10 +122,10 @@ Your values and judgment calls are yours. Every verdict separates what the judge
 
 Enforced by: [scripts/judgeCore.mjs](../scripts/judgeCore.mjs), test "renders Checked for you before Your call, and a missing call counts as yours" in [scripts/judgeCore.test.mjs](../scripts/judgeCore.test.mjs), and test "drops an invalid call value instead of rejecting the challenge" in [scripts/judgeCore.test.mjs](../scripts/judgeCore.test.mjs).
 
-Speed comes first on quick or bulk grills. Never add a required question before the verdict on a quick or bulk grill. Reflection, such as a forecast, is an optional one-line offer after the verdict, for decisions you mark as big.
+Speed comes first on quick or bulk grills. Never add a required question before the verdict on a quick or bulk grill. Reflection, such as a forecast, is an optional one-line offer after the verdict, for decisions you mark as big. One exception: the first grill on a new Grill account asks once whether to keep records.
 
 Enforced by: [server/index.mjs](../server/index.mjs) and [skills/grill/SKILL.md](../skills/grill/SKILL.md), test "tells Claude to send the decision as stated, and not to wait for an OK" in [scripts/server.test.mjs](../scripts/server.test.mjs), and test "the skill and the prompt ask for the call in one line, and the site still shows a record" in [scripts/reflection.test.mjs](../scripts/reflection.test.mjs).
 
-An optional deepen layer is a test, off unless `GRILL_DEEPEN_TEST` is on. It never adds a question or a step before the layer-1 verdict. Layer 1 stays at most 50 words, plus one line of at most 25 words after the verdict: the question that would change the call, and only when the judge named that crux. That line is not a required question, and it never comes before the verdict. The two-line run note, models and time then privacy, comes after the closing line. Never drop the run note. The closing line may mention deepen only for a decision marked as big, never on a quick or bulk grill. The same judge then answers four depth questions and rewrites the plan. The judge stays the Auto Router, excluding only the author's company, with no pin.
+An optional deepen layer is a test, off unless `GRILL_DEEPEN_TEST` is on. It never adds a question or a step before the layer-1 verdict. Layer 1 stays at most 50 words, plus one line of at most 25 words after the verdict: the question that would change the call, and only when the judge named that crux. That line is not a required question, and it never comes before the verdict. The two-line run note, models and time then privacy, comes after the closing line. Never drop the run note. The closing line may mention deepen only for a decision marked as big, never on a quick or bulk grill. The same judge then answers four depth questions and rewrites the plan. The judge stays the Auto Router, excluding only the author's company when Grill can tell which that is, with no pin.
 
 Enforced by: [scripts/judgeCore.mjs](../scripts/judgeCore.mjs) and [server/index.mjs](../server/index.mjs), test "keeps deepen off the default closing line, and names it only for a big decision when the test is on" in [scripts/judgeCore.test.mjs](../scripts/judgeCore.test.mjs), and test "runs deepen only after the verdict, only for a big decision, and only when the test is on" in [scripts/server.test.mjs](../scripts/server.test.mjs).
