@@ -8,7 +8,7 @@
  *
  * USAGE
  *   node scripts/results.mjs check [--file <path>]
- *   node scripts/results.mjs merge-run <public-block.json> [--file <path>]
+ *   node scripts/results.mjs merge-run <public-block.json> [--file <path>] [--allow-unchecked-commit]
  *
  *   check       reads the file and prints every problem in it, one a line. Exit 1 if there
  *               is any. It reads only. A valid file kept in another layout gets one note.
@@ -16,15 +16,20 @@
  *               scripts/eval.mjs writes beside its results in GitHub Actions
  *               (latest.public.json, in the run's eval-results artifact).
  *   --file      the results file to read and write. The default is data/results.json.
+ *   --allow-unchecked-commit
+ *               for merge-run only: add a run whose commit git could not check. See below.
  *
  * WHAT merge-run REFUSES, changing nothing:
  *   - a block that is not a valid run (resultsCore.validateRegressionRun);
  *   - a run whose run number is already in the file;
- *   - a run whose commit cannot be reached from the commit checked out here, when git can
- *     answer. A pull request's run is made on a merge commit that is not on main, so its
- *     counts are not the record of main. When git cannot answer (no git, not a repository,
- *     or a shallow clone that does not hold the commit) the run is added and a line says the
- *     commit was not checked;
+ *   - a run whose commit cannot be reached from the commit checked out here. A pull request's
+ *     run is made on a merge commit that is not on main, so its counts are not the record of
+ *     main;
+ *   - a run whose commit git could not check: there is no git, this is not a repository, or
+ *     this is a shallow clone, which holds only part of the history and so cannot say that a
+ *     commit is not on the branch. Use a full clone, or run git fetch --unshallow first. With
+ *     --allow-unchecked-commit the run is added and a line says the commit was not checked.
+ *     The flag does not get a run past a plain no from git;
  *   - a run dated before the first measured run, or too old to be one of the runs kept.
  *
  * HOW MANY RUNS THE FILE HOLDS: at most resultsCore.MAX_REGRESSION_RUNS. The first measured
@@ -48,7 +53,7 @@ import { MAX_REGRESSION_RUNS, formatResults, mergeRegressionRun, resultsProblems
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_FILE = join(REPO_ROOT, "data", "results.json");
-const USAGE = "usage: node scripts/results.mjs check [--file <path>] | merge-run <public-block.json> [--file <path>]";
+const USAGE = "usage: node scripts/results.mjs check [--file <path>] | merge-run <public-block.json> [--file <path>] [--allow-unchecked-commit]";
 
 /** Run git in this repository. Never throws: a git that is not there gives status null. */
 function runGit(args) {
@@ -58,20 +63,23 @@ function runGit(args) {
 
 /**
  * Can `commit` be reached from the commit checked out here?
- * Returns "yes", "no", or "unknown" when git cannot answer. `git` is a function that takes
- * git's arguments and returns {status, stdout}, so a test can stand in for it.
+ * Returns "yes", "no", or "unknown" when git cannot answer. A shallow clone never gives a
+ * "no": it holds only part of the history, so there the answer is "yes" or "unknown". `git`
+ * is a function that takes git's arguments and returns {status, stdout}, so a test can stand
+ * in for it.
  */
 export function commitOnHead(commit, git = runGit) {
   if (git(["rev-parse", "--is-inside-work-tree"]).status !== 0) return "unknown";
   const found = git(["rev-parse", "--verify", "--quiet", `${commit}^{commit}`]);
-  if (found.status !== 0) {
-    // A full clone that does not hold the commit can say no. A shallow one cannot tell.
+  // A full clone can say no. A shallow one holds only part of the history, so it cannot tell.
+  const fullClone = () => {
     const shallow = git(["rev-parse", "--is-shallow-repository"]);
-    return shallow.status === 0 && shallow.stdout.trim() === "false" ? "no" : "unknown";
-  }
+    return shallow.status === 0 && shallow.stdout.trim() === "false";
+  };
+  if (found.status !== 0) return fullClone() ? "no" : "unknown";
   const reach = git(["merge-base", "--is-ancestor", found.stdout.trim(), "HEAD"]);
   if (reach.status === 0) return "yes";
-  return reach.status === 1 ? "no" : "unknown";
+  return reach.status === 1 && fullClone() ? "no" : "unknown";
 }
 
 /** A JSON file as text and as a parsed value, or the reason it could not be read. */
@@ -106,8 +114,10 @@ export function fileProblems(path) {
 /**
  * Add the run in `blockPath` to the results file at `filePath`.
  * Returns {ok: true, lines} after writing, or {ok: false, lines} having written nothing.
+ * `allowUncheckedCommit` lets a run through when git could not say whether its commit is on
+ * this branch. It never lets one through when git said no.
  */
-export function mergeRunFile(blockPath, filePath, git = runGit) {
+export function mergeRunFile(blockPath, filePath, git = runGit, { allowUncheckedCommit = false } = {}) {
   const refused = (line) => ({ ok: false, lines: [`refused: ${line}`, "nothing was written"] });
 
   const blockRead = readJson(blockPath, "run");
@@ -128,6 +138,11 @@ export function mergeRunFile(blockPath, filePath, git = runGit) {
   if (reach === "no") {
     return refused(
       `run.commit: ${block.commit} cannot be reached from the commit checked out here. A pull request's run is not the record of main. If this is a run of main, bring this branch up to date with main first`,
+    );
+  }
+  if (reach === "unknown" && !allowUncheckedCommit) {
+    return refused(
+      `run.commit: git could not say whether ${block.commit} can be reached from the commit checked out here. That happens in a shallow clone, and where git is not there. Use a full clone, or run git fetch --unshallow first. If you have checked that this is a run of main, pass --allow-unchecked-commit`,
     );
   }
   if (reach === "unknown") notes.push(`note: git could not say whether ${block.commit} is on this branch, so the commit was not checked`);
@@ -159,13 +174,14 @@ export function mergeRunFile(blockPath, filePath, git = runGit) {
 }
 
 function parseArgs(argv) {
-  const opts = { command: argv[0] ?? "", rest: [], file: DEFAULT_FILE };
+  const opts = { command: argv[0] ?? "", rest: [], file: DEFAULT_FILE, allowUncheckedCommit: false };
   for (let i = 1; i < argv.length; i += 1) {
     if (argv[i] === "--file") {
       i += 1;
       if (argv[i] === undefined) return null;
       opts.file = argv[i];
-    } else if (argv[i].startsWith("--")) return null;
+    } else if (argv[i] === "--allow-unchecked-commit" && opts.command === "merge-run") opts.allowUncheckedCommit = true;
+    else if (argv[i].startsWith("--")) return null;
     else opts.rest.push(argv[i]);
   }
   return opts;
@@ -192,7 +208,7 @@ function main(argv) {
     return 1;
   }
   if (opts.command === "merge-run") {
-    const result = mergeRunFile(opts.rest[0], opts.file);
+    const result = mergeRunFile(opts.rest[0], opts.file, runGit, { allowUncheckedCommit: opts.allowUncheckedCommit });
     for (const line of result.lines) (result.ok ? console.log : console.error)(line);
     return result.ok ? 0 : 1;
   }

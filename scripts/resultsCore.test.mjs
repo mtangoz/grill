@@ -88,7 +88,7 @@ const seed = () => ({
   regression: {
     runs: [firstRun()],
     not_measured: ["2026-11-02", "2026-11-09"],
-    skipped_green: ["2026-10-19", "2026-10-26"],
+    skipped_green: ["2026-09-28", "2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26"],
   },
   holdouts: [firstHoldout(), { id: "v2", status: "not-run" }],
   four_arm: { status: "draft", arms: [], comparisons: [] },
@@ -216,6 +216,29 @@ describe("data/results.json", () => {
     for (const day of ["2026-10-19", "2026-10-26"]) assert.ok(file.regression.skipped_green.includes(day), day);
   });
 
+  it("lists every weekly run from before the first measured run, so no week reads as one that measured", () => {
+    // GitHub Actions, workflow eval, scheduled runs: seven before the first measured run of 2026-11-13.
+    // The first five passed while skipping every case, because no key was set. The last two failed as
+    // not measured. A week left out of both lists would read, on the page, as a week that measured.
+    const file = committed();
+    const early = (days) => days.filter((day) => day < firstRun().date);
+    assert.deepEqual(early(file.regression.skipped_green), ["2026-09-28", "2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26"]);
+    assert.deepEqual(early(file.regression.not_measured), ["2026-11-02", "2026-11-09"]);
+    // One run a week, with no week missing between the first and the last.
+    const all = [...early(file.regression.skipped_green), ...early(file.regression.not_measured)];
+    for (let i = 1; i < all.length; i += 1) {
+      assert.equal((Date.parse(all[i]) - Date.parse(all[i - 1])) / 86400000, 7, `${all[i - 1]} to ${all[i]} is one week`);
+    }
+    // The eval's own notes name the same weeks, so the notes and the page cannot disagree.
+    const notes = read("evals/README.md").replace(/\s+/g, " ");
+    assert.ok(
+      notes.includes(
+        "Before it, no weekly run had reached a judge. The five weekly runs from 2026-09-28 to 2026-10-26 were green skips, and the runs on 2026-11-02 and 2026-11-09 failed as not measured.",
+      ),
+      "evals/README.md lists the same weeks",
+    );
+  });
+
   it("gives the same real-user count, date and evidenced look-backs as docs/STRATEGY.md", () => {
     const stated = /As of (\d{4}-\d{2}-\d{2}) the count is (\d+) real users? and (\d+) evidenced look-backs?/.exec(
       read("docs/STRATEGY.md"),
@@ -330,7 +353,7 @@ describe("validateResults refuses anything that is not a count, a flag, a date, 
     fileRefuses((f) => (f.users.as_of = "2026-11-09T00:00:00Z"), "users.as_of");
     fileRefuses((f) => (f.updated = 20261113), "updated", /got 20261113/);
     fileRefuses((f) => (f.regression.runs[0].date = "2026-11-9"), "regression.runs[0].date");
-    fileRefuses((f) => f.regression.skipped_green.push("2026-10-19"), "regression.skipped_green[2]", /listed twice/);
+    fileRefuses((f) => f.regression.skipped_green.push("2026-10-19"), "regression.skipped_green[5]", /listed twice/);
     fileRefuses((f) => (f.regression.not_measured = "2026-11-02"), "regression.not_measured", /expected a list/);
     fileRefuses((f) => (f.users.as_of = "2026-11-14"), "users.as_of", /2026-11-14 is after updated \(2026-11-13\)/);
     fileRefuses((f) => (f.updated = "2026-11-12"), "regression.runs[0].date", /is after updated/);
@@ -1156,7 +1179,7 @@ describe("renderResults turns the counts into the page", () => {
     const text = textOf(renderRegression(seed()));
     assert.ok(
       text.includes(
-        "Weeks that measured nothing. The weekly runs on 2 November 2026 and 9 November 2026 failed as not measured. The runs on 19 October 2026 and 26 October 2026 passed while skipping every case, so a pass on those days measured nothing.",
+        "Weeks that measured nothing. The weekly runs on 2 November 2026 and 9 November 2026 failed as not measured. The runs on 28 September 2026, 5 October 2026, 12 October 2026, 19 October 2026 and 26 October 2026 passed while skipping every case, so a pass on those days measured nothing.",
       ),
     );
     const one = seed();
@@ -1345,13 +1368,15 @@ if (first === "rev-parse" && second === "--verify") {
   if (mode === "missing" || mode === "missing-shallow") process.exit(1);
   say("0123abc0123abc0123abc0123abc0123abc0123a");
 }
-if (first === "rev-parse" && second === "--is-shallow-repository") say(mode === "missing-shallow" ? "true" : "false");
-if (first === "merge-base" && second === "--is-ancestor") process.exit(mode === "yes" ? 0 : mode === "no" ? 1 : 128);
+if (first === "rev-parse" && second === "--is-shallow-repository") say(mode === "missing-shallow" || mode === "apart-shallow" ? "true" : "false");
+if (first === "merge-base" && second === "--is-ancestor") process.exit(mode === "yes" ? 0 : mode === "no" || mode === "apart-shallow" ? 1 : 128);
 process.exit(129);
 `;
 
 describe("scripts/results.mjs", () => {
   const CLI = join(ROOT, "scripts", "results.mjs");
+  const UNCHECKED_REFUSAL =
+    "refused: run.commit: git could not say whether 0123abc can be reached from the commit checked out here. That happens in a shallow clone, and where git is not there. Use a full clone, or run git fetch --unshallow first. If you have checked that this is a run of main, pass --allow-unchecked-commit";
 
   // Removed when the tests end, so a test that fails part way leaves nothing behind.
   const scratchDirs = [];
@@ -1501,13 +1526,57 @@ describe("scripts/results.mjs", () => {
       assert.match(done.stderr, /\nnothing was written\n$/);
       assert.equal(readFileSync(file, "utf8"), before, mode);
     }
-    for (const mode of ["missing-shallow", "no-repository"]) {
-      writeFileSync(file, before);
+    // When git cannot answer, the run is refused as well. The line says why, and names the two ways on.
+    for (const mode of ["missing-shallow", "apart-shallow", "no-repository"]) {
       const done = run(dir, ["merge-run", block, "--file", file], mode);
-      assert.equal(done.code, 0, mode);
-      assert.equal(done.stdout.split("\n")[0], "note: git could not say whether 0123abc is on this branch, so the commit was not checked");
+      assert.equal(done.code, 1, mode);
+      assert.equal(done.stdout, "", mode);
+      assert.deepEqual(done.stderr.trim().split("\n"), [UNCHECKED_REFUSAL, "nothing was written"], mode);
+      assert.equal(readFileSync(file, "utf8"), before, mode);
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("merge-run adds a run git could not check only when --allow-unchecked-commit is given, and says it was not checked", () => {
+    const { dir, file, block } = scratch();
+    const before = readFileSync(file, "utf8");
+    for (const mode of ["missing-shallow", "apart-shallow", "no-repository"]) {
+      writeFileSync(file, before);
+      const done = run(dir, ["merge-run", block, "--allow-unchecked-commit", "--file", file], mode);
+      assert.equal(done.code, 0, `${mode}: ${done.stderr}`);
+      assert.deepEqual(done.stdout.trim().split("\n").slice(0, 2), [
+        "note: git could not say whether 0123abc is on this branch, so the commit was not checked",
+        `added run 43400000001 (2026-11-16, commit 0123abc) to ${file}`,
+      ]);
       assert.equal(JSON.parse(readFileSync(file, "utf8")).regression.runs.length, 2);
     }
+    // The flag is for a commit git could not check. It does not get a run past a plain no.
+    for (const mode of ["no", "missing"]) {
+      writeFileSync(file, before);
+      const done = run(dir, ["merge-run", block, "--file", file, "--allow-unchecked-commit"], mode);
+      assert.equal(done.code, 1, mode);
+      assert.match(done.stderr, /^refused: run\.commit: 0123abc cannot be reached from the commit checked out here\./);
+      assert.equal(readFileSync(file, "utf8"), before, mode);
+    }
+    // Where git can say yes, the flag changes nothing and no note is printed.
+    const plain = run(dir, ["merge-run", block, "--file", file, "--allow-unchecked-commit"], "yes");
+    assert.equal(plain.code, 0, plain.stderr);
+    assert.equal(plain.stdout.split("\n")[0], `added run 43400000001 (2026-11-16, commit 0123abc) to ${file}`);
+
+    // The same through the function, with a git that cannot answer at all.
+    const noGit = () => ({ status: null, stdout: "" });
+    writeFileSync(file, before);
+    assert.deepEqual(mergeRunFile(block, file, noGit), { ok: false, lines: [UNCHECKED_REFUSAL, "nothing was written"] });
+    assert.equal(readFileSync(file, "utf8"), before);
+    const allowed = mergeRunFile(block, file, noGit, { allowUncheckedCommit: true });
+    assert.equal(allowed.ok, true);
+    assert.equal(allowed.lines[0], "note: git could not say whether 0123abc is on this branch, so the commit was not checked");
+
+    // The eval's notes and the command's own header say the same thing the command does.
+    const notes = read("evals/README.md").replace(/\s+/g, " ");
+    assert.ok(notes.includes("In a shallow clone git cannot tell, so the run is refused there too."), "evals/README.md says what a shallow clone does");
+    assert.ok(notes.includes("`--allow-unchecked-commit` adds the run without that check"), "evals/README.md names the flag");
+    assert.ok(read("scripts/results.mjs").includes("--allow-unchecked-commit"));
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -1523,7 +1592,13 @@ describe("scripts/results.mjs", () => {
     assert.equal(commitOnHead("0123abc", yes), "yes");
     assert.deepEqual(asked[1], ["rev-parse", "--verify", "--quiet", "0123abc^{commit}"]);
     assert.deepEqual(asked[2], ["merge-base", "--is-ancestor", "0123abc0123abc0123abc0123abc0123abc0123a", "HEAD"]);
-    assert.equal(commitOnHead("0123abc", git({ "rev-parse --is-inside-work-tree": inside, "rev-parse --verify": found, "merge-base --is-ancestor": { status: 1, stdout: "" } })), "no");
+    const full = { status: 0, stdout: "false\n" };
+    const shallow = { status: 0, stdout: "true\n" };
+    const apart = { status: 1, stdout: "" };
+    assert.equal(commitOnHead("0123abc", git({ "rev-parse --is-inside-work-tree": inside, "rev-parse --verify": found, "merge-base --is-ancestor": apart, "rev-parse --is-shallow-repository": full })), "no");
+    // A shallow clone holds only part of the history, so "not under HEAD" there is not an answer.
+    assert.equal(commitOnHead("0123abc", git({ "rev-parse --is-inside-work-tree": inside, "rev-parse --verify": found, "merge-base --is-ancestor": apart, "rev-parse --is-shallow-repository": shallow })), "unknown");
+    assert.equal(commitOnHead("0123abc", git({ "rev-parse --is-inside-work-tree": inside, "rev-parse --verify": found, "merge-base --is-ancestor": apart })), "unknown");
     assert.equal(commitOnHead("0123abc", git({ "rev-parse --is-inside-work-tree": inside, "rev-parse --verify": found, "merge-base --is-ancestor": { status: 128, stdout: "" } })), "unknown");
     const missing = { status: 1, stdout: "" };
     assert.equal(commitOnHead("0123abc", git({ "rev-parse --is-inside-work-tree": inside, "rev-parse --verify": missing, "rev-parse --is-shallow-repository": { status: 0, stdout: "false\n" } })), "no");
@@ -1555,10 +1630,20 @@ describe("scripts/results.mjs", () => {
 
   it("an unreadable command line exits 2 with the usage line", () => {
     const { dir, file, block } = scratch();
-    for (const args of [[], ["merge-run"], ["merge-run", block, block], ["check", "extra"], ["publish"], ["check", "--file"], ["check", "--force"]]) {
+    for (const args of [
+      [],
+      ["merge-run"],
+      ["merge-run", block, block],
+      ["check", "extra"],
+      ["publish"],
+      ["check", "--file"],
+      ["check", "--force"],
+      ["check", "--allow-unchecked-commit"],
+      ["merge-run", block, "--allow-unchecked"],
+    ]) {
       const done = run(dir, args.includes("--file") || args.length === 0 ? args : [...args, "--file", file]);
       assert.equal(done.code, 2, JSON.stringify(args));
-      assert.match(done.stderr, /^usage: node scripts\/results\.mjs check \[--file <path>\] \| merge-run <public-block\.json> \[--file <path>\]\n$/);
+      assert.equal(done.stderr, "usage: node scripts/results.mjs check [--file <path>] | merge-run <public-block.json> [--file <path>] [--allow-unchecked-commit]\n");
     }
     rmSync(dir, { recursive: true, force: true });
   });

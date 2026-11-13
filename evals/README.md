@@ -84,9 +84,10 @@ says how many cases reached a judge. When some did and some did not, the run is 
 cases with no verdict count as misses and false alarms, so read that line first.
 
 **The first measured run was on 2026-11-13.** Before it, no weekly run had reached a judge. The
-runs on 2026-10-19 and 2026-10-26 were green skips, and the runs on 2026-11-02 and 2026-11-09 failed
-as not measured. Then a manual run, Actions run 43354935479 on commit 303a77f, got a verdict on all
-29 cases. This is one run, given as counts:
+five weekly runs from 2026-09-28 to 2026-10-26 were green skips, and the runs on 2026-11-02 and
+2026-11-09 failed as not measured. Then a manual run,
+Actions run 43354935479 on commit 303a77f, got a verdict on all 29 cases. This is one run, given as
+counts:
 
 | What was counted | Count |
 | --- | --- |
@@ -133,8 +134,10 @@ artifact and run `node scripts/results.mjs merge-run <path to that file>`. The r
 command when it writes the file. The command checks the block, adds the run to `data/results.json`
 and checks the whole file before it writes. It refuses a run that is already there. It also refuses
 a run whose commit cannot be reached from the commit you have checked out, which keeps a pull
-request's run out. The file keeps the first measured run and the 11 latest after it.
-`node scripts/results.mjs check` checks the file and changes nothing.
+request's run out. In a shallow clone git cannot tell, so the run is refused there too. Use a full
+clone, or run `git fetch --unshallow` first. `--allow-unchecked-commit` adds the run without that
+check, and a line says the commit was not checked. The file keeps the first measured run and the 11
+latest after it. `node scripts/results.mjs check` checks the file and changes nothing.
 
 The page that shows these counts is [grillyour.ai/how-we-test](https://grillyour.ai/how-we-test/).
 
