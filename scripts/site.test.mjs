@@ -1221,7 +1221,8 @@ describe("the about and contact pages", () => {
       text.includes("The judge did not write your plan. When Grill can tell which AI did, the judge comes from a different company. When it cannot, the verdict says so."),
       "about should say the judge is from a different company only when Grill can tell which AI wrote the plan",
     );
-    assert.match(text, /An AI from a different company argues the other side\. You decide\. Later you can look back and see how your judgement did\./);
+    // The line above carries the condition, so this one does not say different company on its own.
+    assert.match(text, /An outside AI argues the other side\. You decide\. Later you can look back and see how your judgement did\./);
     assert.doesNotMatch(text, /The verdict never becomes the decision\./);
     assert.ok(source.includes(CHAT_KEEPS_CHOSEN), "about source should say what Grill in chat keeps");
     assert.ok(text.includes(CHAT_KEEPS_CHOSEN), "about page should say what Grill in chat keeps");
