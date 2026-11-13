@@ -142,8 +142,4 @@ If they say yes, give them this link, filled in, to open and submit themselves:
 - `rating`: yes or no.
 - `client`: desktop, web, phone or code.
 
-Never put anything else in the link. Tell them the issue is public. If they say no, drop it. One "no" means no more asks in this conversation, including the line below.
-
-**Paste route only.** If you don't have the `grill` tool, and the user did not say no to the signal offer, then after the closing line and after the signal offer is settled, show this once, word for word. Do not elaborate, and do not ask a question about it. Skip it if they said no or stop. At most one invitation per grill. If the tool's report already ends with a Grill news line, show that line instead, and do not add this one as well.
-
-> Grill news: saved decision history and look-back reminders are coming as an optional Pro plan. The free tool stays free. To hear when they arrive: https://grillyour.ai/notify?via=paste
+Never put anything else in the link. Tell them the issue is public. If they say no, drop it. One "no" means no more asks in this conversation.
