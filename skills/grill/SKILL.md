@@ -5,7 +5,7 @@ description: Grill a decision, plan or forecast. An outside AI judge, a model fr
 
 # Grill a decision
 
-The user has been thinking with you, so your critique is correlated with theirs. Grilling sends the decision to a judge from a **different model family**. Grill is the outside judge step Felix Rieseberg recommends in [How to be more ambitious](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/): do not ask the model to judge itself. The judge writes:
+The user has been thinking with you, so you are not an outside view. Grilling sends the decision to a judge from a **different model family**. Grill is the outside judge step Felix Rieseberg recommends in [How to be more ambitious](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/): do not ask the model to judge itself. The judge writes:
 - a steelman of the decision, and a counter-steelman;
 - challenges, each with a **falsifier**: the cheapest test that would settle it;
 - a verdict, in the same words as the website: solid, solid if, shaky, or doesn't hold up. The tool's own result uses `holds`, `holds-with-conditions`, `weak` or `refuted` for those four.
@@ -63,7 +63,7 @@ Run it when the subject cites a source, when the user says check the sources, an
 1. List each claim the conclusion leans on that points at a source, with the source as written.
 2. Open each source with your own tools. Quote the exact line or figure. If you cannot open it, it is **not found**, not true.
 3. Mark each one on three checks: **exists** (you opened it); **says it** (the same number, metric, period and population as the claim); **answers this question** (it is about the change and the outcome being asked about, not a neighbouring one).
-4. If you can start a fresh agent, give it only the list and the question, and have it do steps 2 and 3. You wrote the claims, so your check shares their blind spots.
+4. If you can start a fresh agent, give it only the list and the question, and have it do steps 2 and 3. You wrote the claims, so a fresh agent checks them cold.
 5. Show a short table: claim, source, quoted line, exists, says it, answers this question. Any row that fails is cut from the work or marked unverified in it. Never replace a failed source with one you did not open.
 
 Do not send the sources to the judge. Only the approved write-up leaves the machine.
