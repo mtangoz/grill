@@ -87,9 +87,9 @@ const measured = () => ({
     { arm: "product", caught: 95, flawed: 120, caught_usable: 95, usable_flawed: 117, alarms: 14, sound: 40, unusable: 4 },
   ],
   comparisons: [
-    { first: "product", second: "fresh-brief", both: 70, first_only: 25, second_only: 10, neither: 15 },
-    { first: "product", second: "same-chat", both: 60, first_only: 35, second_only: 10, neither: 15 },
-    { first: "product", second: "stronger-same-lab", both: 80, first_only: 15, second_only: 10, neither: 15 },
+    { first: "product", second: "fresh-brief", both: 70, first_only: 25, second_only: 10, neither: 15, usable_both: 68, usable_first_only: 22, usable_second_only: 9, usable_neither: 12 },
+    { first: "product", second: "same-chat", both: 60, first_only: 35, second_only: 10, neither: 15, usable_both: 60, usable_first_only: 30, usable_second_only: 10, usable_neither: 11 },
+    { first: "product", second: "stronger-same-lab", both: 80, first_only: 15, second_only: 10, neither: 15, usable_both: 79, usable_first_only: 15, usable_second_only: 8, usable_neither: 14 },
   ],
   single_drafter: true,
 });
@@ -173,6 +173,11 @@ describe("data/results.json", () => {
     assert.doesNotMatch(text, /\$/);
     assert.doesNotMatch(text, /\d\.\d/);
     assert.doesNotMatch(text, LONG_DASH);
+  });
+
+  it("is written as plain JSON with no repeated key hiding a second value", () => {
+    const text = read("data/results.json");
+    assert.equal(text.replace(/\s+/g, ""), JSON.stringify(JSON.parse(text)));
   });
 
   it("keeps the first measured run and the first holdout as they were recorded", () => {
@@ -372,8 +377,25 @@ describe("validateRegressionRun checks one run on its own", () => {
       { company: "other", cases: 7 },
     ];
     assert.equal(validateRegressionRun(run), run);
-    const none = { ...firstRun(), reached_judge: 0, different_company: { k: 0, of: 29 }, by_company: [] };
+    const none = {
+      ...firstRun(),
+      reached_judge: 0,
+      flawed: { caught: 0, of: 15 },
+      wrong_figure: { caught: 0, of: 4 },
+      loaded: { caught: 0, of: 4 },
+      sound: { false_alarms: 6, of: 6 },
+      semantic: { caught: 0, of: 23 },
+      different_company: { k: 0, of: 29 },
+      by_company: [],
+    };
     assert.equal(validateRegressionRun(none), none);
+    // No judge answered, so nothing can have been caught or cleared.
+    const impossible = { ...firstRun(), reached_judge: 0, different_company: { k: 0, of: 29 }, by_company: [] };
+    assert.throws(() => validateRegressionRun(impossible), /reached_judge/);
+    // A list with a hole is refused, not skipped.
+    const holed = firstRun();
+    delete holed.by_company[1];
+    assert.throws(() => validateRegressionRun(holed), /by_company\[1\]/);
   });
 });
 
@@ -434,6 +456,13 @@ describe("validateFourArm", () => {
   it("accepts a measured comparison whose counts add up, alone and inside the file", () => {
     const block = measured();
     assert.equal(validateFourArm(block), block);
+    // The usable-only cells are a subset of the plain cells.
+    const tooMany = measured();
+    tooMany.comparisons[0].usable_first_only = 26;
+    assert.throws(() => validateFourArm(tooMany), /usable_first_only/);
+    const missing = measured();
+    delete missing.comparisons[0].usable_neither;
+    assert.throws(() => validateFourArm(missing), /usable_neither/);
     const file = seed();
     file.four_arm = block;
     assert.equal(validateResults(file), file);

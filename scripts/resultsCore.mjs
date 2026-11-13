@@ -8,8 +8,9 @@
  * p values. Rates and p values are worked out from the counts when a page is built, with
  * the helpers at the end of this file.
  *
- * An error names the path of the first problem. It never repeats a string it was given,
- * because a string that does not belong here could be someone's words.
+ * An error names the path of the first problem. It never repeats a value it was given,
+ * because a string that does not belong here could be someone's words. An unknown key is
+ * named only when it is a plain name of 40 characters or fewer.
  *
  * This file is pure. It imports nothing, reads no file and makes no request.
  */
@@ -182,7 +183,7 @@ function oneOf(value, path, ids) {
 
 function list(value, path, each) {
   if (!Array.isArray(value)) fail(path, `expected a list, got ${seen(value)}`);
-  value.forEach((item, i) => each(item, `${path}[${i}]`));
+  for (let i = 0; i < value.length; i += 1) each(value[i], `${path}[${i}]`);
   return value;
 }
 
@@ -272,6 +273,8 @@ export function validateRegressionRun(block, path = "run") {
     );
   }
 
+  const answered = block.flawed.caught + block.wrong_figure.caught + block.loaded.caught + (block.sound.of - block.sound.false_alarms);
+  atMost(answered, at(path, "reached_judge"), block.reached_judge, at(path, "reached_judge"), `${answered} cases were caught or cleared, which`);
   partOf(block.schema_violations, at(path, "schema_violations"), "k");
   atMost(block.schema_violations.of, at(path, "schema_violations.of"), block.cases, at(path, "cases"));
   partOf(block.different_company, at(path, "different_company"), "k");
@@ -319,7 +322,8 @@ export function validateHoldout(block, path = "holdout") {
 }
 
 const ARM_KEYS = Object.freeze(["arm", "caught", "flawed", "caught_usable", "usable_flawed", "alarms", "sound", "unusable"]);
-const COMPARISON_KEYS = Object.freeze(["first", "second", "both", "first_only", "second_only", "neither"]);
+const COMPARISON_CELLS = Object.freeze(["both", "first_only", "second_only", "neither"]);
+const COMPARISON_KEYS = Object.freeze(["first", "second", ...COMPARISON_CELLS, ...COMPARISON_CELLS.map((cell) => `usable_${cell}`)]);
 
 /**
  * The four-arm comparison.
@@ -332,8 +336,11 @@ const COMPARISON_KEYS = Object.freeze(["first", "second", "both", "first_only", 
  *   caught of flawed counts an unusable answer as a miss.
  *   caught_usable of usable_flawed counts usable answers only.
  *   alarms of sound is the alarm count on sound twins. unusable is that arm's unusable answers.
- * One comparison, on flawed cases: {first, second, both, first_only, second_only, neither},
+ * One comparison, on flawed cases: {first, second, both, first_only, second_only, neither,
+ *   usable_both, usable_first_only, usable_second_only, usable_neither},
  *   where first and second are arm ids and the four cells count cases by which arm caught the flaw.
+ *   The usable_ cells count the same thing on the cases where both arms gave a usable answer,
+ *   so each is at most its plain cell.
  */
 export function validateFourArm(block, path = "four_arm") {
   const status = statusOf(block, path, FOUR_ARM_STATUSES);
@@ -390,6 +397,9 @@ export function validateFourArm(block, path = "four_arm") {
     const cells = pair.both + pair.first_only + pair.second_only + pair.neither;
     if (cells > block.cases.flawed) {
       fail(pairPath, `the four cells add up to ${cells}, more than ${at(casesPath, "flawed")} (${block.cases.flawed})`);
+    }
+    for (const cell of COMPARISON_CELLS) {
+      atMost(pair[`usable_${cell}`], at(pairPath, `usable_${cell}`), pair[cell], at(pairPath, cell));
     }
     // An arm cannot have caught more cases inside a pair than it caught in all.
     for (const [side, only] of [
@@ -525,7 +535,9 @@ function overPowerOfTwo(whole, bits) {
   if (whole === 0n) return 0;
   // 64 leading bits are more than a double holds, so dropping the rest loses nothing it could keep.
   const drop = Math.max(0, whole.toString(2).length - 64);
-  const lead = Number(whole >> BigInt(drop));
+  let top = whole >> BigInt(drop);
+  if (drop > 0 && top << BigInt(drop) !== whole) top |= 1n;
+  const lead = Number(top);
   // Applied in two steps, so a very small power of two cannot underflow before it meets the lead.
   const exponent = drop - bits;
   const half = Math.trunc(exponent / 2);
