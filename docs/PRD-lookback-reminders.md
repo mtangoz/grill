@@ -1,6 +1,6 @@
 # PRD: Look-back reminders for saved decisions
 
-Status: approved by the owner for their own use, 2026-10-16. Builds on Grill in your chat ([HOSTED.md](HOSTED.md)). That route was invite-only when this was written. Open sign-up has been on since 2026-11-03. The "no email" line below is the calendar decision. A later owner decision, 2026-11-08, adds a four-week Monday impact email for signed-in accounts. It is on unless they turn it off. The calendar feed and the in-chat line stay.
+Status: approved by the owner for their own use, 2026-10-16. Builds on Grill in your chat ([HOSTED.md](HOSTED.md)). That route was invite-only when this was written. Open sign-up has been on since 2026-11-03. The "no email" line below is the calendar decision. A later owner decision, 2026-11-08, adds a four-week Monday impact email for signed-in accounts. It is on unless they turn it off. Sending is now set to stop after 25 January 2027. The calendar feed and the in-chat line stay.
 
 ## 0. Why, in one line
 
@@ -42,7 +42,7 @@ The calendar link is the one new flow, and it is opt-in:
 
 The link sits in the URL path because calendar apps cannot send a header. The host's request log therefore sees it. Grill's operators already hold the key that decrypts records ([DATA-LEDGER.md](DATA-LEDGER.md)), so this does not widen what they can read. It is still written down in the ledger.
 
-No email. The only email remains the sign-in. No push service, no cron job, no new vendor, no new environment variable.
+No email, when this was written: the only email was the sign-in. No push service, no cron job, no new vendor, no new environment variable. The Monday email added since then is sent through Resend by a weekly job, and [DATA-LEDGER.md](DATA-LEDGER.md) lists what it carries.
 
 ## 4. Decisions taken (owner may overrule)
 

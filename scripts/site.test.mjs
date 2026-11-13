@@ -252,7 +252,9 @@ describe("the contribute page", () => {
 
   it("says why help matters, the ways to help, and how a change is reviewed", () => {
     assert.match(contribute, /<title>Contribute to Grill<\/title>/);
-    assert.match(contribute, /one model, from a different company/);
+    assert.match(contribute, /The judge is one model that did not write your plan\. When Grill can tell which AI did, the judge is from a different company\. When it cannot, the verdict says so\./);
+    assert.match(contribute, /The judge stays one outside model, from a different company when Grill can tell which AI wrote the plan\./);
+    assert.doesNotMatch(contribute, /one model, from a different company/);
     assert.match(contribute, /no ads, no selling your data, and no training on your decisions\. Grill is paid for by subscriptions only\./);
     assert.match(contribute, /<h2>Ways to help<\/h2>/);
     assert.match(contribute, /issues\/new\?template=idea\.yml/);

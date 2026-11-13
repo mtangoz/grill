@@ -1,8 +1,8 @@
 # How Grill gets better without seeing your decisions
 
-A model router improves every day without reading anyone's prompts: it learns which models people choose for each kind of task. Grill copies that idea one layer up, and runs its whole loop under the same privacy controls as a grill: masked text, zero-retention routing, nothing kept.
+A model router improves every day without reading anyone's prompts: it learns which models people choose for each kind of task. Grill copies that idea one layer up, and runs its whole loop under the same privacy controls as a grill: masked text and zero-retention routing.
 
-**The rule:** contribute the miss, never the decision. Grill learns from synthetic cases, public metadata, choices people share, and **miss cards**: how AI got a decision wrong, written in made-up names and numbers. Never from a decision.
+**The rule:** contribute the miss, never the decision. Grill learns from synthetic cases, public metadata, choices people share, and **miss cards**: how AI got a decision wrong, written in made-up names and numbers. Never from a decision, with one exception you control: a grill you choose to send after a reaction ([docs/PRIVACY.md](docs/PRIVACY.md), "When you tell Grill a grill helped or didn't").
 
 ## Three loops
 

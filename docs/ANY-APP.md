@@ -17,7 +17,7 @@ Check it any time: `npx -y grillyour --key-status`. It says where the key comes 
 Every app starts the same command, `npx -y grillyour`. Two optional settings go in `env`:
 
 - `GRILL_AUTHOR`: the company of the AI you think with, for example `openai`, `google`, `x-ai` or `deepseek`. Grill tells the router to leave that company's models out, checks the model that answered, and gives no verdict if it came from that company. Common names such as `xai`, `grok`, `gemini`, `chatgpt` and `claude` are understood. `none`, or a name Grill does not know as a model company, is ignored. Grill also reads the app's name when it connects. An app that names itself Claude, ChatGPT, Grok or Gemini is recognised without the setting. Leave it out in apps that switch between companies (Cursor, VS Code). There the assistant should name its own company on each call.
-- `JUDGE_MODEL`: a pinned judge, from your Pro setup page. Leave it out for Grill's default: the router picks the judge, and Grill leaves out the company that wrote the write-up when it can tell which that is.
+- `JUDGE_MODEL`: a judge model you pick yourself, by its OpenRouter name. One from the company Grill rules out is refused. Leave it out for Grill's default: the router picks the judge, and Grill leaves out the company that wrote the write-up when it can tell which that is.
 
 When nothing names a company, Grill cannot tell who wrote the write-up. It rules out Anthropic only, and the verdict ends with one line that starts "Independence not verified:". Set `GRILL_AUTHOR` when the app runs one company's models, or have the assistant name its company on the call, and the line goes away.
 
@@ -54,7 +54,7 @@ env = { GRILL_AUTHOR = "openai" }
 
 ## 3. Use it
 
-Restart the app, then ask: *"Grill this: we're moving our launch to March. I'm 70% sure it gets us more signups."* The assistant writes the decision up and shows it to you. Grill sends it only after you approve.
+Restart the app, then ask: *"Grill this: we're moving our launch to March. I'm 70% sure it gets us more signups."* The assistant sends the decision as you said it, with at most a few sentences of context, and does not wait for a second OK.
 
 ## ChatGPT and claude.ai in a browser
 
