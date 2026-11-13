@@ -176,12 +176,26 @@ describe("what /start counts", () => {
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0.0.0 Safari/537.36",
     "curl/8.4.0",
     "python-requests/2.31.0",
+    // Script clients, by the name their HTTP library sends when the script sets none.
+    "node",
+    "Go-http-client/2.0",
+    "axios/1.6.0",
+    "okhttp/4.9.3",
+    "PostmanRuntime/7.36.0",
+    // Two more link-preview fetchers.
+    "Iframely/1.3.1 (+https://iframely.com/docs/about)",
+    "vercel-screenshot/1.0",
   ];
   const PEOPLE = [
     BROWSER,
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [LinkedInApp]/9.29",
     "Mozilla/5.0 (Linux; Android 11; CUBOT NOTE 20 PRO) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+    // A page opened inside an Android app is a browser view, whatever HTTP library the app uses.
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UQ1A.240205.004; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36",
+    // "node" is a script only when it is the whole user-agent.
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Node-Kiosk/2.1",
+    // No user-agent at all still counts. Nothing here shows that every browser sends one.
     "",
   ];
   const get = (agent, url = "https://grillyour.ai/start?ref=askgrill", method = "GET") => new Request(url, { method, headers: agent ? { "user-agent": agent } : {} });
@@ -203,7 +217,7 @@ describe("what /start counts", () => {
     assert.equal(ctx.memory.command(["GET", startRefKey("askgrill")]), null);
     // Nothing was written at all: no count of crawlers, and nothing about who asked.
     assert.deepEqual(ctx.commands.filter((args) => args[0] !== "GET"), []);
-    for (const args of ctx.commands) assert.equal(/bot|curl|mozilla|whatsapp/i.test(args.join(" ")), false, args.join(" "));
+    for (const args of ctx.commands) assert.equal(/bot|curl|mozilla|whatsapp|axios|okhttp|postman|iframely|screenshot/i.test(args.join(" ")), false, args.join(" "));
   });
 
   it("does not count a request that is not a GET", async () => {

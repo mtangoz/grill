@@ -20,11 +20,16 @@ export const START_VIEWS_KEY = "grill:metric:start_views";
 /**
  * Words a crawler, a link-preview fetcher, a script or an uptime check puts in its user-agent.
  * The header is read here, once, only to tell such a request from a visit. It is not stored,
- * not logged and not counted. A request with no user-agent counts as a visit. `bot` skips the
- * letters `cubot`, which is a phone maker's name in a real browser's user-agent.
+ * not logged and not counted. `bot` skips the letters `cubot`, which is a phone maker's name
+ * in a real browser's user-agent. `node` is a script only when it is the whole user-agent,
+ * which is what Node sends when a script sets none.
+ *
+ * The list names what has been seen. A script that sends some other name, or a browser's
+ * name, is still counted. A request with no user-agent counts as a visit too: nothing here
+ * can show that every real browser sends one, so it is not treated as automated.
  */
 const AUTOMATED_AGENT =
-  /(?<!cu)bot(?![a-z])|crawl|spider|preview|facebookexternalhit|whatsapp|embedly|chatgpt-user|claude-user|perplexity-user|curl|wget|python-requests|uptime|monitor|headless/i;
+  /(?<!cu)bot(?![a-z])|crawl|spider|preview|facebookexternalhit|whatsapp|embedly|iframely|vercel-screenshot|chatgpt-user|claude-user|perplexity-user|curl|wget|python-requests|^node$|go-http-client|axios|okhttp|postman|uptime|monitor|headless/i;
 
 /** True for a GET from something that is not a known crawler, preview fetcher or script. */
 export function countsAsVisit(request) {
