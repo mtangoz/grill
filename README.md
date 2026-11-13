@@ -107,7 +107,7 @@ Claude Code's advisor (`/advisor`) has a stronger Claude look over the work. Tha
 
 Grill is free. On your own key you pay the router. Copy and paste uses the assistants you already have.
 
-Coming later: an optional Pro plan with saved decision history and look-back reminders. The free tool stays free and account-free. [Hear when it's ready](https://grillyour.ai/notify?via=site).
+Saved decisions and look-back reminders are free today with [Grill in your chat](https://grillyour.ai/start/?ref=readme). Paid plans are off. The free tool stays free and account-free.
 
 ## Privacy
 

@@ -132,6 +132,19 @@ describe("site/page.html", () => {
     assert.ok(readFileSync(join(ROOT, "docs/DECISION-RECORD.md"), "utf8").includes("version: 1"));
   });
 
+  it("the README says saved decisions and look-back reminders are free today, and paid plans are off", () => {
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    const costs = readme.slice(readme.indexOf("## What it costs"), readme.indexOf("## Privacy"));
+    assert.ok(costs.length > 0 && costs.length < 1000, "the What it costs section sits right before Privacy");
+    assert.ok(
+      costs.includes("Saved decisions and look-back reminders are free today with [Grill in your chat](https://grillyour.ai/start/?ref=readme). Paid plans are off."),
+      "the README should say what is free today and that paid plans are off",
+    );
+    assert.match(costs, /Grill is free\. On your own key you pay the router\./);
+    assert.match(costs, /The free tool stays free and account-free\./);
+    assert.doesNotMatch(costs, /Coming later|Pro plan|Hear when|notify\?via=/);
+  });
+
   it("counts reflection use as a number of records and never the words", () => {
     assert.match(lookBack, /reflection_record_shown/);
     assert.match(lookBack, /reflection_record_copied/);
