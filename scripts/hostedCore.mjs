@@ -69,7 +69,6 @@ export const DATA_FLOW_URL = "https://grillyour.ai/data-flow/";
 export const RECORDS_QUESTION = "Keep a record of your decisions on your Grill account? Yes / No";
 
 /**
- * PROPOSED WORDING, waiting on the owner's yes.
  * What the person reads under the question, before anything is sent: where the decision goes
  * whichever way they answer, and what a yes adds. It asks nothing, so the first reply still
  * holds one question. It makes no claim about which company the judge is from, because this
@@ -86,7 +85,6 @@ export const CONSENT_TEXT = [
 ].join("\n");
 
 /**
- * PROPOSED WORDING, waiting on the owner's yes.
  * What the person is told after a reaction when the grill itself was not sent. It names what
  * buildFeedbackRecord stores that came from them or from the grill, and for how long.
  */
@@ -1162,8 +1160,8 @@ const HOSTED_GRILL_TAIL =
 
 // The installed tool's description assumes Claude wrote the subject unless a setting says
 // otherwise, and it describes a judge model named in settings. Neither is true of Grill in
-// chat: the author comes from the app that connected, and there are no settings. These are the
-// installed sentences that hostedTools() swaps out. scripts/platformPolicy.test.mjs fails if
+// chat: the author comes from the app that connected, and there is no judge model setting.
+// These are the installed sentences that hostedTools() swaps out. scripts/platformPolicy.test.mjs fails if
 // one of them stops matching, so a change to the installed text cannot leave it in place here.
 export const LOCAL_ONLY_OPENING =
   "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).";

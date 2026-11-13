@@ -96,7 +96,7 @@ When neither the client nor the call names a company, the judge runs with nobody
 A directory lists this connector. Its reviewers read every tool description, the server instructions and what the tools return. These rules hold, and [scripts/platformPolicy.test.mjs](../scripts/platformPolicy.test.mjs) checks them:
 
 - No tool text names a credit, a plan, a price or an upgrade, and none links to `/pricing`, `/pro`, `/checkout` or `/notify`. At a monthly limit the person gets one sentence that says what happened and when it starts again, then the support address. It does not offer more.
-- The grill description reads the same for every assistant. It does not assume Claude wrote the decision, and it has no sentence about a judge model named in settings, because this route has no settings. It says the judge is from a different company when Grill can tell who wrote the decision, and that the verdict says so when it cannot.
+- The grill description reads the same for every assistant. It does not assume Claude wrote the decision, and it has no sentence about a judge model named in settings, because Grill in chat has no such setting. It says the judge is from a different company when Grill can tell who wrote the decision, and that the verdict says so when it cannot.
 - The grill description names the second place the write-up goes: by default a quality check by TypeSafe also gets the masked write-up and the judge's verdict and challenges. `quality_check: false` skips it for one grill, when the person asks.
 - Grill asks the assistant not to add a disclosure of its own to Grill's text. Anything the assistant's own rules require goes separately, after the run note.
 

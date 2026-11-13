@@ -765,9 +765,9 @@ async function callTool(name, args = {}, onTick) {
 }
 
 /**
- * PROPOSED WORDING, waiting on the owner's yes.
- * After a reaction on the installed tool. Nothing else this tool does calls Grill's server, so
- * the reply says that this did, what was sent, and how long it is kept.
+ * After a reaction on the installed tool. A reaction is sent to Grill's server. Apart from the
+ * opt-in usage ping, nothing else this tool does is. So the reply says it was sent, what was
+ * sent, and how long it is kept.
  */
 export const FEEDBACK_SENT_TEXT = `Noted. That was sent to Grill: the rating, your one-line reason, the verdict label and the judge model, kept ${FEEDBACK_KEEP_DAYS} days. Not the decision.`;
 

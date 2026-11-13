@@ -80,6 +80,8 @@ const NEUTRAL_REPORT = {
   missingOption: "Run it for one team first.",
   crux: "Did the last launch reach the number this one assumes?",
   servedModel: "openai/gpt-5.6-sol",
+  // A cost, so the check below would catch a layer that printed it.
+  costUsd: 0.031,
   quality: { scores: { verdictFits: 0.8 } },
   challenges: [
     {
@@ -440,11 +442,12 @@ describe("the hosted grill tool reads true on every host", () => {
       .filter(Boolean);
 
   it("does not call Claude the author, and says nothing about settings it does not have", () => {
-    // ChatGPT, Grok and Cursor read this text too. The author comes from the app that connected.
+    // ChatGPT, Grok and Cursor read this text too. The author comes from the app that connected,
+    // and Grill in chat has no judge model setting and no switch for the quality check.
     for (const { where, text } of modelFacingRows()) {
       assert.doesNotMatch(text, /\bClaude\b/, where);
       assert.doesNotMatch(text, /unless set otherwise/i, where);
-      assert.doesNotMatch(text, /\bsettings\b/i, where);
+      assert.doesNotMatch(text, /Grill's settings|in settings/i, where);
     }
     assert.doesNotMatch(grill.description, /name a judge model|same-company pin|Leave it blank/);
     // The installed tool keeps both sentences. If its wording moves, the swap below would
@@ -531,8 +534,8 @@ describe("the hosted grill tool reads true on every host", () => {
 
 describe("the records question, asked before the first send", () => {
   const lines = hostedCore.CONSENT_TEXT.split("\n");
-  // The paragraph the plan proposes, word for word. It waits on the owner's yes.
-  const PROPOSED_NOTE =
+  // The paragraph under the question, word for word.
+  const NOTE =
     "Either way, your decision goes through Grill's server to an outside AI judge that OpenRouter picks, and to a quality check by TypeSafe. If you say yes, Grill keeps an encrypted record that its operators could open, and emails you on Mondays when a look-back is due unless you turn that off. What is kept and for how long: https://grillyour.ai/data-flow/";
 
   it("keeps the question byte for byte, and asks one question only", () => {
@@ -546,8 +549,8 @@ describe("the records question, asked before the first send", () => {
   });
 
   it("says under the question where the decision goes and what a yes keeps", () => {
-    assert.equal(lines[2], PROPOSED_NOTE);
-    assert.equal(hostedCore.RECORDS_NOTE, PROPOSED_NOTE);
+    assert.equal(lines[2], NOTE);
+    assert.equal(hostedCore.RECORDS_NOTE, NOTE);
     assert.match(hostedCore.CONSENT_TEXT, /Monday/);
     assert.match(hostedCore.CONSENT_TEXT, /data-flow/);
     assert.match(hostedCore.CONSENT_TEXT, /OpenRouter/);
@@ -558,7 +561,7 @@ describe("the records question, asked before the first send", () => {
     assert.doesNotMatch(hostedCore.CONSENT_TEXT, /different company/i);
     assert.doesNotMatch(hostedCore.CONSENT_TEXT, /Both are asked/i);
     assert.doesNotMatch(hostedCore.CONSENT_TEXT, /nothing is kept|in memory|zero.retention|does not keep|guarantee/i);
-    assert.doesNotMatch(hostedCore.CONSENT_TEXT, /[–—]/);
+    assert.doesNotMatch(hostedCore.CONSENT_TEXT, /[\u2013\u2014]/);
   });
 
   it("keeps the address in hostedCore.mjs, and tells the assistant to show the paragraph", () => {

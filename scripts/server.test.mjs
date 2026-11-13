@@ -1100,7 +1100,7 @@ describe("the server as a command (npx -y grillyour …)", () => {
       assert.equal(seen.length, 0);
       const quiet = await c.request("tools/call", { name: "grill_feedback", arguments: { rating: "meh", reason: "too vague" } });
       assert.equal(quiet.result.isError, false, textOf(quiet));
-      // A reaction is the one thing this tool sends to Grill's server, so the reply says so and says what went.
+      // A reaction goes to Grill's server, so the reply says so and says what went.
       assert.equal(
         textOf(quiet).trim(),
         "Noted. That was sent to Grill: the rating, your one-line reason, the verdict label and the judge model, kept 180 days. Not the decision.",

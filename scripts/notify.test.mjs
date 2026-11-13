@@ -332,7 +332,7 @@ describe("saved history and look-back reminders are live and free", () => {
     for (const [where, text] of [["form", form], ["email", email.text], ["confirm page", confirm], ["on the list", listed]]) {
       assert.doesNotMatch(text, /Coming later|coming soon|when Pro ships|will keep your decision records/i, where);
       assert.doesNotMatch(text, /when saved history and look-back reminders are available/i, where);
-      assert.doesNotMatch(text, /[–—]/, where);
+      assert.doesNotMatch(text, /[\u2013\u2014]/, where);
     }
     // The link names where the person came from and nothing about them.
     assert.equal(new URL(START).search, "?ref=notify");
