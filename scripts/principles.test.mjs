@@ -17,7 +17,7 @@ const COMMITMENTS = [
   { id: "changing-mind", file: "docs/PRINCIPLES.md", anchor: "Changing your mind is part of the record, not a mark against it." },
   { id: "downloads", file: "docs/PRINCIPLES.md", anchor: "Downloads are not users." },
   { id: "no-deps", file: "docs/PRINCIPLES.md", anchor: "The tool has no third-party dependencies." },
-  { id: "write-up", file: "docs/PRINCIPLES.md", anchor: "Only the write-up you approve leaves your machine" },
+  { id: "write-up", file: "docs/PRINCIPLES.md", anchor: "What leaves your machine is what your assistant puts in a Grill tool call." },
   { id: "telemetry", file: "docs/PRINCIPLES.md", anchor: "Any telemetry is opt-in." },
   { id: "never-about-person", file: "docs/PRINCIPLES.md", anchor: "never about the person" },
   { id: "principles-quick", file: "docs/PRINCIPLES.md", anchor: "quick or bulk" },
