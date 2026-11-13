@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { handleAccount, handleCalendar, handleDecisions, handleMcp, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import { CLAUDE_WEB_REDIRECT, createMemoryRedis, DELETE_ALL_ALSO_WAITING, FUNNEL_KEYS, RECORDS_OFF_DELETES_WAITING, RECORDS_OFF_NOTE, WAITING_GRILL_HOW } from "./hostedCore.mjs";
+import { OUTSIDE_KEYS, hashCounts, hashFields } from "./outsideLoopCore.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -1157,6 +1158,213 @@ describe("the first time a decision is looked back on", () => {
     const row = ledger.split("\n").find((line) => line.startsWith("| Decision record ("));
     assert.ok(row, "the ledger has a decision record row");
     assert.match(row, /look-back answers, with the time of the first one and of the latest change\)/);
+  });
+});
+
+describe("outside look-back counters, counted when the person acts", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  // The test person is invitee@example.com. They are not on this list, so they are an outside account.
+  const outsideWorld = () => {
+    const ctx = world();
+    ctx.env.GRILL_INTERNAL_EMAILS = "owner@grill.example";
+    return ctx;
+  };
+  /** A counter as day to whole number, with emptied days left out. */
+  const counts = (ctx, key) => hashCounts(ctx.memory.command(["HGETALL", key]));
+  const lookbackCounts = (ctx) => ({
+    due: counts(ctx, OUTSIDE_KEYS.lookbacksDue),
+    people: counts(ctx, OUTSIDE_KEYS.lookbackPeople),
+    done7: counts(ctx, OUTSIDE_KEYS.lookbacksDone7d),
+    done14: counts(ctx, OUTSIDE_KEYS.lookbacksDone14d),
+  });
+  const idOf = (rows, title) => encodeURIComponent(rows.find((row) => row.block.includes(`title: ${title}\n`)).id);
+
+  it("counts a look-back under the day it falls due, and only its first answer", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = outsideWorld();
+      await decide(ctx, fake, "Hire contractor", JAN);
+      assert.deepEqual(lookbackCounts(ctx), { due: { "2026-01-15": 1 }, people: { "2026-01-15": 1 }, done7: {}, done14: {} });
+      assert.deepEqual(counts(ctx, OUTSIDE_KEYS.choices), { "2026-01-01": 1 });
+      const [fresh] = await exportedRows(ctx, JAN);
+      assert.equal(fresh.lookback_counted_day, "2026-01-15", "the record holds the day it is counted under");
+      const id = encodeURIComponent(fresh.id);
+
+      // The first answer, a tap two days after the due day.
+      const answered = Date.parse("2026-01-17T10:00:00Z");
+      await postForm(ctx, `action=outcome&id=${id}&value=no`, answered);
+      const once = { due: { "2026-01-15": 1 }, people: { "2026-01-15": 1 }, done7: { "2026-01-15": 1 }, done14: { "2026-01-15": 1 } };
+      assert.deepEqual(lookbackCounts(ctx), once);
+
+      // A changed tap, a note, a second answer in chat, and a cleared note: none of them counts again.
+      await postForm(ctx, `action=outcome&id=${id}&value=held`, answered + DAY);
+      await postForm(ctx, `action=note&id=${id}&note=Two teams used it`, answered + 2 * DAY);
+      const said = await chat(ctx, fake, "grill_look_back", { records: "Hire contractor", happened: "came_true: yes\nhappened: A new contractor finished the job." }, answered + 3 * DAY);
+      assert.equal(said.isError, false, said.text);
+      await postForm(ctx, `action=note&id=${id}&note=`, answered + 4 * DAY);
+      await postForm(ctx, `action=outcome&id=${id}&value=mixed`, answered + 5 * DAY);
+      assert.deepEqual(lookbackCounts(ctx), once, "a second completion does not count");
+      const [row] = await exportedRows(ctx, answered + 5 * DAY);
+      assert.equal(row.lookback_first_at, new Date(answered).toISOString());
+
+      // The counters hold days and whole numbers. Nothing from the record.
+      for (const key of Object.values(OUTSIDE_KEYS)) {
+        for (const [field, value] of Object.entries(hashFields(ctx.memory.command(["HGETALL", key])))) {
+          assert.match(field, /^(\d{4}-\d{2}-\d{2}|claude)$/, `${key} ${field}`);
+          assert.match(value, /^\d+$/);
+        }
+      }
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("counts an answer by how long after the due day it came, and an early answer as done", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = outsideWorld();
+      // Four decisions on 1 January. Each look-back falls due on 15 January.
+      for (const title of ["Hire contractor", "Move office", "Cut prices", "Change supplier"]) await decide(ctx, fake, title, JAN);
+      const rows = await exportedRows(ctx, JAN);
+      const tap = (title, day) => postForm(ctx, `action=outcome&id=${idOf(rows, title)}&value=held`, Date.parse(`${day}T12:00:00Z`));
+      await tap("Hire contractor", "2026-01-05");
+      assert.deepEqual(lookbackCounts(ctx).done14, { "2026-01-15": 1 }, "an early answer counts as done");
+      assert.deepEqual(lookbackCounts(ctx).done7, { "2026-01-15": 1 });
+      await tap("Move office", "2026-01-21");
+      assert.deepEqual(lookbackCounts(ctx).done7, { "2026-01-15": 2 }, "the 7th day is within 7 days");
+      await tap("Cut prices", "2026-01-28");
+      assert.deepEqual(lookbackCounts(ctx).done7, { "2026-01-15": 2 });
+      assert.deepEqual(lookbackCounts(ctx).done14, { "2026-01-15": 3 }, "the 14th day is within 14 days");
+      await tap("Change supplier", "2026-01-29");
+      assert.deepEqual(lookbackCounts(ctx), { due: { "2026-01-15": 4 }, people: { "2026-01-15": 1 }, done7: { "2026-01-15": 2 }, done14: { "2026-01-15": 3 } }, "the 15th day is too late for both");
+      // The all-accounts funnel is unchanged by this work: it does not count the early read.
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksDone]), "3");
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksSet]), "4");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("moves a look-back that is moved before it falls due, and never lowers a count from that day on", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = outsideWorld();
+      const sunday = Date.parse("2026-11-08T15:00:00Z");
+      await decide(ctx, fake, "Ship the beta Friday", sunday);
+      assert.deepEqual(lookbackCounts(ctx), { due: { "2026-11-13": 1 }, people: { "2026-11-13": 1 }, done7: {}, done14: {} });
+      const [fresh] = await exportedRows(ctx, sunday);
+      const id = encodeURIComponent(fresh.id);
+      const review = (value, now) => postForm(ctx, `action=review&id=${id}&${value}`, now);
+      const counted = async (now) => (await exportedRows(ctx, now))[0].lookback_counted_day;
+
+      // Moved before it falls due: the count moves with it, and so does the person.
+      await review("value=set&review=2026-12-01", sunday);
+      assert.deepEqual(lookbackCounts(ctx), { due: { "2026-12-01": 1 }, people: { "2026-12-01": 1 }, done7: {}, done14: {} });
+      assert.equal(await counted(sunday), "2026-12-01");
+      // The same date again, and a date that is not a day, are not moves.
+      await review("value=set&review=2026-12-01", sunday);
+      await review("value=set&review=2026-02-31", sunday);
+      assert.deepEqual(lookbackCounts(ctx).due, { "2026-12-01": 1 });
+
+      // An early answer moves with it.
+      await postForm(ctx, `action=outcome&id=${id}&value=held`, sunday + DAY);
+      assert.deepEqual(lookbackCounts(ctx).done14, { "2026-12-01": 1 });
+      await review("value=set&review=2026-11-20", sunday + DAY);
+      assert.deepEqual(lookbackCounts(ctx), { due: { "2026-11-20": 1 }, people: { "2026-11-20": 1 }, done7: { "2026-11-20": 1 }, done14: { "2026-11-20": 1 } });
+
+      // Switched off before it falls due: it never comes due, so it is not counted.
+      await review("value=off", sunday + DAY);
+      assert.deepEqual(lookbackCounts(ctx), { due: {}, people: {}, done7: {}, done14: {} });
+      assert.equal(await counted(sunday + DAY), "");
+      // Switched on again: counted afresh, already answered.
+      await review("value=on", sunday + DAY);
+      assert.deepEqual(lookbackCounts(ctx), { due: { "2026-11-13": 1 }, people: { "2026-11-13": 1 }, done7: { "2026-11-13": 1 }, done14: { "2026-11-13": 1 } });
+
+      // From the day it falls due, nothing lowers the count: not a move, not switching it off.
+      const dueDay = Date.parse("2026-11-13T09:00:00Z");
+      const cameDue = { due: { "2026-11-13": 1 }, people: { "2026-11-13": 1 }, done7: { "2026-11-13": 1 }, done14: { "2026-11-13": 1 } };
+      await review("value=set&review=2026-12-20", dueDay);
+      assert.deepEqual(lookbackCounts(ctx), cameDue, "moved after it came due: still counted on the day it came due");
+      assert.equal(await counted(dueDay), "2026-11-13");
+      assert.match((await exportedRows(ctx, dueDay))[0].block, /^review: 2026-12-20$/m, "the person's own date did change");
+      await review("value=off", dueDay + DAY);
+      await review("value=on", dueDay + DAY);
+      assert.deepEqual(lookbackCounts(ctx), cameDue, "switched off and on after it came due: not counted twice");
+
+      // A deleted record still counts as due.
+      const gone = await postForm(ctx, `action=delete&confirm=delete&id=${id}`, dueDay + 2 * DAY);
+      assert.equal(gone.status, 303);
+      assert.deepEqual(await exportedRows(ctx, dueDay + 2 * DAY), []);
+      assert.deepEqual(lookbackCounts(ctx), cameDue);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("a record deleted before its look-back day still counts as due, and as not done", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = outsideWorld();
+      await decide(ctx, fake, "Hire contractor", JAN);
+      await decide(ctx, fake, "Move office", JAN);
+      const rows = await exportedRows(ctx, JAN);
+      const before = { due: { "2026-01-15": 2 }, people: { "2026-01-15": 1 }, done7: {}, done14: {} };
+      assert.deepEqual(lookbackCounts(ctx), before);
+      // One record deleted on its own, ten days before the look-back day. Then Delete all.
+      await postForm(ctx, `action=delete&confirm=delete&id=${idOf(rows, "Hire contractor")}`, JAN + 4 * DAY);
+      assert.deepEqual(lookbackCounts(ctx), before);
+      await postForm(ctx, "action=delete-all&confirm=delete", JAN + 5 * DAY);
+      assert.deepEqual(await exportedRows(ctx, JAN + 5 * DAY), []);
+      assert.deepEqual(lookbackCounts(ctx), before, "a deletion never lowers a count, and no record is opened to count it");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("files a person under their earliest look-back day, once", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = outsideWorld();
+      // Thursday 1 January. The first decision gets the default 14 days. The second names Friday.
+      await decide(ctx, fake, "Hire contractor", JAN);
+      assert.deepEqual(lookbackCounts(ctx).people, { "2026-01-15": 1 });
+      await decide(ctx, fake, "Ship the beta Friday", JAN);
+      assert.deepEqual(lookbackCounts(ctx).due, { "2026-01-02": 1, "2026-01-15": 1 });
+      assert.deepEqual(lookbackCounts(ctx).people, { "2026-01-02": 1 }, "one person, filed under the earlier day");
+      // A third, later one does not move them, and neither does anything after their day has come.
+      await decide(ctx, fake, "Move office", JAN + 3 * DAY);
+      assert.deepEqual(lookbackCounts(ctx).people, { "2026-01-02": 1 });
+      assert.deepEqual(lookbackCounts(ctx).due, { "2026-01-02": 1, "2026-01-15": 1, "2026-01-18": 1 });
+      assert.deepEqual(counts(ctx, OUTSIDE_KEYS.choices), { "2026-01-01": 2, "2026-01-04": 1 });
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("leaves the record and the counters alone for an account on the internal list", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = "owner@grill.example, invitee@example.com";
+      await decide(ctx, fake, "Hire contractor", JAN);
+      const [row] = await exportedRows(ctx, JAN);
+      await postForm(ctx, `action=review&id=${encodeURIComponent(row.id)}&value=set&review=2026-01-20`, JAN);
+      await postForm(ctx, `action=outcome&id=${encodeURIComponent(row.id)}&value=held`, FEB);
+      assert.deepEqual(lookbackCounts(ctx), { due: {}, people: {}, done7: {}, done14: {} });
+      assert.deepEqual(counts(ctx, OUTSIDE_KEYS.choices), {});
+      const [after] = await exportedRows(ctx, FEB);
+      assert.equal(after.lookback_counted_day, "");
+      assert.match(after.lookback.happened, /held/i);
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksDone]), "1", "the all-accounts funnel still counts it");
+    } finally {
+      await fake.close();
+    }
   });
 });
 

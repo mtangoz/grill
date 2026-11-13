@@ -1569,6 +1569,7 @@ export function createMemoryRedis() {
   const sets = new Map();
   const zsets = new Map();
   const lists = new Map();
+  const hashes = new Map();
   const expiry = new Map();
   const live = (key) => {
     const exp = expiry.get(key);
@@ -1577,6 +1578,7 @@ export function createMemoryRedis() {
       sets.delete(key);
       zsets.delete(key);
       lists.delete(key);
+      hashes.delete(key);
       expiry.delete(key);
       return false;
     }
@@ -1599,7 +1601,7 @@ export function createMemoryRedis() {
           return "OK";
         }
         case "DEL": {
-          const had = strings.delete(key) || sets.delete(key) || zsets.delete(key) || lists.delete(key);
+          const had = strings.delete(key) || sets.delete(key) || zsets.delete(key) || lists.delete(key) || hashes.delete(key);
           expiry.delete(key);
           return had ? 1 : 0;
         }
@@ -1637,6 +1639,42 @@ export function createMemoryRedis() {
           if (start < 0) start = Math.max(0, len + start);
           if (stop < 0) stop = len + stop;
           return list.slice(start, stop + 1);
+        }
+        case "LINDEX": {
+          const list = lists.get(key) || [];
+          const at = Number(args[2]);
+          return list[at < 0 ? list.length + at : at] ?? null;
+        }
+        case "HINCRBY": {
+          const hash = hashes.get(key) || new Map();
+          const next = (Number(hash.get(String(args[2]))) || 0) + Number(args[3]);
+          hash.set(String(args[2]), String(next));
+          hashes.set(key, hash);
+          return next;
+        }
+        case "HSET": {
+          const hash = hashes.get(key) || new Map();
+          const added = hash.has(String(args[2])) ? 0 : 1;
+          hash.set(String(args[2]), String(args[3]));
+          hashes.set(key, hash);
+          return added;
+        }
+        case "HSETNX": {
+          const hash = hashes.get(key) || new Map();
+          if (hash.has(String(args[2]))) return 0;
+          hash.set(String(args[2]), String(args[3]));
+          hashes.set(key, hash);
+          return 1;
+        }
+        case "HGET":
+          return hashes.get(key)?.get(String(args[2])) ?? null;
+        case "HDEL":
+          return hashes.get(key)?.delete(String(args[2])) ? 1 : 0;
+        case "HGETALL": {
+          // The same shape Upstash answers with: field, value, field, value.
+          const flat = [];
+          for (const [field, value] of hashes.get(key) || []) flat.push(field, value);
+          return flat;
         }
         case "EXPIRE":
           expiry.set(key, Date.now() + Number(args[2]) * 1000);

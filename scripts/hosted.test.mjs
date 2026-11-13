@@ -68,6 +68,7 @@ import {
 import { testSigningKey } from "./testSigningKey.mjs";
 import { lookBack, parseRecords, recordBlock, sourceAppLabel } from "./reflection.mjs";
 import { readFeedbackRecords } from "./feedbackCore.mjs";
+import { OUTSIDE_KEYS, OUTSIDE_LIVE_KEY, hashFields } from "./outsideLoopCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ANTHROPIC = readFileSync(join(ROOT, "scripts/fixtures/anthropic-served-response.json"), "utf8");
@@ -3957,5 +3958,309 @@ describe("chat look-back when more than one decision is due", { concurrency: fal
     // The data ledger says the same thing about titles in the chat.
     const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
     assert.match(ledger, /two or more saved decisions are due, the reply lists them by title so you can say which one you mean, and an answer is saved only on the decision it names\./);
+  });
+});
+
+describe("outside counters, written when the event happens", { concurrency: false }, () => {
+  beforeEach(() => resetHostedCaches());
+
+  const HOUR = 60 * 60 * 1000;
+  const JAN = Date.parse("2026-01-01T15:00:00Z");
+  const FEB = Date.parse("2026-02-01T15:00:00Z");
+  // The test person is invitee@example.com. This list does not hold them, so they are outside.
+  const LIST = "owner@grill.example, tester@grill.example";
+  const call = (id, name, args) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
+  const cookie = () => `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+  const hash = (ctx, key) => hashFields(ctx.memory.command(["HGETALL", key]));
+  const marksOf = (ctx) => hash(ctx, `grill:hosted:outside:${personOf(ctx)}`);
+  const outsideWrites = (ctx) => ctx.writes.filter((args) => args.some((part) => part.includes("outside")));
+  const HASH_OPS = ["HINCRBY", "HSET", "HSETNX", "HDEL", "HGET", "HGETALL", "LINDEX"];
+  const exported = async (ctx, now = FEB) =>
+    JSON.parse(await (await handleDecisions(new Request("https://grillyour.ai/decisions?export=json", { headers: { cookie: cookie() } }), { ...ctx, now })).text());
+  const form = (ctx, handler, path, body, now) =>
+    handler(new Request(`https://grillyour.ai${path}`, { method: "POST", headers: { cookie: cookie(), "content-type": "application/x-www-form-urlencoded" }, body }), { ...ctx, now });
+
+  async function grill(ctx, fake, token, title, now, args = { keep_records: true }) {
+    const deps = { ...judgeDeps(fake), waitMs: 20_000, now };
+    const out = await postMcp(ctx, call(1, "grill", { subject: `Decision: ${title}\nI'm 60% sure.`, quality_check: false, ...args }), { token, deps });
+    assert.equal(out.json.result.isError, false, textOf(out.json));
+    return textOf(out.json);
+  }
+  const decided = async (ctx, fake, token, title, now) =>
+    textOf((await postMcp(ctx, call(2, "grill_decided", { decided: `Go with ${title}.` }), { token, deps: { ...judgeDeps(fake), now } })).json);
+
+  it("with the internal list unset, not one outside key is written", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      assert.equal(ctx.env.GRILL_INTERNAL_EMAILS, undefined);
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      // Every event that counts for an outside account: a first grill, a records answer, a choice
+      // with a look-back date, a come-back, a moved date, an answer in chat, a tap, a note, a switch.
+      await grill(ctx, fake, token, "Hire contractor", JAN);
+      assert.match(await decided(ctx, fake, token, "Hire contractor", JAN), /^Saved\. Look-back 15 Jan\./);
+      await grill(ctx, fake, token, "Move office", JAN + 30 * HOUR);
+      assert.match(await decided(ctx, fake, token, "Move office", JAN + 30 * HOUR), /^Saved\./);
+      const [first, second] = await exported(ctx, JAN + 31 * HOUR);
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=review&id=${first.id}&value=set&review=2026-01-20`, JAN + 31 * HOUR)).status, 303);
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=review&id=${second.id}&value=off`, JAN + 31 * HOUR)).status, 303);
+      const said = await postMcp(ctx, call(3, "grill_look_back", { happened: "came_true: yes\nhappened: It worked." }), { token, deps: { now: FEB } });
+      assert.match(textOf(said.json), /Saved with your decision record\./);
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=outcome&id=${second.id}&value=held`, FEB)).status, 303);
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=note&id=${second.id}&note=Fine`, FEB)).status, 303);
+      assert.equal((await form(ctx, handleAccount, "/account", "action=records&value=off", FEB)).status, 303);
+      assert.equal((await form(ctx, handleAccount, "/account", "action=records&value=keep", FEB)).status, 303);
+
+      assert.deepEqual(outsideWrites(ctx), [], "fail closed: no key with outside in it was read or written");
+      assert.deepEqual(ctx.writes.filter((args) => HASH_OPS.includes(args[0])), [], "and no hash command ran at all");
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), null);
+      for (const key of Object.values(OUTSIDE_KEYS)) assert.deepEqual(hash(ctx, key), {}, key);
+      assert.deepEqual(marksOf(ctx), {});
+      const rows = await exported(ctx);
+      assert.equal(rows.length, 2);
+      assert.equal(rows.every((row) => row.lookback), true, "the look-backs themselves were saved as before");
+      for (const row of rows) assert.equal(row.lookback_counted_day, "", "no record is marked as counted");
+
+      // A value with no address in it is the same as unset.
+      ctx.env.GRILL_INTERNAL_EMAILS = "on";
+      await grill(ctx, fake, token, "Cut prices", FEB + HOUR);
+      await decided(ctx, fake, token, "Cut prices", FEB + HOUR);
+      assert.deepEqual(outsideWrites(ctx), []);
+      assert.deepEqual(ctx.writes.filter((args) => HASH_OPS.includes(args[0])), []);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("counts an outside person's first grill once, under its day and app, and a come-back 20 hours on", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await grill(ctx, fake, token, "Hire contractor", JAN, { keep_records: false });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.firstGrills), { "2026-01-01": "1" });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.firstGrillApp), { claude: "1" });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.cameBack), {});
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), "2026-01-01", "the day counting began");
+      assert.deepEqual(marksOf(ctx), { first: new Date(JAN).toISOString() });
+
+      // A second grill the same afternoon, and one a minute short of 20 hours: not a come-back.
+      await grill(ctx, fake, token, "Move office", JAN + 2 * HOUR, {});
+      await grill(ctx, fake, token, "Cut prices", JAN + 20 * HOUR - 60_000, {});
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.cameBack), {});
+      // 20 hours after the first: counted once, under the day of the first grill.
+      await grill(ctx, fake, token, "Change supplier", JAN + 20 * HOUR, {});
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.cameBack), { "2026-01-01": "1" });
+      await grill(ctx, fake, token, "Renew the lease", JAN + 9 * 24 * HOUR, {});
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.cameBack), { "2026-01-01": "1" }, "a person comes back once");
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.firstGrills), { "2026-01-01": "1" }, "and has one first grill");
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.firstGrillApp), { claude: "1" });
+      assert.deepEqual(marksOf(ctx), { first: new Date(JAN).toISOString(), back: "1" });
+      assert.equal(ctx.memory.command(["GET", "grill:metric:funnel_grills"]), "5", "the all-accounts funnel still counts every grill");
+
+      // Two grills that finish together both find no mark yet. Only the one that sets it counts.
+      const racing = world();
+      racing.env.GRILL_INTERNAL_EMAILS = LIST;
+      const plain = racing.redis;
+      racing.redis = async (args) => {
+        const answer = await plain(args);
+        return args[0] === "HGETALL" && String(args[1]).startsWith("grill:hosted:outside:") ? [] : answer;
+      };
+      await grill(racing, fake, token, "Hire contractor", JAN, { keep_records: false });
+      await grill(racing, fake, token, "Move office", JAN + 30 * HOUR, {});
+      assert.deepEqual(hash(racing, OUTSIDE_KEYS.firstGrills), { "2026-01-01": "1" }, "the grill that lost the mark does not count a second first grill");
+      assert.deepEqual(hash(racing, OUTSIDE_KEYS.firstGrillApp), { claude: "1" });
+
+      // The counters hold a day or an app and a number. No address, no account id, no time of day.
+      const id = personOf(ctx);
+      const counted = ctx.writes.filter((args) => args[0] === "HINCRBY");
+      assert.ok(counted.length >= 3);
+      for (const args of counted) {
+        assert.ok(args[1].startsWith("grill:metric:outside:"), args[1]);
+        assert.match(args[2], /^(\d{4}-\d{2}-\d{2}|claude)$/);
+        assert.equal(args[3], "1");
+        assert.equal(args.join(" ").includes(id), false);
+        assert.equal(args.join(" ").includes("invitee"), false);
+      }
+      // The marks that keep it to one count per person sit under the account's own id, like its other keys.
+      for (const args of outsideWrites(ctx).filter((item) => !item[1].startsWith("grill:metric:outside:"))) {
+        assert.equal(args[1], `grill:hosted:outside:${id}`);
+        assert.equal(args.join(" ").includes("invitee"), false);
+      }
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("counts nothing for an account on the internal list, by its own address or its person's", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = `${LIST}, Invitee@Example.com`;
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await grill(ctx, fake, token, "Hire contractor", JAN);
+      await decided(ctx, fake, token, "Hire contractor", JAN);
+      await grill(ctx, fake, token, "Move office", JAN + 30 * HOUR);
+      const said = await postMcp(ctx, call(3, "grill_look_back", { happened: "came_true: yes\nhappened: It worked." }), { token, deps: { now: FEB } });
+      assert.match(textOf(said.json), /Saved with your decision record\./);
+      assert.deepEqual(ctx.writes.filter((args) => HASH_OPS.includes(args[0])), [], "no counter and no mark for an internal account");
+      for (const key of Object.values(OUTSIDE_KEYS)) assert.deepEqual(hash(ctx, key), {}, key);
+      assert.deepEqual(marksOf(ctx), {});
+      assert.equal((await exported(ctx))[0].lookback_counted_day, "");
+      // The one thing written is the day the list was first seen set, so the readout can say counting is on.
+      assert.deepEqual(
+        outsideWrites(ctx).map((args) => args.slice(0, 2)),
+        [["SET", OUTSIDE_LIVE_KEY]],
+      );
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), "2026-01-01");
+
+      // An agent that acts for an internal person is internal too. One that acts for an outside person is counted.
+      const firstAnswerFrom = async (human) => {
+        const agentWorld = world();
+        agentWorld.env.GRILL_INTERNAL_EMAILS = LIST;
+        const id = "g_agent-account";
+        agentWorld.memory.command(["SET", `grill:hosted:acct:${id}`, JSON.stringify({ id, email: "invitee@example.com", human, records: null, keyCipher: "x", keyHash: "h", createdAt: "2026-01-01T00:00:00Z" })]);
+        agentWorld.memory.command(["SET", identKeyFor(agentWorld.env, "user_invitee"), id]);
+        assert.equal((await form(agentWorld, handleAccount, "/account", "action=records&value=keep", JAN)).status, 303);
+        assert.equal(JSON.parse(agentWorld.memory.command(["GET", `grill:hosted:acct:${id}`])).records, "keep", "the answer itself was saved");
+        return hash(agentWorld, OUTSIDE_KEYS.recordsOn);
+      };
+      assert.deepEqual(await firstAnswerFrom("owner@grill.example"), {}, "a first answer from an internal person's agent is not counted");
+      assert.deepEqual(await firstAnswerFrom("pat@elsewhere.example"), { "2026-01-01": "1" });
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("files an account that grilled before counting began under the day it started", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      // The account exists and its own spend log holds a grill from December, before the list was set.
+      await postMcp(ctx, call(1, "no_such_tool", {}), { token });
+      const id = personOf(ctx);
+      ctx.memory.command(["RPUSH", `grill:hosted:spendlog:${id}`, JSON.stringify({ at: "2025-12-20T09:12:00.000Z", costUsd: 0.02, model: "x/y" })]);
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      await grill(ctx, fake, token, "Hire contractor", JAN, { keep_records: false });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.firstGrills), { "2025-12-20": "1" });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.cameBack), { "2025-12-20": "1" }, "this grill is their come-back");
+      assert.deepEqual(marksOf(ctx), { first: "2025-12-20T09:12:00.000Z", back: "1" });
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), "2026-01-01");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("counts the first answer to the records question, and not a later switch", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = { ...judgeDeps(fake), waitMs: 20_000, now: JAN };
+      // The question, with no answer yet. Nothing is counted for a question.
+      const asked = await postMcp(ctx, call(1, "grill", { subject: "Decision: Hire contractor", quality_check: false }), { token, deps });
+      assert.equal(textOf(asked.json), CONSENT_TEXT);
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.recordsOn), {});
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.recordsOff), {});
+      await grill(ctx, fake, token, "Hire contractor", JAN, { keep_records: true });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.recordsOn), { "2026-01-01": "1" });
+      // Later they switch it off in chat, on again on the account page, and off on Your grills.
+      await grill(ctx, fake, token, "Move office", JAN + HOUR, { keep_records: false });
+      assert.equal((await form(ctx, handleAccount, "/account", "action=records&value=keep", JAN + 2 * HOUR)).status, 303);
+      assert.equal((await form(ctx, handleDecisions, "/decisions", "action=records&value=off", JAN + 3 * HOUR)).status, 303);
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.recordsOn), { "2026-01-01": "1" });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.recordsOff), {}, "a switch is not an answer to the question");
+
+      // A person who first answers no, the next day, on the account page.
+      const other = world();
+      other.env.GRILL_INTERNAL_EMAILS = LIST;
+      await postMcp(other, call(1, "no_such_tool", {}), { token });
+      assert.equal((await form(other, handleAccount, "/account", "action=records&value=off", JAN + 24 * HOUR)).status, 303);
+      assert.equal((await form(other, handleAccount, "/account", "action=records&value=off", JAN + 25 * HOUR)).status, 303);
+      assert.deepEqual(hash(other, OUTSIDE_KEYS.recordsOff), { "2026-01-02": "1" });
+      assert.deepEqual(hash(other, OUTSIDE_KEYS.recordsOn), {});
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("still answers the grill, the choice and the look-back when no counter can be written", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      const redis = ctx.redis;
+      let refused = 0;
+      ctx.redis = async (args) => {
+        if (HASH_OPS.includes(args[0]) || String(args[1]).includes("outside")) {
+          refused += 1;
+          throw new Error("boom");
+        }
+        return redis(args);
+      };
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const verdict = await grill(ctx, fake, token, "Hire contractor", JAN);
+      assert.match(verdict, /Private:/);
+      assert.match(await decided(ctx, fake, token, "Hire contractor", JAN), /^Saved\. Look-back 15 Jan\./);
+      const [row] = await exported(ctx, JAN);
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=review&id=${row.id}&value=set&review=2026-01-20`, JAN)).status, 303);
+      const said = await postMcp(ctx, call(3, "grill_look_back", { records: "Hire contractor", happened: "came_true: yes\nhappened: It worked." }), { token, deps: { now: FEB } });
+      assert.match(textOf(said.json), /Saved with your decision record\./);
+      assert.ok(refused >= 5, `the counters were tried and refused ${refused} times`);
+      const [after] = await exported(ctx);
+      assert.match(after.block, /^review: 2026-01-20$/m, "the person's own change was saved");
+      assert.match(after.lookback.happened, /It worked/);
+      for (const key of Object.values(OUTSIDE_KEYS)) assert.deepEqual(hash(ctx, key), {}, key);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("deleting the account removes its marks and leaves the counts as they were", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await grill(ctx, fake, token, "Hire contractor", JAN);
+      await decided(ctx, fake, token, "Hire contractor", JAN);
+      const id = personOf(ctx);
+      assert.deepEqual(marksOf(ctx), { first: new Date(JAN).toISOString(), lookback: "2026-01-15" });
+      const gone = await form(ctx, handleAccount, "/account", "action=delete-account&confirm=delete", JAN + HOUR);
+      assert.equal(gone.status, 303);
+      assert.deepEqual(hash(ctx, `grill:hosted:outside:${id}`), {}, "the marks go with the account");
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.firstGrills), { "2026-01-01": "1" });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.lookbacksDue), { "2026-01-15": "1" }, "a deleted look-back still counts as due");
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.lookbackPeople), { "2026-01-15": "1" });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.choices), { "2026-01-01": "1" });
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("adds nothing to the Monday email job, its route or the schedule, and opens no record to count", () => {
+    const hosted = readFileSync(join(ROOT, "api/_hosted.mjs"), "utf8");
+    const digest = hosted.slice(hosted.indexOf("export async function runImpactDigest"), hosted.indexOf("function calendarResponse"));
+    assert.ok(digest.length > 500, "found the Monday email job");
+    assert.doesNotMatch(digest, /outside|HINCRBY|HGETALL/i);
+    const entry = readFileSync(join(ROOT, "api/hosted.js"), "utf8");
+    assert.doesNotMatch(entry, /outside|HINCRBY/i);
+    assert.deepEqual(JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8")).crons, [{ path: "/api/hosted?__route=digest", schedule: "0 14 * * *" }]);
+    // The counting helpers never load or decrypt a record. They use what the person's request already holds.
+    const helpers = hosted.slice(hosted.indexOf("// ── Outside counters"), hosted.indexOf("/** A pilot count."));
+    assert.ok(helpers.length > 1000, "found the outside counter helpers");
+    assert.doesNotMatch(helpers, /loadRecords|loadPendings|decryptString|decryptJson|dataKeyFor|ZRANGE|SCAN|KEYS/);
+    assert.doesNotMatch(helpers, /console\./, "and nothing is logged, least of all the internal list");
+    assert.equal((hosted.match(/GRILL_INTERNAL_EMAILS/g) || []).length, 0, "the handler reads the list only through the pure core");
+    const core = readFileSync(join(ROOT, "scripts/outsideLoopCore.mjs"), "utf8");
+    const reads = core.split("\n").filter((line) => line.includes("GRILL_INTERNAL_EMAILS") && !/^\s*(\/\/|\*|\/\*)/.test(line));
+    assert.equal(reads.length, 1, "one line of code reads it");
+    // No address is committed anywhere a setting could be defaulted from.
+    for (const file of ["vercel.json", "api/_hosted.mjs", "scripts/outsideLoopCore.mjs", "scripts/outside-loop.mjs", "scripts/hostedCore.mjs"]) {
+      assert.doesNotMatch(readFileSync(join(ROOT, file), "utf8"), /GRILL_INTERNAL_EMAILS\s*[:=]\s*["'`][^"'`]*@/, file);
+    }
   });
 });

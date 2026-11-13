@@ -190,6 +190,20 @@ import {
   reactionKey,
   storeFeedback,
 } from "../scripts/feedbackCore.mjs";
+import {
+  OUTSIDE_LIVE_KEY,
+  cameBackOps,
+  choiceOps,
+  countsAsOutside,
+  firstGrillOps,
+  firstGrillTime,
+  hashFields,
+  internalEmails,
+  lookbackDateChange,
+  lookbackDoneOps,
+  lookbackPeopleChange,
+  recordsAnswerOps,
+} from "../scripts/outsideLoopCore.mjs";
 
 const JUDGE = fileURLToPath(new URL("../scripts/judge.mjs", import.meta.url));
 const CLERK_API = "https://api.clerk.com";
@@ -211,6 +225,8 @@ const authMetadataCache = new Map();
 // Company named on initialize, keyed by the sign-in subject. This process only.
 // The grill request also reads User-Agent, so a different instance still sees that.
 const clientHintBySub = new Map();
+// Whether this process has already written the day the outside counters went live.
+let outsideLiveNoted = false;
 export const AUTH_METADATA_CACHE_MS = 60_000;
 
 export function resetHostedCaches() {
@@ -219,6 +235,7 @@ export function resetHostedCaches() {
   creditCache.clear();
   authMetadataCache.clear();
   clientHintBySub.clear();
+  outsideLiveNoted = false;
 }
 
 class Coded extends Error {
@@ -396,6 +413,15 @@ function spendLogKey(userId) {
 function disclosedKey(userId) {
   return `grill:hosted:disclosed:${userId}`;
 }
+/**
+ * Marks that keep the outside counters to one count per person: the time of the account's first
+ * grill that got a verdict, a yes once it was counted as having come back, and the day its
+ * first look-back is counted under. A hash, written with atomic commands, like the keys above.
+ * Never written for an account on the internal list, or while that list is unset.
+ */
+function outsideMarkKey(userId) {
+  return `grill:hosted:outside:${userId}`;
+}
 function recordKeyRedisKey(userId) {
   return `grill:hosted:rkey:${userId}`;
 }
@@ -493,7 +519,7 @@ async function claimRun(account, subject, runId, deps) {
 }
 
 /** One completed grill. A second finish of the same run, a follow-up and a poll do not get here. */
-async function countCompletedCheck(account, deps, runId) {
+async function countCompletedCheck(account, deps, runId, { sourceApp = "", spendRows = 0 } = {}) {
   if (!runId) return;
   const once = await redis(deps, ["SET", checkOnceKey(runId), "1", "NX", "EX", String(JOB_TTL_SECONDS)]);
   if (once !== "OK") return;
@@ -506,12 +532,158 @@ async function countCompletedCheck(account, deps, runId) {
   await redis(deps, ["EXPIRE", dayKey, String(2 * 24 * 60 * 60)]);
   await countFunnel(deps, FUNNEL_KEYS.grills);
   await markEmailReturn(account, deps, "grill");
+  await countOutsideGrill(account, deps, { sourceApp, spendRows });
 }
 
 /** A funnel step. The value is 1. The key is a fixed name. A missed count does not fail the grill. */
 async function countFunnel(deps, key) {
   try {
     await redis(deps, ["INCR", key]);
+  } catch {
+    // ignored on purpose
+  }
+}
+
+// ── Outside counters ─────────────────────────────────────────────────────────
+// Whole numbers, written when the event happens, inside the person's own request, and only for
+// an account that is not on the operator's internal list. With that list unset, nothing below
+// writes anything. The rules are in scripts/outsideLoopCore.mjs. Every write is best effort:
+// a missed count never fails the request it rides on.
+
+function nowOf(deps) {
+  return typeof deps.now === "number" ? deps.now : Date.now();
+}
+
+/**
+ * Whether this account's events are counted. Once per process it also writes the day the
+ * counters went live, so the readout can tell "nobody yet" from "the list was never set".
+ */
+async function outsideGate(account, deps) {
+  if (!internalEmails(deps.env)) return false;
+  if (!outsideLiveNoted) {
+    try {
+      await redis(deps, ["SET", OUTSIDE_LIVE_KEY, isoDay(nowOf(deps)), "NX"]);
+      outsideLiveNoted = true;
+    } catch {
+      // Tried again on the next event. A missed mark does not stop the count.
+    }
+  }
+  return countsAsOutside(account, deps.env);
+}
+
+async function addOutside(deps, ops) {
+  await Promise.all(
+    ops.map(async ([key, field, by]) => {
+      try {
+        await redis(deps, ["HINCRBY", key, field, String(by)]);
+      } catch {
+        // ignored on purpose
+      }
+    }),
+  );
+}
+
+/**
+ * A grill that got a verdict. The first one files the person under that day and that app.
+ * A later one, 20 hours or more after it, files them once as having come back.
+ */
+async function countOutsideGrill(account, deps, { sourceApp = "", spendRows = 0 } = {}) {
+  try {
+    if (!(await outsideGate(account, deps))) return;
+    const now = nowOf(deps);
+    const key = outsideMarkKey(account.id);
+    const marks = hashFields(await redis(deps, ["HGETALL", key]));
+    let firstAt = Date.parse(marks.first || "");
+    if (!Number.isFinite(firstAt)) {
+      // An account that grilled before counting began is filed under the day it started.
+      // Its own spend log holds that time already. A new account has only the row just added.
+      let oldest = "";
+      if (spendRows > 1) {
+        try {
+          oldest = JSON.parse(await redis(deps, ["LINDEX", spendLogKey(account.id), "0"]))?.at || "";
+        } catch {
+          oldest = "";
+        }
+      }
+      firstAt = firstGrillTime(now, oldest);
+      const won = await redis(deps, ["HSETNX", key, "first", new Date(firstAt).toISOString()]);
+      // Two grills finishing together: the one that set the mark counts.
+      if (Number(won) !== 1) return;
+      await addOutside(deps, firstGrillOps(deps.env, account, { firstAt, app: sourceApp }));
+    }
+    if (marks.back) return;
+    const back = cameBackOps(deps.env, account, { firstAt, now });
+    if (!back.length) return;
+    if (Number(await redis(deps, ["HSETNX", key, "back", "1"])) !== 1) return;
+    await addOutside(deps, back);
+  } catch {
+    // ignored on purpose
+  }
+}
+
+/** The first yes or no to the records question. */
+async function countOutsideRecordsAnswer(account, deps, keep) {
+  try {
+    if (!(await outsideGate(account, deps))) return;
+    await addOutside(deps, recordsAnswerOps(deps.env, account, { keep, now: nowOf(deps) }));
+  } catch {
+    // ignored on purpose
+  }
+}
+
+async function countOutsideChoice(account, deps) {
+  try {
+    if (!(await outsideGate(account, deps))) return;
+    await addOutside(deps, choiceOps(deps.env, account, { now: nowOf(deps) }));
+  } catch {
+    // ignored on purpose
+  }
+}
+
+/**
+ * A look-back date was set, moved or switched off on `row`. This sets the day the look-back is
+ * counted under on the row, and returns the counter writes to run once the row is saved.
+ * `rows` is every saved record of this person, with this row among them: all already open for
+ * the person's own request.
+ */
+async function outsideLookbackDate(account, deps, row, review, rows) {
+  const nothing = async () => {};
+  try {
+    if (!(await outsideGate(account, deps))) return nothing;
+    const now = nowOf(deps);
+    const left = row.lookbackDueDay || "";
+    const change = lookbackDateChange(deps.env, account, { counted: left, review, done: Boolean(row.lookbackFirstAt), now });
+    if (change.counted === left) return nothing;
+    if (change.counted) row.lookbackDueDay = change.counted;
+    else delete row.lookbackDueDay;
+    return async () => {
+      try {
+        await addOutside(deps, change.ops);
+        const key = outsideMarkKey(account.id);
+        const mark = String((await redis(deps, ["HGET", key, "lookback"])) || "");
+        const days = rows.map((item) => item.lookbackDueDay || "");
+        const people = lookbackPeopleChange(deps.env, account, { mark, days, left, now });
+        if (people.mark === mark) return;
+        if (!mark) {
+          if (Number(await redis(deps, ["HSETNX", key, "lookback", people.mark])) !== 1) return;
+        } else if (people.mark) await redis(deps, ["HSET", key, "lookback", people.mark]);
+        else await redis(deps, ["HDEL", key, "lookback"]);
+        await addOutside(deps, people.ops);
+      } catch {
+        // ignored on purpose
+      }
+    };
+  } catch {
+    return nothing;
+  }
+}
+
+/** The first look-back answer on a record. `first` is what setLookback returned. */
+async function countOutsideLookbackDone(account, deps, row, first) {
+  try {
+    if (first !== true || !row.lookbackDueDay) return;
+    if (!(await outsideGate(account, deps))) return;
+    await addOutside(deps, lookbackDoneOps(deps.env, account, { first, counted: row.lookbackDueDay, now: nowOf(deps) }));
   } catch {
     // ignored on purpose
   }
@@ -1555,10 +1727,10 @@ async function composeReport({ outcome, subject, sourceApp, author = "none", acc
   const verdict = thin ? "quick take" : plainVerdict(parsed?.verdict);
   // Atomic appends and counters only. The account record itself is not rewritten
   // here, so a grill finishing in the background can't undo another one's changes.
-  await redis(deps, ["RPUSH", spendLogKey(account.id), JSON.stringify({ at: new Date().toISOString(), costUsd: cost, model })]);
+  const spendRows = Number(await redis(deps, ["RPUSH", spendLogKey(account.id), JSON.stringify({ at: new Date().toISOString(), costUsd: cost, model })])) || 0;
   await redis(deps, ["LTRIM", spendLogKey(account.id), String(-SPEND_LOG_MAX), "-1"]);
   await countSpend(account, deps, cost);
-  if (completedGrill(parsed)) await countCompletedCheck(account, deps, runId);
+  if (completedGrill(parsed)) await countCompletedCheck(account, deps, runId, { sourceApp, spendRows });
   let text = appendRunNote(layers.brief, parsed || {}, Number(outcome.ms));
   // `author` is the company the judge was told to leave out, or "none". With "none" nobody was
   // excluded: the verdict says so on its own line, and the first-use line makes no company claim.
@@ -1635,10 +1807,12 @@ async function callGrill(args, account, payload, params, deps) {
     return toolText(CONSENT_TEXT);
   }
   if (typeof keepArg === "boolean" && account.records !== (keepArg ? "keep" : "off")) {
+    const firstAnswer = needsRecordChoice(account);
     account.records = keepArg ? "keep" : "off";
     await saveAccount(account, deps);
     // Saying no to records also drops any draft still waiting for a choice.
     if (!keepArg) await deletePendings(account, deps);
+    if (firstAnswer) await countOutsideRecordsAnswer(account, deps, keepArg);
   }
   const subject = typeof args.subject === "string" ? args.subject : "";
   const question = typeof args.question === "string" ? args.question.trim() : "";
@@ -1888,12 +2062,13 @@ async function callLookBack(args, account, deps) {
   for (const save of plan.saves) {
     const row = save.row;
     const firstLook = !hasLookback(row);
-    setLookback(row, save.happened, now);
+    const firstEver = setLookback(row, save.happened, now);
     await writeRecord(account, deps, row);
     if (firstLook) {
       await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
       await markEmailReturn(account, deps, "lookback");
     }
+    await countOutsideLookbackDone(account, deps, row, firstEver);
     savedRows.push(row);
   }
   if (!several || pasted) {
@@ -1965,6 +2140,7 @@ async function callDecided(args, account, deps) {
     saved.decided = decided;
     await writeRecord(account, deps, saved);
     await countFunnel(deps, FUNNEL_KEYS.choices);
+    await countOutsideChoice(account, deps);
     return toolText(withReminder(savedConfirmation(parsed.review), await reminderLine(account, deps, rows, saved.id)));
   }
   const pendings = await loadPendings(account, deps);
@@ -1989,7 +2165,7 @@ async function callDecided(args, account, deps) {
     changed: pending.changed || "",
   };
   const block = recordBlock(fields);
-  await writeRecord(account, deps, {
+  const row = {
     id: pending.id,
     createdAt: pending.createdAt || now.toISOString(),
     block,
@@ -2003,10 +2179,14 @@ async function callDecided(args, account, deps) {
     review,
     supersedes: fields.supersedes,
     decided,
-  });
+  };
+  const countLookbackDate = await outsideLookbackDate(account, deps, row, review, [...rows, row]);
+  await writeRecord(account, deps, row);
   await deletePending(account, deps, pending.id);
   await countFunnel(deps, FUNNEL_KEYS.choices);
   if (review) await countFunnel(deps, FUNNEL_KEYS.lookbacksSet);
+  await countOutsideChoice(account, deps);
+  await countLookbackDate();
   return toolText(withReminder(savedConfirmation(review), await reminderLine(account, deps, rows, pending.id)));
 }
 
@@ -3217,6 +3397,7 @@ async function exportRecords(account, deps, kind) {
         impact: row.impact === "changed" || row.impact === "kept" ? row.impact : "",
         lookback: row.lookback || null,
         lookback_first_at: row.lookbackFirstAt || "",
+        lookback_counted_day: row.lookbackDueDay || "",
         block: row.block,
       })),
       null,
@@ -3265,6 +3446,7 @@ async function deleteAccount(account, deps, sub) {
   await redis(deps, ["DEL", acctKey(account.id)]);
   await redis(deps, ["DEL", spendLogKey(account.id)]);
   await redis(deps, ["DEL", disclosedKey(account.id)]);
+  await redis(deps, ["DEL", outsideMarkKey(account.id)]);
   await redis(deps, ["DEL", recordKeyRedisKey(account.id)]);
   await deleteFeedbackForAccount((command) => redis(deps, command), account.id);
   await calendarOff(account, deps);
@@ -3669,9 +3851,11 @@ export async function handleDecisions(request, deps) {
       if (action === "records") {
         const value = form.get("value");
         if (value === "keep" || value === "off") {
+          const firstAnswer = needsRecordChoice(session.account);
           session.account.records = value;
           await saveAccount(session.account, deps);
           if (value === "off") await deletePendings(session.account, deps);
+          if (firstAnswer) await countOutsideRecordsAnswer(session.account, deps, value === "keep");
         }
       } else if (action === "delete" && form.get("confirm") === "delete") {
         await deleteRecordIds(session.account, deps, [form.get("id") || ""]);
@@ -3703,8 +3887,9 @@ export async function handleDecisions(request, deps) {
             const now = typeof deps.now === "number" ? deps.now : Date.now();
             const finished = hasLookback(row) && !earlyRead(row, now);
             const happened = composeOutcome(row.lookback?.happened, form.get("value") || "");
-            setLookback(row, happened, now);
+            const firstEver = setLookback(row, happened, now);
             await writeRecord(session.account, deps, row);
+            await countOutsideLookbackDone(session.account, deps, row, firstEver);
             if (!finished && !earlyRead(row, now)) {
               await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
               await markEmailReturn(session.account, deps, "lookback");
@@ -3733,8 +3918,9 @@ export async function handleDecisions(request, deps) {
         if (row) {
           const now = typeof deps.now === "number" ? deps.now : Date.now();
           // A note keeps the time of the tap it sits beside. Clearing the note clears the look-back.
-          setLookback(row, composeNote(row.lookback?.happened, form.get("note")), now, { keepAt: true });
+          const firstEver = setLookback(row, composeNote(row.lookback?.happened, form.get("note")), now, { keepAt: true });
           await writeRecord(session.account, deps, row);
+          await countOutsideLookbackDone(session.account, deps, row, firstEver);
         }
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
       } else if (action === "review") {
@@ -3754,10 +3940,14 @@ export async function handleDecisions(request, deps) {
               const posted = validDay(form.get("review"));
               if (posted) review = posted;
             }
+            // Only a real change of date is an event for the outside counters.
+            const dateChanged = review !== String(row.review || "");
             row.block = recordBlock({ ...parsed, review });
             row.review = review;
+            const countLookbackDate = dateChanged ? await outsideLookbackDate(session.account, deps, row, review, rows) : null;
             await writeRecord(session.account, deps, row);
             if (!hadReview && /^\d{4}-\d{2}-\d{2}$/.test(review)) await countFunnel(deps, FUNNEL_KEYS.lookbacksSet);
+            if (countLookbackDate) await countLookbackDate();
           }
         }
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
@@ -3839,9 +4029,11 @@ export async function handleAccount(request, deps) {
       if (form.get("action") === "records") {
         const value = form.get("value");
         if (value === "keep" || value === "off") {
+          const firstAnswer = needsRecordChoice(session.account);
           session.account.records = value;
           await saveAccount(session.account, deps);
           if (value === "off") await deletePendings(session.account, deps);
+          if (firstAnswer) await countOutsideRecordsAnswer(session.account, deps, value === "keep");
         }
       }
       if (form.get("action") === "impact-email") {
