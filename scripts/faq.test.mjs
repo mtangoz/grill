@@ -26,7 +26,7 @@ const ANSWERS = [
   "Preview. Adding Grill as a connector inside Gemini or Muse is not verified. You can try it. Gemini: US only, a personal Google account, Keep Activity on. Muse: the steps are in the README.",
   "Planned. No further way in is listed here. The free tool stays free.",
   "If you say yes to keeping records, choices you make are saved at grillyour.ai/decisions (Your grills), with a 14-day look-back and an optional calendar link. You can also say \"look back\" in chat. It stays private, and off until you opt in.",
-  "No. Whether an outside judge catches more than the same model starting fresh is not measured yet. What Grill runs each week is a regression check on made-up cases. Those cases were used to write the judge’s instructions, so a full score says nothing about how good the judge is. The counts from that check, and what has not been measured, are at grillyour.ai/how-we-test/ (How Grill tests its judge). Examples on this site use invented numbers. They are not a benchmark.",
+  "No. Whether an outside judge catches more than the same model starting fresh is not measured yet. Grill’s weekly check of its judge is a regression check on made-up cases. Those cases were used to write the judge’s instructions, so a full score says nothing about how good the judge is. The counts from that check, and what has not been measured, are at grillyour.ai/how-we-test/ (How Grill tests its judge). Examples on this site use invented numbers. They are not a benchmark.",
 ];
 
 // The page lede, and the one-line summary the build gives the page in its head and in llms.txt.
