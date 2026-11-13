@@ -1703,6 +1703,12 @@ function topLevelValueSpan(text, key) {
   return null;
 }
 
+/** The raw text of a top-level value in a JSON text, exactly as written, or null when the key is not there. */
+export function topLevelValueText(text, key) {
+  const span = topLevelValueSpan(String(text ?? ""), key);
+  return span ? text.slice(span.start, span.end) : null;
+}
+
 function replaceTopLevelValue(text, key, value) {
   const span = topLevelValueSpan(text, key);
   if (!span) throw new Error(`the results file has no top-level "${key}"`);

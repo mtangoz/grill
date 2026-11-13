@@ -87,6 +87,7 @@ import {
   signFlip,
   singleDrafter,
   summarize,
+  topLevelValueText,
   usableFloorMet,
   writeUpUsable,
 } from "./fourArmCore.mjs";
@@ -1154,26 +1155,33 @@ describe("merging the block into data/results.json", () => {
   const text = read(COMMITTED_RESULTS);
   const cases = [{ id: "f1", kind: "flawed", author_family: "openai", drafter_family: "anthropic", visible: "yes" }];
   const items = ARMS.map((arm) => ({ id: "f1", arm, usable: true, label: arm === "D" ? "yes" : "no", words: 10, objections: 1 }));
-  const block = (date = "2026-11-13") => buildPublicBlock({ cases, items, date, commit: "abc1234", single_drafter: true });
+  // Dates are taken from the committed file, so these tests do not start failing when it is next updated.
+  const today = JSON.parse(text).updated;
+  const yearFrom = (date, add) => `${Number(date.slice(0, 4)) + add}-01-15`;
+  const block = (date = today) => buildPublicBlock({ cases, items, date, commit: "abc1234", single_drafter: true });
 
   it("replaces four_arm, leaves every other byte alone, and validates the whole new text", () => {
     const next = mergeFourArmIntoResultsText(text, block());
     const before = JSON.parse(text);
     const after = validateResults(JSON.parse(next));
     assert.deepEqual(after.four_arm, block());
-    for (const key of Object.keys(before)) if (key !== "four_arm") assert.deepEqual(after[key], before[key], key);
-    const start = text.indexOf('"four_arm"');
+    for (const key of Object.keys(before)) {
+      if (key === "four_arm") continue;
+      assert.deepEqual(after[key], before[key], key);
+      assert.equal(topLevelValueText(next, key), topLevelValueText(text, key), `${key} is byte for byte as it was`);
+    }
+    assert.equal(topLevelValueText(next, "four_arm"), JSON.stringify(block(), null, 2).replace(/\n/g, "\n  "));
+    const start = text.indexOf(topLevelValueText(text, "four_arm"));
     assert.equal(next.slice(0, start), text.slice(0, start), "everything above the block is byte for byte the same");
-    const tail = text.slice(text.indexOf('"signals"'));
-    assert.ok(next.endsWith(tail), "everything below the block is byte for byte the same");
+    assert.equal(next.length - topLevelValueText(next, "four_arm").length, text.length - topLevelValueText(text, "four_arm").length, "nothing else grew or shrank");
+    assert.equal(topLevelValueText(text, "no_such_key"), null);
   });
 
   it("moves `updated` forward when the block is dated later, and never back", () => {
-    const before = JSON.parse(text);
-    const later = JSON.parse(mergeFourArmIntoResultsText(text, block("2027-01-15")));
-    assert.equal(later.updated, "2027-01-15");
-    assert.equal(JSON.parse(mergeFourArmIntoResultsText(text, block(before.updated))).updated, before.updated);
-    assert.equal(JSON.parse(mergeFourArmIntoResultsText(text, block("2026-11-01"))).updated, before.updated);
+    const later = JSON.parse(mergeFourArmIntoResultsText(text, block(yearFrom(today, 1))));
+    assert.equal(later.updated, yearFrom(today, 1));
+    assert.equal(JSON.parse(mergeFourArmIntoResultsText(text, block(today))).updated, today);
+    assert.equal(JSON.parse(mergeFourArmIntoResultsText(text, block(yearFrom(today, -1)))).updated, today);
   });
 
   it("refuses a block the validator would refuse, and a file with no four_arm key", () => {
@@ -1501,7 +1509,7 @@ describe("a full loopback run of a tiny set", () => {
     const merged = validateResults(JSON.parse(read(paths.results)));
     const committed = JSON.parse(read(COMMITTED_RESULTS));
     assert.deepEqual(merged.four_arm, block);
-    assert.equal(merged.updated, "2026-12-01");
+    assert.equal(merged.updated, committed.updated > "2026-12-01" ? committed.updated : "2026-12-01", "updated moves forward to the run's date, never back");
     for (const key of Object.keys(committed)) if (key !== "four_arm" && key !== "updated") assert.deepEqual(merged[key], committed[key], key);
 
     const full = JSON.parse(read(join(paths.out, "report.json")));
