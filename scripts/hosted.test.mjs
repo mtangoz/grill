@@ -1209,7 +1209,7 @@ describe("hosted Grill", { concurrency: false }, () => {
           { handshake: "gemini-cli", handshakeClaims: { client_id: "client_one" }, handshakeAgent: "node", userAgent: "node" },
         ],
         // Two clients that both send no User-Agent and carry no client id cannot be told apart.
-        // Nothing is kept for them, so one is never given the company the other named.
+        // No company is remembered for them, so one is never given the company the other named.
         ["no User-Agent and no client id, after a client like that named itself", NONE, "", undefined, [], "none", named("OpenAI"), "", { handshake: "gemini-cli" }],
         ["no User-Agent and no client id, Cursor by name after a client like that named itself", NONE, "Cursor", undefined, [], "none", plain, "", { handshake: "gemini-cli" }],
         // A client id alone is enough to know the client again.

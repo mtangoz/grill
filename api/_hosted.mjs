@@ -1564,7 +1564,7 @@ function tokenClientId(payload) {
 /**
  * Which client a handshake belongs to: the token's client id and the User-Agent. Empty when
  * the request has neither. Two clients like that under one sign-in cannot be told apart, so
- * nothing is kept for them and nothing kept is read for them.
+ * no company is remembered for them and none is read for them.
  */
 function clientHintKey(payload, userAgent) {
   const clientId = tokenClientId(payload);
