@@ -16,8 +16,10 @@ Check it any time: `npx -y grillyour --key-status`. It says where the key comes 
 
 Every app starts the same command, `npx -y grillyour`. Two optional settings go in `env`:
 
-- `GRILL_AUTHOR`: the company of the AI you think with: `openai`, `google`, `xai`, `deepseek`. The judge is never from that company. Leave it out for Claude, which is the default. Leave it out in apps that switch between companies (Cursor, VS Code); the assistant states its own company on each call instead.
-- `JUDGE_MODEL`: a pinned judge, from your Pro setup page. Leave it out for Grill's default, which picks a judge automatically from a different company.
+- `GRILL_AUTHOR`: the company of the AI you think with, for example `openai`, `google`, `x-ai` or `deepseek`. Grill tells the router to leave that company's models out, checks the model that answered, and gives no verdict if it came from that company. Common names such as `xai`, `grok`, `gemini`, `chatgpt` and `claude` are understood. `none`, or a name Grill does not know as a model company, is ignored. Grill also reads the app's name when it connects. An app that names itself Claude, ChatGPT, Grok or Gemini is recognised without the setting. Leave it out in apps that switch between companies (Cursor, VS Code). There the assistant should name its own company on each call.
+- `JUDGE_MODEL`: a pinned judge, from your Pro setup page. Leave it out for Grill's default: the router picks the judge, and Grill leaves out the company that wrote the write-up when it can tell which that is.
+
+When nothing names a company, Grill cannot tell who wrote the write-up. It rules out Anthropic only, and the verdict ends with one line that starts "Independence not verified:". Set `GRILL_AUTHOR` when the app runs one company's models, or have the assistant name its company on the call, and the line goes away.
 
 **Cursor**: [one-click install](https://cursor.com/en/install-mcp?name=grill&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImdyaWxseW91ciJdfQ==), or put this in `~/.cursor/mcp.json`:
 

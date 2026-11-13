@@ -6,16 +6,16 @@ Grill pays for the starter credit, so two hard monthly caps sit in front of ever
 
 This is a connector, not the installed tool. The installed tool is unchanged: your key, on your computer, and the write-up goes only to the model router.
 
-The judge is always OpenRouter's Auto Router (`openrouter/auto`). Grill excludes only the company that wrote the write-up. It does not fall back to the chat's own model, for speed or cost, and it does not pin a model.
+The judge is always OpenRouter's Auto Router (`openrouter/auto`). Grill excludes only the company that wrote the write-up, when it can tell which that is. When it cannot, nobody is excluded and the verdict says independence was not verified. It does not fall back to the chat's own model, for speed or cost, and it does not pin a model.
 
 ## What a person does
 
 1. Follow the steps for the AI at `https://grillyour.ai/start/` (on a preview, use that preview's origin instead of grillyour.ai). Claude.ai, ChatGPT and Grok Bot are verified working. Gemini and Muse work today by copy and paste, no install, no key. Adding Grill as a connector inside Gemini or Muse is not verified. The connector URL is `https://<host>/mcp`. On a preview that host is the preview origin. `https://mcp.grillyour.ai/mcp` comes later, when the owner adds that domain.
 2. Connect. A sign-in opens. Anyone can sign up. Sign in with an emailed code: use the same email each time, the same email you signed up with, every time, and check spam if the code isn't there in a minute. No key to paste, no password, and no card. In Claude, open Customize → Connectors → Add custom connector and paste `https://<host>/mcp`. Asking Claude in a chat to connect it does not work. A code at `/redeem` still grants early-tester access: free, $5 of use each month, on the same $20 service cap.
-3. The first grill asks, once, whether to keep decision records. Answer once. The outside-judge disclosure is shown once per account, then not again.
+3. The first grill asks, once, whether to keep decision records. Answer once. The outside-judge disclosure is shown once per account, then not again. It says "from a different company" only when Grill could tell which company wrote the write-up.
 4. Say the decision as you mean it. The assistant sends that. It does not show a template or wait for an OK. The note comes back in the chat. If three grills are already running, the assistant waits and retries on its own.
 
-An assistant that cannot add a connector can still use this grill. It gives the person a link, `/judge?q=` plus the decision, at most 4000 characters. Add `from` with the same client names a connector already matches, such as `gemini`, `gemini-cli`, `antigravity`, `claude`, `chatgpt` or `grok`, so that company is excluded. The page names the company in one line. With no `from`, or one it does not know, nobody is excluded. The page is signed in the same way as `/decisions`. It shows the decision and does not run a grill until they press the button. The verdict is on the page to copy back. Keeping records follows the same rule as a grill in chat: the first time asks, and a later grill uses that answer.
+An assistant that cannot add a connector can still use this grill. It gives the person a link, `/judge?q=` plus the decision, at most 4000 characters. Add `from` with the same client names a connector already matches, such as `gemini`, `gemini-cli`, `antigravity`, `claude`, `chatgpt`, `grok`, `muse` or `meta`, so that company is excluded. The page names the company in one line. With no `from`, or one it does not know, nobody is excluded. The page then shows one line above the button that starts "Independence not verified:", and the verdict carries its own line that starts the same way. Only `from` counts on this page. A company remembered from the person's connector is not used. The page is signed in the same way as `/decisions`. It shows the decision and does not run a grill until they press the button. The verdict is on the page to copy back. Keeping records follows the same rule as a grill in chat: the first time asks, and a later grill uses that answer.
 
 Decisions you chose to keep are at `/decisions`. The page opens on whether a grill changed the call, then on what is due for a look-back. What happened? opens that record. Saying "look back" in chat is what saves what happened. With three or more decisions, the impact block has one quieter line under the short count: how many decisions, the percent looked back, and, once three have been looked back, how often the verdict held up. With fewer, that line is absent. It is not repeated under the due list. Chips in one row filter by type and by client. A filter with only one value is hidden. The list is grouped due, open, and closed. A title opens that one record: the verdict, what you chose, how sure you were, and whether you have looked back. The type comes from the words already in the record. The client is the one already stored: Claude, ChatGPT, Cursor, Grok Bot, other, or unknown. Claude Code is counted with Claude. Share verdict, on the record, publishes that record's verdict and one challenge at `/share/<token>`. It is off until you confirm, and Stop sharing or deleting the record turns it off. Export and Delete all are small links under the list. Each gets a look-back on the day the decision named, when the words name one, and 14 days out otherwise. The record page can change that date or turn the look-back off. When the date comes, `/decisions` lists it as due, and the next `grill_decided` adds one line counting the calls due, at most once a UTC day. A signed-in account gets a Monday email, from 9 Nov 2026 until the test reaches 30 people and 60 sends (no later than 25 Jan 2027; about one in four accounts is held out and not sent), unless you turn it off on `/account` or with the unsubscribe link in the email. It uses the same changed-call count as Your grills. A verdict is not a change. A week with nothing new sends nothing, and an overdue look-back is not mailed again. The outcome links open a confirm page. To be reminded outside the chat, switch on a calendar link on `/decisions` or `/account` and subscribe to it in your calendar app. It is off by default, shown once, and shows "Grill look-back due" on each date, with titles only if you switch them on. Turning it off, getting a new link, or deleting the account stops the old link. The link is `https://<host>/decisions/calendar/<secret>.ics`. Why it works this way: [PRD-lookback-reminders.md](PRD-lookback-reminders.md).
 
@@ -73,10 +73,23 @@ Grill maps the OAuth client, not the chat's own guess:
 | ChatGPT | Redirect host `chatgpt.com` or `chat.openai.com` | openai | `chatgpt` |
 | Grok | Redirect host `grok.com` or `grok.x.ai` | x-ai | `grok` |
 | Gemini | Redirect host `gemini.google.com` or `aistudio.google.com` | google | `gemini` |
-| Cursor | `clientInfo` name or User-Agent contains Cursor, and no OAuth client already matched | nothing. Cursor is not one model company | `cursor` |
-| Unknown | No match | nothing, unless the call names an author | `unknown` |
+| Cursor | `clientInfo` name or User-Agent contains Cursor, and no OAuth client already matched | nothing, unless the call names a model company. Cursor is not one model company. The verdict says independence was not verified | `cursor` |
+| Unknown | No match | nothing, unless the call names a model company. The verdict says independence was not verified | `unknown` |
 
-An explicit `author` argument wins. A client name is only a hint when the OAuth client is unknown, and it never overrides the row above.
+A client name is only a hint when the OAuth client is unknown, and it never overrides the row above.
+
+The call's `author` argument is mapped to the router's own vendor prefix first. For example, `xai` or `grok` becomes `x-ai`, `claude` becomes `anthropic`, `gemini` becomes `google`, `chatgpt` or `gpt` becomes `openai`, and `meta` or `muse` becomes `meta-llama`. The names and the vendor list are `AUTHOR_ALIASES` and `AUTHOR_VENDORS` in [server/index.mjs](../server/index.mjs). Then:
+
+- A company on that vendor list wins, even over a recognised client. In Claude, `author: openai` excludes OpenAI and no longer excludes Anthropic. Whether the chat's own company may judge in that case is an open owner decision.
+- `none`, or any name that is not on that list, is ignored. It cannot remove a recognised client's company.
+
+When neither the client nor the call names a company, the judge runs with nobody excluded, and Grill says so in three places:
+
+- The verdict carries one line after the run note that starts "Independence not verified:". An unknown client is told which company judged, when Grill has a name for it. Cursor, and a judge from a company Grill has no name for, get: "Independence not verified: Grill couldn't tell which company's model wrote this, so no company was ruled out."
+- The first-use line leaves out "from a different company".
+- The audit line (`grill_result` with detail `provenance`) reads `excluded: none · decorrelated: not verified`.
+
+`decorrelated` in the audit line is a routing check: the judge came from a different company than the declared author. It is not a measure of whether their errors differ.
 
 ## Claude Code
 
@@ -88,7 +101,7 @@ Then `/mcp`, choose grill, Authenticate, and sign in with the email you signed u
 
 ## Grok
 
-Grok Bot is verified working. The person tells the bot `Add this MCP server: https://<host>/mcp`, then signs in with the same email each time, the email you signed up with, every time. Grill treats a redirect on `grok.com` or `grok.x.ai` as Grok and excludes x-ai from the judge. If Grok's redirect host is different, the client is unknown and nothing is excluded until the call names an author. Do not pin Grok's own model to save time. The spike's pass rule is still the Claude web runs in [hosted-spike.md](hosted-spike.md).
+Grok Bot is verified working. The person tells the bot `Add this MCP server: https://<host>/mcp`, then signs in with the same email each time, the email you signed up with, every time. Grill treats a redirect on `grok.com` or `grok.x.ai` as Grok and excludes x-ai from the judge. If Grok's redirect host is different, the client is unknown, nothing is excluded until the call names its company, and the verdict says independence was not verified. Do not pin Grok's own model to save time. The spike's pass rule is still the Claude web runs in [hosted-spike.md](hosted-spike.md).
 
 ## Grill IDs, and leaving Clerk
 
