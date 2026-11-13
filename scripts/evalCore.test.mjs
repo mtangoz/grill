@@ -1241,3 +1241,96 @@ describe("actionsRunOf: the run number and commit a public block needs", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// evals/README.md states figures. These pins tie them to the recorded run, the thresholds and
+// the committed cases, so the note cannot drift from what was measured.
+describe("evals/README.md: the first measured run, as counts and with its limits", () => {
+  const readme = readFileSync(join(HERE, "..", "evals", "README.md"), "utf8");
+  const run = JSON.parse(readFileSync(RESULTS_PATH, "utf8")).regression.runs.find((r) => r.run_id === 43354935479);
+  const between = (from, to) => {
+    assert.ok(readme.includes(from), `evals/README.md has "${from}"`);
+    assert.ok(readme.includes(to), `evals/README.md has "${to}"`);
+    return readme.slice(readme.indexOf(from), readme.indexOf(to));
+  };
+  const note = between("**The first measured run was on", "**The false-alarm gate will flap.**");
+
+  it("states the counts recorded in data/results.json, with the run, its date and its commit", () => {
+    assert.ok(note.includes(`**The first measured run was on ${run.date}.**`));
+    assert.ok(note.includes(`Actions run ${run.run_id} on commit ${run.commit}, got a verdict on all`));
+    assert.equal(run.reached_judge, run.cases);
+    assert.match(note.replace(/\s+/g, " "), new RegExp(`got a verdict on all ${run.cases} cases`));
+    const flawedCaught = run.flawed.caught + run.wrong_figure.caught;
+    const flawedOf = run.flawed.of + run.wrong_figure.of;
+    for (const row of [
+      `| Flawed cases caught | ${flawedCaught} of ${flawedOf} (${run.flawed.caught} of ${run.flawed.of} plain flawed, ${run.wrong_figure.caught} of ${run.wrong_figure.of} wrong figure) |`,
+      `| Loaded questions caught | ${run.loaded.caught} of ${run.loaded.of} |`,
+      `| Sound cases that got a false alarm | ${run.sound.false_alarms} of ${run.sound.of} |`,
+      `| Cases whose answer broke the output rules | ${run.schema_violations.k} of ${run.schema_violations.of} |`,
+      `| Cases served by a model from outside Anthropic | ${run.different_company.k} of ${run.different_company.of} |`,
+      `| Quoted targets found in the write-up | ${run.quotes.found} of ${run.quotes.of} |`,
+      `| Planted flaw named in other words, as scored by the quality check (Jev) | ${run.semantic.caught} of ${run.semantic.of} |`,
+      `| Cases by judge company | ${run.by_company.map((row) => `${row.company} ${row.cases}`).join(", ")} |`,
+    ]) {
+      assert.ok(note.includes(`${row}\n`), row);
+    }
+    assert.ok(note.replace(/\s+/g, " ").includes(`${run.quotes.of - run.quotes.found} of the ${run.quotes.of} quoted targets were not found`));
+  });
+
+  it("gives no percentage and no rate for that run", () => {
+    assert.doesNotMatch(note, /%|percent|\b\d\.\d+\b/i);
+  });
+
+  it("carries the two honest readings, and says the routing count is only a routing check", () => {
+    const flat = note.replace(/\s+/g, " ");
+    assert.ok(flat.includes("These 29 cases were used to write the judge's instructions, so a full catch score says nothing about how good the judge is."));
+    assert.ok(flat.includes("It cannot rank one critic against another."));
+    assert.ok(flat.includes(`**${run.sound.false_alarms} of the ${run.sound.of} sound plans got a false alarm.** That is one sound plan in three, on a sample of six.`));
+    assert.ok(flat.includes("is a routing check."));
+    assert.ok(flat.includes("It is not a measure of whether the judge's errors differ from the writer's."));
+  });
+
+  it("the false-alarm gate note matches the threshold, the six sound cases and the arithmetic", () => {
+    const flap = between("**The false-alarm gate will flap.**", "**Each measured run in GitHub Actions also writes its counts.**").replace(/\s+/g, " ");
+    const ceiling = JSON.parse(readFileSync(join(HERE, "..", "evals", "thresholds.json"), "utf8")).falseAlarmRate;
+    const sound = readdirSync(CASES_DIR).filter((f) => f.endsWith(".json") && JSON.parse(readFileSync(join(CASES_DIR, f), "utf8")).kind === "sound").length;
+    let allowed = 0;
+    while ((allowed + 1) / sound <= ceiling) allowed += 1;
+    assert.ok(flap.includes(`With ${sound} sound cases, the ${ceiling} ceiling allows ${allowed} false alarms, and the first measured run had exactly ${run.sound.false_alarms}.`));
+    assert.equal(allowed, run.sound.false_alarms);
+    // The chance of more than `allowed` false alarms in one run when each sound case alarms one time in three.
+    const choose = (n, k) => { let c = 1; for (let i = 0; i < k; i += 1) c = (c * (n - i)) / (i + 1); return c; };
+    let withinGate = 0;
+    for (let k = 0; k <= allowed; k += 1) withinGate += choose(sound, k) * (1 / 3) ** k * (2 / 3) ** (sound - k);
+    const red = 1 - withinGate;
+    assert.ok(red > 0.28 && red < 0.38, `the gate goes red with probability ${red.toFixed(3)}, which is about one in three`);
+    assert.ok(flap.includes("If one in three is the real rate, the gate goes red by chance about one week in three."));
+    assert.ok(flap.includes("It is not proof the judge got worse."));
+  });
+
+  it("says who measures: a fork skips, and the weekly and manual runs have measured since 2026-11-13", () => {
+    const flat = between("**The eval gates only run with a key.**", "**The first measured run was on").replace(/\s+/g, " ");
+    assert.ok(flat.includes("A pull request from a fork gets no key, so there the eval prints `SKIPPED: no judge ran` and does not report a score."));
+    assert.ok(flat.includes("The repository has had a key since 2026-11-13, so the weekly run and a manual run measure."));
+    assert.ok(flat.includes("If the key is missing they fail and say `Not measured`."));
+    assert.ok(flat.includes("`Not measured: 0 of N cases reached a judge.`"));
+    assert.ok(!readme.includes("CI has no OpenRouter key"));
+  });
+
+  it("names the pull request triggers the workflow has", () => {
+    const flat = readme.replace(/\s+/g, " ");
+    assert.ok(
+      flat.includes(
+        "A pull request from this repository runs the eval only when it changes `scripts/judge.mjs`, `scripts/judgeCore.mjs`, `scripts/checkCore.mjs`, a file under `cases/` or `thresholds.json`.",
+      ),
+    );
+    const yml = readFileSync(join(HERE, "..", ".github", "workflows", "eval.yml"), "utf8");
+    for (const path of ["scripts/judge.mjs", "scripts/judgeCore.mjs", "scripts/checkCore.mjs", "evals/cases/**", "evals/thresholds.json"]) {
+      assert.ok(yml.includes(`      - ${path}\n`), path);
+    }
+  });
+
+  it("uses no em dash or en dash in what was written on 2026-11-13", () => {
+    assert.doesNotMatch(between("**The eval gates only run with a key.**", "**A held-out set keeps the score honest.**"), new RegExp(`[${String.fromCharCode(0x2013, 0x2014)}]`));
+  });
+});
