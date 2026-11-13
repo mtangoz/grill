@@ -982,6 +982,11 @@ export function waitingGrillLine(count) {
 }
 export const WAITING_GRILL_HOW = `In a chat where Grill is connected, tell your AI what you chose, for example “I’m going ahead”. It is saved here with a look-back date. A waiting grill is deleted after ${PENDING_KEEP_DAYS} days.`;
 
+/** What the records switch and Delete all do to a waiting grill, said on the page next to each. */
+export const RECORDS_OFF_DELETES_WAITING = "A grill still waiting for your call is deleted.";
+export const RECORDS_OFF_NOTE = `Turning records off leaves the decisions already saved until you delete them. ${RECORDS_OFF_DELETES_WAITING}`;
+export const DELETE_ALL_ALSO_WAITING = "It also removes any grill still waiting for your call.";
+
 /** A judge kind that flags a source, a fact, or a figure. The flag is not proof it was wrong. */
 export const FLAG_KINDS = Object.freeze(["unsupported-claim", "evidence-mismatch", "wrong-cost-model"]);
 

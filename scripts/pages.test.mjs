@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAccount, handleCalendar, handleDecisions, handleMcp, resetHostedCaches } from "../api/_hosted.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
-import { CLAUDE_WEB_REDIRECT, createMemoryRedis, FUNNEL_KEYS, WAITING_GRILL_HOW } from "./hostedCore.mjs";
+import { CLAUDE_WEB_REDIRECT, createMemoryRedis, DELETE_ALL_ALSO_WAITING, FUNNEL_KEYS, RECORDS_OFF_DELETES_WAITING, RECORDS_OFF_NOTE, WAITING_GRILL_HOW } from "./hostedCore.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -128,6 +128,30 @@ async function grillOnly(ctx, fake, title, now, extra = {}) {
   const grilled = await chat(ctx, fake, "grill", { subject: `Decision: ${title}\nI'm 60% sure.`, keep_records: true, quality_check: false, ...extra }, now);
   assert.equal(grilled.isError, false, grilled.text);
   return grilled;
+}
+
+/** The drafts the store holds: the encrypted rows, and the list the server reads them from. */
+function draftsIn(ctx) {
+  const keys = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:pending:*"])[1];
+  const accounts = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1];
+  assert.equal(accounts.length, 1, "one account in this test world");
+  const id = accounts[0].slice("grill:hosted:acct:".length);
+  return { keys: keys.length, indexed: ctx.memory.command(["ZRANGE", `grill:hosted:pendings:${id}`, "0", "-1"]).length };
+}
+
+async function accountPost(ctx, body, now) {
+  return handleAccount(
+    new Request("https://grillyour.ai/account", {
+      method: "POST",
+      headers: { cookie: cookieHeader(), "content-type": "application/x-www-form-urlencoded" },
+      body,
+    }),
+    { ...ctx, now },
+  );
+}
+
+async function exportedRows(ctx, now) {
+  return JSON.parse((await getPage(ctx, "/decisions?export=json", { now })).html);
 }
 
 describe("pages a person sees", () => {
@@ -896,6 +920,143 @@ describe("a grill that is waiting for a choice", () => {
     }
   });
 
+  it("is deleted when records are switched off on Your grills, and saved records stay", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Cut prices", JAN);
+      await grillOnly(ctx, fake, "Hire contractor", JAN);
+      await grillOnly(ctx, fake, "Move office", JAN);
+      assert.deepEqual(draftsIn(ctx), { keys: 2, indexed: 2 });
+      const before = await getPage(ctx, "/decisions", { now: JAN });
+      assert.match(before.html, /2 grills are waiting for your call\./);
+      assert.ok(before.html.includes(`Turning this off leaves the ones already here until you delete them. ${RECORDS_OFF_DELETES_WAITING}`));
+      assert.equal(RECORDS_OFF_DELETES_WAITING, "A grill still waiting for your call is deleted.");
+
+      const off = await postForm(ctx, "action=records&value=off", JAN);
+      assert.equal(off.status, 303);
+      assert.deepEqual(draftsIn(ctx), { keys: 0, indexed: 0 }, "no draft and no list of drafts is left");
+      const after = await getPage(ctx, "/decisions", { now: JAN });
+      assert.equal(after.html.includes('id="waiting"'), false);
+      assert.match(after.html, /Cut prices/, "a saved record is not touched");
+      assert.equal((await exportedRows(ctx, JAN)).length, 1);
+      // Nothing is left for a later choice to pick up.
+      const late = await chat(ctx, fake, "grill_decided", { decided: "Hire the contractor." }, JAN);
+      assert.equal(late.isError, true);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is deleted when records are switched off on the account page", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await grillOnly(ctx, fake, "Hire contractor", JAN);
+      assert.deepEqual(draftsIn(ctx), { keys: 1, indexed: 1 });
+      // The account page says what its switch does, next to the switch.
+      const account = await (await handleAccount(new Request("https://grillyour.ai/account", { headers: { cookie: cookieHeader() } }), { ...ctx, now: JAN })).text();
+      assert.equal(RECORDS_OFF_NOTE, "Turning records off leaves the decisions already saved until you delete them. A grill still waiting for your call is deleted.");
+      assert.ok(account.includes(`<p class="small">${RECORDS_OFF_NOTE}</p>`));
+      assert.ok(account.indexOf("Don't keep records") < account.indexOf(RECORDS_OFF_NOTE));
+      // Keeping records on leaves it alone.
+      assert.equal((await accountPost(ctx, "action=records&value=keep", JAN)).status, 303);
+      assert.deepEqual(draftsIn(ctx), { keys: 1, indexed: 1 });
+      assert.equal((await accountPost(ctx, "action=records&value=off", JAN)).status, 303);
+      assert.deepEqual(draftsIn(ctx), { keys: 0, indexed: 0 });
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is deleted when the chat is told not to keep records", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await grillOnly(ctx, fake, "Hire contractor", JAN);
+      assert.deepEqual(draftsIn(ctx), { keys: 1, indexed: 1 });
+      const second = await grillOnly(ctx, fake, "Move office", JAN, { keep_records: false });
+      assert.match(second.text, /follow: /, "the grill itself still runs");
+      assert.deepEqual(draftsIn(ctx), { keys: 0, indexed: 0 }, "the earlier draft is gone, and this grill left none");
+      const page = await getPage(ctx, "/decisions", { now: JAN });
+      assert.equal(page.html.includes('id="waiting"'), false);
+      assert.match(page.html, /Records are off\./);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is not left behind by a grill that finishes after records were switched off", async () => {
+    // The judge answers only when the test lets it, so the switch lands while the grill runs.
+    let answer;
+    const held = new Promise((resolve) => (answer = resolve));
+    const usable = readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8");
+    const fake = await startFakeOpenRouter({
+      chat: async () => {
+        await held;
+        return { text: usable };
+      },
+    });
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      const backgrounds = [];
+      const started = await chat({ ...ctx, waitMs: 0, backgrounds }, fake, "grill", { subject: "Decision: Hire contractor\nI'm 60% sure.", keep_records: true, quality_check: false }, JAN);
+      assert.match(started.text, /^Still grilling \(job /);
+      assert.equal((await postForm(ctx, "action=records&value=off", JAN)).status, 303);
+      answer();
+      await Promise.all(backgrounds);
+      assert.deepEqual(draftsIn(ctx), { keys: 0, indexed: 0 }, "the grill finished after the switch and wrote no draft");
+      // The verdict is still there to collect, by the job id the chat holds.
+      const jobId = started.text.match(/job (g1\.[0-9a-f]{32}\.[A-Za-z0-9_-]+)/)[1];
+      const collected = await chat({ ...ctx, waitMs: 500 }, fake, "grill_result", { job_id: jobId }, JAN);
+      assert.equal(collected.isError, false, collected.text);
+      assert.match(collected.text, /\*\*Shaky\.\*\*/);
+    } finally {
+      answer();
+      await fake.close();
+    }
+  });
+
+  it("is deleted by Delete all, and only after the confirm page", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Cut prices", JAN);
+      await grillOnly(ctx, fake, "Hire contractor", JAN);
+      const ask = await getPage(ctx, "/decisions?confirm=delete-all", { now: JAN });
+      assert.ok(ask.html.includes(`This removes every saved decision on this page. ${DELETE_ALL_ALSO_WAITING} Export first if you want a copy. This cannot be undone.`));
+      assert.equal(DELETE_ALL_ALSO_WAITING, "It also removes any grill still waiting for your call.");
+      const unconfirmed = await postForm(ctx, "action=delete-all", JAN);
+      assert.equal(unconfirmed.status, 303);
+      assert.deepEqual(draftsIn(ctx), { keys: 1, indexed: 1 }, "a post without confirm deletes nothing");
+      assert.equal((await exportedRows(ctx, JAN)).length, 1);
+      const confirmed = await postForm(ctx, "action=delete-all&confirm=delete", JAN);
+      assert.equal(confirmed.status, 303);
+      assert.deepEqual(draftsIn(ctx), { keys: 0, indexed: 0 });
+      assert.equal((await exportedRows(ctx, JAN)).length, 0);
+      const empty = await getPage(ctx, "/decisions", { now: JAN });
+      assert.match(empty.html, /No decisions saved yet\./);
+      // Records are still on: the next grill waits as usual.
+      await grillOnly(ctx, fake, "Move office", JAN);
+      assert.deepEqual(draftsIn(ctx), { keys: 1, indexed: 1 });
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is described in the data ledger the way the code behaves", () => {
+    const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
+    const row = ledger.split("\n").find((line) => line.startsWith("| Draft, if you chose to keep records"));
+    assert.ok(row, "the ledger has a draft row");
+    assert.match(row, /14 days, or until you say what you chose, turn records off or press Delete all, whichever comes first/);
+    assert.match(row, /You, by turning records off \(in chat, on `\/decisions` or on `\/account`\) or with Delete all on `\/decisions`\./);
+    assert.match(row, /`\/decisions` shows how many are waiting, and nothing from the draft itself\./);
+  });
 });
 
 describe("the public pages name where saved grills are", () => {

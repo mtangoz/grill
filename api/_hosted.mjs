@@ -163,6 +163,9 @@ import {
   PENDING_KEEP_DAYS,
   waitingGrillLine,
   WAITING_GRILL_HOW,
+  RECORDS_OFF_DELETES_WAITING,
+  RECORDS_OFF_NOTE,
+  DELETE_ALL_ALSO_WAITING,
   savedConfirmation,
   serviceFailureText,
   signInUrl,
@@ -1446,6 +1449,26 @@ async function deletePending(account, deps, id) {
   await redis(deps, ["ZREM", pendingIndex(account.id), id]);
 }
 
+/**
+ * Every draft this account holds: a grill that got a verdict and has no stated choice yet.
+ * They go when records are switched off, on Delete all, and with the account.
+ */
+async function deletePendings(account, deps) {
+  const ids = (await redis(deps, ["ZRANGE", pendingIndex(account.id), "0", "-1"])) || [];
+  for (const id of ids) await deletePending(account, deps, id);
+  await redis(deps, ["DEL", pendingIndex(account.id)]);
+}
+
+/** Whether records are on for this account in the store right now, not only when the call began. */
+async function recordsStillOn(account, deps) {
+  if (account.records !== "keep") return false;
+  try {
+    return JSON.parse(await redis(deps, ["GET", acctKey(account.id)]))?.records === "keep";
+  } catch {
+    return false;
+  }
+}
+
 /** The person the starter credit and the per-person cap belong to. */
 function capPerson(account) {
   return account.human || account.email || account.id;
@@ -1495,7 +1518,11 @@ async function composeReport({ outcome, subject, sourceApp, author = "none", acc
     const depthOutcome = await depthJob.promise;
     if (big === true && deepenTestEnabled(deps.env)) layers.deepen = renderDeepen(depthOutcome?.parsed?.depth) || "";
   }
-  const keep = account.records === "keep";
+  // A grill can finish minutes after it started. If records were switched off in between, or
+  // the account was deleted, that already removed the drafts, and this grill must not add one
+  // after it. So the stored choice is read again here, and the rest of this call follows it.
+  const keep = await recordsStillOn(account, deps);
+  if (!keep && account.records === "keep") account.records = "off";
   const thin = isThinGrill(parsed, subject);
   if (keep && offer) layers.brief = `${layers.brief.trim()}\n\n${offer}`;
   let pendingId = "";
@@ -1603,6 +1630,8 @@ async function callGrill(args, account, payload, params, deps) {
   if (typeof keepArg === "boolean" && account.records !== (keepArg ? "keep" : "off")) {
     account.records = keepArg ? "keep" : "off";
     await saveAccount(account, deps);
+    // Saying no to records also drops any draft still waiting for a choice.
+    if (!keepArg) await deletePendings(account, deps);
   }
   const subject = typeof args.subject === "string" ? args.subject : "";
   const question = typeof args.question === "string" ? args.question.trim() : "";
@@ -2990,7 +3019,7 @@ function renderDecisions(account, rows, _credit, habits, extra = {}) {
     ${renderFooter(linked.length, narrowed)}
     <details class="settings">
     <summary>Settings</summary>
-    <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them.</p>
+    <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them. ${esc(RECORDS_OFF_DELETES_WAITING)}</p>
     <form method="post" action="/decisions" class="row">
       <input type="hidden" name="action" value="records">
       <button type="submit" name="value" value="keep">Keep my decision records</button>
@@ -3049,7 +3078,7 @@ function renderDeleteAllConfirm() {
     "Delete all records? · Grill",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Delete all records?</h1>
-    <p>This removes every saved decision on this page. Export first if you want a copy. This cannot be undone.</p>
+    <p>This removes every saved decision on this page. ${esc(DELETE_ALL_ALSO_WAITING)} Export first if you want a copy. This cannot be undone.</p>
     <form method="post" action="/decisions">
       <input type="hidden" name="action" value="delete-all">
       <button type="submit" name="confirm" value="delete">Delete all records</button>
@@ -3075,6 +3104,7 @@ function renderAccount(account, credit, extra = {}) {
       <button type="submit" name="value" value="keep">Keep my decision records</button>
       <button type="submit" name="value" value="off">Don't keep records</button>
     </form>
+    <p class="small">${esc(RECORDS_OFF_NOTE)}</p>
     <p><a href="/decisions">Your grills</a></p>
     ${renderCalendar("/account", extra.calendar, extra.freshUrl || "")}
     ${renderImpactEmail(account)}
@@ -3208,9 +3238,7 @@ async function deleteAccount(account, deps, sub) {
   const ids = (await redis(deps, ["ZRANGE", recordIndex(account.id), "0", "-1"])) || [];
   await deleteRecordIds(account, deps, ids);
   await redis(deps, ["DEL", recordIndex(account.id)]);
-  const pendingIds = (await redis(deps, ["ZRANGE", pendingIndex(account.id), "0", "-1"])) || [];
-  for (const id of pendingIds) await deletePending(account, deps, id);
-  await redis(deps, ["DEL", pendingIndex(account.id)]);
+  await deletePendings(account, deps);
   await redis(deps, ["DEL", acctKey(account.id)]);
   await redis(deps, ["DEL", spendLogKey(account.id)]);
   await redis(deps, ["DEL", disclosedKey(account.id)]);
@@ -3620,6 +3648,7 @@ export async function handleDecisions(request, deps) {
         if (value === "keep" || value === "off") {
           session.account.records = value;
           await saveAccount(session.account, deps);
+          if (value === "off") await deletePendings(session.account, deps);
         }
       } else if (action === "delete" && form.get("confirm") === "delete") {
         await deleteRecordIds(session.account, deps, [form.get("id") || ""]);
@@ -3629,6 +3658,8 @@ export async function handleDecisions(request, deps) {
       } else if (action === "delete-all" && form.get("confirm") === "delete") {
         const rows = await loadRecords(session.account, deps);
         await deleteRecordIds(session.account, deps, rows.map((row) => row.id));
+        // A draft is a decision too, waiting for a choice. Delete all means all.
+        await deletePendings(session.account, deps);
       } else if (action === "share" && form.get("confirm") === "share") {
         const recordId = form.get("id") || "";
         await createShare(session.account, deps, recordId);
@@ -3788,6 +3819,7 @@ export async function handleAccount(request, deps) {
         if (value === "keep" || value === "off") {
           session.account.records = value;
           await saveAccount(session.account, deps);
+          if (value === "off") await deletePendings(session.account, deps);
         }
       }
       if (form.get("action") === "impact-email") {
