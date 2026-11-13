@@ -245,6 +245,7 @@ const PUBLIC_FILES = [
   "docs/WHY.md",
   "docs/UX.md",
   "docs/PRD-lookback-reminders.md",
+  "docs/DIRECTORY-SUBMISSIONS.md",
   "prompts/grill.md",
   "manifest.json",
   ".claude-plugin/plugin.json",
