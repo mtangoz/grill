@@ -44,7 +44,16 @@ export const HOSTED_JUDGE_ATTEMPT_MS = 180_000;
 export const DAILY_GRILL_LIMIT = 30;
 export const RUNNING_JOB_LIMIT = 3;
 export const CREDIT_CACHE_MS = 60_000;
-export const OUT_OF_CREDIT = "You're out of grill credit for this month, so this one didn't run. It starts again on the 1st. Nothing was charged to you. If you need more sooner, write to support@grillyour.ai.";
+/**
+ * The person's router key has no allowance left this month, or the judge answered 402.
+ * The name is older than the wording: no tool text says "credit", and
+ * scripts/platformPolicy.test.mjs holds that line.
+ */
+export const OUT_OF_CREDIT =
+  "You've reached this month's free limit, so this one didn't run. It resets on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.";
+/** One email, two sign-ins, and the second one cannot share the first one's account. */
+export const EMAIL_CLAIMED_TEXT =
+  "This email is already set up with Grill on another sign-in. Sign in with that one instead, or write to support@grillyour.ai if you've lost it.";
 /** The invite-only reply. `origin` makes the redeem link absolute for the host they are on. */
 export function inviteOnlyText(origin = "") {
   const base = String(origin || "").replace(/\/$/, "");
@@ -497,10 +506,12 @@ export const TESTER_MONTHLY_USD = 5;
 export const DEFAULT_USER_MONTHLY_CAP_USD = TESTER_MONTHLY_USD;
 export const CAP_COUNTER_TTL_SECONDS = 40 * 24 * 60 * 60;
 
+// Each says what happened and when it starts again. Neither offers a way to get more:
+// a directory reads that as a sale.
 export const SERVICE_CAP_TEXT =
-  "Grill has used up this month's free grills for everyone, so this one didn't run. It starts again on the 1st. Nothing was charged to you. If you need a grill sooner, write to support@grillyour.ai.";
+  "Grill has used up this month's free grills for everyone, so this one didn't run. It starts again on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.";
 export const USER_CAP_TEXT =
-  "You've used this month's free grills, so this one didn't run. It starts again on the 1st. Nothing was charged to you. If you need more sooner, write to support@grillyour.ai.";
+  "You've used this month's free grills, so this one didn't run. It starts again on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.";
 
 function capFromEnv(value, fallback) {
   const n = Number(value);
@@ -641,7 +652,7 @@ export function serviceFailureText(code = "", requestId = "") {
     case "jwks":
       return `Grill couldn't check your sign-in just now. Try again in a minute; if it keeps happening, reconnect Grill in your chat app's settings${ref(requestId)}.`;
     case "starter-key":
-      return `Grill couldn't set up your free starter credit just now. Try again in a few minutes; if it keeps happening, write to support@grillyour.ai${ref(requestId)}.`;
+      return `Grill couldn't finish setting up your account just now. Try again in a few minutes; if it keeps happening, write to support@grillyour.ai${ref(requestId)}.`;
     case "key-encryption":
     case "record-key":
       return `Grill isn't fully set up on the server right now, so it can't run this. We've logged it; write to support@grillyour.ai if you need it sooner${ref(requestId)}.`;
@@ -650,11 +661,6 @@ export function serviceFailureText(code = "", requestId = "") {
     default:
       return `Something on Grill's side broke while handling this. Try again in a minute; if it keeps happening, write to support@grillyour.ai${ref(requestId)}.`;
   }
-}
-
-export function grillsLeft(remainingUsd) {
-  if (!(Number(remainingUsd) > 0)) return 0;
-  return Math.floor(Number(remainingUsd) / TYPICAL_GRILL_USD);
 }
 
 /**
@@ -700,19 +706,11 @@ export const FUNNEL_KEYS = Object.freeze({
   lookbacksDone: "grill:metric:funnel_lookbacks_done",
 });
 
-/** Saved line in chat. Points at Your grills. No confidence nag and no credit line. */
+/** Saved line in chat. Points at Your grills. No confidence nag, and nothing about what is left this month. */
 export function savedConfirmation(review) {
   const day = formatDay(review);
   const where = `Your grills: ${PUBLIC_SITE_ORIGIN}/decisions`;
   return day ? `Saved. Look-back ${day}. ${where}` : `Saved. ${where}`;
-}
-
-export function footerLine({ saved, review = "", remainingUsd = 0 } = {}) {
-  const left = grillsLeft(remainingUsd);
-  const credit = `about ${left} grill${left === 1 ? "" : "s"} of credit left`;
-  if (!saved) return `Not saved · ${credit}`;
-  const day = formatDay(review);
-  return day ? `Saved to your decisions · look-back on ${day} · ${credit}` : `Saved to your decisions · ${credit}`;
 }
 
 export function isoDay(ms = Date.now()) {
@@ -1124,7 +1122,7 @@ export function recordsForLookBack(saved, { records = "", now = Date.now() } = {
 }
 
 const HOSTED_COST_LINE =
-  "Uses a little of the person's Grill credit. Do not tell them the balance or how long it takes. The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. Do not ask the person for a job id. The first time, Grill asks whether to keep decision records before anything is sent: show that one question, and call again with keep_records true or false only after they answer Yes or No. Do not add your own disclosure. If the result starts with the outside-judge sentence, show that one line once. Later results leave it off. Layer 1 is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question. When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Do not write a layer yourself. A follow: line is a job id for you. Never show it. " +
+  "The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. Do not ask the person for a job id. The first time, Grill asks whether to keep decision records before anything is sent: show that one question, and call again with keep_records true or false only after they answer Yes or No. Do not add your own disclosure. If the result starts with the outside-judge sentence, show that one line once. Later results leave it off. Layer 1 is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question. When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Do not write a layer yourself. A follow: line is a job id for you. Never show it. " +
   SCOPE_GUARD;
 
 /** What the assistant reads from grill_result. The next step, if the job is still running, is another call. */
@@ -1165,7 +1163,7 @@ export function hostedTools() {
   const localDisclosure =
     /The first time you use Grill with this person, say once\b.*?Do not mention a score, a balance, or a quote check\. /;
   const hostedDisclosure =
-    `Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Every result then ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY} Do not mention a Jev score, a credit balance, or a quote check. `;
+    `Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Every result then ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY} Do not mention a Jev score or a quote check. `;
   // Hosted hints are set here, not copied from the local tools. A local look-back stores
   // nothing, and a local grill does not write an account. OpenAI's review reads all three,
   // and the MCP defaults (read-only false, destructive true, open-world true) are wrong for
@@ -1282,7 +1280,7 @@ export const HOSTED_INSTRUCTIONS = [
   "When the note has a line that starts with Look back on, show that one line after the verdict. It is optional. Do not add one when it is not there. Never on a quick or bulk grill.",
   "When they say more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Pass job_id if you have one. A follow: line is a job id for you. Never show it. Do not write a layer yourself.",
   "Never present an answer as Grill's, or label it a Grill verdict, unless grill or grill_result returned it in this conversation; if the tool isn't available or fails, say Grill didn't run instead of imitating it.",
-  "Do not add a model name of your own, and do not show a record, a Jev score, a credit balance, a quote check, format rules, or a disclaimer.",
+  "Do not add a model name of your own, and do not show a record, a Jev score, a quote check, format rules, or a disclaimer.",
   "Call grill_result with detail provenance only when you are writing a lasting record of the grill, such as an audit log. Put that one line in the record, not in your reply, unless the person asks which model judged.",
   "The verdict never becomes the decision. If they ask whether they should do it, hand the choice back and name the cheap test.",
   "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation as written, and sometimes one more line saying earlier calls are due for a look-back. If they never answer, do not call it, and there is no record and no look-back.",

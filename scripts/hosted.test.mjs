@@ -12,6 +12,7 @@ import {
   CLAUDE_CODE_CLIENT_ID,
   CLAUDE_WEB_REDIRECT,
   CONSENT_TEXT,
+  EMAIL_CLAIMED_TEXT,
   inviteOnlyText,
   OUT_OF_CREDIT,
   SERVICE_CAP_TEXT,
@@ -32,7 +33,6 @@ import {
   decisionHabits,
   decryptString,
   encryptString,
-  footerLine,
   linkChains,
   savedConfirmation,
   ONCE_DISCLOSURE,
@@ -612,7 +612,9 @@ describe("hosted Grill", { concurrency: false }, () => {
     const listed = await postMcp(ctx, { jsonrpc: "2.0", id: 2, method: "tools/list" }, { token });
     const tools = listed.json.result.tools;
     const grill = tools.find((tool) => tool.name === "grill");
-    assert.match(grill.description, /Do not tell them the balance or how long it takes/);
+    // Nothing about a balance: the tool shows none, and tool copy names no credit.
+    assert.match(grill.description, /Do not ask the user for a job id, and do not tell them how long it takes\./);
+    assert.doesNotMatch(grill.description, /balance|credit/i);
     assert.match(
       grill.description,
       /If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives\./,
@@ -1725,7 +1727,8 @@ describe("hosted Grill", { concurrency: false }, () => {
         { token: secondUser, deps },
       );
       // Same verified email, another sign-in ID: the same person, still one starter key.
-      assert.doesNotMatch(textOf(shared.json), /already has Grill.s free starter credit/);
+      assert.notEqual(textOf(shared.json), EMAIL_CLAIMED_TEXT);
+      assert.doesNotMatch(textOf(shared.json), /already set up with Grill on another sign-in/);
       assert.equal(personOf(ctx, "user_second"), personOf(ctx));
       assert.equal(ctx.management.creates.length, 1);
       resetHostedCaches();
@@ -1743,7 +1746,10 @@ describe("hosted Grill", { concurrency: false }, () => {
       const account = await handleAccount(new Request("https://grillyour.ai/account", { headers: { cookie: `__session=${session}` } }), ctx);
       const html = await account.text();
       assert.equal(html.includes(USER_KEY), false);
-      assert.match(html, /out of grill credit/i);
+      // The account page shows the same sentence the tool returned, and it no longer says "credit".
+      assert.ok(html.includes(esc(OUT_OF_CREDIT)), "the account page shows the limit sentence");
+      assert.match(OUT_OF_CREDIT, /^You've reached this month's free limit, so this one didn't run\./);
+      assert.doesNotMatch(html, /grill credit/i);
       const gone = await handleAccount(
         new Request("https://grillyour.ai/account", {
           method: "POST",
@@ -2544,8 +2550,6 @@ describe("hosted mappings and ledger pins", () => {
     assert.equal(linked[1].replacesId, "a");
     assert.deepEqual(linked[0].replacedByIds, ["b"]);
     assert.deepEqual(chainIds(rows, "b").sort(), ["a", "b"]);
-    assert.match(footerLine({ saved: true, review: "2026-10-17", remainingUsd: 1 }), /Saved to your decisions · look-back on 17 Oct · about 33 grills of credit left/);
-    assert.match(footerLine({ saved: false, remainingUsd: 0 }), /Not saved · about 0 grills of credit left/);
     assert.equal(savedConfirmation("2026-10-25"), "Saved. Look-back 25 Oct. Your grills: https://grillyour.ai/decisions");
     assert.equal(savedConfirmation(""), "Saved. Your grills: https://grillyour.ai/decisions");
     assert.equal(savedConfirmation("not-a-day"), "Saved. Your grills: https://grillyour.ai/decisions");
@@ -2743,7 +2747,7 @@ describe("hosted Grill: spending caps, open sign-up, races and plain errors", ()
   it("explains failures in plain words, with no codes or traces", () => {
     const cases = [
       ["[judge] ERROR: refusing a correlated verdict — x", /same company/],
-      ["[judge] ERROR: OpenRouter 402 insufficient credits", /out of grill credit/],
+      ["[judge] ERROR: OpenRouter 402 insufficient credits", /You've reached this month's free limit/],
       ["[judge] ERROR: the subject contains what looks like an API key. Nothing was sent.", /password, key or token/],
       ["[judge] router retry: openrouter/auto · http_429", /busy/],
       ["[judge] abandoned the walk after the deadline", /took too long/],

@@ -70,6 +70,7 @@ import {
   CONSENT_TEXT,
   CREDIT_CACHE_MS,
   DAILY_GRILL_LIMIT,
+  EMAIL_CLAIMED_TEXT,
   HOSTED_INSTRUCTIONS,
   JOB_TTL_SECONDS,
   MAX_PASTE_CHARS,
@@ -1579,7 +1580,7 @@ function layerFromStored(stored, detail) {
 
 async function callGrill(args, account, payload, params, deps) {
   if (account.creditBlocked === "email") {
-    return toolText("This email already has Grill's free starter credit on another sign-in. Sign in with that account instead, or write to support@grillyour.ai if you've lost it.", true);
+    return toolText(EMAIL_CLAIMED_TEXT, true);
   }
   const capped = await capReached(account, deps);
   if (capped) {
