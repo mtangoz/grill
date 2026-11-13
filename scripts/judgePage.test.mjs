@@ -314,6 +314,75 @@ describe("the /judge page", { concurrency: false }, () => {
     }
   });
 
+  it("keeps an over-long decision away from the sign-in company on the handshake, and still brings the visitor back", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      const marker = "MAPLE-TOO-LONG";
+      const huge = marker + "Z".repeat(JUDGE_PACKET_MAX + 1000);
+      // A browser Clerk already knows, with no Grill page cookie yet: the first stop is Clerk's handshake.
+      const start = await handleJudge(
+        new Request(`https://grillyour.ai/judge?q=${encodeURIComponent(huge)}&from=gemini&q=${encodeURIComponent(marker)}`, {
+          headers: { cookie: "__client_uat=1760000000" },
+        }),
+        { ...ctx, ...judgeDeps(fake) },
+      );
+      assert.equal(start.status, 307);
+      const location = start.headers.get("location");
+      assert.equal(new URL(location).origin, "https://clerk.example.test");
+      assert.equal(location.includes(marker), false, "the decision is not in the address sent to the sign-in company");
+      assert.equal(decodeURIComponent(location).includes("ZZZZ"), false);
+      assert.ok(location.length < 600, `the address is ${location.length} characters`);
+      const back = new URL(new URL(location).searchParams.get("redirect_url"));
+      assert.equal(back.pathname, "/judge");
+      assert.equal(back.searchParams.get("q"), null);
+      assert.equal(back.searchParams.get("over"), "1");
+      assert.equal(back.searchParams.get("from"), "gemini");
+      const state = back.searchParams.get("__grill_hs");
+      assert.ok(state);
+
+      // The way back works as before, and the page says the decision was too long.
+      back.searchParams.set("__clerk_handshake_nonce", "nonce-1");
+      const jwt = session();
+      const inner = ctx.fetch;
+      ctx.fetch = async (url, init = {}) => {
+        if (String(url).startsWith("https://api.clerk.com/v1/clients/handshake_payload")) {
+          return Response.json({ directives: [`__session=${jwt}; Path=/; Secure; SameSite=Lax`] });
+        }
+        return inner(url, init);
+      };
+      const done = await handleJudge(new Request(back, { headers: { cookie: `__Host-grill_hs=${state}` } }), { ...ctx, ...judgeDeps(fake) });
+      assert.equal(done.status, 303);
+      const landed = new URL(done.headers.get("location"));
+      assert.equal(landed.searchParams.get("over"), "1");
+      assert.deepEqual(landed.searchParams.getAll("over"), ["1"]);
+      assert.equal(landed.searchParams.get("q"), null);
+      const pageCookie = done.headers.getSetCookie().find((cookie) => cookie.startsWith("__Host-grill_page=")).split(";")[0];
+      const page = await handleJudge(new Request(landed, { headers: { cookie: pageCookie } }), { ...ctx, ...judgeDeps(fake) });
+      const html = await page.text();
+      assert.match(html, new RegExp(`That decision is over ${JUDGE_PACKET_MAX} characters`));
+      assert.equal(html.includes(marker), false);
+      assert.match(html, /Judge: not from Google/);
+      assert.equal(fake.seen.chat.length, 0);
+
+      // A decision that fits is still carried through the handshake, as before.
+      const short = await handleJudge(
+        new Request(`https://grillyour.ai/judge?q=${encodeURIComponent("Z".repeat(JUDGE_PACKET_MAX))}`, { headers: { cookie: "__client_uat=1760000000" } }),
+        { ...ctx, ...judgeDeps(fake) },
+      );
+      const shortBack = new URL(new URL(short.headers.get("location")).searchParams.get("redirect_url"));
+      assert.equal(shortBack.searchParams.get("q"), "Z".repeat(JUDGE_PACKET_MAX));
+      assert.equal(shortBack.searchParams.get("over"), null);
+
+      // The ledger sentence this makes true on every path to sign-in.
+      const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
+      assert.match(ledger, /A `q` longer than 4000 characters is dropped and not sent\./);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("does not apply a form posted with no session", async () => {
     const fake = await startFakeOpenRouter();
     try {

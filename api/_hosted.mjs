@@ -2088,12 +2088,31 @@ function seeOther(location, cookies = []) {
   return new Response(null, { status: 303, headers });
 }
 
-/** The page path and query this request was for, on the public origin, without handshake leftovers. */
+/**
+ * The page path and query this request was for, on the public origin, without handshake leftovers.
+ * This address is handed to the sign-in company as the place to come back to, so on /judge it
+ * follows the same rule as returnTo: only the first `q` is kept, and one over JUDGE_PACKET_MAX
+ * is dropped and marked `over=1`. A decision too long to grill is never passed along.
+ */
 function cleanPageUrl(request, { keepMark = false } = {}) {
   const url = pageUrl(request);
   const clean = new URL(`${publicOrigin(request)}${url.pathname}`);
+  const judge = url.pathname === "/judge";
+  let sawPacket = false;
   for (const [k, v] of url.searchParams) {
     if (CLERK_HANDSHAKE_PARAMS.includes(k) || k === HANDSHAKE_MARK) continue;
+    if (judge && k === "q") {
+      if (sawPacket) continue;
+      sawPacket = true;
+      if (v.length > JUDGE_PACKET_MAX) {
+        clean.searchParams.set("over", "1");
+        continue;
+      }
+    }
+    if (judge && k === "over") {
+      clean.searchParams.set(k, v);
+      continue;
+    }
     clean.searchParams.append(k, v);
   }
   if (keepMark) clean.searchParams.set(HANDSHAKE_MARK, "done");
