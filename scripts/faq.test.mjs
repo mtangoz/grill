@@ -26,7 +26,7 @@ const ANSWERS = [
   "Preview. Adding Grill as a connector inside Gemini or Muse is not verified. You can try it. Gemini: US only, a personal Google account, Keep Activity on. Muse: the steps are in the README.",
   "Planned. No further way in is listed here. The free tool stays free.",
   "If you say yes to keeping records, choices you make are saved at grillyour.ai/decisions (Your grills), with a 14-day look-back and an optional calendar link. You can also say \"look back\" in chat. It stays private, and off until you opt in.",
-  "No benchmarks are published. Examples on this site use invented numbers. They are not a benchmark.",
+  "No benchmarks are published. We have not yet measured a judge from a different company against the same model starting fresh. Examples on this site use invented numbers. They are not a benchmark.",
 ];
 
 function textOf(html) {
