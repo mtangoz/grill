@@ -177,4 +177,14 @@ describe("claims Grill does not make before they are measured", () => {
     // About, check-your-ai and the FAQ still say when the judge is from a different company. The demo does not say it.
     assert.equal(conditional, 6);
   });
+
+  // Only the opening paragraph is read this way so far. The promise list and the paste
+  // steps further down the README are not read sentence by sentence yet.
+  it("the README's opening paragraph does not say different company without the condition", () => {
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    const opening = readme.split("\n").filter((line) => line.startsWith("Tell the assistant you think with, "));
+    assert.equal(opening.length, 1, "the README opens with how to ask for a grill");
+    assert.ok(opening[0].includes("It sends the decision as you said it. An outside judge comes back with a short note: one verdict line,"));
+    assert.deepEqual(unconditionalIn(opening[0]), []);
+  });
 });
