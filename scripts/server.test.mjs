@@ -10,14 +10,25 @@ import { fileURLToPath } from "node:url";
 
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import {
+  AUTHOR_VENDORS,
+  GUESSED_AUTHOR_LINE,
+  INDEPENDENCE_NOT_VERIFIED,
+  INDEPENDENCE_RELAY,
   NEWS_MONTH_START_DAYS,
   NEWS_RELEASE_WINDOW_DAYS,
   NEWS_UNTIL,
   NEWS_URL,
+  ONCE_DISCLOSURE,
+  ONCE_DISCLOSURE_UNVERIFIED,
   RELEASE_DATE,
+  buildGrillTools,
+  groundedAuthor,
   newsLine,
+  normalizeAuthor,
   withNews,
 } from "../server/index.mjs";
+import { RUN_PRIVACY_LINE, countWords } from "./judgeCore.mjs";
+import { JUDGE_COMPANY_IDS } from "./resultsCore.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = join(HERE, "..", "server", "index.mjs");
@@ -98,9 +109,12 @@ function connect(env) {
   return { request, raw, close, notifications, transcript: () => transcript };
 }
 
-async function initialized(env, clientInfo = { name: "test", version: "0" }) {
+// The default client is one the server recognises, so a default run knows who wrote the
+// subject. A client it cannot place gets one more line after the run note. Those cases pass
+// their own client name.
+async function initialized(env, clientInfo = { name: "claude-ai", version: "0" }) {
   const client = connect(env);
-  await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo });
+  await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, ...(clientInfo ? { clientInfo } : {}) });
   client.raw.bind(null); // keep the helper shape obvious
   return client;
 }
@@ -698,7 +712,7 @@ describe("GRILL_AUTHOR: a host that is not Claude", () => {
     const told = await initialized({ GRILL_API_KEY: KEY, GRILL_AUTHOR: "google", GRILL_CHECK: "false", ...fake.env });
     await told.request("tools/call", { name: "grill", arguments: { ...subject, author: "xai" } });
     const last = fake.seen.chat.at(-1).body.plugins[0].excluded_models;
-    assert.ok(last.includes("x-ai/*") || last.includes("xai/*"), last.join(","));
+    assert.deepEqual(last, ["x-ai/*"], "xai is mapped to the router's own prefix");
     assert.ok(!last.includes("google/*"), "the call's own author replaces GRILL_AUTHOR");
     await told.close();
     // And a host that declares the company that answers gets no verdict at all.
@@ -782,7 +796,7 @@ describe("MCP initialize: the company behind the client", () => {
       const toldRes = await told.request("tools/call", { name: "grill", arguments: { ...subject, author: "xai" } });
       assert.equal(toldRes.result.isError, false, textOf(toldRes));
       const toldExcluded = fake.seen.chat.at(-1).body.plugins[0].excluded_models;
-      assert.ok(toldExcluded.includes("x-ai/*") || toldExcluded.includes("xai/*"), toldExcluded.join(","));
+      assert.deepEqual(toldExcluded, ["x-ai/*"], "xai is mapped to the router's own prefix");
       assert.ok(!toldExcluded.includes("google/*"));
       await told.close();
 
@@ -803,6 +817,195 @@ describe("MCP initialize: the company behind the client", () => {
     } finally {
       await fake.close();
     }
+  });
+
+  it("says independence is not verified when the author was a guess, for each client, setting and author", { timeout: 60_000 }, async () => {
+    const ANTHROPIC = ["anthropic/*", "*/claude-*"];
+    // [client name, GRILL_AUTHOR, the call's author, what the judge is told to leave out,
+    //  was the author a guess, does the session know the author before any call]
+    const table = [
+      // A client the server recognises: its company is excluded and nothing is guessed.
+      ["claude-ai", "", "", ANTHROPIC, false, true],
+      ["claude-code", "", "", ANTHROPIC, false, true],
+      ["ChatGPT", "", "", ["openai/*"], false, true],
+      ["gemini-cli", "", "", ["google/*"], false, true],
+      // none, or a name the router does not use, cannot remove that company.
+      ["gemini-cli", "", "none", ["google/*"], false, true],
+      ["gemini-cli", "", "assistant", ["google/*"], false, true],
+      ["ChatGPT", "", "unknown", ["openai/*"], false, true],
+      // A real company named on the call still replaces it.
+      ["gemini-cli", "", "openai", ["openai/*"], false, true],
+      ["gemini-cli", "", "claude", ANTHROPIC, false, true],
+      // Cursor, a client with no known company, and no client name at all: Anthropic is a guess.
+      ["Cursor", "", "", ANTHROPIC, true, false],
+      ["test", "", "", ANTHROPIC, true, false],
+      [null, "", "", ANTHROPIC, true, false],
+      ["Cursor", "", "none", ANTHROPIC, true, false],
+      ["Cursor", "", "cursor", ANTHROPIC, true, false],
+      ["test", "", "unknown", ANTHROPIC, true, false],
+      // The same clients once the call names a company the router uses.
+      ["Cursor", "", "openai", ["openai/*"], false, false],
+      ["Cursor", "", "gpt", ["openai/*"], false, false],
+      ["Cursor", "", "xai", ["x-ai/*"], false, false],
+      ["test", "", "meta", ["meta-llama/*"], false, false],
+      ["test", "", "anthropic", ANTHROPIC, false, false],
+      // GRILL_AUTHOR names the company for the whole session, when it is one the router uses.
+      ["Cursor", "xai", "", ["x-ai/*"], false, true],
+      ["test", "OpenAI", "", ["openai/*"], false, true],
+      ["test", "openai", "none", ["openai/*"], false, true],
+      ["test", "openai", "google", ["google/*"], false, true],
+      ["Cursor", "none", "", ANTHROPIC, true, false],
+      ["Cursor", "copilot", "", ANTHROPIC, true, false],
+    ];
+    const fake = await startFakeOpenRouter({ chat: outside() });
+    try {
+      for (const [name, configured, called, excluded, guessed, sessionKnows] of table) {
+        const label = JSON.stringify({ name, configured, called });
+        const env = { GRILL_API_KEY: KEY, GRILL_CHECK: "false", GRILL_NEWS: "off", ...fake.env, ...(configured ? { GRILL_AUTHOR: configured } : {}) };
+        const client = connect(env);
+        try {
+          const init = await client.request("initialize", {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            ...(name ? { clientInfo: { name, version: "0" } } : {}),
+          });
+          const instructions = init.result.instructions;
+          const description = (await client.request("tools/list", {})).result.tools.find((tool) => tool.name === "grill").description;
+          // The once-only line and the instructions claim a different company only when the session knows the author.
+          assert.equal(description.includes(ONCE_DISCLOSURE), sessionKnows, label);
+          assert.equal(description.includes(ONCE_DISCLOSURE_UNVERIFIED), !sessionKnows, label);
+          assert.equal(instructions.startsWith("Grill sends the decision as the user stated it to an outside judge from a different company. "), sessionKnows, label);
+          assert.equal(instructions.startsWith("Grill sends the decision as the user stated it to an outside judge. "), !sessionKnows, label);
+          assert.ok(description.includes(INDEPENDENCE_RELAY), label);
+          assert.ok(instructions.includes(INDEPENDENCE_RELAY), label);
+
+          const res = await client.request("tools/call", { name: "grill", arguments: { ...subject, ...(called ? { author: called } : {}) } });
+          const report = textOf(res);
+          assert.equal(res.result.isError, false, `${label}: ${report}`);
+          assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, excluded, label);
+          assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto", label);
+          if (guessed) {
+            // One line, after the privacy sentence, and nothing after it.
+            assert.ok(report.endsWith(`${RUN_PRIVACY_LINE}\n${GUESSED_AUTHOR_LINE}\n`), `${label}: ${report}`);
+            assert.equal(report.split(INDEPENDENCE_NOT_VERIFIED).length, 2, label);
+          } else {
+            assert.ok(report.endsWith(`${RUN_PRIVACY_LINE}\n`), `${label}: ${report}`);
+            assert.equal(report.includes(INDEPENDENCE_NOT_VERIFIED), false, `${label}: ${report}`);
+          }
+          // A later layer is not the verdict, and carries no line.
+          const more = await client.request("tools/call", { name: "grill_result", arguments: { detail: "more" } });
+          assert.equal(textOf(more).includes(INDEPENDENCE_NOT_VERIFIED), false, label);
+        } finally {
+          await client.close();
+        }
+      }
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("keeps the guess line when the verdict is collected later with grill_result", { timeout: 10_000 }, async () => {
+    const guessed = await initialized(
+      { GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false", GRILL_NEWS: "off", GRILL_WAIT_MS: "1000", GRILL_CLOCK_MS: "0", GRILL_CLOCK_STEP_MS: "10000" },
+      { name: "Cursor", version: "0" },
+    );
+    try {
+      const first = await guessed.request("tools/call", { name: "grill", arguments: subject });
+      const match = textOf(first).match(/job_id "([0-9a-f]{8})"/);
+      assert.ok(match, textOf(first));
+      assert.equal(textOf(first).includes(INDEPENDENCE_NOT_VERIFIED), false, "a job id is not a verdict");
+      let report = "";
+      for (let i = 0; i < 5 && !/\*\*Shaky\.\*\*/.test(report); i++) {
+        report = textOf(await guessed.request("tools/call", { name: "grill_result", arguments: { job_id: match[1] } }));
+      }
+      assert.ok(report.endsWith(`${RUN_PRIVACY_LINE}\n${GUESSED_AUTHOR_LINE}\n`), report);
+    } finally {
+      await guessed.close();
+    }
+  });
+});
+
+describe("naming the author", () => {
+  it("maps common names to the router's vendor prefix, and treats anything else as no company", () => {
+    const mapped = [
+      ["xai", "x-ai"],
+      ["XAI", "x-ai"],
+      [" grok ", "x-ai"],
+      ["x-ai", "x-ai"],
+      ["claude", "anthropic"],
+      ["Anthropic", "anthropic"],
+      ["gemini", "google"],
+      ["google", "google"],
+      ["chatgpt", "openai"],
+      ["gpt", "openai"],
+      ["codex", "openai"],
+      ["openai", "openai"],
+      ["meta", "meta-llama"],
+      ["muse", "meta-llama"],
+      ["llama", "meta-llama"],
+      ["meta-llama", "meta-llama"],
+      ["mistral", "mistralai"],
+      ["mistralai", "mistralai"],
+      ["deepseek", "deepseek"],
+      ["moonshot", "moonshotai"],
+      ["alibaba", "qwen"],
+      ["zai", "z-ai"],
+    ];
+    for (const [given, vendor] of mapped) {
+      assert.equal(normalizeAuthor(given), vendor, given);
+      assert.equal(groundedAuthor(given), vendor, given);
+    }
+    // Not a company the router uses: the name passes through unchanged, and grounds nothing.
+    for (const given of ["none", "unknown", "cursor", "copilot", "assistant", "open ai!", "${user_config.author}", "toString", "constructor", ""]) {
+      assert.equal(groundedAuthor(given), "", given);
+    }
+    assert.equal(normalizeAuthor("None"), "none");
+    assert.equal(normalizeAuthor("Cursor"), "cursor");
+    assert.equal(normalizeAuthor("toString"), "tostring");
+    for (const given of [undefined, null, 7, {}, ["openai"]]) {
+      assert.equal(normalizeAuthor(given), "");
+      assert.equal(groundedAuthor(given), "");
+    }
+  });
+
+  it("knows the same vendor prefixes as the published results, so a named author always matches real models", () => {
+    assert.deepEqual([...AUTHOR_VENDORS], JUDGE_COMPANY_IDS.filter((id) => id !== "other"));
+    for (const vendor of AUTHOR_VENDORS) assert.equal(groundedAuthor(vendor), vendor);
+    assert.equal(AUTHOR_VENDORS.includes("none"), false);
+    assert.equal(AUTHOR_VENDORS.includes("xai"), false, "the router's prefix is x-ai");
+  });
+
+  it("gives the router's own spelling as the example in the tool schema", () => {
+    for (const tools of [buildGrillTools({ checkOn: true }), buildGrillTools({ checkOn: false, authorGuessed: true })]) {
+      const author = tools.find((tool) => tool.name === "grill").inputSchema.properties.author.description;
+      assert.match(author, /for example openai, google or x-ai\./);
+      assert.doesNotMatch(author, /\bxai\b/);
+      for (const example of author.match(/for example ([^.]+)\./)[1].split(/, | or /)) {
+        assert.equal(groundedAuthor(example), example, `${example} must be a name that excludes a company`);
+      }
+    }
+  });
+
+  it("words the guess line and the once-only line without a company claim", () => {
+    assert.equal(INDEPENDENCE_NOT_VERIFIED, "Independence not verified:");
+    assert.equal(
+      GUESSED_AUTHOR_LINE,
+      "Independence not verified: Grill couldn't tell which AI you're using, so it ruled out Anthropic only. Set GRILL_AUTHOR, or name your assistant's company next time.",
+    );
+    assert.equal(GUESSED_AUTHOR_LINE.includes("\n"), false);
+    assert.equal(GUESSED_AUTHOR_LINE.includes("?"), false);
+    assert.ok(countWords(GUESSED_AUTHOR_LINE) <= 25, countWords(GUESSED_AUTHOR_LINE));
+    // The existing sentence, minus the company claim, and nothing else changed. The link is
+    // whatever the full line carries, so a change to it lands in both lines at once.
+    assert.match(ONCE_DISCLOSURE_UNVERIFIED, /^This goes to an outside judge, and the router does not keep it\. https:\/\/grillyour\.ai\/\S+$/);
+    assert.match(ONCE_DISCLOSURE, /^This goes to an outside judge from a different company, and the router does not keep it\. https:\/\/grillyour\.ai\/\S+$/);
+    assert.equal(ONCE_DISCLOSURE.replace(" from a different company", ""), ONCE_DISCLOSURE_UNVERIFIED);
+    assert.notEqual(ONCE_DISCLOSURE_UNVERIFIED, ONCE_DISCLOSURE);
+    assert.equal(ONCE_DISCLOSURE_UNVERIFIED.includes("different company"), false);
+    assert.equal(ONCE_DISCLOSURE_UNVERIFIED.includes("\n"), false);
+    assert.ok(countWords(ONCE_DISCLOSURE_UNVERIFIED) >= 12 && countWords(ONCE_DISCLOSURE_UNVERIFIED) <= 25, countWords(ONCE_DISCLOSURE_UNVERIFIED));
+    assert.equal(INDEPENDENCE_RELAY, "If a line that starts with Independence not verified follows the run note, show that line as written.");
+    for (const text of [GUESSED_AUTHOR_LINE, ONCE_DISCLOSURE_UNVERIFIED, INDEPENDENCE_RELAY]) assert.doesNotMatch(text, /[\u2013\u2014]/);
   });
 });
 

@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { activeKeys, activeMember, AUTH_METADATA_CACHE_MS, changesForAccount, describeError, handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
+import { activeKeys, activeMember, AUTH_METADATA_CACHE_MS, changesForAccount, describeError, handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleJudge, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
+import { esc } from "../api/_pro.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import {
   CLAUDE_CODE_CLIENT_ID,
@@ -35,18 +36,30 @@ import {
   linkChains,
   savedConfirmation,
   ONCE_DISCLOSURE,
+  ONCE_DISCLOSURE_UNVERIFIED,
+  INDEPENDENCE_NOT_VERIFIED,
+  JUDGE_PAGE_UNVERIFIED_LINE,
+  HOSTED_INSTRUCTIONS,
   HOSTED_JUDGE_ATTEMPT_MS,
   HOSTED_JUDGE_DEADLINE_MS,
   NO_JOB_TEXT,
   parseJobCredential,
   judgeCompanyName,
+  companyLabel,
+  hostedTools,
+  independenceLine,
+  onceDisclosureFor,
   provenanceLine,
   sourceAppFromClient,
-  unknownClientJudgeLine,
   wwwAuthenticate,
 } from "./hostedCore.mjs";
-import { countWords } from "./judgeCore.mjs";
-import { ONCE_DISCLOSURE as LOCAL_DISCLOSURE } from "../server/index.mjs";
+import { RUN_PRIVACY_LINE, countWords } from "./judgeCore.mjs";
+import {
+  AUTHOR_VENDORS,
+  INDEPENDENCE_RELAY,
+  ONCE_DISCLOSURE as LOCAL_DISCLOSURE,
+  ONCE_DISCLOSURE_UNVERIFIED as LOCAL_DISCLOSURE_UNVERIFIED,
+} from "../server/index.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
 import { parseRecords, recordBlock, sourceAppLabel } from "./reflection.mjs";
 import { readFeedbackRecords } from "./feedbackCore.mjs";
@@ -936,7 +949,8 @@ describe("hosted Grill", { concurrency: false }, () => {
       const privacy =
         "Private: sent only to zero-data-retention endpoints, with keys blocked and common personally identifiable information masked first.";
       const note =
-        "Grill couldn't tell which AI you're using. This judge is from OpenAI. If your assistant is too, name it next time for a different company.";
+        "Independence not verified: Grill couldn't tell which AI you're using. This judge is from OpenAI. If yours is too, name it next time.";
+      const plain = "Independence not verified: Grill couldn't tell which company's model wrote this, so no company was ruled out.";
       const grill = (id, extra = {}, clientInfo) => ({
         jsonrpc: "2.0",
         id,
@@ -971,6 +985,7 @@ describe("hosted Grill", { concurrency: false }, () => {
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
         assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
         assert.equal(ctx.writes.some((row) => row.join(" ").includes("couldn't tell which AI")), false);
+        assert.equal(ctx.writes.some((row) => row.join(" ").includes("Independence not verified")), false);
 
         const more = await postMcp(
           ctx,
@@ -984,6 +999,7 @@ describe("hosted Grill", { concurrency: false }, () => {
         );
         assert.equal(more.json.result.isError, false, textOf(more.json));
         assert.equal(textOf(more.json).includes("couldn't tell which AI"), false, textOf(more.json));
+        assert.equal(textOf(more.json).includes("Independence not verified"), false, textOf(more.json));
 
         const chatgpt = await postMcp(ctx, grill(3), {
           token: signJwt(claims({
@@ -995,6 +1011,7 @@ describe("hosted Grill", { concurrency: false }, () => {
         const chatgptText = textOf(chatgpt.json);
         assert.equal(chatgpt.json.result.isError, false, chatgptText);
         assert.equal(chatgptText.includes("couldn't tell which AI"), false, chatgptText);
+        assert.equal(chatgptText.includes("Independence not verified"), false, chatgptText);
         assert.ok(chatgptText.includes(privacy), chatgptText);
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["openai/*"]);
 
@@ -1004,7 +1021,12 @@ describe("hosted Grill", { concurrency: false }, () => {
         });
         const cursorText = textOf(cursor.json);
         assert.equal(cursor.json.result.isError, false, cursorText);
+        // Cursor runs several companies' models, so nobody is excluded. The verdict now says so.
         assert.equal(cursorText.includes("couldn't tell which AI"), false, cursorText);
+        assert.ok(cursorText.includes(`${privacy}\n${plain}\n`), cursorText);
+        assert.equal(plain.includes("?"), false);
+        assert.ok(countWords(plain) <= 25, countWords(plain));
+        assert.match(cursorText.slice(cursorText.indexOf(plain) + plain.length).trim(), /^follow: \S+$/, cursorText);
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
 
         const named = await postMcp(ctx, grill(5, { author: "google" }), {
@@ -1014,10 +1036,265 @@ describe("hosted Grill", { concurrency: false }, () => {
         const namedText = textOf(named.json);
         assert.equal(named.json.result.isError, false, namedText);
         assert.equal(namedText.includes("couldn't tell which AI"), false, namedText);
+        assert.equal(namedText.includes("Independence not verified"), false, namedText);
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
       } finally {
         await fake.close();
       }
+    });
+
+    it("says whether independence was verified, for each client and author, and on /judge with and without from", { timeout: 120_000 }, async () => {
+      const usable = JSON.parse(readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8"));
+      let serve = "";
+      const fake = await startFakeOpenRouter({
+        chat: (body) => {
+          const excluded = body?.plugins?.[0]?.excluded_models || [];
+          const model = serve || (excluded.some((item) => String(item).startsWith("openai")) ? "google/gemini-2.5-pro" : "openai/gpt-5.6-sol");
+          return { text: JSON.stringify({ ...usable, model }) };
+        },
+      });
+      const AT = "2026-10-22T15:00:00Z";
+      const ANTHROPIC = ["anthropic/*", "*/claude-*"];
+      const CLAUDE = { redirect_uri: CLAUDE_WEB_REDIRECT };
+      const GROK = { redirect_uri: "https://grok.com/connectors/oauth/callback" };
+      const NONE = {};
+      const named = (company) =>
+        `Independence not verified: Grill couldn't tell which AI you're using. This judge is from ${company}. If yours is too, name it next time.`;
+      const plain = "Independence not verified: Grill couldn't tell which company's model wrote this, so no company was ruled out.";
+      // [what the row is, sign-in claims, client name, author on the call,
+      //  what the judge is told to leave out, the company in the audit line, the line on the verdict, a model the router is made to serve]
+      const rows = [
+        // A client Grill recognises. Its company is excluded, and none or a made-up name cannot remove it.
+        ["claude.ai, no author", CLAUDE, "", undefined, ANTHROPIC, "anthropic", ""],
+        ["claude.ai, its own company under another name", CLAUDE, "", "claude", ANTHROPIC, "anthropic", ""],
+        ["claude.ai, none", CLAUDE, "", "none", ANTHROPIC, "anthropic", ""],
+        ["claude.ai, a name the router does not use", CLAUDE, "", "cursor", ANTHROPIC, "anthropic", ""],
+        ["Grok, the schema's old example", GROK, "", "xai", ["x-ai/*"], "x-ai", ""],
+        ["Grok, none", GROK, "", "none", ["x-ai/*"], "x-ai", ""],
+        // A different real company still replaces the client's. That is an open owner decision.
+        ["claude.ai, a different real company", CLAUDE, "", "openai", ["openai/*"], "openai", ""],
+        // Cursor is recognised, but it is not one model company.
+        ["Cursor, no author", NONE, "Cursor", undefined, [], "none", plain],
+        ["Cursor, none", NONE, "Cursor", "none", [], "none", plain],
+        ["Cursor, a name the router does not use", NONE, "Cursor", "assistant", [], "none", plain],
+        ["Cursor, a real company", NONE, "Cursor", "google", ["google/*"], "google", ""],
+        ["Cursor, a real company under another name", NONE, "Cursor", "gemini", ["google/*"], "google", ""],
+        // A client Grill cannot place.
+        ["unknown, no author", NONE, "", undefined, [], "none", named("OpenAI")],
+        ["unknown, none", NONE, "", "none", [], "none", named("OpenAI")],
+        ["unknown, a name the router does not use", NONE, "", "unknown", [], "none", named("OpenAI")],
+        ["unknown, a judge from a company Grill has no name for", NONE, "", undefined, [], "none", plain, "moonshotai/kimi-k2"],
+        ["unknown, a real company", NONE, "", "google", ["google/*"], "google", ""],
+        ["unknown, a real company under another name", NONE, "", "meta", ["meta-llama/*"], "meta-llama", ""],
+      ];
+      try {
+        for (const [label, claim, clientName, author, excluded, auditCompany, line, served = ""] of rows) {
+          resetHostedCaches();
+          serve = served;
+          const ctx = world();
+          const token = signJwt(claims(claim));
+          const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse(AT) };
+          const out = await postMcp(
+            ctx,
+            {
+              jsonrpc: "2.0",
+              id: 1,
+              method: "tools/call",
+              params: {
+                name: "grill",
+                arguments: {
+                  subject: "Decision: ship the plan.\nI'm 70% sure.",
+                  keep_records: false,
+                  quality_check: false,
+                  ...(author === undefined ? {} : { author }),
+                },
+                ...(clientName ? { _meta: { clientInfo: { name: clientName } } } : {}),
+              },
+            },
+            { token, deps },
+          );
+          const text = textOf(out.json);
+          assert.equal(out.json.result.isError, false, `${label}: ${text}`);
+          const sent = fake.seen.chat.at(-1).body;
+          assert.equal(sent.model, "openrouter/auto", label);
+          assert.deepEqual(sent.plugins[0].excluded_models, excluded, label);
+          const verified = line === "";
+          // The first-use line claims a different company only when one was excluded.
+          assert.equal(text.split("\n")[0], verified ? ONCE_DISCLOSURE : ONCE_DISCLOSURE_UNVERIFIED, label);
+          // The line comes right after the privacy sentence, once, and only when nobody was excluded.
+          const follow = text.match(/\n\nfollow: (\S+)\n$/);
+          assert.ok(follow, `${label}: ${text}`);
+          const shown = text.slice(0, follow.index);
+          if (verified) {
+            assert.ok(shown.endsWith(RUN_PRIVACY_LINE), `${label}: ${text}`);
+            assert.equal(text.includes(INDEPENDENCE_NOT_VERIFIED), false, `${label}: ${text}`);
+          } else {
+            assert.ok(shown.endsWith(`${RUN_PRIVACY_LINE}\n${line}`), `${label}: ${text}`);
+            assert.equal(text.split(INDEPENDENCE_NOT_VERIFIED).length, 2, `${label}: ${text}`);
+          }
+          // The audit line never says yes for a run that excluded nobody.
+          const audit = await postMcp(
+            ctx,
+            { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: { job_id: follow[1], detail: "provenance" } } },
+            { token, deps: { waitMs: 50 } },
+          );
+          const judge = served || (excluded.includes("openai/*") ? "google/gemini-2.5-pro" : "openai/gpt-5.6-sol");
+          assert.equal(
+            textOf(audit.json).trim(),
+            `Judge: ${judge} · excluded: ${auditCompany} · decorrelated: ${verified ? "yes" : "not verified"} · at: ${AT}`,
+            label,
+          );
+        }
+
+        // A value that is not a name at all is refused before anything is sent, on any client.
+        for (const claim of [CLAUDE, NONE]) {
+          resetHostedCaches();
+          const ctx = world();
+          const before = fake.seen.chat.length;
+          const refused = await postMcp(
+            ctx,
+            {
+              jsonrpc: "2.0",
+              id: 1,
+              method: "tools/call",
+              params: { name: "grill", arguments: { subject: "Decision: ship the plan.", keep_records: false, quality_check: false, author: "Open AI!" } },
+            },
+            { token: signJwt(claims(claim)), deps: { ...judgeDeps(fake), waitMs: 20_000 } },
+          );
+          assert.equal(refused.json.result.isError, true);
+          assert.match(textOf(refused.json), /author must be a lowercase model-family name/);
+          assert.equal(fake.seen.chat.length, before, "no judge request for a malformed author");
+        }
+
+        // /judge: only `from` names who wrote the decision.
+        const cookie = `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+        const page = async (ctx, path, body) => {
+          const headers = { cookie };
+          if (body) headers["content-type"] = "application/x-www-form-urlencoded";
+          const res = await handleJudge(
+            new Request(`https://grillyour.ai${path}`, { method: body ? "POST" : "GET", headers, body: body ? new URLSearchParams(body).toString() : undefined }),
+            { ...ctx, ...judgeDeps(fake), waitMs: 20_000, now: Date.parse(AT) },
+          );
+          return res.text();
+        };
+        const decision = "Decision: keep the maple stand on Pine Street.\nI'm 60% sure.";
+        // [from, what the judge is told to leave out, the company the page names]
+        const pages = [
+          ["", [], ""],
+          ["banana", [], ""],
+          ["cursor", [], ""],
+          ["chatgpt", ["openai/*"], "OpenAI"],
+          ["claude", ANTHROPIC, "Anthropic"],
+          ["gemini", ["google/*"], "Google"],
+          ["grok", ["x-ai/*"], "xAI"],
+          ["muse", ["meta-llama/*"], "Meta"],
+          ["meta", ["meta-llama/*"], "Meta"],
+        ];
+        serve = "";
+        for (const [from, excluded, company] of pages) {
+          resetHostedCaches();
+          const ctx = world();
+          const label = `/judge from=${from || "(none)"}`;
+          const shown = await page(ctx, `/judge?q=${encodeURIComponent(decision)}${from ? `&from=${from}` : ""}`);
+          const grilled = await page(ctx, "/judge", { q: decision, keep: "no", ...(from ? { from } : {}) });
+          assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, excluded, label);
+          for (const html of [shown, grilled]) {
+            // One line above the button says which it is: a named company left out, or not verified.
+            assert.equal(html.includes(`<p class="small">Judge: not from ${company}</p>`), company !== "", `${label}: ${html}`);
+            assert.equal(html.includes(`<p class="small">${esc(JUDGE_PAGE_UNVERIFIED_LINE)}</p>`), company === "", `${label}: ${html}`);
+            const lineAt = html.indexOf(company ? "Judge: not from" : esc(JUDGE_PAGE_UNVERIFIED_LINE));
+            assert.ok(lineAt > 0 && lineAt < html.indexOf("<button"), label);
+            assert.equal(html.includes("<script"), false, label);
+          }
+          const verdict = grilled.match(/<pre id="verdict" class="config">([\s\S]*?)<\/pre>/)?.[1] || "";
+          assert.ok(verdict, `${label}: ${grilled}`);
+          if (company) {
+            assert.ok(verdict.startsWith(esc(ONCE_DISCLOSURE)), `${label}: ${verdict}`);
+            assert.equal(grilled.includes(INDEPENDENCE_NOT_VERIFIED), false, `${label}: ${grilled}`);
+          } else {
+            assert.ok(verdict.startsWith(esc(ONCE_DISCLOSURE_UNVERIFIED)), `${label}: ${verdict}`);
+            assert.equal(verdict.includes("different company"), false, `${label}: ${verdict}`);
+            assert.ok(verdict.trimEnd().endsWith(esc(`${RUN_PRIVACY_LINE}\n${named("OpenAI")}`)), `${label}: ${verdict}`);
+          }
+        }
+
+        // A company remembered from this person's connector belongs to another assistant.
+        // A later grill over the connector still uses it. /judge does not.
+        resetHostedCaches();
+        const ctx = world();
+        const token = signJwt(claims());
+        const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse(AT) };
+        await postMcp(
+          ctx,
+          { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "gemini-cli", version: "1" } } },
+          { token },
+        );
+        await postMcp(
+          ctx,
+          { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill", arguments: { subject: decision, keep_records: false, quality_check: false } } },
+          { token, deps },
+        );
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"], "the connector remembers the handshake");
+        const viaPage = await page(ctx, "/judge", { q: decision });
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, [], "/judge with no from excludes nobody");
+        assert.ok(viaPage.includes(esc(JUDGE_PAGE_UNVERIFIED_LINE)), viaPage);
+        assert.ok(viaPage.includes(esc(named("OpenAI"))), viaPage);
+      } finally {
+        await fake.close();
+      }
+    });
+
+    it("keeps the independence line when the verdict is collected later with grill_result", async () => {
+      const fake = await startFakeOpenRouter();
+      const backgrounds = [];
+      try {
+        const ctx = world();
+        const token = signJwt(claims());
+        const started = await postMcp(
+          ctx,
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "grill", arguments: { subject: "Decision: ship the plan.\nI'm 70% sure.", keep_records: false, quality_check: false } },
+          },
+          { token, deps: { ...judgeDeps(fake), waitMs: 0, backgrounds } },
+        );
+        const waiting = textOf(started.json);
+        assert.equal(waiting.includes(INDEPENDENCE_NOT_VERIFIED), false, "a job id is not a verdict");
+        const jobId = waiting.match(/job (g1\.[0-9a-f]{32}\.[A-Za-z0-9_-]+)/)[1];
+        await Promise.all(backgrounds);
+        const collected = await postMcp(
+          ctx,
+          { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId } } },
+          { token, deps: { waitMs: 500 } },
+        );
+        const text = textOf(collected.json);
+        assert.equal(collected.json.result.isError, false, text);
+        assert.equal(text.split("\n")[0], ONCE_DISCLOSURE_UNVERIFIED);
+        assert.ok(
+          text.trimEnd().endsWith(
+            `${RUN_PRIVACY_LINE}\nIndependence not verified: Grill couldn't tell which AI you're using. This judge is from OpenAI. If yours is too, name it next time.`,
+          ),
+          text,
+        );
+      } finally {
+        await fake.close();
+      }
+    });
+
+    it("tells the assistant to show the independence line, in the instructions and in the grill tool", () => {
+      assert.equal(INDEPENDENCE_RELAY, "If a line that starts with Independence not verified follows the run note, show that line as written.");
+      const description = hostedTools().find((tool) => tool.name === "grill").description;
+      for (const [where, text] of [["instructions", HOSTED_INSTRUCTIONS], ["grill description", description]]) {
+        assert.equal(text.split(INDEPENDENCE_RELAY).length, 2, where);
+        // It follows the run-note rule, so the assistant reads it as part of what to show after the verdict.
+        assert.ok(text.includes(`Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY}`), where);
+        assert.doesNotMatch(text, /[\u2013\u2014]/, where);
+      }
+      assert.equal(JUDGE_PAGE_UNVERIFIED_LINE, "Independence not verified: Grill can't tell which company's model wrote this, so no company is ruled out.");
+      assert.ok(countWords(JUDGE_PAGE_UNVERIFIED_LINE) <= 25, countWords(JUDGE_PAGE_UNVERIFIED_LINE));
+      assert.equal(JUDGE_PAGE_UNVERIFIED_LINE.includes("\n"), false);
     });
   });
 
@@ -2169,17 +2446,70 @@ describe("hosted mappings and ledger pins", () => {
     assert.equal(judgeCompanyName("openrouter/auto"), "");
     assert.equal(judgeCompanyName(""), "");
     assert.equal(judgeCompanyName("moonshotai/kimi"), "");
-    const line = unknownClientJudgeLine({ sourceApp: "unknown", servedModel: "openai/gpt-5.6-sol" });
+    // Every company a client can map to is one the router uses, so the mapping always excludes real models.
+    for (const [input, company] of table) {
+      if (company) assert.ok(AUTHOR_VENDORS.includes(company), `${company} from ${JSON.stringify(input)}`);
+    }
+    const line = independenceLine({ author: "none", sourceApp: "unknown", servedModel: "openai/gpt-5.6-sol" });
     assert.equal(
       line,
-      "Grill couldn't tell which AI you're using. This judge is from OpenAI. If your assistant is too, name it next time for a different company.",
+      "Independence not verified: Grill couldn't tell which AI you're using. This judge is from OpenAI. If yours is too, name it next time.",
     );
-    assert.ok(countWords(line) <= 25, countWords(line));
-    assert.equal(line.includes("?"), false);
-    assert.equal(unknownClientJudgeLine({ sourceApp: "chatgpt", servedModel: "google/gemini-2.5-pro" }), "");
-    assert.equal(unknownClientJudgeLine({ sourceApp: "cursor", servedModel: "openai/gpt-5.6-sol" }), "");
-    assert.equal(unknownClientJudgeLine({ sourceApp: "unknown", authorGiven: true, servedModel: "openai/gpt-5.6-sol" }), "");
-    assert.equal(unknownClientJudgeLine({ sourceApp: "unknown", servedModel: "moonshotai/kimi" }), "");
+    const plain = "Independence not verified: Grill couldn't tell which company's model wrote this, so no company was ruled out.";
+    for (const text of [line, plain]) {
+      assert.ok(countWords(text) <= 25, countWords(text));
+      assert.equal(text.includes("?"), false);
+      assert.equal(text.includes("\n"), false);
+      assert.ok(text.startsWith(`${INDEPENDENCE_NOT_VERIFIED} `));
+      assert.doesNotMatch(text, /[\u2013\u2014]/);
+    }
+    // A known company, from the client or the call, means the judge was told whom to leave out: no line.
+    assert.equal(independenceLine({ author: "openai", sourceApp: "chatgpt", servedModel: "google/gemini-2.5-pro" }), "");
+    assert.equal(independenceLine({ author: "google", sourceApp: "unknown", servedModel: "openai/gpt-5.6-sol" }), "");
+    assert.equal(independenceLine({ author: "google", sourceApp: "cursor", servedModel: "openai/gpt-5.6-sol" }), "");
+    // Nobody excluded: Cursor, and a judge from a company Grill has no name for, get the plain line.
+    assert.equal(independenceLine({ author: "none", sourceApp: "cursor", servedModel: "openai/gpt-5.6-sol" }), plain);
+    assert.equal(independenceLine({ author: "none", sourceApp: "unknown", servedModel: "moonshotai/kimi" }), plain);
+    assert.equal(independenceLine({ author: "none", sourceApp: "unknown", servedModel: "" }), plain);
+    // Anything that is not a company the router uses counts as none, so a missing author never hides the line.
+    assert.equal(independenceLine({ sourceApp: "unknown", servedModel: "openai/gpt-5.6-sol" }), line);
+    assert.equal(independenceLine({ author: "", sourceApp: "unknown", servedModel: "openai/gpt-5.6-sol" }), line);
+    assert.equal(independenceLine({ author: "cursor", sourceApp: "cursor", servedModel: "openai/gpt-5.6-sol" }), plain);
+    assert.equal(independenceLine(), plain);
+    // An explicit author is mapped to the router's prefix. none, or a name the router does not use, never beats the client.
+    assert.deepEqual(authorForJudge({ explicit: "xai", company: "x-ai" }), { author: "x-ai" });
+    assert.deepEqual(authorForJudge({ explicit: "XAI", company: "" }), { author: "x-ai" });
+    assert.deepEqual(authorForJudge({ explicit: "claude", company: "anthropic" }), { author: "anthropic" });
+    assert.deepEqual(authorForJudge({ explicit: "gemini", company: "" }), { author: "google" });
+    assert.deepEqual(authorForJudge({ explicit: "meta", company: "" }), { author: "meta-llama" });
+    assert.deepEqual(authorForJudge({ explicit: "none", company: "anthropic" }), { author: "anthropic" });
+    assert.deepEqual(authorForJudge({ explicit: "unknown", company: "openai" }), { author: "openai" });
+    assert.deepEqual(authorForJudge({ explicit: "cursor", company: "x-ai" }), { author: "x-ai" });
+    assert.deepEqual(authorForJudge({ explicit: "none", company: "" }), { author: "none" });
+    assert.deepEqual(authorForJudge({ explicit: "cursor", company: "" }), { author: "none" });
+    assert.deepEqual(authorForJudge({ explicit: "assistant" }), { author: "none" });
+    assert.deepEqual(authorForJudge({ company: "not-a-vendor" }), { author: "none" });
+    assert.match(authorForJudge({ explicit: "Open AI!", company: "anthropic" }).error, /lowercase model-family name/);
+    // The first-use line follows the same rule.
+    assert.equal(onceDisclosureFor("anthropic"), ONCE_DISCLOSURE);
+    assert.equal(onceDisclosureFor("none"), ONCE_DISCLOSURE_UNVERIFIED);
+    assert.equal(onceDisclosureFor(""), ONCE_DISCLOSURE_UNVERIFIED);
+    assert.equal(onceDisclosureFor(undefined), ONCE_DISCLOSURE_UNVERIFIED);
+    assert.match(ONCE_DISCLOSURE_UNVERIFIED, /^This goes to an outside judge, and the router does not keep it\. https:\/\/grillyour\.ai\/\S+$/);
+    assert.equal(ONCE_DISCLOSURE.replace(" from a different company", ""), ONCE_DISCLOSURE_UNVERIFIED);
+    assert.notEqual(ONCE_DISCLOSURE_UNVERIFIED, ONCE_DISCLOSURE);
+    assert.equal(LOCAL_DISCLOSURE_UNVERIFIED, ONCE_DISCLOSURE_UNVERIFIED);
+    assert.ok(countWords(ONCE_DISCLOSURE_UNVERIFIED) >= 12 && countWords(ONCE_DISCLOSURE_UNVERIFIED) <= 25, countWords(ONCE_DISCLOSURE_UNVERIFIED));
+    assert.equal(ONCE_DISCLOSURE_UNVERIFIED.includes("\n"), false);
+    assert.doesNotMatch(ONCE_DISCLOSURE_UNVERIFIED, /different company|Jev|TypeSafe|credit/i);
+    // The names /judge shows come from the same list.
+    assert.equal(companyLabel("meta-llama"), "Meta");
+    assert.equal(companyLabel("x-ai"), "xAI");
+    assert.equal(companyLabel("anthropic"), "Anthropic");
+    assert.equal(companyLabel("openai"), "OpenAI");
+    assert.equal(companyLabel("google"), "Google");
+    assert.equal(companyLabel(""), "");
+    assert.equal(companyLabel("constructor"), "");
     assert.equal(sourceAppLabel("claude-code"), "claude-code");
     assert.equal(sourceAppLabel("Claude by Anthropic"), "claude");
   });
@@ -2940,6 +3270,23 @@ describe("hosted judge budget and provenance", { concurrency: false }, () => {
   it("provenanceLine never invents a model", () => {
     assert.equal(provenanceLine(null, new Date("2026-10-22T15:00:00Z")), "Judge: unattributable · excluded: anthropic · decorrelated: no · at: 2026-10-22T15:00:00Z");
     assert.match(provenanceLine({ servedModel: "google/gemini-3", declaredAuthor: "openai", decorrelated: true }, new Date(Number.NaN)), /^Judge: google\/gemini-3 · excluded: openai · decorrelated: yes · at: unknown$/);
+  });
+
+  it("provenanceLine says not verified, never yes, when nobody was excluded", () => {
+    const at = new Date("2026-10-22T15:00:00Z");
+    // The judge reports decorrelated true for --author none, because there was no author to clash with.
+    assert.equal(
+      provenanceLine({ servedModel: "openai/gpt-5.6-sol", declaredAuthor: "none", decorrelated: true }, at),
+      "Judge: openai/gpt-5.6-sol · excluded: none · decorrelated: not verified · at: 2026-10-22T15:00:00Z",
+    );
+    assert.equal(
+      provenanceLine({ servedModel: "", declaredAuthor: "none", decorrelated: false }, at),
+      "Judge: unattributable · excluded: none · decorrelated: no · at: 2026-10-22T15:00:00Z",
+    );
+    assert.equal(
+      provenanceLine({ servedModel: "openai/gpt-5.6-sol", declaredAuthor: "anthropic", decorrelated: true }, at),
+      "Judge: openai/gpt-5.6-sol · excluded: anthropic · decorrelated: yes · at: 2026-10-22T15:00:00Z",
+    );
   });
 
   it("an unknown job id tells the assistant to grill again", async () => {

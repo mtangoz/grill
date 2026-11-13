@@ -76,7 +76,7 @@ import {
   MAX_QUESTION_CHARS,
   JUDGE_PACKET_MAX,
   MAX_SUBJECT_CHARS,
-  ONCE_DISCLOSURE,
+  JUDGE_PAGE_UNVERIFIED_LINE,
   OUT_OF_CREDIT,
   RUNNING_JOB_LIMIT,
   CAP_COUNTER_TTL_SECONDS,
@@ -91,7 +91,9 @@ import {
   storedInviteListed,
   storedInvitesEnabled,
   authorForJudge,
-  unknownClientJudgeLine,
+  companyLabel,
+  independenceLine,
+  onceDisclosureFor,
   calendarFeed,
   calendarTokenHash,
   calendarTokenShape,
@@ -1465,7 +1467,7 @@ async function firstDisclosure(account, deps) {
   return won === "OK";
 }
 
-async function composeReport({ outcome, subject, sourceApp, authorGiven = false, account, credit, supersedes, changed, deps, depthJob, big, runId }) {
+async function composeReport({ outcome, subject, sourceApp, author = "none", account, credit, supersedes, changed, deps, depthJob, big, runId }) {
   const stderr = String(outcome?.stderr || "");
   const parsed = outcome?.parsed || null;
   if (!outcome || outcome.code !== 0 || (!parsed && !String(outcome.report || "").trim())) {
@@ -1516,9 +1518,11 @@ async function composeReport({ outcome, subject, sourceApp, authorGiven = false,
   await countSpend(account, deps, cost);
   if (completedGrill(parsed)) await countCompletedCheck(account, deps, runId);
   let text = appendRunNote(layers.brief, parsed || {}, Number(outcome.ms));
-  const gapLine = unknownClientJudgeLine({ sourceApp, authorGiven, servedModel: model });
+  // `author` is the company the judge was told to leave out, or "none". With "none" nobody was
+  // excluded: the verdict says so on its own line, and the first-use line makes no company claim.
+  const gapLine = independenceLine({ author, sourceApp, servedModel: model });
   if (gapLine) text = `${text}\n${gapLine}`;
-  if (await firstDisclosure(account, deps)) text = `${ONCE_DISCLOSURE}\n\n${text}`;
+  if (await firstDisclosure(account, deps)) text = `${onceDisclosureFor(author)}\n\n${text}`;
   creditCache.delete(account.id);
   return {
     text: `${text.trim()}\n`,
@@ -1600,7 +1604,6 @@ async function callGrill(args, account, payload, params, deps) {
   const client = clientFromToken(payload, params, deps);
   const author = authorForJudge({ explicit: args.author, company: client.company });
   if (author.error) return toolText(author.error, true);
-  const authorGiven = Boolean(String(args.author || "").trim());
   if (account.records === "keep" && !keyFromEnv(deps.env, "GRILL_RECORD_KEY")) {
     logHosted(deps.requestId, "record-key");
     return toolText("Grill can't save decision records right now because of a setup problem on our side. Turn records off on your account page to grill without saving, or write to support@grillyour.ai.", true);
@@ -1646,7 +1649,7 @@ async function callGrill(args, account, payload, params, deps) {
       outcome: job.outcome,
       subject,
       sourceApp: client.sourceApp,
-      authorGiven,
+      author: author.author,
       account,
       credit,
       supersedes: args.supersedes,
@@ -1673,7 +1676,7 @@ async function callGrill(args, account, payload, params, deps) {
           outcome,
           subject,
           sourceApp: client.sourceApp,
-          authorGiven,
+          author: author.author,
           account,
           credit,
           supersedes: args.supersedes,
@@ -3393,27 +3396,21 @@ export async function handleRedeem(request, deps) {
 
 const JUDGE_BODY_MAX = 60_000;
 
-/** Company names for the one line on /judge. The keys are clientCompanyHint's companies. */
-const JUDGE_FROM_LABEL = {
-  google: "Google",
-  anthropic: "Anthropic",
-  openai: "OpenAI",
-  "x-ai": "xAI",
-};
-
 function needsRecordChoice(account) {
   return account?.records !== "keep" && account?.records !== "off";
 }
 
 /**
- * A /judge `from` run through the same clientCompanyHint list as a connector.
- * `signin` is the sign-in return, not an assistant. Anything else excludes nobody.
+ * A /judge `from` run through the same client name list as a connector, so `muse` and
+ * `meta` name Meta the way a connector's client name does. The page names the company
+ * with companyLabel. `signin` is the sign-in return, not an assistant. Anything else
+ * excludes nobody, and the page says independence is not verified.
  */
 function judgeHint(raw) {
   const name = String(raw || "").trim();
   if (!name || name.toLowerCase() === "signin") return null;
   const mapped = sourceAppFromClient({ clientInfo: { name } });
-  const label = JUDGE_FROM_LABEL[mapped.company];
+  const label = companyLabel(mapped.company);
   if (!mapped.company || !label) return null;
   return { name, company: mapped.company, label };
 }
@@ -3447,7 +3444,7 @@ function personVerdict(text) {
 function renderJudge({ packet, tooLong, askRecords, verdict, note, hint }) {
   const capped = tooLong ? `<p>That decision is over ${JUDGE_PACKET_MAX} characters. Shorten it, then try again.</p>` : "";
   const empty = note ? `<p>${esc(note)}</p>` : "";
-  const fromLine = hint ? `<p class="small">Judge: not from ${esc(hint.label)}</p>` : "";
+  const fromLine = hint ? `<p class="small">Judge: not from ${esc(hint.label)}</p>` : `<p class="small">${esc(JUDGE_PAGE_UNVERIFIED_LINE)}</p>`;
   const fromField = hint ? `<input type="hidden" name="from" value="${esc(hint.name)}">` : "";
   const result = verdict
     ? `<h2>Verdict</h2>
@@ -3515,7 +3512,9 @@ export async function handleJudge(request, deps) {
     else if (keep === "no") args.keep_records = false;
     const waited = { ...deps, waitMs: Number.isInteger(deps.waitMs) ? deps.waitMs : 240_000 };
     const params = hint ? { clientInfo: { name: hint.name } } : {};
-    const result = await callGrill(args, session.account, { sub: session.sub }, params, waited);
+    // No `sub` here on purpose. A company remembered from this person's connector handshake
+    // belongs to another assistant. On this page only `from` names who wrote the decision.
+    const result = await callGrill(args, session.account, {}, params, waited);
     const text = result?.content?.[0]?.text || "";
     if (text.trim() === CONSENT_TEXT) {
       return pageFor({ packet: posted, askRecords: true });

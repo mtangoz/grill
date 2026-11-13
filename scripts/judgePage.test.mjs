@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { esc } from "../api/_pro.mjs";
 import { handleJudge, resetHostedCaches } from "../api/_hosted.mjs";
-import { JUDGE_PACKET_MAX, USER_CAP_TEXT, createMemoryRedis, isoMonth } from "./hostedCore.mjs";
+import { JUDGE_PACKET_MAX, JUDGE_PAGE_UNVERIFIED_LINE, ONCE_DISCLOSURE, ONCE_DISCLOSURE_UNVERIFIED, USER_CAP_TEXT, createMemoryRedis, isoMonth } from "./hostedCore.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
 
@@ -110,6 +110,9 @@ describe("the /judge page", { concurrency: false }, () => {
       assert.equal(html.includes(">Grill this</button>"), false);
       assert.equal(html.includes('id="verdict"'), false);
       assert.equal(html.includes("Judge: not from"), false);
+      // No `from`, so nobody will be excluded. The page says so above the button, before anything is sent.
+      assert.ok(html.includes(`<p class="small">${esc(JUDGE_PAGE_UNVERIFIED_LINE)}</p>`), html);
+      assert.ok(html.indexOf(esc(JUDGE_PAGE_UNVERIFIED_LINE)) < html.indexOf("<button"), html);
       assert.equal(html.includes("<script"), false);
       assert.match(html, /<a href="\/decisions">Your grills<\/a>/);
       assert.equal(fake.seen.chat.length, 0);
@@ -182,7 +185,15 @@ describe("the /judge page", { concurrency: false }, () => {
       assert.equal(grilled.res.status, 200);
       assert.match(grilled.html, /id="verdict"/);
       assert.match(grilled.html, /Say &#39;more&#39;, &#39;options&#39;, or your call\./);
-      assert.match(grilled.html, /This goes to an outside judge from a different company/);
+      // This link named no assistant, so nobody was excluded. The first-use line makes no
+      // company claim, and the verdict says independence was not verified.
+      assert.ok(grilled.html.includes(esc(ONCE_DISCLOSURE_UNVERIFIED)), grilled.html);
+      assert.equal(grilled.html.includes(esc(ONCE_DISCLOSURE)), false, grilled.html);
+      assert.doesNotMatch(grilled.html, /from a different company/);
+      assert.ok(
+        grilled.html.includes(esc("Independence not verified: Grill couldn't tell which AI you're using. This judge is from OpenAI. If yours is too, name it next time.")),
+        grilled.html,
+      );
       assert.equal(grilled.html.includes("follow:"), false);
       assert.equal(grilled.html.includes("<script"), false);
       assert.match(grilled.html, />Grill this<\/button>/);
@@ -201,7 +212,7 @@ describe("the /judge page", { concurrency: false }, () => {
       });
       assert.match(again.html, /id="verdict"/);
       assert.equal(again.html.includes('name="keep"'), false);
-      assert.doesNotMatch(again.html, /This goes to an outside judge from a different company/);
+      assert.doesNotMatch(again.html, /This goes to an outside judge/);
       assert.equal(fake.seen.chat.length >= 2, true);
     } finally {
       await fake.close();
@@ -371,11 +382,14 @@ describe("the /judge page", { concurrency: false }, () => {
         ["claude", "Anthropic", ["anthropic/*", "*/claude-*"]],
         ["chatgpt", "OpenAI", ["openai/*"]],
         ["grok", "xAI", ["x-ai/*"]],
+        ["muse", "Meta", ["meta-llama/*"]],
+        ["meta", "Meta", ["meta-llama/*"]],
       ];
       for (const [from, label, excluded] of cases) {
         const shown = await open(ctx, fake, `/judge?q=${encodeURIComponent(PACKET)}&from=${from}`);
         assert.match(shown.html, new RegExp(`Judge: not from ${label}`));
         assert.match(shown.html, new RegExp(`name="from" value="${from}"`));
+        assert.equal(shown.html.includes("Independence not verified"), false, from);
         assert.equal(shown.html.includes("<script"), false);
         const before = fake.seen.chat.length;
         const grilled = await open(ctx, fake, "/judge", {
@@ -384,6 +398,7 @@ describe("the /judge page", { concurrency: false }, () => {
         });
         assert.match(grilled.html, new RegExp(`Judge: not from ${label}`));
         assert.match(grilled.html, new RegExp(`name="from" value="${from}"`));
+        assert.equal(grilled.html.includes("Independence not verified"), false, from);
         const sent = fake.seen.chat[before];
         assert.ok(sent, `${from} sent a judge request`);
         assert.equal(sent.body.model, "openrouter/auto");
@@ -403,6 +418,8 @@ describe("the /judge page", { concurrency: false }, () => {
       const shown = await open(ctx, fake, `/judge?q=${encodeURIComponent(PACKET)}&from=banana`);
       assert.equal(shown.html.includes("Judge: not from"), false);
       assert.equal(shown.html.includes('name="from"'), false);
+      assert.equal(JUDGE_PAGE_UNVERIFIED_LINE, "Independence not verified: Grill can't tell which company's model wrote this, so no company is ruled out.");
+      assert.ok(shown.html.includes(`<p class="small">${esc(JUDGE_PAGE_UNVERIFIED_LINE)}</p>`), shown.html);
       const grilled = await open(ctx, fake, "/judge", {
         method: "POST",
         body: new URLSearchParams({ q: PACKET, keep: "no", from: "banana" }).toString(),
@@ -410,6 +427,15 @@ describe("the /judge page", { concurrency: false }, () => {
       assert.equal(grilled.html.includes("Judge: not from"), false);
       assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
       assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
+      // The page keeps its line above the button, and the verdict to copy back carries its own.
+      assert.ok(grilled.html.includes(`<p class="small">${esc(JUDGE_PAGE_UNVERIFIED_LINE)}</p>`), grilled.html);
+      assert.ok(grilled.html.indexOf(esc(JUDGE_PAGE_UNVERIFIED_LINE)) < grilled.html.indexOf("<button"), grilled.html);
+      const verdict = grilled.html.match(/<pre id="verdict" class="config">([\s\S]*?)<\/pre>/)[1];
+      assert.match(verdict, /Independence not verified: Grill couldn&#39;t tell which AI you&#39;re using\. This judge is from OpenAI\./);
+      // Cursor is a client name Grill knows, but it is not one company, so it rules nobody out either.
+      const cursor = await open(ctx, fake, `/judge?q=${encodeURIComponent(PACKET)}&from=cursor`);
+      assert.equal(cursor.html.includes("Judge: not from"), false);
+      assert.ok(cursor.html.includes(esc(JUDGE_PAGE_UNVERIFIED_LINE)), cursor.html);
     } finally {
       await fake.close();
     }

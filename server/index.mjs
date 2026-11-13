@@ -21,7 +21,11 @@
  * Claude and ChatGPT) names the company behind this client. Gemini, Gemini CLI, Antigravity
  * and Google-Discovery-Engine are Google, so the judge excludes google/* and stays on the
  * default router. GRILL_AUTHOR in the MCP config still wins, for example `openai` for Codex,
- * and so does `author` on the tool call. Unrecognized, the judge excludes Anthropic, as before.
+ * and so does `author` on the tool call. Each name is mapped to the router's own vendor prefix
+ * first (`xai` becomes `x-ai`, `claude` becomes `anthropic`). `none`, or a name the router does
+ * not use, is not a company and is ignored. When nothing names a company, the judge excludes
+ * Anthropic, as before, and that is a guess: the result then ends with one line that starts
+ * "Independence not verified:", and the once-only line leaves out "from a different company".
  *
  * AS A COMMAND. `npx -y grillyour` with no arguments is this MCP server over stdio. With
  * `--set-key` it saves a key from stdin to the key file (scripts/apiKey.mjs), so an MCP config
@@ -76,6 +80,23 @@ import {
 /** First use only. One line. The privacy page holds the rest. Same words as the hosted connector. */
 export const ONCE_DISCLOSURE =
   "This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/#privacy";
+
+/**
+ * The same line for a run where Grill could not tell who wrote the write-up. It is the
+ * sentence above without the company claim, and it is built from that sentence so the two
+ * cannot drift apart.
+ */
+export const ONCE_DISCLOSURE_UNVERIFIED = ONCE_DISCLOSURE.replace(" from a different company", "");
+
+/** Every line that says Grill could not check who wrote the write-up starts with these words. */
+export const INDEPENDENCE_NOT_VERIFIED = "Independence not verified:";
+
+/** What the installed tool adds after the run note when the author was a guess. */
+export const GUESSED_AUTHOR_LINE = `${INDEPENDENCE_NOT_VERIFIED} Grill couldn't tell which AI you're using, so it ruled out Anthropic only. Set GRILL_AUTHOR, or name your assistant's company next time.`;
+
+/** Tells the assistant to pass that line on. The hosted connector uses the same sentence. */
+export const INDEPENDENCE_RELAY =
+  "If a line that starts with Independence not verified follows the run note, show that line as written.";
 import { changesView, lookBack, plainVerdict } from "../scripts/reflection.mjs";
 import { FEEDBACK_POINTER, FEEDBACK_TOOL_DESCRIPTION, buildFeedbackRecord } from "../scripts/feedbackCore.mjs";
 import { scheduleUsagePing, sendGrillFeedback } from "../scripts/usageStats.mjs";
@@ -91,6 +112,63 @@ const MAX_SUBJECT_CHARS = 200_000;
 const MAX_QUESTION_CHARS = 600;
 const MAX_PASTE_CHARS = 100_000;
 const AUTHOR_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+/**
+ * The router's vendor prefixes an author can be named as. A name outside this list makes an
+ * exclusion pattern that matches no model, so it rules nobody out. It is the same list as
+ * JUDGE_COMPANY_IDS in scripts/resultsCore.mjs, without "other". A test keeps them equal.
+ */
+export const AUTHOR_VENDORS = Object.freeze([
+  "openai",
+  "anthropic",
+  "google",
+  "x-ai",
+  "deepseek",
+  "meta-llama",
+  "mistralai",
+  "moonshotai",
+  "minimax",
+  "qwen",
+  "cohere",
+  "amazon",
+  "microsoft",
+  "nvidia",
+  "perplexity",
+  "z-ai",
+]);
+
+/** Names an assistant or a config is likely to use, mapped to the router's vendor prefix. */
+const AUTHOR_ALIASES = Object.freeze({
+  xai: "x-ai",
+  grok: "x-ai",
+  claude: "anthropic",
+  gemini: "google",
+  chatgpt: "openai",
+  gpt: "openai",
+  codex: "openai",
+  meta: "meta-llama",
+  muse: "meta-llama",
+  llama: "meta-llama",
+  mistral: "mistralai",
+  moonshot: "moonshotai",
+  alibaba: "qwen",
+  zai: "z-ai",
+});
+
+/** Lower-case, trimmed, with a common name mapped to the router's prefix. Anything else passes through. */
+export function normalizeAuthor(value) {
+  const name = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return Object.hasOwn(AUTHOR_ALIASES, name) ? AUTHOR_ALIASES[name] : name;
+}
+
+/**
+ * The vendor prefix to exclude for a named author, or "" when the name is not one the router
+ * uses. `none`, `unknown`, an app name such as `cursor`, and a misspelling all return "".
+ */
+export function groundedAuthor(value) {
+  const name = normalizeAuthor(value);
+  return AUTHOR_VENDORS.includes(name) ? name : "";
+}
 
 function progressEveryMs() {
   const n = Number(process.env.GRILL_PROGRESS_MS);
@@ -126,11 +204,27 @@ function waitClock() {
 /** Company read from initialize. Empty until then, and empty when the name matches nobody. */
 let sessionCompany = "";
 
-/** GRILL_AUTHOR from the host's config wins. Otherwise the company named at initialize. */
-function defaultAuthor(env = process.env) {
-  const value = typeof env.GRILL_AUTHOR === "string" ? env.GRILL_AUTHOR.trim().toLowerCase() : "";
-  if (AUTHOR_RE.test(value)) return value;
-  return AUTHOR_RE.test(sessionCompany) ? sessionCompany : "";
+/**
+ * Who wrote the subject when the call names no company. GRILL_AUTHOR from the host's config
+ * wins, then the company named at initialize. With neither, the judge falls back to excluding
+ * Anthropic, and `guessed` says so: nothing told Grill that Claude wrote it.
+ */
+function sessionAuthor(env = process.env) {
+  const configured = groundedAuthor(env.GRILL_AUTHOR);
+  if (configured) return { author: configured, guessed: false };
+  const client = groundedAuthor(sessionCompany);
+  if (client) return { author: client, guessed: false };
+  return { author: "", guessed: true };
+}
+
+/**
+ * Who wrote this subject. A company named on the call wins when it is one the router uses.
+ * `none`, or any other name, is not a company: it is ignored, so it can never switch off the
+ * exclusion that GRILL_AUTHOR or the client's name set.
+ */
+function authorFor(called, env = process.env) {
+  const named = groundedAuthor(called);
+  return named ? { author: named, guessed: false } : sessionAuthor(env);
 }
 
 /** The user's key: the install dialog, the environment, then the key file (../scripts/apiKey.mjs). */
@@ -264,7 +358,10 @@ const SETUP_TEXT = [
 // one of them depends on their setting. The server knows the setting, so it says so here, where
 // Claude reads it before every call. (A setting change restarts the server, so this stays true.)
 // Hosted Grill imports this same text so the two cannot drift.
-export function buildGrillTools({ checkOn }) {
+// `authorGuessed` is true when neither GRILL_AUTHOR nor the client's name says who wrote the
+// subject. The once-only line then leaves out "from a different company", because Grill only
+// assumed Claude wrote it.
+export function buildGrillTools({ checkOn, authorGuessed = false }) {
   const checkNote = checkOn
     ? "A quality check (Jev, from TypeSafe) may also see the masked write-up, on a zero-retention endpoint. Do not put that into the once-only line. The privacy link covers it. Do not mention the check or its score again. Pass quality_check: false only if the user asks to skip it."
     : "The quality check is off, so only the judge sees the write-up. Leave Jev out of the once-only sentence, and do not mention the check.";
@@ -274,9 +371,9 @@ export function buildGrillTools({ checkOn }) {
     "Send the decision as the user stated it, plus a brief, user-relevant summary of the essential context, at most a few sentences. Do not include the full conversation, chat history, transcripts, memories or unrelated personal data. Do not rewrite it into a template, and do not add your own case against.",
     "Ask at most one short question, and only if the decision is truly unclear, such as 'What's the goal?'. Then call this tool. Do not wait for an OK, and do not show a write-up full of blanks.",
     "Never add a required question before the verdict on a quick or bulk grill. Ask only what the subject strictly needs.",
-    `The first time you use Grill with this person, say once, as one line, and not again: ${ONCE_DISCLOSURE}`,
+    `The first time you use Grill with this person, say once, as one line, and not again: ${authorGuessed ? ONCE_DISCLOSURE_UNVERIFIED : ONCE_DISCLOSURE}`,
     checkNote,
-    "After that, do not repeat the disclosure. Every result ends with a two-line run note: the models that ran with how long it took, then one privacy sentence. It comes after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. Do not mention a score, a balance, or a quote check.",
+    `After that, do not repeat the disclosure. Every result ends with a two-line run note: the models that ran with how long it took, then one privacy sentence. It comes after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY} Do not mention a score, a balance, or a quote check.`,
     "Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question. It already ends with: " +
       CLOSING_ASK +
       " On a decision they marked as big, and only while the deepen test is on, that line may also name deepen. Relay whichever line came back. Do not add deepen yourself. Do not add a fact list, a confidence question, a record, or a disclaimer.",
@@ -308,7 +405,7 @@ export function buildGrillTools({ checkOn }) {
           author: {
             type: "string",
             description:
-              "Optional. The model family that wrote the subject, if not Claude, for example openai, google or xai. That family is excluded from judging. If you are not Claude, always set it to your own family.",
+              "Optional. The model family that wrote the subject, if not Claude, for example openai, google or x-ai. That family is excluded from judging. If you are not Claude, always set it to your own family.",
           },
           quality_check: {
             type: "boolean",
@@ -413,7 +510,10 @@ export function buildGrillTools({ checkOn }) {
   ];
 }
 
-const TOOLS = buildGrillTools({ checkOn: checkEnabled() });
+/** Built for each tools/list, after initialize, so the once-only line matches what this session knows. */
+function sessionTools() {
+  return buildGrillTools({ checkOn: checkEnabled(), authorGuessed: sessionAuthor().guessed });
+}
 
 const jobs = new Map();
 
@@ -428,13 +528,11 @@ function configuredJudgeModel(env = process.env) {
 function judgePinConflicts(model, author) {
   const primary = String(model).split(",")[0].trim().toLowerCase();
   if (!primary || primary.startsWith("openrouter/")) return false;
-  const pin = /(^|[/.])claude[-.\d]/.test(primary) ? "anthropic" : primary.split("/")[0] === "x-ai" ? "xai" : primary.split("/")[0];
-  const declared = String(author || "anthropic").trim().toLowerCase();
-  const family = declared === "x-ai" || declared === "xai" ? "xai" : declared === "claude" ? "anthropic" : declared;
-  return pin === family;
+  const pin = /(^|[/.])claude[-.\d]/.test(primary) ? "anthropic" : normalizeAuthor(primary.split("/")[0]);
+  return pin === normalizeAuthor(author || "anthropic");
 }
 
-function startJob({ subject, question, author, skipCheck, big = false }) {
+function startJob({ subject, question, author, authorGuessed = false, skipCheck, big = false }) {
   const id = randomUUID().slice(0, 8);
   const dir = mkdtempSync(join(tmpdir(), "grill-"));
   const args = [JUDGE, "--json", "--out", join(dir, "report.md")];
@@ -458,7 +556,7 @@ function startJob({ subject, question, author, skipCheck, big = false }) {
   child.stderr.on("data", (d) => {
     stderr += d;
   });
-  const job = { id, startedAt: Date.now(), done: false, outcome: null, child, subject, question, author, big: big === true };
+  const job = { id, startedAt: Date.now(), done: false, outcome: null, child, subject, question, author, authorGuessed: authorGuessed === true, big: big === true };
   job.promise = new Promise((resolve) => {
     const finish = (code, error) => {
       if (job.done) return;
@@ -540,7 +638,9 @@ function finishBrief(brief, job) {
   const note = body.endsWith(ask) ? body.slice(0, -ask.length).trim() : body;
   const lined = withNews(note, { now: nowMs() }).trim();
   const ms = (job?.finishedAt ?? Number.NaN) - (job?.startedAt ?? Number.NaN);
-  return `${appendRunNote(`${lined}\n\n${ask}`, job?.outcome?.parsed || {}, ms)}\n`;
+  const noted = appendRunNote(`${lined}\n\n${ask}`, job?.outcome?.parsed || {}, ms);
+  // The author was a guess: say so on the line after the run note.
+  return `${job?.authorGuessed ? `${noted}\n${GUESSED_AUTHOR_LINE}` : noted}\n`;
 }
 
 function runDeepen(job) {
@@ -627,12 +727,13 @@ async function callTool(name, args = {}, onTick) {
   if (name === "grill") {
     const subject = typeof args.subject === "string" ? args.subject : "";
     const question = typeof args.question === "string" ? args.question.trim() : "";
-    const author = (typeof args.author === "string" ? args.author.trim().toLowerCase() : "") || defaultAuthor();
+    const called = typeof args.author === "string" ? args.author.trim().toLowerCase() : "";
     const skipCheck = args.quality_check === false; // off for this grill only; never switches it on
     if (!subject.trim()) return text("There's no decision to grill. Send the decision as the user stated it.", true);
     if (subject.length > MAX_SUBJECT_CHARS) return text(`The subject is ${subject.length} characters; trim it under ${MAX_SUBJECT_CHARS}.`, true);
     if (question.length > MAX_QUESTION_CHARS) return text(`The question is over ${MAX_QUESTION_CHARS} characters; shorten it.`, true);
-    if (author && !AUTHOR_RE.test(author)) return text("author must be a lowercase model-family name, like openai.", true);
+    if (called && !AUTHOR_RE.test(called)) return text("author must be a lowercase model-family name, like openai.", true);
+    const { author, guessed } = authorFor(called);
     if (!apiKey()) return text(SETUP_TEXT, true);
     const judgeModel = configuredJudgeModel();
     if (judgeModel && judgePinConflicts(judgeModel, author)) {
@@ -641,7 +742,7 @@ async function callTool(name, args = {}, onTick) {
         true,
       );
     }
-    const job = startJob({ subject, question, author, skipCheck, big: args.big === true });
+    const job = startJob({ subject, question, author, authorGuessed: guessed, skipCheck, big: args.big === true });
     return (await waitFor(job, waitMs(), onTick)) ? await outcomeOf(job, "brief") : pending(job);
   }
   if (name === "grill_result") {
@@ -723,6 +824,8 @@ async function handle(msg) {
     case "initialize": {
       const hint = clientCompanyHint({ clientInfo: params?.clientInfo || params?._meta?.clientInfo || null });
       sessionCompany = hint?.company || "";
+      // Nothing names the author yet, so do not tell the assistant the judge is from a different company.
+      const judgeIs = sessionAuthor().guessed ? "an outside judge" : "an outside judge from a different company";
       const asked = params?.protocolVersion;
       send({
         id,
@@ -731,7 +834,8 @@ async function handle(msg) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "grill", title: "Grill", version: VERSION },
           instructions:
-            "Grill sends the decision as the user stated it to an outside judge from a different company. Do not rewrite it, do not add your own case against, and do not wait for an OK. Ask at most one short question, and only if the decision is truly unclear. The first time, say the outside-judge disclosure once, as one line, then never again. If grill returns a job id, call grill_result before you reply. Do not ask the user for a job id. Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question, a fact list, or a confidence question. When the user says more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Do not write a layer yourself. Each result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. Do not add a model name of your own, and do not show a record, a score, a balance, a quote check, or a disclaimer. The verdict never becomes the decision. If the user asks 'so should I do it?', hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If the same decision is grilled again in the chat, ask what changed. Nothing changed is a re-run: show the earlier verdict beside the new one, and do not add a supersedes line. A changed choice names the earlier record and what changed. Never send the earlier verdict to the judge. Write a decision record only after the user states a choice, including a quick take. Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask. If they never answer, write no record and set no look-back. When they say look back, call grill_look_back and relay its one line. It stores nothing. If the report includes a 'Grill news' line, show it once, word for word, after the verdict and before the next-step line. The run note comes after that line. The tool adds the news line only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it. " +
+            `Grill sends the decision as the user stated it to ${judgeIs}. Do not rewrite it, do not add your own case against, and do not wait for an OK. Ask at most one short question, and only if the decision is truly unclear. The first time, say the outside-judge disclosure once, as one line, then never again. If grill returns a job id, call grill_result before you reply. Do not ask the user for a job id. Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question, a fact list, or a confidence question. When the user says more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Do not write a layer yourself. Each result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY} ` +
+            "Do not add a model name of your own, and do not show a record, a score, a balance, a quote check, or a disclaimer. The verdict never becomes the decision. If the user asks 'so should I do it?', hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If the same decision is grilled again in the chat, ask what changed. Nothing changed is a re-run: show the earlier verdict beside the new one, and do not add a supersedes line. A changed choice names the earlier record and what changed. Never send the earlier verdict to the judge. Write a decision record only after the user states a choice, including a quick take. Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask. If they never answer, write no record and set no look-back. When they say look back, call grill_look_back and relay its one line. It stores nothing. If the report includes a 'Grill news' line, show it once, word for word, after the verdict and before the next-step line. The run note comes after that line. The tool adds the news line only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it. " +
               `${FEEDBACK_POINTER} ` +
               SCOPE_GUARD,
         },
@@ -742,7 +846,7 @@ async function handle(msg) {
       if (isRequest) send({ id, result: {} });
       return;
     case "tools/list":
-      send({ id, result: { tools: TOOLS } });
+      send({ id, result: { tools: sessionTools() } });
       return;
     case "tools/call": {
       const token = params?._meta?.progressToken;

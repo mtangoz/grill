@@ -5,7 +5,7 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
 import { addDays, confidenceValue, isoDate, parseDecided, parseOutcomes, parseRecords, plainVerdict, REVIEW_DAYS, reviewDateFor } from "./reflection.mjs";
 import { CHALLENGE_KINDS, SCOPE_GUARD, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
-import { buildGrillTools } from "../server/index.mjs";
+import { INDEPENDENCE_NOT_VERIFIED, INDEPENDENCE_RELAY, buildGrillTools, groundedAuthor } from "../server/index.mjs";
 import { FEEDBACK_POINTER } from "./feedbackCore.mjs";
 
 export { SCOPE_GUARD };
@@ -13,6 +13,15 @@ export { SCOPE_GUARD };
 /** First use only. One line. The privacy page holds the rest. Same words as the local server. */
 export const ONCE_DISCLOSURE =
   "This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/#privacy";
+
+/**
+ * The same line on a run that ruled nobody out, because Grill could not tell who wrote the
+ * write-up. It is the sentence above without the company claim, built from it so the two
+ * cannot drift apart. Same words as the local server.
+ */
+export const ONCE_DISCLOSURE_UNVERIFIED = ONCE_DISCLOSURE.replace(" from a different company", "");
+
+export { INDEPENDENCE_NOT_VERIFIED };
 
 export const HOSTED_PROTOCOLS = Object.freeze(["2025-11-25", "2025-06-18", "2025-03-26"]);
 export const CLAUDE_WEB_REDIRECT = "https://claude.ai/api/mcp/auth_callback";
@@ -226,14 +235,27 @@ export function sourceAppFromClient({ redirectUri = "", clientId = "", clientInf
   return { company: "", sourceApp: "unknown" };
 }
 
-/** An explicit author wins. Unknown clients exclude nothing beyond that, which means `--author none`. */
+/**
+ * Which company the judge must not come from.
+ *
+ * A company named on the call wins when it is one the router uses, after common names are
+ * mapped to the router's prefix (`xai` to `x-ai`, `claude` to `anthropic`). That holds even
+ * when it differs from the recognised client's company. Whether it should is an open owner
+ * decision.
+ *
+ * `none`, or any name the router does not use, is not a company. It never replaces the
+ * recognised client's company, so the assistant cannot switch the exclusion off.
+ *
+ * With no company from either, the author is `none`: nobody is excluded, and the verdict
+ * says independence was not verified.
+ */
 export function authorForJudge({ explicit = "", company = "" } = {}) {
   const given = String(explicit || "").trim().toLowerCase();
-  if (given) {
-    if (!AUTHOR_RE.test(given)) return { error: "author must be a lowercase model-family name, like openai." };
-    return { author: given };
-  }
-  if (company && AUTHOR_RE.test(company)) return { author: company };
+  if (given && !AUTHOR_RE.test(given)) return { error: "author must be a lowercase model-family name, like openai." };
+  const named = groundedAuthor(given);
+  if (named) return { author: named };
+  const client = groundedAuthor(company);
+  if (client) return { author: client };
   return { author: "none" };
 }
 
@@ -262,19 +284,38 @@ export function judgeCompanyName(servedModel) {
   return JUDGE_COMPANY_NAMES[slug.split("/")[0]] || "";
 }
 
-/**
- * One line when a hosted grill excluded nobody because the client was unknown
- * and the call named no author. A recognised client, including Cursor, gets nothing:
- * Cursor excludes nobody on purpose, because it runs several companies' models.
- * No line when the served model does not name a company.
- */
-export function unknownClientJudgeLine({ sourceApp = "", authorGiven = false, servedModel = "" } = {}) {
-  if (String(sourceApp || "") !== "unknown") return "";
-  if (authorGiven) return "";
-  const company = judgeCompanyName(servedModel);
-  if (!company) return "";
-  return `Grill couldn't tell which AI you're using. This judge is from ${company}. If your assistant is too, name it next time for a different company.`;
+/** The plain name for a company id from sourceAppFromClient, or "" when Grill has no name for it. */
+export function companyLabel(company) {
+  const id = String(company || "").trim().toLowerCase();
+  return Object.hasOwn(JUDGE_COMPANY_NAMES, id) ? JUDGE_COMPANY_NAMES[id] : "";
 }
+
+/**
+ * One line on every hosted verdict that excluded nobody. `author` is what authorForJudge
+ * returned: `none` means neither the client nor the call named a company the router uses.
+ *
+ * An unknown client is told which company judged, when Grill has a name for it, so the person
+ * can see whether it matches their own assistant. Cursor runs several companies' models, and
+ * some served models come from a company Grill has no name for: those get the plain line.
+ * Anything but a named company counts as `none`, so a caller that forgets `author` still
+ * gets the line.
+ */
+export function independenceLine({ author = "none", sourceApp = "", servedModel = "" } = {}) {
+  if (groundedAuthor(author)) return "";
+  const company = String(sourceApp || "") === "unknown" ? judgeCompanyName(servedModel) : "";
+  if (company) {
+    return `${INDEPENDENCE_NOT_VERIFIED} Grill couldn't tell which AI you're using. This judge is from ${company}. If yours is too, name it next time.`;
+  }
+  return `${INDEPENDENCE_NOT_VERIFIED} Grill couldn't tell which company's model wrote this, so no company was ruled out.`;
+}
+
+/** The first-use line for this run: without the company claim when nobody was excluded. */
+export function onceDisclosureFor(author) {
+  return groundedAuthor(author) ? ONCE_DISCLOSURE : ONCE_DISCLOSURE_UNVERIFIED;
+}
+
+/** On /judge, above the button, when the link named no assistant whose company Grill knows. */
+export const JUDGE_PAGE_UNVERIFIED_LINE = `${INDEPENDENCE_NOT_VERIFIED} Grill can't tell which company's model wrote this, so no company is ruled out.`;
 
 export function starterCreditUsd(env = {}) {
   const n = Number(env.GRILL_STARTER_CREDIT_USD);
@@ -1094,12 +1135,16 @@ const HOSTED_RESULT_DESCRIPTION =
  * One line for an agent's written audit record: which model judged, which company was
  * excluded, and when. The time joins it to the account's spend log, which keeps the same
  * model. It is for the record, not the chat note.
+ *
+ * `decorrelated` is a routing check: the judge came from a different company than the
+ * declared author. It does not measure whether their errors differ. With no author declared
+ * there was nothing to check against, so the line says `not verified`, never `yes`.
  */
 export function provenanceLine(parsed, at) {
   const served = typeof parsed?.servedModel === "string" && parsed.servedModel.trim() ? parsed.servedModel.trim() : "unattributable";
   const author = typeof parsed?.declaredAuthor === "string" && parsed.declaredAuthor.trim() ? parsed.declaredAuthor.trim() : "anthropic";
   const excluded = author === "none" ? "none" : author;
-  const decorrelated = parsed?.decorrelated === true ? "yes" : "no";
+  const decorrelated = parsed?.decorrelated !== true ? "no" : author === "none" ? "not verified" : "yes";
   const when = at instanceof Date && !Number.isNaN(at.getTime()) ? at.toISOString().replace(/\.\d{3}Z$/, "Z") : "unknown";
   return `Judge: ${served} · excluded: ${excluded} · decorrelated: ${decorrelated} · at: ${when}`;
 }
@@ -1120,7 +1165,7 @@ export function hostedTools() {
   const localDisclosure =
     /The first time you use Grill with this person, say once\b.*?Do not mention a score, a balance, or a quote check\. /;
   const hostedDisclosure =
-    "Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Every result then ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. Do not mention a Jev score, a credit balance, or a quote check. ";
+    `Do not add a disclosure of your own. If the result starts with the outside-judge sentence, show it once. Every result then ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY} Do not mention a Jev score, a credit balance, or a quote check. `;
   // Hosted hints are set here, not copied from the local tools. A local look-back stores
   // nothing, and a local grill does not write an account. OpenAI's review reads all three,
   // and the MCP defaults (read-only false, destructive true, open-world true) are wrong for
@@ -1230,7 +1275,7 @@ export const HOSTED_INSTRUCTIONS = [
   "Do not rewrite the decision, do not add your own case against, and do not wait for an OK.",
   "Ask at most one short question, and only if the decision is truly unclear, such as what the goal is.",
   "The first time, grill asks whether to keep decision records before anything is sent. Relay that one question and call again with keep_records true or false only after they answer.",
-  "If the result starts with the outside-judge sentence, show that one line once. Do not add a disclosure of your own, and do not repeat it later. Every result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict.",
+  `If the result starts with the outside-judge sentence, show that one line once. Do not add a disclosure of your own, and do not repeat it later. Every result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY}`,
   "If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the note arrives. Do not ask the person to check, and do not ask them for a job id.",
   "If three grills are still running, wait about 2 minutes and call grill again yourself. Do not ask the person for a job id.",
   "Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question, a fact list, a confidence question, or a line of your own. It already ends with the next-step line.",
