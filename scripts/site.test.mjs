@@ -554,12 +554,19 @@ describe("the site build", () => {
   });
 
   it("names the live commit in every public page footer when the deploy provides one, and nothing otherwise", () => {
-    const pages = ["index.html", "terms/index.html", "contribute/index.html", "look-back/index.html", "privacy/index.html", "about/index.html", "contact/index.html", "miss/index.html"];
+    // Every page the build just listed in the sitemap, the miss page included. A page added later
+    // is read here with no edit to this test.
     const build = (sha) => {
       const env = { ...process.env, GRILL_MISS: "1" };
       if (sha === undefined) delete env.VERCEL_GIT_COMMIT_SHA;
       else env.VERCEL_GIT_COMMIT_SHA = sha;
       execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe", env });
+      const sitemap = readFileSync(join(ROOT, "_site/sitemap.xml"), "utf8");
+      const pages = [...sitemap.matchAll(/<loc>https:\/\/grillyour\.ai\/([^<]*)<\/loc>/g)].map((match) => `${match[1]}index.html`);
+      assert.ok(pages.length >= 14, `the sitemap lists ${pages.length} pages`);
+      for (const known of ["index.html", "terms/index.html", "contribute/index.html", "look-back/index.html", "privacy/index.html", "about/index.html", "contact/index.html", "miss/index.html", "faq/index.html", "start/index.html", "how-we-test/index.html"]) {
+        assert.ok(pages.includes(known), `the sitemap lists ${known}`);
+      }
       return pages.map((p) => [p, readFileSync(join(ROOT, "_site", p), "utf8")]);
     };
     const sha = "0123456789abcdef0123456789abcdef01234567";
@@ -577,6 +584,24 @@ describe("the site build", () => {
       }
     }
     assert.doesNotMatch(page, /Live commit/, "the artifact source never carries a commit");
+  });
+
+  // The two page rules a review used to carry. They hold for every file in site/, so a page
+  // added later is checked the day it is added: the brand's no-dash rule, and the footer span
+  // the build writes the live commit into.
+  it("no page source has an em dash or an en dash, and every one keeps the Hold footer span", () => {
+    const sources = readdirSync(join(ROOT, "site")).filter((name) => name.endsWith(".html")).sort();
+    assert.ok(sources.length >= 14, `site/ holds ${sources.length} pages`);
+    for (const known of ["page.html", "terms.html", "privacy.html", "faq.html", "demo.html", "start.html", "miss.html", "how-we-test.html"]) {
+      assert.ok(sources.includes(known), `site/${known} is read`);
+    }
+    const span = '<span>Made at <a href="https://hold.quest">Hold</a>';
+    for (const name of sources) {
+      const source = readFileSync(join(ROOT, "site", name), "utf8");
+      assert.ok(!source.includes("\u2014"), `site/${name} has an em dash`);
+      assert.ok(!source.includes("\u2013"), `site/${name} has an en dash`);
+      assert.equal(source.split(span).length - 1, 1, `site/${name} keeps the Hold footer span, once`);
+    }
   });
 
   // A chat preview reads og:title, and X reads twitter:title. Both have to be the page's own
@@ -1760,6 +1785,7 @@ describe("where saved grills are", () => {
     "site/check-your-ai.html",
     "site/contribute.html",
     "site/demo.html",
+    "site/how-we-test.html",
     "site/look-back.html",
     "site/miss.html",
     "site/privacy.html",

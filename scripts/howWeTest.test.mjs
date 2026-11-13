@@ -741,7 +741,46 @@ describe("the site build stops rather than publish a broken /how-we-test/", () =
     assert.ok(notJson, "a file that is not JSON stops the build");
   });
 
+  it("when any page has lost the footer span the live commit is written into", () => {
+    const span = '<span>Made at <a href="https://hold.quest">Hold</a></span>';
+    for (const page of ["how-we-test.html", "about.html", "page.html"]) {
+      const failure = buildFailure(
+        scratchTree((dir) => {
+          const path = join(dir, "site", page);
+          const html = readFileSync(path, "utf8");
+          assert.ok(html.includes(span), `site/${page} has the span to begin with`);
+          writeFileSync(path, html.replace(span, "<span>Made at Hold</span>"));
+        }),
+      );
+      assert.ok((failure ?? "").includes(`site/${page} must keep the footer span`), `the build names site/${page}`);
+    }
+  });
+
   it("and builds again from an unbroken copy", () => {
     assert.equal(buildFailure(scratchTree()), null);
+  });
+});
+
+describe("the head of a built page", () => {
+  it("escapes the description, so a quote or an ampersand in one cannot cut the attribute short", () => {
+    // The build script's own copy is edited here: the committed descriptions hold no such character.
+    const dir = scratchTree((tree) => {
+      const path = join(tree, "scripts", "build-site.mjs");
+      const script = readFileSync(path, "utf8");
+      const written = `description: "${DESCRIPTION}",`;
+      assert.equal(script.split(written).length - 1, 1, "the page's description is in the build script once");
+      writeFileSync(path, script.replace(written, "description: 'Not \"measured\" yet & <b>counts</b>',"));
+    });
+    const { html } = buildIn(dir);
+    const safe = "Not &quot;measured&quot; yet &amp; &lt;b&gt;counts&lt;/b&gt;";
+    assert.ok(html.includes(`<meta name="description" content="${safe}">`));
+    assert.ok(html.includes(`<meta property="og:description" content="${safe}">`));
+    assert.equal((html.match(/<b>counts<\/b>/g) ?? []).length, 0);
+    // Every committed description is still written exactly as it was, since none needs escaping.
+    assert.ok(today.html.includes(`<meta name="description" content="${DESCRIPTION}">`));
+    for (const page of ["about/index.html", "faq/index.html", "check-your-ai/index.html", "index.html"]) {
+      const description = today.out(page).match(/<meta name="description" content="([^"]*)">/)?.[1] ?? "";
+      assert.ok(description.length > 20 && !/[&<>]/.test(description), `${page} has a plain description`);
+    }
   });
 });

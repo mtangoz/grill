@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 /**
- * Build the public onboarding site. The home page's one source is site/page.html; the other pages
- * (terms, contribute, look-back, start, privacy, about, contact, demo, check-your-ai) borrow its styles.
+ * Build the public onboarding site. The home page's one source is site/page.html. Every other page
+ * is a file in site/ that one writePage call below registers, and it borrows the home page's styles.
+ * Today those are terms, contribute, look-back, start, privacy, about, contact, support, demo, faq,
+ * check-your-ai and how-we-test, plus miss when GRILL_MISS=1. The writePage calls are the list:
+ * this comment is not.
  *
  * site/page.html is a page body (title, styles, markup, script) with no document skeleton, so the
  * same file publishes as a Claude artifact unchanged. This wraps it into a full document with the
  * link-preview tags a shared URL needs, and writes _site/index.html, which Vercel serves.
+ *
+ * A registered page lands in sitemap.xml and llms.txt, and gets a Markdown twin, with no other
+ * edit. The build stops when a page does not open with its <title>, or has lost the footer span
+ * that carries the live commit. How to add a page: CONTRIBUTING.md, "Add a page".
  *
  *   node scripts/build-site.mjs        # writes _site/index.html, a Markdown twin for every public page, and 404.md
  */
@@ -307,17 +314,23 @@ const ANALYTICS = analyticsSnippet(process.env);
 // the public source. A local build, or anything that isn't a full commit hash, shows nothing.
 const LIVE_COMMIT = /^[0-9a-f]{40}$/.test(process.env.VERCEL_GIT_COMMIT_SHA ?? "") ? process.env.VERCEL_GIT_COMMIT_SHA : "";
 const MADE_AT = '<span>Made at <a href="https://hold.quest">Hold</a>';
-const withLiveCommit = (body) =>
-  LIVE_COMMIT
+// The commit goes in by replacing that span. A page without it would ship with no commit and no
+// error, so the build stops instead, on a local build as well as on a deploy.
+const withLiveCommit = (body, label) => {
+  if (!body.includes(MADE_AT)) throw new Error(`${label} must keep the footer span ${MADE_AT}</span>: the live commit is written into it`);
+  return LIVE_COMMIT
     ? body.replace(
         MADE_AT,
         `<span>Live commit <a href="https://github.com/mtangoz/grill/commit/${LIVE_COMMIT}">${LIVE_COMMIT.slice(0, 7)}</a> · Made at <a href="https://hold.quest">Hold</a>`,
       )
     : body;
+};
 
 const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
 const headFor = ({ description, url, title = "Grill" }) => {
   const safeTitle = esc(title);
+  // Escaped like the title, so a quote or an ampersand in a description cannot cut the attribute short.
+  const safeDescription = esc(description);
   return [
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
@@ -325,11 +338,11 @@ const headFor = ({ description, url, title = "Grill" }) => {
     '<meta name="theme-color" content="#f7f4ef" media="(prefers-color-scheme: light)">',
     '<meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">',
     ...ICONS,
-    `<meta name="description" content="${description}">`,
+    `<meta name="description" content="${safeDescription}">`,
     `<link rel="canonical" href="${url}">`,
     `<meta property="og:url" content="${url}">`,
     `<meta property="og:title" content="${safeTitle}">`,
-    `<meta property="og:description" content="${description}">`,
+    `<meta property="og:description" content="${safeDescription}">`,
     '<meta property="og:type" content="website">',
     `<meta property="og:image" content="${OG_IMAGE}">`,
     '<meta property="og:image:width" content="1200">',
@@ -355,8 +368,8 @@ const cut = page.indexOf("</style>");
 if (cut === -1) throw new Error("site/page.html must open with its <title>, links and <style>");
 const pageHead = page.slice(0, cut + "</style>".length);
 const pageBody = page.slice(cut + "</style>".length);
-const doc = (head, title, body) =>
-  `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${withLiveCommit(body)}\n${ANALYTICS}\n</body>\n</html>\n`;
+const doc = (head, title, body, label) =>
+  `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${withLiveCommit(body, label)}\n${ANALYTICS}\n</body>\n</html>\n`;
 
 // The offer, the paywall and the launch-list form are build-time switches.
 // GRILL_PRO_COUPON set means 50% off is on the page. GRILL_PRO_BILLING=subscription shows
@@ -401,7 +414,7 @@ cpSync(join(ROOT, "site/brand"), join(OUT, "brand"), { recursive: true });
 cpSync(join(ROOT, "site/brand/favicon.ico"), join(OUT, "favicon.ico"));
 writeFileSync(
   join(OUT, "index.html"),
-  doc(headFor({ description: DESCRIPTION, url: SITE_URL, title: HOME_TITLE }), `${pageHead}\n${jsonLdScript(SOFTWARE_APPLICATION)}`, homeBody),
+  doc(headFor({ description: DESCRIPTION, url: SITE_URL, title: HOME_TITLE }), `${pageHead}\n${jsonLdScript(SOFTWARE_APPLICATION)}`, homeBody, "site/page.html"),
 );
 // Every public page. The sitemap and /llms.txt both read this list, so a new page lands in both.
 // Google has to crawl the home page before its favicon service knows the icon; until then Claude
@@ -444,7 +457,7 @@ function writePage(file, { description, url, outDir, name, blurb }) {
   addPublicPage({ url, name, blurb });
   writeFileSync(
     join(OUT, outDir, "index.html"),
-    doc(headFor({ description, url, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length)),
+    doc(headFor({ description, url, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length), `site/${file}`),
   );
 }
 writePage("terms.html", {
@@ -555,7 +568,7 @@ if (process.env.GRILL_MISS === "1") {
   });
   writeFileSync(
     join(OUT, "miss", "index.html"),
-    doc(headFor({ description: "Share how AI got a decision wrong, without the decision.", url: `${SITE_URL}miss/`, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length)),
+    doc(headFor({ description: "Share how AI got a decision wrong, without the decision.", url: `${SITE_URL}miss/`, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length), "site/miss.html"),
   );
 }
 writeFileSync(join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}sitemap.xml\n`);
