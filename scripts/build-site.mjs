@@ -524,11 +524,11 @@ writePage("demo.html", {
   blurb: "Four made-up decisions, and what Grill said about each.",
 });
 writePage("faq.html", {
-  description: "Plain answers: how Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and that no benchmarks are published.",
+  description: "Plain answers: how Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and what has not been measured yet.",
   url: `${SITE_URL}faq/`,
   outDir: "faq",
   name: "FAQ",
-  blurb: "How Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and that no benchmarks are published.",
+  blurb: "How Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and what has not been measured yet.",
 });
 writePage("check-your-ai.html", {
   description: "Plain checks for an AI draft before you send it to your boss: the assumption, the facts, and one cheap test.",

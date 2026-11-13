@@ -26,8 +26,12 @@ const ANSWERS = [
   "Preview. Adding Grill as a connector inside Gemini or Muse is not verified. You can try it. Gemini: US only, a personal Google account, Keep Activity on. Muse: the steps are in the README.",
   "Planned. No further way in is listed here. The free tool stays free.",
   "If you say yes to keeping records, choices you make are saved at grillyour.ai/decisions (Your grills), with a 14-day look-back and an optional calendar link. You can also say \"look back\" in chat. It stays private, and off until you opt in.",
-  "No benchmarks are published. We have not yet measured a judge from a different company against the same model starting fresh. Examples on this site use invented numbers. They are not a benchmark.",
+  "No. Whether an outside judge catches more than the same model starting fresh is not measured yet. What Grill runs each week is a regression check on made-up cases. Those cases were used to write the judge’s instructions, so a full score says nothing about how good the judge is. The counts from that check, and what has not been measured, are at grillyour.ai/how-we-test/ (How Grill tests its judge). Examples on this site use invented numbers. They are not a benchmark.",
 ];
+
+// The page lede, and the one-line summary the build gives the page in its head and in llms.txt.
+const LEDE = "Plain answers, including what has not been measured yet.";
+const SUMMARY = "How Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and what has not been measured yet.";
 
 function textOf(html) {
   return html
@@ -59,6 +63,34 @@ describe("the FAQ", () => {
     assert.doesNotMatch(plain, /worse than|better than|inferior|beats Cruxes|behind Cruxes/i);
     const support = readFileSync(join(ROOT, "site/support.html"), "utf8");
     assert.match(support, /href="\/faq\/"/);
+  });
+
+  // The benchmarks answer is copied into llms.txt, so it is what an assistant quotes. It says what
+  // has and has not been measured, claims no result, and sends the reader to the page with the counts.
+  it("says what has and has not been measured, and points at /how-we-test/ for the counts", () => {
+    const faq = readFileSync(faqPath, "utf8");
+    assert.ok(faq.includes(`<p class="lede">${LEDE}</p>`));
+    const answer = faq.slice(faq.indexOf("<h2>Are there benchmarks?</h2>"), faq.indexOf('<div class="footer">'));
+    assert.equal((answer.match(/<p class="note">/g) || []).length, 1, "one answer under the last question");
+    assert.equal(textOf(answer), `Are there benchmarks? ${ANSWERS[7]}`);
+    assert.ok(answer.includes('are at <a href="/how-we-test/">grillyour.ai/how-we-test/</a> (How Grill tests its judge).'));
+    assert.ok(existsSync(join(ROOT, "site/how-we-test.html")), "the page it points at exists");
+    assert.ok(ANSWERS[7].startsWith("No. Whether an outside judge catches more than the same model starting fresh is not measured yet."));
+    const plain = textOf(faq);
+    assert.doesNotMatch(plain, /No benchmarks are published/);
+    assert.doesNotMatch(plain, /%|\bpercent\b/i, "the FAQ quotes no rate");
+    assert.doesNotMatch(ANSWERS[7], /\d/, "the counts live on the page, not in the answer");
+    assert.doesNotMatch(ANSWERS[7], /different company|accura|guarantee|proves?\b|outperform|more reliable/i);
+
+    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
+    const built = readFileSync(join(ROOT, "_site/faq/index.html"), "utf8");
+    assert.ok(built.includes(`<meta name="description" content="Plain answers: ${SUMMARY.replace("How Grill", "how Grill")}">`));
+    const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
+    assert.ok(llms.includes(`- [FAQ](https://grillyour.ai/faq/): ${SUMMARY}\n`));
+    assert.ok(llms.includes(`### Are there benchmarks?\n\n${ANSWERS[7]}\n`), "llms.txt carries the answer word for word, with the address in it");
+    assert.doesNotMatch(llms, /no benchmarks are published/i);
+    const md = readFileSync(join(ROOT, "_site/faq/index.md"), "utf8");
+    assert.ok(md.includes("are at [grillyour.ai/how-we-test/](https://grillyour.ai/how-we-test/) (How Grill tests its judge)."));
   });
 
   it("copies the same answers into llms.txt after the page list, and the page has no script of its own", () => {
