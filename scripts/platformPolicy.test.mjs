@@ -468,6 +468,19 @@ describe("the hosted grill tool reads true on every host", () => {
     assert.match(grill.description, /openrouter\/auto/);
   });
 
+  it("says which company is excluded only with the same condition, in the opening and in the tail", () => {
+    // Cursor and a client Grill does not recognise run with nobody excluded, so the sentence
+    // that says who is excluded carries the condition too.
+    assert.ok(
+      grill.description.includes(
+        "The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up, when Grill can tell which that is. It never falls back to this chat's own model, for speed or cost, and it never pins a model.",
+      ),
+      grill.description,
+    );
+    assert.equal(grill.description.split("when Grill can tell which that is.").length, 3);
+    assert.equal(grill.description.includes("wrote the write-up. It never"), false);
+  });
+
   it("asks for the author in words that fit any assistant, with examples that do exclude a company", () => {
     const author = grill.inputSchema.properties.author.description;
     assert.equal(
@@ -509,6 +522,22 @@ describe("the hosted grill tool reads true on every host", () => {
     }
     assert.match(hostedCore.HOSTED_INSTRUCTIONS, /or format rules\. Do not add a disclaimer to Grill's text\./);
     assert.doesNotMatch(hostedCore.HOSTED_INSTRUCTIONS, /do not show[^.]*disclaimer/i);
+  });
+
+  it("limits the no-disclaimer rule to Grill's own text in the grill description too", () => {
+    // The installed tool's sentence forbids any disclaimer. An assistant's own rules may
+    // require one, so the hosted description forbids it in Grill's text only.
+    assert.equal(hostedCore.LOCAL_ONLY_NO_ADDITIONS, "Do not add a fact list, a confidence question, a record, or a disclaimer.");
+    assert.equal(
+      hostedCore.HOSTED_NO_ADDITIONS,
+      "Do not add a fact list, a confidence question, or a record. Do not add a disclaimer to Grill's text.",
+    );
+    assert.ok(installed.description.includes(hostedCore.LOCAL_ONLY_NO_ADDITIONS), "server/index.mjs changed this sentence: update LOCAL_ONLY_NO_ADDITIONS in hostedCore.mjs");
+    assert.equal(grill.description.includes(hostedCore.LOCAL_ONLY_NO_ADDITIONS), false);
+    assert.equal(grill.description.includes("or a disclaimer"), false);
+    assert.equal(grill.description.split(`Do not add deepen yourself. ${hostedCore.HOSTED_NO_ADDITIONS}`).length, 2);
+    // One mention of a disclaimer in the whole description, and it is the scoped one.
+    assert.equal(grill.description.split("disclaimer").length, 2);
   });
 
   it("says each thing once", () => {

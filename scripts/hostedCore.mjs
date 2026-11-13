@@ -1347,7 +1347,7 @@ export function lookbackSavedText({ reading = "", saved = [], unmatched = [], re
  * first-use line and the scope rule, so this does not say them again.
  */
 const HOSTED_GRILL_TAIL =
-  "The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. The first time, Grill asks whether to keep decision records before anything is sent: show that one question and the paragraph under it, and call again with keep_records true or false only after they answer Yes or No. A follow: line is a job id for you. Never show it.";
+  "The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up, when Grill can tell which that is. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. The first time, Grill asks whether to keep decision records before anything is sent: show that one question and the paragraph under it, and call again with keep_records true or false only after they answer Yes or No. A follow: line is a job id for you. Never show it.";
 
 // The installed tool's description assumes Claude wrote the subject unless a setting says
 // otherwise, and it describes a judge model named in settings. Neither is true of Grill in
@@ -1360,6 +1360,12 @@ export const HOSTED_OPENING =
   "Send a decision, plan or forecast to an outside AI judge. The judge is from a different company than the one whose model wrote it, when Grill can tell which that is. When it cannot, the verdict says so.";
 export const LOCAL_ONLY_JUDGE_SETTING =
   "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default. ";
+
+// The installed sentence forbids any disclaimer. An assistant's own rules may require one, so
+// Grill in chat forbids it in Grill's text only, as HOSTED_INSTRUCTIONS already does.
+export const LOCAL_ONLY_NO_ADDITIONS = "Do not add a fact list, a confidence question, a record, or a disclaimer.";
+export const HOSTED_NO_ADDITIONS =
+  "Do not add a fact list, a confidence question, or a record. Do not add a disclaimer to Grill's text.";
 
 /**
  * The quality check is a second place the write-up goes, and it is on unless the call turns
@@ -1435,6 +1441,7 @@ export function hostedTools() {
       description: `${grill.description
         .replace(LOCAL_ONLY_OPENING, HOSTED_OPENING)
         .replace(localDisclosure, hostedDisclosure)
+        .replace(LOCAL_ONLY_NO_ADDITIONS, HOSTED_NO_ADDITIONS)
         .replace(LOCAL_ONLY_JUDGE_SETTING, "")} ${HOSTED_GRILL_TAIL}`,
       annotations: { title: "Grill a decision", readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       inputSchema: {
