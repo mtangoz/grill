@@ -118,7 +118,7 @@ Enforced by: [scripts/contributorsCore.mjs](../scripts/contributorsCore.mjs), te
 
 ## A public page
 
-A public page is one file in `site/` and one `writePage` call in the build script. It opens with its `<title>`, and the title has the word Grill in it. It has one `<h1>`. It borrows the home page's styles, and has no `<style>` and no `<script>` of its own. Its address is one segment with no dot, such as `/how-we-test/`, so the routes that already exist serve it and its Markdown twin. Registering it puts it in the sitemap and in `llms.txt`. The steps are in [CONTRIBUTING.md](../CONTRIBUTING.md), under "Add a page".
+A public page is one file in `site/` and one `writePage` call in the build script. It opens with its `<title>`, and the title has the word Grill in it. It has one `<h1>`. It borrows the home page's styles. A new page has no `<style>` and no `<script>` of its own. Three older pages, look-back, start and miss, keep one script each, and a test names them. Its address is one segment with no dot, such as `/how-we-test/`, so the routes that already exist serve it and its Markdown twin. Registering it puts it in the sitemap and in `llms.txt`. The steps are in [CONTRIBUTING.md](../CONTRIBUTING.md), under "Add a page".
 
 Enforced by: [scripts/build-site.mjs](../scripts/build-site.mjs) (`writePage`), test "names Grill in the title of every sitemap page" in [scripts/site.test.mjs](../scripts/site.test.mjs), test "publishes one SoftwareApplication JSON-LD block and no other script" in [scripts/site.test.mjs](../scripts/site.test.mjs), test "writes a markdown twin for every sitemap page, from that page's own words" in [scripts/site.test.mjs](../scripts/site.test.mjs) and test "negotiates markdown for every sitemap page and adds Vary: Accept to the HTML" in [scripts/site.test.mjs](../scripts/site.test.mjs).
 
@@ -136,7 +136,7 @@ Enforced by: test "opens with what has not been measured yet, and the descriptio
 
 A sentence that says the judge is from a different company keeps its condition: when Grill can tell which company wrote the plan. A page does not carry a claim about how good the judge is that has not been measured.
 
-Enforced by: test "states the rule in its conditional shape, and no sentence says different company without the condition" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs) and test "uses none of the words Grill does not say, promises no date, and shows no rate sign anywhere" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs).
+Enforced by: test "states the rule in its conditional shape, and no sentence says different company without the condition" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs), test "uses none of the words Grill does not say, promises no date, and shows no rate sign anywhere" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs) and, for the other pages, test "public copy does not claim the judge is more accurate before it is measured" in [scripts/claims.test.mjs](../scripts/claims.test.mjs).
 
 A new page is looked at 390 px wide, in light and in dark, before it ships.
 

@@ -12,6 +12,10 @@
  * because a string that does not belong here could be someone's words. An unknown key is
  * named only when it is a plain name of 40 characters or fewer.
  *
+ * The second half of this file is what is done with a checked file: the layout it is written
+ * in, the merge that adds one run of the weekly check, and the HTML that the page
+ * /how-we-test/ shows. scripts/results.mjs is the command that reads and writes the file.
+ *
  * This file is pure. It imports nothing, reads no file and makes no request.
  */
 
@@ -763,7 +767,7 @@ export function mergeRegressionRun(json, block) {
   const added = copy(block);
   const runs = [...before.map(copy), added].sort((a, b) => (a.date === b.date ? a.run_id - b.run_id : a.date < b.date ? -1 : 1));
   if (before.length > 0 && runs[0] === added) {
-    fail("run.date", `${block.date} is before the first measured run in the file, which stays first`);
+    fail("run.date", `${block.date}, run ${block.run_id}, comes before the first measured run in the file, which stays first`);
   }
   while (runs.length > MAX_REGRESSION_RUNS) runs.splice(1, 1);
   if (!runs.includes(added)) {
