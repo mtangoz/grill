@@ -16,6 +16,7 @@ import { billingMode, couponId, starterAllowanceUsd } from "../api/_pro.mjs";
 import { analyticsSnippet } from "./siteAnalytics.mjs";
 import { renderContributorEntries } from "./contributorsCore.mjs";
 import { INDEXNOW_KEY } from "./indexnow.mjs";
+import { withRenderedResults } from "./resultsCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "_site");
@@ -426,9 +427,18 @@ function withContributorEntries(source) {
   return source.replace(marker, () => renderContributorEntries(entries));
 }
 
+// /how-we-test/ shows data/results.json, the public counts-only file. The page has one marker,
+// and scripts/resultsCore.mjs renders what takes its place. The build stops when the marker is
+// not there exactly once, and when the file breaks any rule of its shape.
+function withResults(source) {
+  const results = JSON.parse(readFileSync(join(ROOT, "data/results.json"), "utf8"));
+  return withRenderedResults(source, results);
+}
+
 function writePage(file, { description, url, outDir, name, blurb }) {
   let source = readFileSync(join(ROOT, "site", file), "utf8");
   if (file === "contribute.html") source = withContributorEntries(source);
+  if (file === "how-we-test.html") source = withResults(source);
   const title = openingTitle(source, `site/${file}`);
   mkdirSync(join(OUT, outDir), { recursive: true });
   addPublicPage({ url, name, blurb });
@@ -513,6 +523,14 @@ writePage("check-your-ai.html", {
   outDir: "check-your-ai",
   name: "Check your AI's work",
   blurb: "Four quick checks before you send an AI draft to your boss.",
+});
+// The description, the blurb and so the llms.txt line open with what has not been measured.
+writePage("how-we-test.html", {
+  description: "Not measured yet: whether an outside judge catches more than the same model starting fresh. What Grill has measured so far, as counts.",
+  url: `${SITE_URL}how-we-test/`,
+  outDir: "how-we-test",
+  name: "How Grill tests its judge",
+  blurb: "Not measured yet: whether an outside judge catches more than the same model starting fresh. What has been measured, as counts: a weekly regression check, one held-out check of a candidate rule, and how many people use Grill.",
 });
 // The miss page is built only when GRILL_MISS=1, the same switch that opens /miss/send. Its fields
 // and its in-browser check come from scripts/missCore.mjs, the module the server checks with.
@@ -637,4 +655,4 @@ writeFileSync(
     "",
   ].join("\n"),
 );
-console.log(`built _site/index.html and the terms, contribute, look-back, start, privacy and demo pages, plus about, contact and check-your-ai${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);
+console.log(`built _site/index.html and the terms, contribute, look-back, start, privacy and demo pages, plus about, contact, support, faq, check-your-ai and how-we-test${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);
