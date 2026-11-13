@@ -1023,7 +1023,8 @@ describe("the /check-your-ai page", () => {
   const H1 = "Check your AI's work before you send it to your boss.";
   const DESCRIPTION = "Plain checks for an AI draft before you send it to your boss: the assumption, the facts, and one cheap test.";
   const CANONICAL = "https://grillyour.ai/check-your-ai/";
-  const JUDGE_BLIND_SPOTS = "The judge never comes from the company behind your AI, so it won\u2019t share its blind spots.";
+  // The judge line is conditional: a different company only when Grill can tell which AI wrote the draft.
+  const JUDGE_LINE = "The judge did not write your draft. When Grill can tell which AI did, the judge comes from a different company. When it cannot, the verdict says so.";
   const nav = (html) => html.match(/<nav aria-label="Sections">[\s\S]*?<\/nav>/)?.[0];
   const footer = (html) => html.match(/<div class="footer">[\s\S]*?<\/div>/)?.[0];
 
@@ -1054,7 +1055,7 @@ describe("the /check-your-ai page", () => {
     assert.equal(footer(source), footer(about));
     assert.match(source, /href="\/demo\/"/);
     assert.match(source, /href="\/start\/"/);
-    assert.ok(source.includes(JUDGE_BLIND_SPOTS));
+    assert.ok(source.includes(JUDGE_LINE));
     assert.match(source, /Say [“"]grill this[”"]/);
     assert.match(source, /made-up/);
     assert.match(source, /Nothing in that example is a real decision/);
@@ -1106,7 +1107,7 @@ describe("the /check-your-ai page", () => {
     const rest = built.replace(analyticsSnippet(process.env), "");
     assert.equal(rest.match(/<script\b/gi)?.length ?? 0, 0, "/check-your-ai has a script of its own");
     assert.ok(md.includes(H1));
-    assert.ok(md.includes(JUDGE_BLIND_SPOTS));
+    assert.ok(md.includes(JUDGE_LINE));
     assert.ok(md.includes("https://grillyour.ai/demo/"));
     assert.ok(md.includes("https://grillyour.ai/start/"));
     assert.doesNotMatch(md, /<script/i);
@@ -1197,6 +1198,10 @@ describe("the about and contact pages", () => {
     assert.match(text, /Hear the strongest case against your plan, then decide for yourself\./);
     assert.doesNotMatch(text, /Get a second opinion before you decide\./);
     assert.match(text, /A model from another company gives a verdict and one cheap test\./);
+    assert.ok(
+      text.includes("The judge did not write your plan. When Grill can tell which AI did, the judge comes from a different company. When it cannot, the verdict says so."),
+      "about should say the judge is from a different company only when Grill can tell which AI wrote the plan",
+    );
     assert.match(text, /An AI from a different company argues the other side\. You decide\. Later you can look back and see how your judgement did\./);
     assert.doesNotMatch(text, /The verdict never becomes the decision\./);
     assert.ok(source.includes(CHAT_KEEPS_CHOSEN), "about source should say what Grill in chat keeps");
