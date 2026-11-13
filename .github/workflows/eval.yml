@@ -7,12 +7,15 @@ on:
   schedule:
     - cron: "0 13 * * 1"
   workflow_dispatch:
+  # With the secret set, every run here is a paid run. A pull request starts one only when it
+  # changes the judge, a case or a threshold. A change to a doc or to another eval folder does not.
   pull_request:
     paths:
       - scripts/judge.mjs
       - scripts/judgeCore.mjs
       - scripts/checkCore.mjs
-      - evals/**
+      - evals/cases/**
+      - evals/thresholds.json
 
 permissions:
   contents: read
@@ -29,6 +32,8 @@ jobs:
           node-version: 22
       # Pull requests may skip when there is no key (a fork gets no secrets). The weekly and
       # manual runs must measure: with no key they fail with exit 2, "not measured".
+      # Any run where no case gets a verdict back also exits 2. A dead key is not a quality result.
+      # The script writes reached_judge to the step outputs: how many cases got a verdict.
       - name: Run the judge self-eval
         id: eval
         env:
@@ -56,7 +61,7 @@ jobs:
           set -e
           if [ "$CODE" = "2" ]; then
             TITLE="Judge self-eval is not measuring"
-            BODY="The weekly judge self-eval ran on $(date -u +%F) with no OPENROUTER_API_KEY secret, so no case reached a judge. Nothing was measured. Add the secret (a capped key), then run the eval workflow by hand.
+            BODY="The weekly judge self-eval ran on $(date -u +%F) and no case reached a judge. Nothing was measured. Either there is no OPENROUTER_API_KEY secret, or the key is dead or out of credit. The run log says which. Fix the secret (a capped key), then run the eval workflow by hand. A run that measures closes this issue.
 
           Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           else
@@ -72,4 +77,21 @@ jobs:
             gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body "$BODY"
           else
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+          fi
+      # The other half of that alarm. Once a weekly or manual run measures again, the open
+      # "not measuring" issue is closed, so it does not sit there as a stale alarm. A pull
+      # request run never closes it, and only an issue with exactly this title is touched.
+      - name: On a weekly or manual run that measured, close the open not-measuring issue
+        if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.eval.outputs.reached_judge != '' && steps.eval.outputs.reached_judge != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REACHED: ${{ steps.eval.outputs.reached_judge }}
+        run: |
+          set -e
+          TITLE="Judge self-eval is not measuring"
+          NUMBER=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number,title --jq '[.[] | select(.title == "Judge self-eval is not measuring")][0].number // empty')
+          if [ -n "$NUMBER" ]; then
+            gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed --comment "Measuring again on $(date -u +%F). Cases that reached a judge: $REACHED.
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           fi

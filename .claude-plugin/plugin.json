@@ -2,7 +2,7 @@
   "name": "grill",
   "version": "0.1.1",
   "license": "MIT",
-  "description": "Grill your decisions: an outside AI judge, from a different company than your chat assistant, argues the strongest case against a decision or forecast and names the tests that would settle it. Includes a weekly decision review. Bring your own OpenRouter key and connections.",
+  "description": "Grill your decisions: an outside AI judge, from a different company than your chat assistant when Grill can tell which that is, argues the strongest case against a decision or forecast and names the tests that would settle it. Includes a weekly decision review. Bring your own OpenRouter key and connections.",
   "author": {
     "name": "Grill"
   },
@@ -21,24 +21,24 @@
     "openrouter_api_key": {
       "type": "string",
       "title": "Model router key (OpenRouter)",
-      "description": "Create one at https://openrouter.ai/keys and add credit. It is masked, stored securely, and sent only to OpenRouter. Have Grill Pro? Paste your managed key here instead. It is the same field. Or leave it empty if GRILL_API_KEY or OPENROUTER_API_KEY is already set. Grill reads GRILL_API_KEY first.",
+      "description": "Create one at https://openrouter.ai/keys and add credit. It is masked, stored securely, and sent only to OpenRouter. Or leave it empty if GRILL_API_KEY or OPENROUTER_API_KEY is already set. Grill reads GRILL_API_KEY first.",
       "sensitive": true
     },
     "jev_quality_check": {
       "type": "boolean",
       "title": "Quality check with Jev",
-      "description": "Score every grill with Jev, a zero-retention decision model reached through the same model router: are the falsifiers real tests, does the verdict fit the challenges? It sees the masked write-up and the report. About $0.0002 a grill. Claude tells you before each grill, and you can skip it for one. Turn off to send the write-up to the judge only.",
+      "description": "Score every grill with Jev, one fixed decision model at TypeSafe, reached through the same model router: are the falsifiers real tests, does the verdict fit the challenges? It sees the masked write-up, your question, the verdict and the top five challenges. Its request carries no zero-retention flag. Grill relies instead on TypeSafe being the only provider of that model on OpenRouter, a weekly check that it is on OpenRouter's zero-retention list, and reading an answer only if TypeSafe served it. About $0.0002 a grill. Say skip the check to skip it for one grill. Turn off to send the write-up to the judge only.",
       "default": true
     },
     "judge_model": {
       "type": "string",
       "title": "Judge model (optional)",
-      "description": "An OpenRouter model from a different company than the assistant you think with. Leave blank to use Grill's default, which picks a judge automatically from a different company than your assistant. Grill Pro setup gives you one. An empty box is the same as blank."
+      "description": "An OpenRouter model from a different company than the assistant you think with. One from the company Grill rules out is refused. Leave blank to use Grill's default, which lets the router pick the judge and leaves out your assistant's company when Grill can tell which that is, or Anthropic otherwise. An empty box is the same as blank."
     },
     "show_news": {
       "type": "boolean",
       "title": "Show Grill news",
-      "description": "After a finished grill, at most once a session, show one line about optional Pro features (saved history and look-back reminders), with a link to leave your email. Only within 7 days of a release, or on the first 3 days of a month. The tool sends nothing. It stops on its own. Turn off to hide the line.",
+      "description": "After a finished grill, at most once a session, show one line about a planned Pro plan, with a link to leave your email. Only within 7 days of a release, or on the first 3 days of a month, and never after 13 November 2026. The tool sends nothing. Turn off to hide the line.",
       "default": true
     },
     "usage_stats": {

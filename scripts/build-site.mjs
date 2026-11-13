@@ -1,21 +1,29 @@
 #!/usr/bin/env node
 /**
- * Build the public onboarding site. The home page's one source is site/page.html; the other pages
- * (terms, contribute, look-back, start, privacy, about, contact, demo, check-your-ai) borrow its styles.
+ * Build the public onboarding site. The home page's one source is site/page.html. Every other page
+ * is a file in site/ that one writePage call below registers, and it borrows the home page's styles.
+ * Today those are terms, contribute, look-back, start, privacy, about, contact, support, demo, faq,
+ * check-your-ai, how-we-test and data-flow, plus miss when GRILL_MISS=1. The writePage calls are the list:
+ * this comment is not.
  *
  * site/page.html is a page body (title, styles, markup, script) with no document skeleton, so the
  * same file publishes as a Claude artifact unchanged. This wraps it into a full document with the
  * link-preview tags a shared URL needs, and writes _site/index.html, which Vercel serves.
  *
+ * A registered page lands in sitemap.xml and llms.txt, and gets a Markdown twin, with no other
+ * edit. The build stops when a page does not open with its <title>, or has lost the footer span
+ * that carries the live commit. How to add a page: CONTRIBUTING.md, "Add a page".
+ *
  *   node scripts/build-site.mjs        # writes _site/index.html, a Markdown twin for every public page, and 404.md
  */
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { billingMode, couponId, starterAllowanceUsd } from "../api/_pro.mjs";
 import { analyticsSnippet } from "./siteAnalytics.mjs";
 import { renderContributorEntries } from "./contributorsCore.mjs";
 import { INDEXNOW_KEY } from "./indexnow.mjs";
+import { withRenderedResults } from "./resultsCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "_site");
@@ -25,7 +33,7 @@ const GITHUB_URL = "https://github.com/mtangoz/grill";
 const TAGLINE = "Grill your AI before you send it to your boss.";
 const HOME_TITLE = "Grill: grill your AI before you send it to your boss";
 const DESCRIPTION =
-  `${TAGLINE} A model from another company finds the weak spots in your plan and one cheap way to test them. Works with ChatGPT, Claude, Gemini and more.`;
+  `${TAGLINE} A different AI argues the case against your plan and names one cheap test. Works with ChatGPT, Claude, Gemini and more.`;
 // One schema.org block on the homepage. The description is the meta description above.
 // ProductivityApplication is the closer category: Grill challenges a plan before you act.
 // Nothing here is an offer, a rating, a review, or a claim the homepage does not already make.
@@ -306,17 +314,23 @@ const ANALYTICS = analyticsSnippet(process.env);
 // the public source. A local build, or anything that isn't a full commit hash, shows nothing.
 const LIVE_COMMIT = /^[0-9a-f]{40}$/.test(process.env.VERCEL_GIT_COMMIT_SHA ?? "") ? process.env.VERCEL_GIT_COMMIT_SHA : "";
 const MADE_AT = '<span>Made at <a href="https://hold.quest">Hold</a>';
-const withLiveCommit = (body) =>
-  LIVE_COMMIT
+// The commit goes in by replacing that span. A page without it would ship with no commit and no
+// error, so the build stops instead, on a local build as well as on a deploy.
+const withLiveCommit = (body, label) => {
+  if (!body.includes(MADE_AT)) throw new Error(`${label} must keep the footer span ${MADE_AT}</span>: the live commit is written into it`);
+  return LIVE_COMMIT
     ? body.replace(
         MADE_AT,
         `<span>Live commit <a href="https://github.com/mtangoz/grill/commit/${LIVE_COMMIT}">${LIVE_COMMIT.slice(0, 7)}</a> · Made at <a href="https://hold.quest">Hold</a>`,
       )
     : body;
+};
 
 const page = readFileSync(join(ROOT, "site/page.html"), "utf8");
 const headFor = ({ description, url, title = "Grill" }) => {
   const safeTitle = esc(title);
+  // Escaped like the title, so a quote or an ampersand in a description cannot cut the attribute short.
+  const safeDescription = esc(description);
   return [
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
@@ -324,11 +338,11 @@ const headFor = ({ description, url, title = "Grill" }) => {
     '<meta name="theme-color" content="#f7f4ef" media="(prefers-color-scheme: light)">',
     '<meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">',
     ...ICONS,
-    `<meta name="description" content="${description}">`,
+    `<meta name="description" content="${safeDescription}">`,
     `<link rel="canonical" href="${url}">`,
     `<meta property="og:url" content="${url}">`,
     `<meta property="og:title" content="${safeTitle}">`,
-    `<meta property="og:description" content="${description}">`,
+    `<meta property="og:description" content="${safeDescription}">`,
     '<meta property="og:type" content="website">',
     `<meta property="og:image" content="${OG_IMAGE}">`,
     '<meta property="og:image:width" content="1200">',
@@ -354,8 +368,8 @@ const cut = page.indexOf("</style>");
 if (cut === -1) throw new Error("site/page.html must open with its <title>, links and <style>");
 const pageHead = page.slice(0, cut + "</style>".length);
 const pageBody = page.slice(cut + "</style>".length);
-const doc = (head, title, body) =>
-  `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${withLiveCommit(body)}\n${ANALYTICS}\n</body>\n</html>\n`;
+const doc = (head, title, body, label) =>
+  `<!doctype html>\n<html lang="en">\n<head>\n${head}\n${title}\n</head>\n<body>${withLiveCommit(body, label)}\n${ANALYTICS}\n</body>\n</html>\n`;
 
 // The offer, the paywall and the launch-list form are build-time switches.
 // GRILL_PRO_COUPON set means 50% off is on the page. GRILL_PRO_BILLING=subscription shows
@@ -395,12 +409,37 @@ if (homeBody.includes('id="pro"')) {
   }
 }
 
+/** The text of every file this build has written, by path. */
+const builtText = new Map();
+
+/**
+ * Write one built file whole. The text goes to a scratch file beside the target, and the
+ * scratch file is then renamed over it. A rename swaps the file in one step, so anything that
+ * reads _site while a build runs gets the file as it was or as it now is, never an empty or
+ * half-written one. The tests need this: several test files build into _site at the same time
+ * and read it back. If the swap cannot be made, the file is written in place.
+ *
+ * The text is also kept, so a later step of this build reads its own page and not the folder,
+ * where another build may have put a page of its own since.
+ */
+function writeBuilt(path, text) {
+  builtText.set(path, text);
+  const scratch = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(scratch, text);
+    renameSync(scratch, path);
+  } catch {
+    rmSync(scratch, { force: true });
+    writeFileSync(path, text);
+  }
+}
+
 mkdirSync(OUT, { recursive: true });
 cpSync(join(ROOT, "site/brand"), join(OUT, "brand"), { recursive: true });
 cpSync(join(ROOT, "site/brand/favicon.ico"), join(OUT, "favicon.ico"));
-writeFileSync(
+writeBuilt(
   join(OUT, "index.html"),
-  doc(headFor({ description: DESCRIPTION, url: SITE_URL, title: HOME_TITLE }), `${pageHead}\n${jsonLdScript(SOFTWARE_APPLICATION)}`, homeBody),
+  doc(headFor({ description: DESCRIPTION, url: SITE_URL, title: HOME_TITLE }), `${pageHead}\n${jsonLdScript(SOFTWARE_APPLICATION)}`, homeBody, "site/page.html"),
 );
 // Every public page. The sitemap and /llms.txt both read this list, so a new page lands in both.
 // Google has to crawl the home page before its favicon service knows the icon; until then Claude
@@ -426,15 +465,24 @@ function withContributorEntries(source) {
   return source.replace(marker, () => renderContributorEntries(entries));
 }
 
+// /how-we-test/ shows data/results.json, the public counts-only file. The page has one marker,
+// and scripts/resultsCore.mjs renders what takes its place. The build stops when the marker is
+// not there exactly once, and when the file breaks any rule of its shape.
+function withResults(source) {
+  const results = JSON.parse(readFileSync(join(ROOT, "data/results.json"), "utf8"));
+  return withRenderedResults(source, results);
+}
+
 function writePage(file, { description, url, outDir, name, blurb }) {
   let source = readFileSync(join(ROOT, "site", file), "utf8");
   if (file === "contribute.html") source = withContributorEntries(source);
+  if (file === "how-we-test.html") source = withResults(source);
   const title = openingTitle(source, `site/${file}`);
   mkdirSync(join(OUT, outDir), { recursive: true });
   addPublicPage({ url, name, blurb });
-  writeFileSync(
+  writeBuilt(
     join(OUT, outDir, "index.html"),
-    doc(headFor({ description, url, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length)),
+    doc(headFor({ description, url, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length), `site/${file}`),
   );
 }
 writePage("terms.html", {
@@ -470,7 +518,7 @@ writePage("privacy.html", {
   url: `${SITE_URL}privacy/`,
   outDir: "privacy",
   name: "Privacy",
-  blurb: "The free tool has no account. Grill keeps a grill from it only when you send that one. Grill in chat keeps only what you choose, encrypted, and you can delete it.",
+  blurb: "The free tool has no account. Grill keeps a grill from it only when you send that one. Grill in chat keeps your account, a 15-minute encrypted copy of each grill that gets a verdict, and a log and counts of your use. It keeps a record of a decision only if you say yes, encrypted, and you can delete it.",
 });
 writePage("about.html", {
   description: "Hear the strongest case against your plan, then decide for yourself. Grill is made by Hold.",
@@ -501,11 +549,11 @@ writePage("demo.html", {
   blurb: "Four made-up decisions, and what Grill said about each.",
 });
 writePage("faq.html", {
-  description: "Plain answers: how Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and that no benchmarks are published.",
+  description: "Plain answers: how Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and what has not been measured yet.",
   url: `${SITE_URL}faq/`,
   outDir: "faq",
   name: "FAQ",
-  blurb: "How Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and that no benchmarks are published.",
+  blurb: "How Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and what has not been measured yet.",
 });
 writePage("check-your-ai.html", {
   description: "Plain checks for an AI draft before you send it to your boss: the assumption, the facts, and one cheap test.",
@@ -513,6 +561,23 @@ writePage("check-your-ai.html", {
   outDir: "check-your-ai",
   name: "Check your AI's work",
   blurb: "Four quick checks before you send an AI draft to your boss.",
+});
+// The description, the blurb and so the llms.txt line open with what has not been measured.
+writePage("how-we-test.html", {
+  description: "Not measured yet: whether an outside judge catches more than the same model starting fresh. What Grill has measured so far, as counts.",
+  url: `${SITE_URL}how-we-test/`,
+  outDir: "how-we-test",
+  name: "How Grill tests its judge",
+  blurb: "Not measured yet: whether an outside judge catches more than the same model starting fresh. What has been measured, as counts: a weekly regression check, one held-out check of a candidate rule, and how many people use Grill.",
+});
+// /data-flow/ says where a decision goes on each route, and what is kept and for how long.
+// scripts/dataFlow.test.mjs holds its whole text and checks its numbers against the code.
+writePage("data-flow.html", {
+  description: "Where your decision goes when you grill it, who sees it, and what Grill keeps and for how long, route by route.",
+  url: `${SITE_URL}data-flow/`,
+  outDir: "data-flow",
+  name: "Where your decision goes",
+  blurb: "Route by route: what leaves your assistant when you grill a decision, who sees it, and what Grill keeps and for how long.",
 });
 // The miss page is built only when GRILL_MISS=1, the same switch that opens /miss/send. Its fields
 // and its in-browser check come from scripts/missCore.mjs, the module the server checks with.
@@ -535,20 +600,20 @@ if (process.env.GRILL_MISS === "1") {
     name: "Share a miss",
     blurb: "Share a miss, not your decision. When AI got a decision wrong, tell Grill how it went wrong.",
   });
-  writeFileSync(
+  writeBuilt(
     join(OUT, "miss", "index.html"),
-    doc(headFor({ description: "Share how AI got a decision wrong, without the decision.", url: `${SITE_URL}miss/`, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length)),
+    doc(headFor({ description: "Share how AI got a decision wrong, without the decision.", url: `${SITE_URL}miss/`, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length), "site/miss.html"),
   );
 }
-writeFileSync(join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}sitemap.xml\n`);
+writeBuilt(join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}sitemap.xml\n`);
 // IndexNow's public key file, at the site root. The body is the key. A trailing newline is allowed.
 // text/plain comes from the vercel.json route. Not a page, so it is not added to publicPages.
-writeFileSync(join(OUT, `${INDEXNOW_KEY}.txt`), `${INDEXNOW_KEY}\n`);
+writeBuilt(join(OUT, `${INDEXNOW_KEY}.txt`), `${INDEXNOW_KEY}\n`);
 // OpenAI's public domain-verification token. The body is these bytes and nothing else:
 // no newline, and text/plain comes from the vercel.json route for this path.
 mkdirSync(join(OUT, ".well-known"), { recursive: true });
-writeFileSync(join(OUT, ".well-known", "openai-apps-challenge"), "qUFqSGmOG8CWwJUnLKQuZ-6pUmSzTgCZRDsib-tA2j0");
-writeFileSync(
+writeBuilt(join(OUT, ".well-known", "openai-apps-challenge"), "qUFqSGmOG8CWwJUnLKQuZ-6pUmSzTgCZRDsib-tA2j0");
+writeBuilt(
   join(OUT, "sitemap.xml"),
   `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${publicPages.map((p) => `  <url><loc>${p.url}</loc></url>`).join("\n")}\n</urlset>\n`,
 );
@@ -571,12 +636,12 @@ const WHEN_TO_USE = [
   "Get the strongest case against your plan from a different AI, right in the chat you already use.",
   "Then you decide.",
 ];
-writeFileSync(
+writeBuilt(
   join(OUT, "llms.txt"),
   [
     "# Grill",
     "",
-    "> Grill your AI before you send it to your boss. An outside judge, a model from a different company, gives the strongest case against a decision.",
+    "> Grill your AI before you send it to your boss. An outside judge gives the strongest case against a decision. When Grill can tell which AI wrote the plan, the judge is from a different company.",
     "",
     "Anyone can sign up and connect Grill to the AI they use at https://grillyour.ai/mcp.",
     "",
@@ -589,7 +654,7 @@ writeFileSync(
     "## Pages",
     "",
     ...publicPages.map((p) => `- [${p.name}](${p.url}): ${p.blurb}`),
-    `- [GitHub](${GITHUB_URL}): An outside judge, a model from a different company.`,
+    `- [GitHub](${GITHUB_URL}): The code, the tests and the judge prompt.`,
     "",
     FAQ_FOR_AGENTS,
   ].join("\n"),
@@ -600,17 +665,19 @@ writeFileSync(
 for (const p of publicPages) {
   if (p.url === SITE_URL) continue;
   const rel = p.url.slice(SITE_URL.length);
-  let md = htmlToMarkdown(readFileSync(join(OUT, rel, "index.html"), "utf8"));
+  const html = builtText.get(join(OUT, rel, "index.html"));
+  if (html === undefined) throw new Error(`no page was built for ${p.url}, so it cannot get a Markdown twin`);
+  let md = htmlToMarkdown(html);
   // /start HTML replaces this sentence with the live count. The twin is built once,
   // so a number here would disagree with the page. Keep the sentence, drop the count.
   if (rel === "start/") {
     md = md.replace(/First 100 users get Grill free for life, \d+ spots? left\./g, "First 100 users get Grill free for life.");
   }
-  writeFileSync(join(OUT, rel, "index.md"), md);
+  writeBuilt(join(OUT, rel, "index.md"), md);
 }
 // Same words as the homepage, for an agent that sends Accept: text/markdown. vercel.json
 // routes / to this file only for that header. Nothing here is a new claim.
-writeFileSync(
+writeBuilt(
   join(OUT, "index.md"),
   [
     "# Grill your AI before you send it to your boss.",
@@ -625,7 +692,7 @@ writeFileSync(
     "",
   ].join("\n"),
 );
-writeFileSync(
+writeBuilt(
   join(OUT, "404.md"),
   [
     "# This page doesn’t exist",
@@ -637,4 +704,4 @@ writeFileSync(
     "",
   ].join("\n"),
 );
-console.log(`built _site/index.html and the terms, contribute, look-back, start, privacy and demo pages, plus about, contact and check-your-ai${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);
+console.log(`built _site/index.html and the terms, contribute, look-back, start, privacy and demo pages, plus about, contact, support, faq, check-your-ai, how-we-test and data-flow${process.env.GRILL_MISS === "1" ? " and _site/miss/index.html" : ""}, plus llms.txt`);

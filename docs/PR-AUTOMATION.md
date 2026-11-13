@@ -131,6 +131,13 @@ Labels:
 
 The verdict is advisory. The job passes for a solid verdict and for a shaky one. It fails when the judge run errors, and it fails when the model that answered is from an excluded company. It does not block merging unless branch protection is later told to require it. `needs-review` still blocks auto-merge.
 
+## What the pull request template asks for
+
+`.github/pull_request_template.md` asks the author for two things that no workflow can do.
+
+- **The writing model.** The template has a line `Written-by-model: <vendor>/<model>`. Replace the placeholder with the model that wrote the change, such as `anthropic/claude-opus-4`. Grill CI uses it to keep that company out of the judge. The rules are under "Who is excluded from judging" above. Left as the placeholder, or deleted, the line names no model. Grill CI then knows the company only when the login names it, or when the head branch starts with `claude/` (Anthropic) or `codex/` (OpenAI). Otherwise it excludes nothing, and its comment says independence isn't verified. An agent that opens a pull request through the API does not get the template, so it has to add the line itself.
+- **IndexNow, after a page change.** Once a change to a public page is merged and live, run `node scripts/indexnow.mjs` by hand. It reads the live sitemap and prints what it would send. `--send` posts it. No workflow runs it.
+
 ## Repository settings
 
 1. In **Settings → General → Pull Requests**, turn on **Allow auto-merge** and **Allow squash merging**.

@@ -6,7 +6,7 @@
 **No key needed:** Anyone can sign up and connect Grill to the AI they use at https://grillyour.ai/mcp.
 **See it first:** [four made-up decisions, grilled](https://grillyour.ai/demo/)
 
-Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, DeepSeek, Gemini, Grok or Muse. It sends the decision as you said it. An outside judge, a model from a different company, comes back with a short note: one verdict line, then one short line naming the question that would change the call when the judge named one, then the sharpest point and one cheap test when the judge named one. The verdict, the point and the test stay within about 50 words. The extra line is at most about 25 words, and it never comes before the verdict. Say more, options, or your call when you want the rest. After that closing line, a two-line run note names the models that answered and how long it took, then one sentence on privacy. Never drop the run note. Never put it before the verdict. A thin line gets a quick take and one question, not a refusal. A record is written only after you answer, and a percent is optional. Grill does not store it on the installed tool.
+Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, DeepSeek, Gemini, Grok or Muse. It sends the decision as you said it. An outside judge comes back with a short note: one verdict line, then one short line naming the question that would change the call when the judge named one, then the sharpest point and one cheap test when the judge named one. The verdict, the point and the test stay within about 50 words. The extra line is at most about 25 words, and it never comes before the verdict. Say more, options, or your call when you want the rest. After that closing line, a two-line run note names the models that answered and how long it took, then one sentence on privacy. Never drop the run note. Never put it before the verdict. A thin line gets a quick take and one question, not a refusal. A record is written only after you answer, and a percent is optional. Grill does not store it on the installed tool.
 
 > **Verdict: shaky.** The plan assumes customers stay at the new price, and nothing in it tests that.
 > **Falsifier:** show the new price to one in ten new signups for two weeks, and compare how many start paying.
@@ -15,20 +15,21 @@ Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, D
 
 The verdict never becomes the decision. You decide.
 Your values and judgment calls are yours: each verdict lists what the judge checked for you separately from what is your call.
-The judge is a model from a different company.
+The judge is from a different company than the one that wrote the plan, when Grill can tell which that is. When it cannot, the verdict says so.
 Grill uses OpenRouter's Auto Router, and it does not pin models.
-Only the write-up you approve leaves your machine.
+What leaves your machine is what your assistant puts in a Grill tool call: the decision and, at most, a few sentences of context. On copy and paste, nothing leaves until you paste it.
 Every promise, and the code and test that enforce it: [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
+What has been measured about the judge, and what has not: [grillyour.ai/how-we-test](https://grillyour.ai/how-we-test/).
 
 ## Set up
 
-Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes check it and warn you. Who to paste into is in the table below.
+Claude Desktop and Claude Code enforce that in code. The copy-and-paste routes check it and warn you. Grill in chat enforces it for the apps it recognises. In Cursor, in an app Grill does not recognise, and on the installed tool when nothing names your assistant's company, the verdict ends with a line that starts "Independence not verified:". Who to paste into is in the table below.
 
 When Grill is connected, most apps show a Grill tool call when it runs. If yours shows none and the answer still claims to be Grill's, Grill may not have run.
 
 ### Grill in chat
 
-Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). Use the same email each time, the email you signed up with, every time.
+Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/start/?ref=readme). Use the same email each time, the email you signed up with, every time.
 
 - **Claude.ai**, verified working. Works on the web, the desktop app and the phone app. The free plan allows only one custom connector. On a Team plan, an owner adds Grill, then each person signs in to Grill themselves. [Add Grill to Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Grill&connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp). Check the name says Grill and the URL says `https://grillyour.ai/mcp`, then Add and Connect, and sign in. Link didn't open? Customize → Connectors → Add custom connector and paste `https://grillyour.ai/mcp`. Asking Claude in a chat to connect it does not work.
 - **ChatGPT**. On chatgpt.com, and in the desktop app where that is supported, in the same account or workspace where you add it. The iPhone and Android apps can't run custom connectors. Plugins → + → Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Tick I understand and want to continue, then Create, then Install, and sign in.
@@ -60,7 +61,7 @@ Want it in one step? Use Claude Desktop, above.
 
 1. Copy **[the Grill prompt](prompts/grill.md)** into the assistant you think with, and say what you're deciding.
 2. It writes your decision up with you, then gives you a prompt for the judge.
-3. Paste that into an assistant from a **different company**, then paste the answer back.
+3. Paste that into one of the judges the table names for your assistant, then paste the answer back.
 
 | You think with | Judge with |
 |---|---|
@@ -88,7 +89,7 @@ In Cursor, a desktop connection and a Cloud Agent connection are separate sign-i
 npx -y grillyour --set-key      # once: paste your key, Enter, then Ctrl-D
 ```
 
-Then add a server named `grill` that runs `npx -y grillyour`. The config holds no key. Each app's config, and one-click installs for Cursor and VS Code, are in [docs/ANY-APP.md](docs/ANY-APP.md). A Grill Pro key works here too.
+Then add a server named `grill` that runs `npx -y grillyour`. The config holds no key. Each app's config, and one-click installs for Cursor and VS Code, are in [docs/ANY-APP.md](docs/ANY-APP.md).
 
 ### Claude Code
 
@@ -101,28 +102,30 @@ It asks for your model router key. Grill reads `GRILL_API_KEY` first. `OPENROUTE
 
 When Claude Code shows you a plan to approve, Grill adds one line, once a session: want an outside judge on this plan first? Keep planning and say "grill this plan". Claude Code hands the hook the plan, and the hook ignores it: it sends nothing and keeps nothing of the plan. To ask once, it keeps an empty marker file per session in the plugin's data folder, and removes markers older than two days the next time it runs. Turn it off with `GRILL_PLAN_OFFER=off`.
 
-Claude Code's advisor (`/advisor`) has a stronger Claude look over the work. That is a second opinion from the same company. Grill's judge is from a different one. Use both.
+Claude Code's advisor (`/advisor`) has a stronger Claude look over the work. That is a second opinion from the same company. Grill's judge is from another one when Grill can tell which AI wrote the plan. Use both.
 
 ## What it costs
 
 Grill is free. On your own key you pay the router. Copy and paste uses the assistants you already have.
 
-Coming later: an optional Pro plan with saved decision history and look-back reminders. The free tool stays free and account-free. [Hear when it's ready](https://grillyour.ai/notify?via=site).
+Saved decisions and look-back reminders are free today with [Grill in your chat](https://grillyour.ai/start/?ref=readme). Paid plans are off. The free tool stays free and account-free.
 
 ## Privacy
 
-- Your notes stay in your tools. Only the write-up you approve is sent. The reflection you write stays in your chat or your own notes.
-- The free tool has no account. Grill's makers never see your decisions on that tool. Anonymous usage stats are off unless you turn them on. An in-chat account is open to anyone who signs up; what it stores is in [docs/DATA-LEDGER.md](docs/DATA-LEDGER.md).
+- Your notes stay in your tools. What is sent is what your assistant puts in the Grill tool call: the decision and, at most, a few sentences of context. The reflection you write stays in your chat or your own notes.
+- The free tool has no account. Grill's makers never see a decision from that tool unless you send that grill after a reaction. Anonymous usage stats are off unless you turn them on. An in-chat account is open to anyone who signs up; what it stores is in [docs/DATA-LEDGER.md](docs/DATA-LEDGER.md).
 - A key, token or password in the write-up stops the run. Email addresses, phone numbers, card and bank numbers, ID numbers, labelled dates of birth, street addresses, postcodes and IP addresses are masked. Names are not. The full list is in [docs/PRIVACY.md](docs/PRIVACY.md).
-- The quality check (Jev) is on by default and also sees the masked write-up. Say "skip the check" to skip it for one grill, or switch it off in Grill's settings. The website counts visits without cookies.
-- Grill news line: after a finished grill, at most once a session, and only within 7 days of a release or on the first 3 days of a month, a line with a link to hear when an optional Pro plan is ready. Showing the line sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own.
+- The quality check (Jev) is on by default and also sees the masked write-up. Its request carries no zero-retention flag. Say "skip the check" to skip it for one grill. On the installed tool you can also switch it off in Grill's settings. The website counts visits without cookies. /start sets no cookie while sign-up is open. When sign-up needs an invitation, a /start link with a source tag sets one cookie holding that tag for 30 days. Signing in sets sign-in cookies.
+- Grill news line: until 13 November 2026, after a finished grill, at most once a session, and only within 7 days of a release or on the first 3 days of a month, the installed tool could show a line with a link to a launch list for a planned Pro plan. No paid plan is on sale. Showing the line sends nothing. Hide it with the "Show Grill news" setting, or `GRILL_NEWS=off`. It stops on its own after that date.
 - Anonymous usage stats: off by default. One metadata ping to Grill's website after the first successful grill, and never again. Never the decision, the question, the verdict, or your key.
+
+Where your decision goes on each route, and what is kept and for how long: [grillyour.ai/data-flow](https://grillyour.ai/data-flow/).
 
 What we will and won't do with your data, and how we build: [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
 
 ### Turn anonymous usage stats on
 
-Leave them off and the tool does not call Grill. To opt in:
+Leave them off and the tool calls Grill only when you react to a grill (helped or meh). To opt in:
 
 - **Claude Desktop:** in the install dialog, switch on "Send anonymous usage stats (optional)".
 - **Claude Code:** `/plugin` → Configure options, the same switch.

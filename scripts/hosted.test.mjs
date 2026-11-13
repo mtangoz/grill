@@ -5,12 +5,17 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { activeKeys, activeMember, AUTH_METADATA_CACHE_MS, changesForAccount, describeError, handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
+import { activeKeys, activeMember, AUTH_METADATA_CACHE_MS, changesForAccount, describeError, handleAccount, handleAuthorizationServer, handleCalendar, handleDecisions, handleJudge, handleMcp, handleProtectedResource, resetHostedCaches } from "../api/_hosted.mjs";
+import { esc } from "../api/_pro.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import {
   CLAUDE_CODE_CLIENT_ID,
   CLAUDE_WEB_REDIRECT,
   CONSENT_TEXT,
+  DATA_FLOW_URL,
+  EMAIL_CLAIMED_TEXT,
+  RECORDS_NOTE,
+  RECORDS_QUESTION,
   inviteOnlyText,
   OUT_OF_CREDIT,
   SERVICE_CAP_TEXT,
@@ -31,25 +36,41 @@ import {
   decisionHabits,
   decryptString,
   encryptString,
-  footerLine,
+  keyFromEnv,
   linkChains,
   savedConfirmation,
   ONCE_DISCLOSURE,
+  ONCE_DISCLOSURE_UNVERIFIED,
+  INDEPENDENCE_NOT_VERIFIED,
+  JUDGE_PAGE_UNVERIFIED_LINE,
+  HOSTED_INSTRUCTIONS,
   HOSTED_JUDGE_ATTEMPT_MS,
   HOSTED_JUDGE_DEADLINE_MS,
   NO_JOB_TEXT,
   parseJobCredential,
   judgeCompanyName,
+  companyLabel,
+  hostedTools,
+  independenceLine,
+  onceDisclosureFor,
   provenanceLine,
   sourceAppFromClient,
-  unknownClientJudgeLine,
   wwwAuthenticate,
+  HOSTED_LOOK_BACK_DESCRIPTION,
+  HOSTED_LOOK_BACK_RECORDS,
 } from "./hostedCore.mjs";
-import { countWords } from "./judgeCore.mjs";
-import { ONCE_DISCLOSURE as LOCAL_DISCLOSURE } from "../server/index.mjs";
+import { RUN_PRIVACY_LINE, countWords } from "./judgeCore.mjs";
+import {
+  AUTHOR_VENDORS,
+  INDEPENDENCE_RELAY,
+  ONCE_DISCLOSURE as LOCAL_DISCLOSURE,
+  ONCE_DISCLOSURE_UNVERIFIED as LOCAL_DISCLOSURE_UNVERIFIED,
+} from "../server/index.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
-import { parseRecords, recordBlock, sourceAppLabel } from "./reflection.mjs";
+import { lookBack, parseRecords, recordBlock, sourceAppLabel } from "./reflection.mjs";
 import { readFeedbackRecords } from "./feedbackCore.mjs";
+import { OUTSIDE_KEYS, OUTSIDE_LIVE_KEY, OUTSIDE_SEEN_KEY, SEEN_STALE_DAYS, hashFields } from "./outsideLoopCore.mjs";
+import { outsideLoopLines } from "./outside-loop.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ANTHROPIC = readFileSync(join(ROOT, "scripts/fixtures/anthropic-served-response.json"), "utf8");
@@ -292,6 +313,32 @@ describe("hosted Grill", { concurrency: false }, () => {
     ctx.memory.command(["SET", `grill:hosted:email:${emailHash}`, "user_agent"]);
     await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "no_such_tool", arguments: {} } }, { token: signJwt(claims()) });
     assert.notEqual(personOf(ctx), "user_agent");
+  });
+
+  it("tells a person whose email is already set up on another sign-in, in one plain sentence, and runs no judge", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const emailHash = createHash("sha256").update("invitee@example.com").digest("hex");
+      const agent = { id: "user_agent", email: "agent@inbox.example", human: "invitee@example.com", spend: [], createdAt: "2026-10-01T00:00:00Z" };
+      ctx.memory.command(["SET", "grill:hosted:acct:user_agent", JSON.stringify(agent)]);
+      ctx.memory.command(["SET", `grill:hosted:email:${emailHash}`, "user_agent"]);
+      const { json } = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: a second sign-in.", keep_records: false, quality_check: false } } },
+        { token: signJwt(claims()), deps: { ...judgeDeps(fake), waitMs: 20_000 } },
+      );
+      assert.equal(textOf(json), EMAIL_CLAIMED_TEXT);
+      assert.equal(
+        textOf(json),
+        "This email is already set up with Grill on another sign-in. Sign in with that one instead, or write to support@grillyour.ai if you've lost it.",
+      );
+      assert.equal(json.result.isError, true);
+      assert.equal(fake.seen.chat.length, 0);
+      assert.equal(ctx.management.creates.length, 0, "no second key is made");
+    } finally {
+      await fake.close();
+    }
   });
 
   it("an unverified email never links to someone else's records", async () => {
@@ -599,7 +646,9 @@ describe("hosted Grill", { concurrency: false }, () => {
     const listed = await postMcp(ctx, { jsonrpc: "2.0", id: 2, method: "tools/list" }, { token });
     const tools = listed.json.result.tools;
     const grill = tools.find((tool) => tool.name === "grill");
-    assert.match(grill.description, /Do not tell them the balance or how long it takes/);
+    // Nothing about a balance: the tool shows none, and tool copy names no credit.
+    assert.match(grill.description, /Do not ask the user for a job id, and do not tell them how long it takes\./);
+    assert.doesNotMatch(grill.description, /balance|credit/i);
     assert.match(
       grill.description,
       /If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives\./,
@@ -861,13 +910,39 @@ describe("hosted Grill", { concurrency: false }, () => {
             method: "initialize",
             params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "Antigravity", version: "1" } },
           },
-          { token: antigravity },
+          { token: antigravity, userAgent: "node" },
         );
         assert.equal(init.json.result.serverInfo.name, "grill");
-        const afterInit = await postMcp(ctx, grill(2), { token: antigravity, deps });
+        // The client is known again on its later calls by its User-Agent (or by a client id).
+        const afterInit = await postMcp(ctx, grill(2), { token: antigravity, userAgent: "node", deps });
         assert.equal(afterInit.json.result.isError, false, textOf(afterInit.json));
         assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
+
+        // A client that sends no User-Agent and carries no client id cannot be known again, so
+        // its handshake is not kept. Another client like it would otherwise get its company.
+        const bare = signJwt(claims({ sub: "user_bare" }));
+        await postMcp(
+          ctx,
+          {
+            jsonrpc: "2.0",
+            id: 8,
+            method: "initialize",
+            params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "Antigravity", version: "1" } },
+          },
+          { token: bare },
+        );
+        const bareCall = await postMcp(ctx, grill(9), { token: bare, deps });
+        assert.equal(bareCall.json.result.isError, false, textOf(bareCall.json));
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
+        assert.ok(textOf(bareCall.json).includes(INDEPENDENCE_NOT_VERIFIED), textOf(bareCall.json));
+        // The hosted notes say the same.
+        assert.ok(
+          readFileSync(join(ROOT, "docs/HOSTED.md"), "utf8").includes(
+            "A client that sends no User-Agent and has no OAuth client id is not kept at all, because Grill could not tell it from another client of the same person.",
+          ),
+          "docs/HOSTED.md",
+        );
 
         const discovery = signJwt(claims({ sub: "user_discovery" }));
         const viaAgent = await postMcp(ctx, grill(3), { token: discovery, userAgent: "Google-Discovery-Engine/1.0", deps });
@@ -886,14 +961,58 @@ describe("hosted Grill", { concurrency: false }, () => {
           },
           { token: remembered, userAgent: "Google-Discovery-Engine/1.0" },
         );
-        const later = await postMcp(ctx, grill(5), { token: remembered, deps });
+        // The same client sends the same User-Agent on its later calls.
+        const later = await postMcp(ctx, grill(5), { token: remembered, userAgent: "Google-Discovery-Engine/1.0", deps });
         assert.equal(later.json.result.isError, false, textOf(later.json));
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
+        // A call under the same sign-in without that User-Agent is another client. The handshake is not its own.
+        const other = await postMcp(ctx, grill(7), { token: remembered, deps });
+        assert.equal(other.json.result.isError, false, textOf(other.json));
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
+        assert.ok(textOf(other.json).includes(INDEPENDENCE_NOT_VERIFIED), textOf(other.json));
 
         const claude = signJwt(claims({ sub: "user_claude_ua", redirect_uri: CLAUDE_WEB_REDIRECT }));
         const claudeCall = await postMcp(ctx, grill(6), { token: claude, userAgent: "Google-Discovery-Engine/1.0", deps });
         assert.equal(claudeCall.json.result.isError, false, textOf(claudeCall.json));
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
+      } finally {
+        await fake.close();
+      }
+    });
+
+    it("remembers at most eight clients for one person, and forgets a client that connects again without a name it knows", async () => {
+      const fake = await startFakeOpenRouter();
+      try {
+        const ctx = world();
+        const token = signJwt(claims());
+        const deps = { ...judgeDeps(fake), waitMs: 20_000 };
+        const connect = (userAgent, name) =>
+          postMcp(
+            ctx,
+            { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name, version: "1" } } },
+            { token, userAgent },
+          );
+        const excludedFor = async (userAgent) => {
+          const out = await postMcp(
+            ctx,
+            { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: wait a week.", keep_records: false, quality_check: false } } },
+            { token, userAgent, deps },
+          );
+          assert.equal(out.json.result.isError, false, textOf(out.json));
+          return fake.seen.chat.at(-1).body.plugins[0].excluded_models;
+        };
+        for (let i = 0; i < 9; i += 1) await connect(`client-${i}`, "gemini-cli");
+        assert.deepEqual(await excludedFor("client-0"), [], "the ninth client pushed the first one out");
+        assert.deepEqual(await excludedFor("client-1"), ["google/*"]);
+        assert.deepEqual(await excludedFor("client-8"), ["google/*"]);
+        await connect("client-8", "unknown-client");
+        assert.deepEqual(await excludedFor("client-8"), [], "a handshake with no known name clears what was kept for that client");
+        assert.deepEqual(await excludedFor("client-1"), ["google/*"], "and leaves the person's other clients alone");
+        // The hosted notes say the same.
+        const notes = readFileSync(join(ROOT, "docs/HOSTED.md"), "utf8");
+        assert.ok(notes.includes("for that client only: the same sign-in, the same OAuth client id and the same User-Agent."), "docs/HOSTED.md");
+        assert.ok(notes.includes("Another client of the same person does not get it, and at most eight clients are kept for one person."), "docs/HOSTED.md");
+        assert.ok(notes.includes("A User-Agent that says Cursor is read before a kept name, so a kept company is never used for Cursor."), "docs/HOSTED.md");
       } finally {
         await fake.close();
       }
@@ -936,7 +1055,8 @@ describe("hosted Grill", { concurrency: false }, () => {
       const privacy =
         "Private: sent only to zero-data-retention endpoints, with keys blocked and common personally identifiable information masked first.";
       const note =
-        "Grill couldn't tell which AI you're using. This judge is from OpenAI. If your assistant is too, name it next time for a different company.";
+        "Independence not verified: Grill couldn't tell which AI you're using. This judge is from OpenAI. If yours is too, name it next time.";
+      const plain = "Independence not verified: Grill couldn't tell which company's model wrote this, so no company was ruled out.";
       const grill = (id, extra = {}, clientInfo) => ({
         jsonrpc: "2.0",
         id,
@@ -971,6 +1091,7 @@ describe("hosted Grill", { concurrency: false }, () => {
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
         assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
         assert.equal(ctx.writes.some((row) => row.join(" ").includes("couldn't tell which AI")), false);
+        assert.equal(ctx.writes.some((row) => row.join(" ").includes("Independence not verified")), false);
 
         const more = await postMcp(
           ctx,
@@ -984,6 +1105,7 @@ describe("hosted Grill", { concurrency: false }, () => {
         );
         assert.equal(more.json.result.isError, false, textOf(more.json));
         assert.equal(textOf(more.json).includes("couldn't tell which AI"), false, textOf(more.json));
+        assert.equal(textOf(more.json).includes("Independence not verified"), false, textOf(more.json));
 
         const chatgpt = await postMcp(ctx, grill(3), {
           token: signJwt(claims({
@@ -995,6 +1117,7 @@ describe("hosted Grill", { concurrency: false }, () => {
         const chatgptText = textOf(chatgpt.json);
         assert.equal(chatgpt.json.result.isError, false, chatgptText);
         assert.equal(chatgptText.includes("couldn't tell which AI"), false, chatgptText);
+        assert.equal(chatgptText.includes("Independence not verified"), false, chatgptText);
         assert.ok(chatgptText.includes(privacy), chatgptText);
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["openai/*"]);
 
@@ -1004,7 +1127,12 @@ describe("hosted Grill", { concurrency: false }, () => {
         });
         const cursorText = textOf(cursor.json);
         assert.equal(cursor.json.result.isError, false, cursorText);
+        // Cursor runs several companies' models, so nobody is excluded. The verdict now says so.
         assert.equal(cursorText.includes("couldn't tell which AI"), false, cursorText);
+        assert.ok(cursorText.includes(`${privacy}\n${plain}\n`), cursorText);
+        assert.equal(plain.includes("?"), false);
+        assert.ok(countWords(plain) <= 25, countWords(plain));
+        assert.match(cursorText.slice(cursorText.indexOf(plain) + plain.length).trim(), /^follow: \S+$/, cursorText);
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
 
         const named = await postMcp(ctx, grill(5, { author: "google" }), {
@@ -1014,10 +1142,311 @@ describe("hosted Grill", { concurrency: false }, () => {
         const namedText = textOf(named.json);
         assert.equal(named.json.result.isError, false, namedText);
         assert.equal(namedText.includes("couldn't tell which AI"), false, namedText);
+        assert.equal(namedText.includes("Independence not verified"), false, namedText);
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
       } finally {
         await fake.close();
       }
+    });
+
+    it("says whether independence was verified, for each client and author, and on /judge with and without from", { timeout: 120_000 }, async () => {
+      const usable = JSON.parse(readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8"));
+      let serve = "";
+      const fake = await startFakeOpenRouter({
+        chat: (body) => {
+          const excluded = body?.plugins?.[0]?.excluded_models || [];
+          const model = serve || (excluded.some((item) => String(item).startsWith("openai")) ? "google/gemini-2.5-pro" : "openai/gpt-5.6-sol");
+          return { text: JSON.stringify({ ...usable, model }) };
+        },
+      });
+      const AT = "2026-10-22T15:00:00Z";
+      const ANTHROPIC = ["anthropic/*", "*/claude-*"];
+      const CLAUDE = { redirect_uri: CLAUDE_WEB_REDIRECT };
+      const GROK = { redirect_uri: "https://grok.com/connectors/oauth/callback" };
+      const NONE = {};
+      const named = (company) =>
+        `Independence not verified: Grill couldn't tell which AI you're using. This judge is from ${company}. If yours is too, name it next time.`;
+      const plain = "Independence not verified: Grill couldn't tell which company's model wrote this, so no company was ruled out.";
+      // [what the row is, sign-in claims, client name, author on the call,
+      //  what the judge is told to leave out, the company in the audit line, the line on the verdict, a model the router is made to serve]
+      const rows = [
+        // A client Grill recognises. Its company is excluded, and none or a made-up name cannot remove it.
+        ["claude.ai, no author", CLAUDE, "", undefined, ANTHROPIC, "anthropic", ""],
+        ["claude.ai, its own company under another name", CLAUDE, "", "claude", ANTHROPIC, "anthropic", ""],
+        ["claude.ai, none", CLAUDE, "", "none", ANTHROPIC, "anthropic", ""],
+        ["claude.ai, a name the router does not use", CLAUDE, "", "cursor", ANTHROPIC, "anthropic", ""],
+        ["Grok, the schema's old example", GROK, "", "xai", ["x-ai/*"], "x-ai", ""],
+        ["Grok, none", GROK, "", "none", ["x-ai/*"], "x-ai", ""],
+        // A different real company still replaces the client's. That is an open owner decision.
+        ["claude.ai, a different real company", CLAUDE, "", "openai", ["openai/*"], "openai", ""],
+        // Cursor is recognised, but it is not one model company.
+        ["Cursor, no author", NONE, "Cursor", undefined, [], "none", plain],
+        ["Cursor, none", NONE, "Cursor", "none", [], "none", plain],
+        ["Cursor, a name the router does not use", NONE, "Cursor", "assistant", [], "none", plain],
+        ["Cursor, a real company", NONE, "Cursor", "google", ["google/*"], "google", ""],
+        ["Cursor, a real company under another name", NONE, "Cursor", "gemini", ["google/*"], "google", ""],
+        // A client Grill cannot place.
+        ["unknown, no author", NONE, "", undefined, [], "none", named("OpenAI")],
+        ["unknown, none", NONE, "", "none", [], "none", named("OpenAI")],
+        ["unknown, a name the router does not use", NONE, "", "unknown", [], "none", named("OpenAI")],
+        ["unknown, a judge from a company Grill has no name for", NONE, "", undefined, [], "none", plain, "moonshotai/kimi-k2"],
+        ["unknown, a real company", NONE, "", "google", ["google/*"], "google", ""],
+        ["unknown, a real company under another name", NONE, "", "meta", ["meta-llama/*"], "meta-llama", ""],
+        // The same person signed in from two clients. One named itself when it connected.
+        // That name is kept for the client that gave it, and for no other client of theirs.
+        ["the client that named itself when it connected", NONE, "", undefined, ["google/*"], "google", "", "", { handshake: "gemini-cli", handshakeAgent: "node", userAgent: "node" }],
+        ["Cursor by User-Agent, after another client named itself", NONE, "", undefined, [], "none", plain, "", { handshake: "gemini-cli", userAgent: "Cursor/1.7.3 (darwin arm64)" }],
+        ["no client name, after another client named itself", NONE, "", undefined, [], "none", named("OpenAI"), "", { handshake: "gemini-cli", userAgent: "node" }],
+        [
+          "no client name and the same User-Agent, from a different OAuth client",
+          { client_id: "client_two" },
+          "",
+          undefined,
+          [],
+          "none",
+          named("OpenAI"),
+          "",
+          { handshake: "gemini-cli", handshakeClaims: { client_id: "client_one" }, handshakeAgent: "node", userAgent: "node" },
+        ],
+        // Two clients that both send no User-Agent and carry no client id cannot be told apart.
+        // No company is remembered for them, so one is never given the company the other named.
+        ["no User-Agent and no client id, after a client like that named itself", NONE, "", undefined, [], "none", named("OpenAI"), "", { handshake: "gemini-cli" }],
+        ["no User-Agent and no client id, Cursor by name after a client like that named itself", NONE, "Cursor", undefined, [], "none", plain, "", { handshake: "gemini-cli" }],
+        // A client id alone is enough to know the client again.
+        ["no User-Agent, the same client id as the handshake", { client_id: "client_one" }, "", undefined, ["google/*"], "google", "", "", { handshake: "gemini-cli" }],
+        [
+          "no User-Agent, a client id the handshake did not have",
+          { client_id: "client_two" },
+          "",
+          undefined,
+          [],
+          "none",
+          named("OpenAI"),
+          "",
+          { handshake: "gemini-cli", handshakeClaims: {} },
+        ],
+      ];
+      try {
+        for (const [label, claim, clientName, author, excluded, auditCompany, line, served = "", earlier = null] of rows) {
+          resetHostedCaches();
+          serve = served;
+          const ctx = world();
+          const token = signJwt(claims(claim));
+          const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse(AT) };
+          if (earlier) {
+            const connected = await postMcp(
+              ctx,
+              {
+                jsonrpc: "2.0",
+                id: 9,
+                method: "initialize",
+                params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: earlier.handshake, version: "1" } },
+              },
+              { token: signJwt(claims(earlier.handshakeClaims || claim)), userAgent: earlier.handshakeAgent },
+            );
+            assert.equal(connected.json.result.serverInfo.name, "grill", label);
+          }
+          const out = await postMcp(
+            ctx,
+            {
+              jsonrpc: "2.0",
+              id: 1,
+              method: "tools/call",
+              params: {
+                name: "grill",
+                arguments: {
+                  subject: "Decision: ship the plan.\nI'm 70% sure.",
+                  keep_records: false,
+                  quality_check: false,
+                  ...(author === undefined ? {} : { author }),
+                },
+                ...(clientName ? { _meta: { clientInfo: { name: clientName } } } : {}),
+              },
+            },
+            { token, deps, userAgent: earlier?.userAgent },
+          );
+          const text = textOf(out.json);
+          assert.equal(out.json.result.isError, false, `${label}: ${text}`);
+          const sent = fake.seen.chat.at(-1).body;
+          assert.equal(sent.model, "openrouter/auto", label);
+          assert.deepEqual(sent.plugins[0].excluded_models, excluded, label);
+          const verified = line === "";
+          // The first-use line claims a different company only when one was excluded.
+          assert.equal(text.split("\n")[0], verified ? ONCE_DISCLOSURE : ONCE_DISCLOSURE_UNVERIFIED, label);
+          // The line comes right after the privacy sentence, once, and only when nobody was excluded.
+          const follow = text.match(/\n\nfollow: (\S+)\n$/);
+          assert.ok(follow, `${label}: ${text}`);
+          const shown = text.slice(0, follow.index);
+          if (verified) {
+            assert.ok(shown.endsWith(RUN_PRIVACY_LINE), `${label}: ${text}`);
+            assert.equal(text.includes(INDEPENDENCE_NOT_VERIFIED), false, `${label}: ${text}`);
+          } else {
+            assert.ok(shown.endsWith(`${RUN_PRIVACY_LINE}\n${line}`), `${label}: ${text}`);
+            assert.equal(text.split(INDEPENDENCE_NOT_VERIFIED).length, 2, `${label}: ${text}`);
+          }
+          // The audit line never says yes for a run that excluded nobody.
+          const audit = await postMcp(
+            ctx,
+            { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: { job_id: follow[1], detail: "provenance" } } },
+            { token, deps: { waitMs: 50 } },
+          );
+          const judge = served || (excluded.includes("openai/*") ? "google/gemini-2.5-pro" : "openai/gpt-5.6-sol");
+          assert.equal(
+            textOf(audit.json).trim(),
+            `Judge: ${judge} · excluded: ${auditCompany} · decorrelated: ${verified ? "yes" : "not verified"} · at: ${AT}`,
+            label,
+          );
+        }
+
+        // A value that is not a name at all is refused before anything is sent, on any client.
+        for (const claim of [CLAUDE, NONE]) {
+          resetHostedCaches();
+          const ctx = world();
+          const before = fake.seen.chat.length;
+          const refused = await postMcp(
+            ctx,
+            {
+              jsonrpc: "2.0",
+              id: 1,
+              method: "tools/call",
+              params: { name: "grill", arguments: { subject: "Decision: ship the plan.", keep_records: false, quality_check: false, author: "Open AI!" } },
+            },
+            { token: signJwt(claims(claim)), deps: { ...judgeDeps(fake), waitMs: 20_000 } },
+          );
+          assert.equal(refused.json.result.isError, true);
+          assert.match(textOf(refused.json), /author must be a lowercase model-family name/);
+          assert.equal(fake.seen.chat.length, before, "no judge request for a malformed author");
+        }
+
+        // /judge: only `from` names who wrote the decision.
+        const cookie = `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+        const page = async (ctx, path, body) => {
+          const headers = { cookie };
+          if (body) headers["content-type"] = "application/x-www-form-urlencoded";
+          const res = await handleJudge(
+            new Request(`https://grillyour.ai${path}`, { method: body ? "POST" : "GET", headers, body: body ? new URLSearchParams(body).toString() : undefined }),
+            { ...ctx, ...judgeDeps(fake), waitMs: 20_000, now: Date.parse(AT) },
+          );
+          return res.text();
+        };
+        const decision = "Decision: keep the maple stand on Pine Street.\nI'm 60% sure.";
+        // [from, what the judge is told to leave out, the company the page names]
+        const pages = [
+          ["", [], ""],
+          ["banana", [], ""],
+          ["cursor", [], ""],
+          ["chatgpt", ["openai/*"], "OpenAI"],
+          ["claude", ANTHROPIC, "Anthropic"],
+          ["gemini", ["google/*"], "Google"],
+          ["grok", ["x-ai/*"], "xAI"],
+          ["muse", ["meta-llama/*"], "Meta"],
+          ["meta", ["meta-llama/*"], "Meta"],
+        ];
+        serve = "";
+        for (const [from, excluded, company] of pages) {
+          resetHostedCaches();
+          const ctx = world();
+          const label = `/judge from=${from || "(none)"}`;
+          const shown = await page(ctx, `/judge?q=${encodeURIComponent(decision)}${from ? `&from=${from}` : ""}`);
+          const grilled = await page(ctx, "/judge", { q: decision, keep: "no", ...(from ? { from } : {}) });
+          assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, excluded, label);
+          for (const html of [shown, grilled]) {
+            // One line above the button says which it is: a named company left out, or not verified.
+            assert.equal(html.includes(`<p class="small">Judge: not from ${company}</p>`), company !== "", `${label}: ${html}`);
+            assert.equal(html.includes(`<p class="small">${esc(JUDGE_PAGE_UNVERIFIED_LINE)}</p>`), company === "", `${label}: ${html}`);
+            const lineAt = html.indexOf(company ? "Judge: not from" : esc(JUDGE_PAGE_UNVERIFIED_LINE));
+            assert.ok(lineAt > 0 && lineAt < html.indexOf("<button"), label);
+            assert.equal(html.includes("<script"), false, label);
+          }
+          const verdict = grilled.match(/<pre id="verdict" class="config">([\s\S]*?)<\/pre>/)?.[1] || "";
+          assert.ok(verdict, `${label}: ${grilled}`);
+          if (company) {
+            assert.ok(verdict.startsWith(esc(ONCE_DISCLOSURE)), `${label}: ${verdict}`);
+            assert.equal(grilled.includes(INDEPENDENCE_NOT_VERIFIED), false, `${label}: ${grilled}`);
+          } else {
+            assert.ok(verdict.startsWith(esc(ONCE_DISCLOSURE_UNVERIFIED)), `${label}: ${verdict}`);
+            assert.equal(verdict.includes("different company"), false, `${label}: ${verdict}`);
+            assert.ok(verdict.trimEnd().endsWith(esc(`${RUN_PRIVACY_LINE}\n${named("OpenAI")}`)), `${label}: ${verdict}`);
+          }
+        }
+
+        // A company remembered from this person's connector belongs to another assistant.
+        // A later grill over the connector still uses it. /judge does not.
+        resetHostedCaches();
+        const ctx = world();
+        const token = signJwt(claims());
+        const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse(AT) };
+        await postMcp(
+          ctx,
+          { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "gemini-cli", version: "1" } } },
+          { token, userAgent: "node" },
+        );
+        await postMcp(
+          ctx,
+          { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill", arguments: { subject: decision, keep_records: false, quality_check: false } } },
+          { token, deps, userAgent: "node" },
+        );
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"], "the connector remembers the handshake");
+        const viaPage = await page(ctx, "/judge", { q: decision });
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, [], "/judge with no from excludes nobody");
+        assert.ok(viaPage.includes(esc(JUDGE_PAGE_UNVERIFIED_LINE)), viaPage);
+        assert.ok(viaPage.includes(esc(named("OpenAI"))), viaPage);
+      } finally {
+        await fake.close();
+      }
+    });
+
+    it("keeps the independence line when the verdict is collected later with grill_result", async () => {
+      const fake = await startFakeOpenRouter();
+      const backgrounds = [];
+      try {
+        const ctx = world();
+        const token = signJwt(claims());
+        const started = await postMcp(
+          ctx,
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "grill", arguments: { subject: "Decision: ship the plan.\nI'm 70% sure.", keep_records: false, quality_check: false } },
+          },
+          { token, deps: { ...judgeDeps(fake), waitMs: 0, backgrounds } },
+        );
+        const waiting = textOf(started.json);
+        assert.equal(waiting.includes(INDEPENDENCE_NOT_VERIFIED), false, "a job id is not a verdict");
+        const jobId = waiting.match(/job (g1\.[0-9a-f]{32}\.[A-Za-z0-9_-]+)/)[1];
+        await Promise.all(backgrounds);
+        const collected = await postMcp(
+          ctx,
+          { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill_result", arguments: { job_id: jobId } } },
+          { token, deps: { waitMs: 500 } },
+        );
+        const text = textOf(collected.json);
+        assert.equal(collected.json.result.isError, false, text);
+        assert.equal(text.split("\n")[0], ONCE_DISCLOSURE_UNVERIFIED);
+        assert.ok(
+          text.trimEnd().endsWith(
+            `${RUN_PRIVACY_LINE}\nIndependence not verified: Grill couldn't tell which AI you're using. This judge is from OpenAI. If yours is too, name it next time.`,
+          ),
+          text,
+        );
+      } finally {
+        await fake.close();
+      }
+    });
+
+    it("tells the assistant to show the independence line, in the instructions and in the grill tool", () => {
+      assert.equal(INDEPENDENCE_RELAY, "If a line that starts with Independence not verified follows the run note, show that line as written.");
+      const description = hostedTools().find((tool) => tool.name === "grill").description;
+      for (const [where, text] of [["instructions", HOSTED_INSTRUCTIONS], ["grill description", description]]) {
+        assert.equal(text.split(INDEPENDENCE_RELAY).length, 2, where);
+        // It follows the run-note rule, so the assistant reads it as part of what to show after the verdict.
+        assert.ok(text.includes(`Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY}`), where);
+        assert.doesNotMatch(text, /[\u2013\u2014]/, where);
+      }
+      assert.equal(JUDGE_PAGE_UNVERIFIED_LINE, "Independence not verified: Grill can't tell which company's model wrote this, so no company is ruled out.");
+      assert.ok(countWords(JUDGE_PAGE_UNVERIFIED_LINE) <= 25, countWords(JUDGE_PAGE_UNVERIFIED_LINE));
+      assert.equal(JUDGE_PAGE_UNVERIFIED_LINE.includes("\n"), false);
     });
   });
 
@@ -1082,6 +1511,73 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.match(textOf(off.json), /Say 'more', 'options', or your call\./);
       assert.doesNotMatch(textOf(off.json), /credit left|grill-record/);
       assert.equal(offCtx.writes.some((row) => row[0] === "SET" && row[1].includes(":record:")), false);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("shows the note under the records question, in chat and on /judge, before anything is sent", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const subject = `Decision: ${CANARY}\nI'm 70% sure.`;
+      const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse("2026-11-13T15:00:00Z") };
+      const ask = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "grill", arguments: { subject } } },
+        { token, deps },
+      );
+      const reply = textOf(ask.json);
+      assert.equal(reply, CONSENT_TEXT);
+      const [question, gap, note] = reply.split("\n");
+      assert.equal(question, RECORDS_QUESTION);
+      assert.equal(gap, "");
+      assert.equal(note, RECORDS_NOTE);
+      // Still one question. The note tells; it does not ask.
+      assert.equal(reply.split("?").length, 2, reply);
+      // The note is read before the decision goes anywhere: no judge call, and nothing written from it.
+      assert.equal(fake.seen.chat.length, 0);
+      assert.equal(ctx.writes.some((row) => row.join(" ").includes(CANARY)), false);
+
+      // The same account on /judge, still unanswered: the question, the note under it, then the buttons.
+      const cookie = `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+      const judgePage = async (path, body) => {
+        const headers = { cookie };
+        if (body) headers["content-type"] = "application/x-www-form-urlencoded";
+        const res = await handleJudge(
+          new Request(`https://grillyour.ai${path}`, { method: body ? "POST" : "GET", headers, body: body ? new URLSearchParams(body).toString() : undefined }),
+          { ...ctx, ...deps },
+        );
+        return res.text();
+      };
+      const shown = await judgePage(`/judge?q=${encodeURIComponent(subject)}&from=claude`);
+      const words = RECORDS_NOTE.slice(0, RECORDS_NOTE.length - DATA_FLOW_URL.length);
+      const noteHtml = `<p class="small">${esc(words)}<a href="${DATA_FLOW_URL}">${DATA_FLOW_URL}</a></p>`;
+      assert.ok(shown.includes(`<p>${esc(RECORDS_QUESTION)}</p>`), shown);
+      assert.ok(shown.includes(noteHtml), shown);
+      assert.ok(shown.indexOf(esc(RECORDS_QUESTION)) < shown.indexOf(noteHtml));
+      assert.ok(shown.indexOf(noteHtml) < shown.indexOf('<button type="submit" name="keep" value="yes">'));
+      assert.equal(shown.includes("<script"), false);
+      assert.equal(fake.seen.chat.length, 0, "opening the page sends nothing");
+
+      // Once they answer, the question and the note are not shown again.
+      const grilled = await judgePage("/judge", { q: subject, keep: "no", from: "claude" });
+      assert.match(grilled, /<pre id="verdict" class="config">/);
+      assert.equal(fake.seen.chat.length, 1);
+      assert.equal(grilled.includes(esc(RECORDS_QUESTION)), false);
+      assert.equal(grilled.includes(esc(words)), false, "the note is not shown again");
+      // The once-only line on this first verdict links the same page. Nothing else on it does.
+      assert.ok(grilled.includes(esc(ONCE_DISCLOSURE)), "the link named Claude, so the once-only line is the full one");
+      const withoutOnce = grilled.replace(esc(ONCE_DISCLOSURE), "");
+      assert.equal(withoutOnce.includes(DATA_FLOW_URL), false);
+      const again = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: a second one.", quality_check: false } } },
+        { token, deps },
+      );
+      assert.equal(textOf(again.json).includes(RECORDS_QUESTION), false);
+      assert.equal(textOf(again.json).includes(DATA_FLOW_URL), false);
     } finally {
       await fake.close();
     }
@@ -1336,19 +1832,27 @@ describe("hosted Grill", { concurrency: false }, () => {
         { token },
       );
       assert.equal(empty.json.result.isError, true);
-      const look = await postMcp(
-        ctx,
-        {
-          jsonrpc: "2.0",
-          id: 5,
-          method: "tools/call",
-          params: { name: "grill_look_back", arguments: { happened: "came_true: yes\nhappened: The in-house hire started." } },
-        },
-        { token, deps: { now: Date.parse("2026-03-01T15:00:00Z") } },
-      );
+      // Both calls are due by 1 March: the first one, and the one that replaced it. An answer
+      // with no title could be about either, so it is saved on neither.
+      const readJson = async () =>
+        JSON.parse(await (await handleDecisions(new Request("https://grillyour.ai/decisions?export=json", { headers: { cookie: `__session=${session}` } }), ctx)).text());
+      const lookAt = (id, happened) =>
+        postMcp(ctx, { jsonrpc: "2.0", id, method: "tools/call", params: { name: "grill_look_back", arguments: { happened } } }, { token, deps: { now: Date.parse("2026-03-01T15:00:00Z") } });
+      const unnamed = await lookAt(5, "came_true: yes\nhappened: The in-house hire started.");
+      assert.match(textOf(unnamed.json), /^Nothing was saved\./);
+      assert.match(textOf(unnamed.json), /Hire contractor \(due 24 Jan\)/);
+      assert.match(textOf(unnamed.json), /Hire in house \(due 15 Feb\)/);
+      assert.equal((await readJson()).some((row) => row.lookback), false);
+      const look = await lookAt(6, "title: Hire in house\ncame_true: yes\nhappened: The in-house hire started.");
       assert.match(textOf(look.json), /Look back/);
-      const after = JSON.parse(await (await handleDecisions(new Request("https://grillyour.ai/decisions?export=json", { headers: { cookie: `__session=${session}` } }), ctx)).text());
-      assert.ok(after.some((row) => /in-house hire started/.test(row.lookback?.happened || "")));
+      const after = await readJson();
+      assert.deepEqual(
+        after.map((row) => [row.block.match(/^title: (.*)$/m)[1], row.lookback?.happened || ""]),
+        [
+          ["Hire contractor", ""],
+          ["Hire in house", "came_true: yes happened: The in-house hire started."],
+        ],
+      );
       const id = after.find((row) => row.block.includes("Hire in house")).id;
       const removed = await handleDecisions(
         new Request("https://grillyour.ai/decisions", {
@@ -1448,7 +1952,8 @@ describe("hosted Grill", { concurrency: false }, () => {
         { token: secondUser, deps },
       );
       // Same verified email, another sign-in ID: the same person, still one starter key.
-      assert.doesNotMatch(textOf(shared.json), /already has Grill.s free starter credit/);
+      assert.notEqual(textOf(shared.json), EMAIL_CLAIMED_TEXT);
+      assert.doesNotMatch(textOf(shared.json), /already set up with Grill on another sign-in/);
       assert.equal(personOf(ctx, "user_second"), personOf(ctx));
       assert.equal(ctx.management.creates.length, 1);
       resetHostedCaches();
@@ -1466,7 +1971,10 @@ describe("hosted Grill", { concurrency: false }, () => {
       const account = await handleAccount(new Request("https://grillyour.ai/account", { headers: { cookie: `__session=${session}` } }), ctx);
       const html = await account.text();
       assert.equal(html.includes(USER_KEY), false);
-      assert.match(html, /out of grill credit/i);
+      // The account page shows the same sentence the tool returned, and it no longer says "credit".
+      assert.ok(html.includes(esc(OUT_OF_CREDIT)), "the account page shows the limit sentence");
+      assert.match(OUT_OF_CREDIT, /^You've reached this month's free limit, so this one didn't run\./);
+      assert.doesNotMatch(html, /grill credit/i);
       const gone = await handleAccount(
         new Request("https://grillyour.ai/account", {
           method: "POST",
@@ -2153,6 +2661,16 @@ describe("hosted mappings and ledger pins", () => {
         "google",
         "gemini",
       ],
+      // A User-Agent that says Cursor is read before a company kept from a handshake.
+      [
+        {
+          redirectUri: "https://unknown.example/cb",
+          remembered: { company: "google", sourceApp: "gemini" },
+          userAgent: "Cursor/1.2",
+        },
+        "",
+        "cursor",
+      ],
     ];
     for (const [input, company, sourceApp] of table) {
       assert.deepEqual(sourceAppFromClient(input), { company, sourceApp });
@@ -2169,17 +2687,70 @@ describe("hosted mappings and ledger pins", () => {
     assert.equal(judgeCompanyName("openrouter/auto"), "");
     assert.equal(judgeCompanyName(""), "");
     assert.equal(judgeCompanyName("moonshotai/kimi"), "");
-    const line = unknownClientJudgeLine({ sourceApp: "unknown", servedModel: "openai/gpt-5.6-sol" });
+    // Every company a client can map to is one the router uses, so the mapping always excludes real models.
+    for (const [input, company] of table) {
+      if (company) assert.ok(AUTHOR_VENDORS.includes(company), `${company} from ${JSON.stringify(input)}`);
+    }
+    const line = independenceLine({ author: "none", sourceApp: "unknown", servedModel: "openai/gpt-5.6-sol" });
     assert.equal(
       line,
-      "Grill couldn't tell which AI you're using. This judge is from OpenAI. If your assistant is too, name it next time for a different company.",
+      "Independence not verified: Grill couldn't tell which AI you're using. This judge is from OpenAI. If yours is too, name it next time.",
     );
-    assert.ok(countWords(line) <= 25, countWords(line));
-    assert.equal(line.includes("?"), false);
-    assert.equal(unknownClientJudgeLine({ sourceApp: "chatgpt", servedModel: "google/gemini-2.5-pro" }), "");
-    assert.equal(unknownClientJudgeLine({ sourceApp: "cursor", servedModel: "openai/gpt-5.6-sol" }), "");
-    assert.equal(unknownClientJudgeLine({ sourceApp: "unknown", authorGiven: true, servedModel: "openai/gpt-5.6-sol" }), "");
-    assert.equal(unknownClientJudgeLine({ sourceApp: "unknown", servedModel: "moonshotai/kimi" }), "");
+    const plain = "Independence not verified: Grill couldn't tell which company's model wrote this, so no company was ruled out.";
+    for (const text of [line, plain]) {
+      assert.ok(countWords(text) <= 25, countWords(text));
+      assert.equal(text.includes("?"), false);
+      assert.equal(text.includes("\n"), false);
+      assert.ok(text.startsWith(`${INDEPENDENCE_NOT_VERIFIED} `));
+      assert.doesNotMatch(text, /[\u2013\u2014]/);
+    }
+    // A known company, from the client or the call, means the judge was told whom to leave out: no line.
+    assert.equal(independenceLine({ author: "openai", sourceApp: "chatgpt", servedModel: "google/gemini-2.5-pro" }), "");
+    assert.equal(independenceLine({ author: "google", sourceApp: "unknown", servedModel: "openai/gpt-5.6-sol" }), "");
+    assert.equal(independenceLine({ author: "google", sourceApp: "cursor", servedModel: "openai/gpt-5.6-sol" }), "");
+    // Nobody excluded: Cursor, and a judge from a company Grill has no name for, get the plain line.
+    assert.equal(independenceLine({ author: "none", sourceApp: "cursor", servedModel: "openai/gpt-5.6-sol" }), plain);
+    assert.equal(independenceLine({ author: "none", sourceApp: "unknown", servedModel: "moonshotai/kimi" }), plain);
+    assert.equal(independenceLine({ author: "none", sourceApp: "unknown", servedModel: "" }), plain);
+    // Anything that is not a company the router uses counts as none, so a missing author never hides the line.
+    assert.equal(independenceLine({ sourceApp: "unknown", servedModel: "openai/gpt-5.6-sol" }), line);
+    assert.equal(independenceLine({ author: "", sourceApp: "unknown", servedModel: "openai/gpt-5.6-sol" }), line);
+    assert.equal(independenceLine({ author: "cursor", sourceApp: "cursor", servedModel: "openai/gpt-5.6-sol" }), plain);
+    assert.equal(independenceLine(), plain);
+    // An explicit author is mapped to the router's prefix. none, or a name the router does not use, never beats the client.
+    assert.deepEqual(authorForJudge({ explicit: "xai", company: "x-ai" }), { author: "x-ai" });
+    assert.deepEqual(authorForJudge({ explicit: "XAI", company: "" }), { author: "x-ai" });
+    assert.deepEqual(authorForJudge({ explicit: "claude", company: "anthropic" }), { author: "anthropic" });
+    assert.deepEqual(authorForJudge({ explicit: "gemini", company: "" }), { author: "google" });
+    assert.deepEqual(authorForJudge({ explicit: "meta", company: "" }), { author: "meta-llama" });
+    assert.deepEqual(authorForJudge({ explicit: "none", company: "anthropic" }), { author: "anthropic" });
+    assert.deepEqual(authorForJudge({ explicit: "unknown", company: "openai" }), { author: "openai" });
+    assert.deepEqual(authorForJudge({ explicit: "cursor", company: "x-ai" }), { author: "x-ai" });
+    assert.deepEqual(authorForJudge({ explicit: "none", company: "" }), { author: "none" });
+    assert.deepEqual(authorForJudge({ explicit: "cursor", company: "" }), { author: "none" });
+    assert.deepEqual(authorForJudge({ explicit: "assistant" }), { author: "none" });
+    assert.deepEqual(authorForJudge({ company: "not-a-vendor" }), { author: "none" });
+    assert.match(authorForJudge({ explicit: "Open AI!", company: "anthropic" }).error, /lowercase model-family name/);
+    // The first-use line follows the same rule.
+    assert.equal(onceDisclosureFor("anthropic"), ONCE_DISCLOSURE);
+    assert.equal(onceDisclosureFor("none"), ONCE_DISCLOSURE_UNVERIFIED);
+    assert.equal(onceDisclosureFor(""), ONCE_DISCLOSURE_UNVERIFIED);
+    assert.equal(onceDisclosureFor(undefined), ONCE_DISCLOSURE_UNVERIFIED);
+    assert.match(ONCE_DISCLOSURE_UNVERIFIED, /^This goes to an outside judge, and the router does not keep it\. https:\/\/grillyour\.ai\/\S+$/);
+    assert.equal(ONCE_DISCLOSURE.replace(" from a different company", ""), ONCE_DISCLOSURE_UNVERIFIED);
+    assert.notEqual(ONCE_DISCLOSURE_UNVERIFIED, ONCE_DISCLOSURE);
+    assert.equal(LOCAL_DISCLOSURE_UNVERIFIED, ONCE_DISCLOSURE_UNVERIFIED);
+    assert.ok(countWords(ONCE_DISCLOSURE_UNVERIFIED) >= 12 && countWords(ONCE_DISCLOSURE_UNVERIFIED) <= 25, countWords(ONCE_DISCLOSURE_UNVERIFIED));
+    assert.equal(ONCE_DISCLOSURE_UNVERIFIED.includes("\n"), false);
+    assert.doesNotMatch(ONCE_DISCLOSURE_UNVERIFIED, /different company|Jev|TypeSafe|credit/i);
+    // The names /judge shows come from the same list.
+    assert.equal(companyLabel("meta-llama"), "Meta");
+    assert.equal(companyLabel("x-ai"), "xAI");
+    assert.equal(companyLabel("anthropic"), "Anthropic");
+    assert.equal(companyLabel("openai"), "OpenAI");
+    assert.equal(companyLabel("google"), "Google");
+    assert.equal(companyLabel(""), "");
+    assert.equal(companyLabel("constructor"), "");
     assert.equal(sourceAppLabel("claude-code"), "claude-code");
     assert.equal(sourceAppLabel("Claude by Anthropic"), "claude");
   });
@@ -2214,8 +2785,6 @@ describe("hosted mappings and ledger pins", () => {
     assert.equal(linked[1].replacesId, "a");
     assert.deepEqual(linked[0].replacedByIds, ["b"]);
     assert.deepEqual(chainIds(rows, "b").sort(), ["a", "b"]);
-    assert.match(footerLine({ saved: true, review: "2026-10-17", remainingUsd: 1 }), /Saved to your decisions · look-back on 17 Oct · about 33 grills of credit left/);
-    assert.match(footerLine({ saved: false, remainingUsd: 0 }), /Not saved · about 0 grills of credit left/);
     assert.equal(savedConfirmation("2026-10-25"), "Saved. Look-back 25 Oct. Your grills: https://grillyour.ai/decisions");
     assert.equal(savedConfirmation(""), "Saved. Your grills: https://grillyour.ai/decisions");
     assert.equal(savedConfirmation("not-a-day"), "Saved. Your grills: https://grillyour.ai/decisions");
@@ -2413,7 +2982,7 @@ describe("hosted Grill: spending caps, open sign-up, races and plain errors", ()
   it("explains failures in plain words, with no codes or traces", () => {
     const cases = [
       ["[judge] ERROR: refusing a correlated verdict — x", /same company/],
-      ["[judge] ERROR: OpenRouter 402 insufficient credits", /out of grill credit/],
+      ["[judge] ERROR: OpenRouter 402 insufficient credits", /You've reached this month's free limit/],
       ["[judge] ERROR: the subject contains what looks like an API key. Nothing was sent.", /password, key or token/],
       ["[judge] router retry: openrouter/auto · http_429", /busy/],
       ["[judge] abandoned the walk after the deadline", /took too long/],
@@ -2425,6 +2994,12 @@ describe("hosted Grill: spending caps, open sign-up, races and plain errors", ()
       assert.match(text, want, stderr);
       assert.doesNotMatch(text, /\[judge\]|ERROR|http_|stack/);
     }
+    // The refusal says what happened. It does not say what a same-company verdict would have been like.
+    assert.equal(
+      judgeFailureText("[judge] ERROR: refusing a correlated verdict", "ab12cd34"),
+      "The only judge available was from the same company that wrote this, so Grill held back the verdict. Try again in a few minutes.",
+    );
+    assert.doesNotMatch(judgeFailureText("[judge] ERROR: refusing a correlated verdict", ""), /biased/i);
     for (const code of ["store", "clerk", "starter-key", "key-encryption", "clerk-delete", ""]) {
       const text = serviceFailureText(code, "ab12cd34");
       assert.match(text, /Try again|write to support/);
@@ -2942,6 +3517,23 @@ describe("hosted judge budget and provenance", { concurrency: false }, () => {
     assert.match(provenanceLine({ servedModel: "google/gemini-3", declaredAuthor: "openai", decorrelated: true }, new Date(Number.NaN)), /^Judge: google\/gemini-3 · excluded: openai · decorrelated: yes · at: unknown$/);
   });
 
+  it("provenanceLine says not verified, never yes, when nobody was excluded", () => {
+    const at = new Date("2026-10-22T15:00:00Z");
+    // The judge reports decorrelated true for --author none, because there was no author to clash with.
+    assert.equal(
+      provenanceLine({ servedModel: "openai/gpt-5.6-sol", declaredAuthor: "none", decorrelated: true }, at),
+      "Judge: openai/gpt-5.6-sol · excluded: none · decorrelated: not verified · at: 2026-10-22T15:00:00Z",
+    );
+    assert.equal(
+      provenanceLine({ servedModel: "", declaredAuthor: "none", decorrelated: false }, at),
+      "Judge: unattributable · excluded: none · decorrelated: no · at: 2026-10-22T15:00:00Z",
+    );
+    assert.equal(
+      provenanceLine({ servedModel: "openai/gpt-5.6-sol", declaredAuthor: "anthropic", decorrelated: true }, at),
+      "Judge: openai/gpt-5.6-sol · excluded: anthropic · decorrelated: yes · at: 2026-10-22T15:00:00Z",
+    );
+  });
+
   it("an unknown job id tells the assistant to grill again", async () => {
     const ctx = world();
     const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
@@ -3191,7 +3783,11 @@ describe("fair check counting", () => {
         { token, deps },
       );
       assert.equal(quiet.json.result.isError, false, textOf(quiet.json));
-      assert.equal(textOf(quiet.json).trim(), "Noted.");
+      // The reply says what was kept and for how long, so the person is not left to guess.
+      assert.equal(
+        textOf(quiet.json).trim(),
+        "Noted. Grill keeps the rating, your one-line reason, the verdict label and the judge model for 180 days. Not the decision.",
+      );
       const rows = await readFeedbackRecords((args) => ctx.memory.command(args), key);
       assert.equal(rows.length, 1);
       assert.equal(rows[0].rating, "meh");
@@ -3222,5 +3818,826 @@ describe("fair check counting", () => {
     } finally {
       await fake.close();
     }
+  });
+});
+
+// A look-back answered in chat. With one decision due, one answer is that decision's answer.
+// With two or more due, Grill names each one, and an answer is saved only on the decision it
+// names. An answer that names none of them is saved nowhere and counted nowhere.
+describe("chat look-back when more than one decision is due", { concurrency: false }, () => {
+  beforeEach(() => resetHostedCaches());
+
+  const JAN = Date.parse("2026-01-01T15:00:00Z");
+  const FEB = Date.parse("2026-02-01T15:00:00Z");
+  const call = (id, name, args) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
+  const cookie = () => `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+  const exported = async (ctx, now = FEB) =>
+    JSON.parse(await (await handleDecisions(new Request("https://grillyour.ai/decisions?export=json", { headers: { cookie: cookie() } }), { ...ctx, now })).text());
+  const rowFor = (rows, title) => rows.find((row) => row.block.includes(`title: ${title}\n`));
+  const done = (ctx) => ctx.memory.command(["GET", "grill:metric:funnel_lookbacks_done"]);
+  const look = async (ctx, token, args, now = FEB) => textOf((await postMcp(ctx, call(9, "grill_look_back", args), { token, deps: { now } })).json);
+
+  async function decide(ctx, fake, token, title, now, { subject = `Decision: ${title}\nI'm 60% sure.`, confidence } = {}) {
+    const deps = { ...judgeDeps(fake), waitMs: 20_000, now };
+    const grilled = await postMcp(ctx, call(1, "grill", { subject, keep_records: true, quality_check: false }), { token, deps });
+    assert.equal(grilled.json.result.isError, false, textOf(grilled.json));
+    const args = { decided: `Go with ${title}.` };
+    if (confidence) args.confidence = confidence;
+    const saved = textOf((await postMcp(ctx, call(2, "grill_decided", args), { token, deps })).json);
+    assert.match(saved, /^Saved\./);
+  }
+
+  it("names each decision that is due, and writes nothing when one answer names none of them", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN, { confidence: "60%" });
+      await decide(ctx, fake, token, "Move office", JAN, { subject: "Decision: Move office\nI expect the move to take two weekends." });
+
+      // Both came due on 15 Jan. The prompt says which is which.
+      const asked = await look(ctx, token, {});
+      assert.equal(
+        asked,
+        [
+          "Hire contractor (due 15 Jan): You were 60% sure. What happened?",
+          "Move office (due 15 Jan): You predicted the move to take two weekends. What happened?",
+          "Say which one, and what happened.",
+        ].join("\n"),
+      );
+
+      // One answer, no title. It could be about either, so it is saved on neither.
+      const loose = await look(ctx, token, { happened: "came_true: yes\nhappened: It went fine." });
+      assert.match(loose, /^Nothing was saved\. That answer did not name one of these decisions\. Which one is it about\?\n/);
+      assert.match(loose, /Hire contractor \(due 15 Jan\)/);
+      assert.match(loose, /Move office \(due 15 Jan\)/);
+      assert.doesNotMatch(loose, /Saved with your decision record/);
+      assert.doesNotMatch(loose, /came true|calls? back/, "an answer that names no decision is not scored against every decision");
+      const rows = await exported(ctx);
+      assert.equal(rows.length, 2);
+      for (const row of rows) assert.equal(row.lookback, null, "no record got the answer");
+      assert.equal(done(ctx), null, "nothing was counted as a look-back done");
+      const page = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: cookie() } }), { ...ctx, now: FEB })).text();
+      assert.match(page, /2 decisions due for a look-back/);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("does not copy one answer onto every decision that is due, or count it once for each", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN);
+      await decide(ctx, fake, token, "Move office", JAN);
+      await decide(ctx, fake, token, "Cut prices", JAN);
+      const reply = await look(ctx, token, { happened: "came_true: yes\nhappened: The contractor shipped on time." });
+      const rows = await exported(ctx);
+      assert.deepEqual(
+        rows.map((row) => row.lookback),
+        [null, null, null],
+        "the answer named no decision, so no record holds it",
+      );
+      assert.equal(done(ctx), null);
+      assert.doesNotMatch(reply, /3 calls back, 3 came true/);
+      assert.doesNotMatch(reply, /Nothing is stored[\s\S]*Saved with your decision record/, "one reply never says both");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("saves a titled answer on the decision it names, with its own lines, and counts one look-back", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN, { confidence: "60%" });
+      await decide(ctx, fake, token, "Move office", JAN, { confidence: "60%" });
+      await decide(ctx, fake, token, "Cut prices", JAN, { confidence: "60%" });
+
+      const reply = await look(ctx, token, { happened: "title: Hire contractor\ncame_true: no\nhappened: The contractor left after a week." });
+      let rows = await exported(ctx);
+      assert.deepEqual(rowFor(rows, "Hire contractor").lookback, { at: "2026-02-01T15:00:00.000Z", happened: "came_true: no happened: The contractor left after a week." });
+      assert.equal(rowFor(rows, "Move office").lookback, null);
+      assert.equal(rowFor(rows, "Cut prices").lookback, null);
+      assert.equal(done(ctx), "1", "one decision was looked back on, so one is counted");
+      // The reply reads that one call back, says where the answer went, and names what is left.
+      assert.match(reply, /\*\*Hire contractor\.\*\* Verdict then: shaky\./);
+      assert.match(reply, /1 call back, 0 came true\./);
+      assert.match(reply, /\n\nSaved with your decision record:\nHire contractor\n\nStill to answer:\nMove office \(due 15 Jan\): You were 60% sure\. What happened\?\nCut prices \(due 15 Jan\): You were 60% sure\. What happened\?$/);
+      assert.doesNotMatch(reply, /Nothing is stored|Nothing was saved/, "something was stored, so the reply does not say otherwise");
+      assert.doesNotMatch(reply, /\*\*Move office|\*\*Cut prices/, "the other decisions are not scored");
+
+      // Two answers in one reply, each under its own title. A title that fits no decision is said, not guessed.
+      const both = await look(ctx, token, {
+        happened: ["title: Cut prices", "came_true: yes", "happened: Sales held.", "title: Raise prices", "came_true: no", "- title: move office.", "happened: Still packing."].join("\n"),
+      });
+      rows = await exported(ctx);
+      assert.equal(rowFor(rows, "Cut prices").lookback.happened, "came_true: yes happened: Sales held.");
+      assert.equal(rowFor(rows, "Move office").lookback.happened, "happened: Still packing.");
+      assert.equal(rowFor(rows, "Hire contractor").lookback.happened, "came_true: no happened: The contractor left after a week.", "an earlier answer is not overwritten");
+      assert.equal(done(ctx), "3");
+      assert.match(both, /Saved with your decision record:\nCut prices\nMove office\n\nNothing was saved for "Raise prices"\. That title matches no single decision here\.$/);
+      assert.doesNotMatch(both, /Nothing is stored/);
+      assert.doesNotMatch(both, /Still to answer/, "nothing is left");
+      assert.match(await look(ctx, token, {}), /^No saved decision is due for a look-back yet\./);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("says a note was saved and not scored, without saying nothing is stored", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN);
+      await decide(ctx, fake, token, "Move office", JAN);
+      const reply = await look(ctx, token, { happened: "title: Move office\nhappened: Still packing." });
+      assert.equal(
+        reply,
+        [
+          "## Look back",
+          "",
+          "Those notes did not say whether each call came true, so nothing was scored.",
+          "",
+          "Saved with your decision record:",
+          "Move office",
+          "",
+          "Still to answer:",
+          "Hire contractor (due 15 Jan): You didn't write a prediction. What happened?",
+        ].join("\n"),
+      );
+      assert.equal(rowFor(await exported(ctx), "Move office").lookback.happened, "happened: Still packing.");
+      assert.equal(done(ctx), "1");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  // The name is kept because other files cite it. The one-decision reply is what it always was,
+  // except that it no longer says nothing is stored when the answer was saved.
+  it("takes the decision's title in records, and then gives the reply one due decision has always had", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN, { confidence: "60%" });
+      await decide(ctx, fake, token, "Move office", JAN, { confidence: "60%" });
+      const blocks = Object.fromEntries((await exported(ctx)).map((row) => [row.block.match(/^title: (.*)$/m)[1], row.block]));
+
+      // Named by the label the list showed. A plain sentence is enough: one decision is in view.
+      const happened = "The move took four weekends, not two.";
+      const named = await look(ctx, token, { records: "Move office (due 15 Jan)", happened });
+      // The reading is the one-decision reading. Its words about storing nothing are left out,
+      // because this answer was saved.
+      assert.equal(
+        named,
+        ["## Look back", "", "Those notes did not say whether each call came true, so nothing was scored.", "", "You were 60% sure. What happened?", "", "Saved with your decision record."].join("\n"),
+      );
+      assert.equal(named, `${lookBack({ records: blocks["Move office"], happened }).replace("Nothing is stored. Those notes", "Those notes")}\n\nSaved with your decision record.`);
+      let rows = await exported(ctx);
+      assert.equal(rowFor(rows, "Move office").lookback.happened, happened);
+      assert.equal(rowFor(rows, "Hire contractor").lookback, null);
+      assert.equal(done(ctx), "1");
+
+      // One decision is left due. From here every reply is the one-decision reply, word for word.
+      const asked = await look(ctx, token, {});
+      assert.equal(asked, lookBack({ records: blocks["Hire contractor"], happened: "" }));
+      assert.equal(asked, "You were 60% sure. What happened?");
+      const answer = "came_true: yes\nhappened: The contractor shipped.";
+      const answered = await look(ctx, token, { happened: answer });
+      const pasteReading = lookBack({ records: blocks["Hire contractor"], happened: answer });
+      assert.match(pasteReading, /^## Look back\n\nNothing is stored\. This reading stays in the chat\.\n\n\*\*Hire contractor\.\*\*/);
+      assert.equal(
+        answered,
+        `${pasteReading.replace("Nothing is stored. This reading stays in the chat.\n\n", "")}\n\nSaved with your decision record.`,
+        "the one-decision reply is the paste reading, sentence for sentence, without the words about storing nothing",
+      );
+      assert.match(answered, /^## Look back\n\n\*\*Hire contractor\.\*\*/);
+      rows = await exported(ctx);
+      assert.equal(rowFor(rows, "Hire contractor").lookback.happened, "came_true: yes happened: The contractor shipped.");
+      assert.equal(done(ctx), "2");
+
+      // A name that fits no saved decision changes nothing.
+      const missed = await look(ctx, token, { records: "Open a second shop", happened: "came_true: yes" });
+      assert.equal(missed, "No saved decision matched that name.");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("does not say nothing is stored when the answer was saved on the one decision in view, and still says it when nothing was saved", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const STORES_NOTHING = "Nothing is stored. This reading stays in the chat.\n\n";
+      const SAVED = "Saved with your decision record.";
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN, { confidence: "60%" });
+      await decide(ctx, fake, token, "Move office", JAN, { confidence: "60%" });
+      const blocks = Object.fromEntries((await exported(ctx)).map((row) => [row.block.match(/^title: (.*)$/m)[1], row.block]));
+
+      // One decision named, and a note that cannot be scored. The note is saved, and the reply says only that.
+      const note = "Still waiting on the second invoice.";
+      const unscored = await look(ctx, token, { records: "Move office (due 15 Jan)", happened: note });
+      assert.equal(
+        unscored,
+        ["## Look back", "", "Those notes did not say whether each call came true, so nothing was scored.", "", "You were 60% sure. What happened?", "", SAVED].join("\n"),
+      );
+      assert.equal(rowFor(await exported(ctx), "Move office").lookback.happened, note);
+
+      // One decision left due, and an answer that can be scored.
+      const answer = "came_true: yes\nhappened: The contractor shipped.";
+      const paste = lookBack({ records: blocks["Hire contractor"], happened: answer });
+      assert.ok(paste.includes(STORES_NOTHING), "the paste route stores nothing, and its reading says so");
+      const scored = await look(ctx, token, { happened: answer });
+      assert.equal(scored, `${paste.replace(STORES_NOTHING, "")}\n\n${SAVED}`);
+      assert.equal(rowFor(await exported(ctx), "Hire contractor").lookback.happened, "came_true: yes happened: The contractor shipped.");
+
+      // A pasted record that is one of this account's saved decisions: the answer is saved on it.
+      const second = "came_true: no\nhappened: The contractor left in March.";
+      const pastedSaved = await look(ctx, token, { records: blocks["Hire contractor"], happened: second });
+      assert.equal(pastedSaved, `${lookBack({ records: blocks["Hire contractor"], happened: second }).replace(STORES_NOTHING, "")}\n\n${SAVED}`);
+      assert.equal(rowFor(await exported(ctx), "Hire contractor").lookback.happened, "came_true: no happened: The contractor left in March.");
+
+      // Every reply that says an answer was saved says nothing about storing nothing.
+      for (const reply of [unscored, scored, pastedSaved]) {
+        assert.ok(reply.endsWith(`\n\n${SAVED}`), reply);
+        assert.doesNotMatch(reply, /Nothing is stored|stays in the chat|stores nothing/i, reply);
+      }
+
+      // A pasted record this account never saved has nowhere to be saved. The reading is the
+      // paste route's own, and what it says about storing nothing is true.
+      const elsewhere = world();
+      await decide(elsewhere, fake, token, "Open a second shop", JAN, { confidence: "60%" });
+      const foreign = (await exported(elsewhere))[0].block;
+      const before = JSON.stringify(await exported(ctx));
+      const notSaved = await look(ctx, token, { records: foreign, happened: "came_true: yes" });
+      assert.equal(notSaved, lookBack({ records: foreign, happened: "came_true: yes" }));
+      assert.ok(notSaved.includes(STORES_NOTHING), notSaved);
+      assert.equal(notSaved.includes(SAVED), false);
+      assert.equal(JSON.stringify(await exported(ctx)), before, "no record changed");
+
+      // An account that keeps no records: the same.
+      const off = world();
+      const first = await postMcp(off, call(1, "grill", { subject: "Decision: wait a week.", keep_records: false, quality_check: false }), { token, deps: { ...judgeDeps(fake), waitMs: 20_000, now: JAN } });
+      assert.equal(first.json.result.isError, false, textOf(first.json));
+      const offReply = await look(off, token, { records: foreign, happened: "came_true: yes" });
+      assert.equal(offReply, lookBack({ records: foreign, happened: "came_true: yes" }));
+      assert.ok(offReply.includes(STORES_NOTHING), offReply);
+      assert.equal(offReply.includes(SAVED), false);
+      assert.deepEqual(await exported(off), []);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("tells two decisions with the same title apart by the day each fell due", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const WEEK = 7 * 24 * 60 * 60 * 1000;
+      await decide(ctx, fake, token, "Weekly stock order", JAN);
+      await decide(ctx, fake, token, "Weekly stock order", JAN + WEEK);
+      const asked = await look(ctx, token, {});
+      assert.match(asked, /^Weekly stock order \(due 15 Jan\): .*\nWeekly stock order \(due 22 Jan\): /);
+      // The title alone fits both, so nothing is saved on either.
+      const vague = await look(ctx, token, { records: "Weekly stock order", happened: "came_true: yes" });
+      assert.match(vague, /^Nothing was saved\./);
+      assert.equal((await exported(ctx)).some((row) => row.lookback), false);
+      const exact = await look(ctx, token, { records: "Weekly stock order (due 22 Jan)", happened: "came_true: yes\nhappened: It sold out by Friday." });
+      assert.match(exact, /Saved with your decision record\.$/);
+      const rows = await exported(ctx);
+      assert.deepEqual(
+        rows.map((row) => [row.block.match(/^review: (.*)$/m)[1], row.lookback?.happened || ""]),
+        [
+          ["2026-01-15", ""],
+          ["2026-01-22", "came_true: yes happened: It sold out by Friday."],
+        ],
+      );
+      assert.equal(done(ctx), "1");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("reads pasted records as the paste route does, and saves only where a title says", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN, { confidence: "60%" });
+      await decide(ctx, fake, token, "Move office", JAN, { confidence: "60%" });
+      const paste = (await exported(ctx)).map((row) => row.block).join("\n\n");
+
+      // One answer with no title. The reading is the paste route's own. Nothing is saved, and it says so.
+      const loose = await look(ctx, token, { records: paste, happened: "came_true: yes" });
+      assert.equal(loose, lookBack({ records: paste, happened: "came_true: yes" }));
+      assert.match(loose, /Nothing is stored\./);
+      assert.equal((await exported(ctx)).some((row) => row.lookback), false);
+      assert.equal(done(ctx), null);
+
+      const titled = await look(ctx, token, { records: paste, happened: "title: Hire contractor\ncame_true: no\nhappened: Left after a week." });
+      const rows = await exported(ctx);
+      assert.equal(rowFor(rows, "Hire contractor").lookback.happened, "came_true: no happened: Left after a week.");
+      assert.equal(rowFor(rows, "Move office").lookback, null);
+      assert.equal(done(ctx), "1");
+      assert.match(titled, /\n\nSaved with your decision record:\nHire contractor$/);
+      assert.doesNotMatch(titled, /Nothing is stored/);
+      assert.match(titled, /Still to answer:\n\nYou were 60% sure\. What happened\?/, "the paste route's own list of what is left stays");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("tells the assistant to relay the list and pass back the title the person picks", () => {
+    assert.match(
+      HOSTED_INSTRUCTIONS,
+      /When they say look back, call grill_look_back and relay what it returns\. With a Grill account it can read saved records, so they do not have to paste\. When it lists several decisions, ask which one they mean, then call it again with that title in records and what happened in happened\./,
+    );
+    assert.doesNotMatch(HOSTED_INSTRUCTIONS, /relay its one line/);
+    const tool = hostedTools().find((item) => item.name === "grill_look_back");
+    assert.equal(tool.description, HOSTED_LOOK_BACK_DESCRIPTION);
+    assert.match(tool.description, /When several are due, the result lists them by title: ask which one they mean, then call again with that title in records and what happened in happened\./);
+    assert.match(tool.description, /a look-back answer is saved on the one record in view, or, when several are, only on the record it names\./);
+    assert.equal(tool.inputSchema.properties.records.description, HOSTED_LOOK_BACK_RECORDS);
+    assert.match(HOSTED_LOOK_BACK_RECORDS, /^Optional\. Omit it to read the saved decisions that are due\. Or the title of one saved decision, as the result listed it\./);
+    assert.equal(tool.inputSchema.required, undefined, "nothing has to be pasted");
+    for (const text of [HOSTED_LOOK_BACK_DESCRIPTION, HOSTED_LOOK_BACK_RECORDS]) assert.doesNotMatch(text, /[\u2013\u2014]/);
+    // The data ledger says the same thing about titles in the chat.
+    const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
+    assert.match(ledger, /two or more saved decisions are due, the reply lists them by title so you can say which one you mean, and an answer is saved only on the decision it names\./);
+  });
+});
+
+describe("outside counters, written when the event happens", { concurrency: false }, () => {
+  beforeEach(() => resetHostedCaches());
+
+  const HOUR = 60 * 60 * 1000;
+  const JAN = Date.parse("2026-01-01T15:00:00Z");
+  const FEB = Date.parse("2026-02-01T15:00:00Z");
+  // The test person is invitee@example.com. This list does not hold them, so they are outside.
+  const LIST = "owner@grill.example, tester@grill.example";
+  const call = (id, name, args) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
+  const cookie = () => `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+  const hash = (ctx, key) => hashFields(ctx.memory.command(["HGETALL", key]));
+  const marksOf = (ctx) => hash(ctx, `grill:hosted:outside:${personOf(ctx)}`);
+  const outsideWrites = (ctx) => ctx.writes.filter((args) => args.some((part) => part.includes("outside")));
+  const HASH_OPS = ["HINCRBY", "HSET", "HSETNX", "HDEL", "HGET", "HGETALL", "LINDEX"];
+  const exported = async (ctx, now = FEB) =>
+    JSON.parse(await (await handleDecisions(new Request("https://grillyour.ai/decisions?export=json", { headers: { cookie: cookie() } }), { ...ctx, now })).text());
+  const form = (ctx, handler, path, body, now) =>
+    handler(new Request(`https://grillyour.ai${path}`, { method: "POST", headers: { cookie: cookie(), "content-type": "application/x-www-form-urlencoded" }, body }), { ...ctx, now });
+
+  async function grill(ctx, fake, token, title, now, args = { keep_records: true }) {
+    const deps = { ...judgeDeps(fake), waitMs: 20_000, now };
+    const out = await postMcp(ctx, call(1, "grill", { subject: `Decision: ${title}\nI'm 60% sure.`, quality_check: false, ...args }), { token, deps });
+    assert.equal(out.json.result.isError, false, textOf(out.json));
+    return textOf(out.json);
+  }
+  const decided = async (ctx, fake, token, title, now) =>
+    textOf((await postMcp(ctx, call(2, "grill_decided", { decided: `Go with ${title}.` }), { token, deps: { ...judgeDeps(fake), now } })).json);
+
+  it("with the internal list unset, not one outside key is written", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      assert.equal(ctx.env.GRILL_INTERNAL_EMAILS, undefined);
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      // Every event that counts for an outside account: a first grill, a records answer, a choice
+      // with a look-back date, a come-back, a moved date, an answer in chat, a tap, a note, a switch.
+      await grill(ctx, fake, token, "Hire contractor", JAN);
+      assert.match(await decided(ctx, fake, token, "Hire contractor", JAN), /^Saved\. Look-back 15 Jan\./);
+      await grill(ctx, fake, token, "Move office", JAN + 30 * HOUR);
+      assert.match(await decided(ctx, fake, token, "Move office", JAN + 30 * HOUR), /^Saved\./);
+      const [first, second] = await exported(ctx, JAN + 31 * HOUR);
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=review&id=${first.id}&value=set&review=2026-01-20`, JAN + 31 * HOUR)).status, 303);
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=review&id=${second.id}&value=off`, JAN + 31 * HOUR)).status, 303);
+      const said = await postMcp(ctx, call(3, "grill_look_back", { happened: "came_true: yes\nhappened: It worked." }), { token, deps: { now: FEB } });
+      assert.match(textOf(said.json), /Saved with your decision record\./);
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=outcome&id=${second.id}&value=held`, FEB)).status, 303);
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=note&id=${second.id}&note=Fine`, FEB)).status, 303);
+      assert.equal((await form(ctx, handleAccount, "/account", "action=records&value=off", FEB)).status, 303);
+      assert.equal((await form(ctx, handleAccount, "/account", "action=records&value=keep", FEB)).status, 303);
+
+      assert.deepEqual(outsideWrites(ctx), [], "fail closed: no key with outside in it was read or written");
+      assert.deepEqual(ctx.writes.filter((args) => HASH_OPS.includes(args[0])), [], "and no hash command ran at all");
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), null);
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_SEEN_KEY]), null);
+      for (const key of Object.values(OUTSIDE_KEYS)) assert.deepEqual(hash(ctx, key), {}, key);
+      assert.deepEqual(marksOf(ctx), {});
+      const rows = await exported(ctx);
+      assert.equal(rows.length, 2);
+      assert.equal(rows.every((row) => row.lookback), true, "the look-backs themselves were saved as before");
+      for (const row of rows) assert.equal(row.lookback_counted_day, "", "no record is marked as counted");
+
+      // A value with no address in it is the same as unset.
+      ctx.env.GRILL_INTERNAL_EMAILS = "on";
+      await grill(ctx, fake, token, "Cut prices", FEB + HOUR);
+      await decided(ctx, fake, token, "Cut prices", FEB + HOUR);
+      assert.deepEqual(outsideWrites(ctx), []);
+      assert.deepEqual(ctx.writes.filter((args) => HASH_OPS.includes(args[0])), []);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("counts an outside person's first grill once, under its day and app, and a come-back 20 hours on", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await grill(ctx, fake, token, "Hire contractor", JAN, { keep_records: false });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.firstGrills), { "2026-01-01": "1" });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.firstGrillApp), { claude: "1" });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.cameBack), {});
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), "2026-01-01", "the day counting began");
+      assert.deepEqual(marksOf(ctx), { first: new Date(JAN).toISOString() });
+
+      // A second grill the same afternoon, and one a minute short of 20 hours: not a come-back.
+      await grill(ctx, fake, token, "Move office", JAN + 2 * HOUR, {});
+      await grill(ctx, fake, token, "Cut prices", JAN + 20 * HOUR - 60_000, {});
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.cameBack), {});
+      // 20 hours after the first: counted once, under the day of the first grill.
+      await grill(ctx, fake, token, "Change supplier", JAN + 20 * HOUR, {});
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.cameBack), { "2026-01-01": "1" });
+      await grill(ctx, fake, token, "Renew the lease", JAN + 9 * 24 * HOUR, {});
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.cameBack), { "2026-01-01": "1" }, "a person comes back once");
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.firstGrills), { "2026-01-01": "1" }, "and has one first grill");
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.firstGrillApp), { claude: "1" });
+      assert.deepEqual(marksOf(ctx), { first: new Date(JAN).toISOString(), back: "1" });
+      assert.equal(ctx.memory.command(["GET", "grill:metric:funnel_grills"]), "5", "the all-accounts funnel still counts every grill");
+
+      // Two grills that finish together both find no mark yet. Only the one that sets it counts.
+      const racing = world();
+      racing.env.GRILL_INTERNAL_EMAILS = LIST;
+      const plain = racing.redis;
+      racing.redis = async (args) => {
+        const answer = await plain(args);
+        return args[0] === "HGETALL" && String(args[1]).startsWith("grill:hosted:outside:") ? [] : answer;
+      };
+      await grill(racing, fake, token, "Hire contractor", JAN, { keep_records: false });
+      await grill(racing, fake, token, "Move office", JAN + 30 * HOUR, {});
+      assert.deepEqual(hash(racing, OUTSIDE_KEYS.firstGrills), { "2026-01-01": "1" }, "the grill that lost the mark does not count a second first grill");
+      assert.deepEqual(hash(racing, OUTSIDE_KEYS.firstGrillApp), { claude: "1" });
+
+      // The counters hold a day or an app and a number. No address, no account id, no time of day.
+      const id = personOf(ctx);
+      const counted = ctx.writes.filter((args) => args[0] === "HINCRBY");
+      assert.ok(counted.length >= 3);
+      for (const args of counted) {
+        assert.ok(args[1].startsWith("grill:metric:outside:"), args[1]);
+        assert.match(args[2], /^(\d{4}-\d{2}-\d{2}|claude)$/);
+        assert.equal(args[3], "1");
+        assert.equal(args.join(" ").includes(id), false);
+        assert.equal(args.join(" ").includes("invitee"), false);
+      }
+      // The marks that keep it to one count per person sit under the account's own id, like its other keys.
+      for (const args of outsideWrites(ctx).filter((item) => !item[1].startsWith("grill:metric:outside:"))) {
+        assert.equal(args[1], `grill:hosted:outside:${id}`);
+        assert.equal(args.join(" ").includes("invitee"), false);
+      }
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("counts nothing for an account on the internal list, by its own address or its person's", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = `${LIST}, Invitee@Example.com`;
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await grill(ctx, fake, token, "Hire contractor", JAN);
+      await decided(ctx, fake, token, "Hire contractor", JAN);
+      await grill(ctx, fake, token, "Move office", JAN + 30 * HOUR);
+      const said = await postMcp(ctx, call(3, "grill_look_back", { happened: "came_true: yes\nhappened: It worked." }), { token, deps: { now: FEB } });
+      assert.match(textOf(said.json), /Saved with your decision record\./);
+      assert.deepEqual(ctx.writes.filter((args) => HASH_OPS.includes(args[0])), [], "no counter and no mark for an internal account");
+      for (const key of Object.values(OUTSIDE_KEYS)) assert.deepEqual(hash(ctx, key), {}, key);
+      assert.deepEqual(marksOf(ctx), {});
+      assert.equal((await exported(ctx))[0].lookback_counted_day, "");
+      // All that is written is two days: the day the list was first seen set, so the readout can say
+      // counting is on, and each day an event was handled with it set, so the readout can show the last one.
+      assert.deepEqual(outsideWrites(ctx), [
+        ["SET", OUTSIDE_LIVE_KEY, "2026-01-01", "NX"],
+        ["SET", OUTSIDE_SEEN_KEY, "2026-01-01"],
+        ["SET", OUTSIDE_SEEN_KEY, "2026-01-02"],
+      ]);
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), "2026-01-01");
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_SEEN_KEY]), "2026-01-02");
+
+      // An agent that acts for an internal person is internal too. One that acts for an outside person is counted.
+      const firstAnswerFrom = async (human) => {
+        const agentWorld = world();
+        agentWorld.env.GRILL_INTERNAL_EMAILS = LIST;
+        const id = "g_agent-account";
+        agentWorld.memory.command(["SET", `grill:hosted:acct:${id}`, JSON.stringify({ id, email: "invitee@example.com", human, records: null, keyCipher: "x", keyHash: "h", createdAt: "2026-01-01T00:00:00Z" })]);
+        agentWorld.memory.command(["SET", identKeyFor(agentWorld.env, "user_invitee"), id]);
+        assert.equal((await form(agentWorld, handleAccount, "/account", "action=records&value=keep", JAN)).status, 303);
+        assert.equal(JSON.parse(agentWorld.memory.command(["GET", `grill:hosted:acct:${id}`])).records, "keep", "the answer itself was saved");
+        return hash(agentWorld, OUTSIDE_KEYS.recordsOn);
+      };
+      assert.deepEqual(await firstAnswerFrom("owner@grill.example"), {}, "a first answer from an internal person's agent is not counted");
+      assert.deepEqual(await firstAnswerFrom("pat@elsewhere.example"), { "2026-01-01": "1" });
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("files an account that grilled before counting began under the day it started", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      // The account exists and its own spend log holds a grill from December, before the list was set.
+      await postMcp(ctx, call(1, "no_such_tool", {}), { token });
+      const id = personOf(ctx);
+      ctx.memory.command(["RPUSH", `grill:hosted:spendlog:${id}`, JSON.stringify({ at: "2025-12-20T09:12:00.000Z", costUsd: 0.02, model: "x/y" })]);
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      await grill(ctx, fake, token, "Hire contractor", JAN, { keep_records: false });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.firstGrills), { "2025-12-20": "1" });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.cameBack), { "2025-12-20": "1" }, "this grill is their come-back");
+      assert.deepEqual(marksOf(ctx), { first: "2025-12-20T09:12:00.000Z", back: "1" });
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), "2026-01-01");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("counts a look-back that was answered before its first-answer time was kept as done, once its date is moved", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const DAY = 24 * HOUR;
+      // Before counting began: a decision, and its look-back answer on 21 January.
+      await grill(ctx, fake, token, "Hire contractor", JAN);
+      await decided(ctx, fake, token, "Hire contractor", JAN);
+      const said = await postMcp(ctx, call(3, "grill_look_back", { happened: "came_true: yes\nhappened: It worked." }), { token, deps: { now: JAN + 20 * DAY } });
+      assert.match(textOf(said.json), /Saved with your decision record\./);
+      // The code of that time kept no first-answer time. Put the stored record back to that shape:
+      // a look-back, and no `lookbackFirstAt`.
+      const [made] = await exported(ctx);
+      const id = personOf(ctx);
+      const dataKey = Buffer.from(decryptString(ctx.memory.command(["GET", `grill:hosted:rkey:${id}`]), keyFromEnv(ctx.env, "GRILL_RECORD_KEY")), "base64");
+      const recordKey = `grill:hosted:record:${id}:${made.id}`;
+      const stored = JSON.parse(decryptString(ctx.memory.command(["GET", recordKey]), dataKey));
+      assert.equal(stored.lookbackFirstAt, new Date(JAN + 20 * DAY).toISOString());
+      delete stored.lookbackFirstAt;
+      ctx.memory.command(["SET", recordKey, encryptString(JSON.stringify(stored), dataKey)]);
+      const [old] = await exported(ctx);
+      assert.deepEqual({ answered: Boolean(old.lookback), first: old.lookback_first_at, counted: old.lookback_counted_day }, { answered: true, first: "", counted: "" });
+      for (const key of Object.values(OUTSIDE_KEYS)) assert.deepEqual(hash(ctx, key), {}, key);
+
+      // The list is set. On 1 February the person moves that look-back to 20 February.
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=review&id=${old.id}&value=set&review=2026-02-20`, FEB)).status, 303);
+      const moved = { due: { "2026-02-20": "1" }, people: { "2026-02-20": "1" }, done7: { "2026-02-20": "1" }, done14: { "2026-02-20": "1" } };
+      const lookbacks = () => ({
+        due: hash(ctx, OUTSIDE_KEYS.lookbacksDue),
+        people: hash(ctx, OUTSIDE_KEYS.lookbackPeople),
+        done7: hash(ctx, OUTSIDE_KEYS.lookbacksDone7d),
+        done14: hash(ctx, OUTSIDE_KEYS.lookbacksDone14d),
+      });
+      assert.deepEqual(lookbacks(), moved, "it is counted as due on the new day, and as done: it already has its answer");
+      assert.equal((await exported(ctx))[0].lookback_counted_day, "2026-02-20");
+
+      // A new answer the next day is a second answer. It adds nothing, and the first time is the old answer's.
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=outcome&id=${old.id}&value=held`, FEB + DAY)).status, 303);
+      assert.deepEqual(lookbacks(), moved, "done once, not twice");
+      const [after] = await exported(ctx, FEB + DAY);
+      assert.equal(after.lookback_first_at, new Date(JAN + 20 * DAY).toISOString());
+      assert.equal(after.lookback.at, new Date(FEB + DAY).toISOString());
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("keeps the last day an event was handled with the list set, and the readout warns once the list is unset", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const DAY = 24 * HOUR;
+      const seenWrites = () => ctx.writes.filter((args) => args[1] === OUTSIDE_SEEN_KEY);
+      const seenDay = () => ctx.memory.command(["GET", OUTSIDE_SEEN_KEY]);
+      // The readout as an operator runs it: it reads this store, and has no way to see the server's settings.
+      const readout = (now) =>
+        outsideLoopLines({
+          env: { UPSTASH_REDIS_REST_URL: "https://redis.example.test", UPSTASH_REDIS_REST_TOKEN: "redis-token" },
+          fetch: async (url, init) => Response.json({ result: ctx.memory.command(JSON.parse(init.body)) }),
+          now,
+        });
+      const LAST = "Last day the server handled an event with the list set:";
+
+      // Several events on 1 January write the day once. The next day writes it once more.
+      await grill(ctx, fake, token, "Hire contractor", JAN);
+      await decided(ctx, fake, token, "Hire contractor", JAN);
+      await grill(ctx, fake, token, "Move office", JAN + 2 * HOUR, {});
+      assert.deepEqual(seenWrites(), [["SET", OUTSIDE_SEEN_KEY, "2026-01-01"]], "once per process per day");
+      await grill(ctx, fake, token, "Cut prices", JAN + 30 * HOUR, {});
+      assert.deepEqual(seenWrites().map((args) => args[2]), ["2026-01-01", "2026-01-02"]);
+      assert.equal(seenDay(), "2026-01-02");
+      // A late request carrying an earlier time does not move the day back.
+      await decided(ctx, fake, token, "Move office", JAN + 3 * HOUR);
+      assert.equal(seenDay(), "2026-01-02");
+      // It is a day and nothing else: no account, no address, no time of day.
+      for (const args of seenWrites()) assert.deepEqual(args.slice(3), [], "a plain SET that never expires");
+      const fresh = await readout(JAN + 31 * HOUR);
+      assert.deepEqual(fresh.slice(0, 4), ["Outside loop readout (UTC day 2026-01-02)", "Counting since: 2026-01-01", `${LAST} 2026-01-02`, "Outside people who grilled: 1"]);
+      assert.equal(fresh.some((line) => line.startsWith("Warning:")), false);
+
+      // The list is unset on the server, and a new process starts. Events go on. Nothing outside is written.
+      delete ctx.env.GRILL_INTERNAL_EMAILS;
+      resetHostedCaches();
+      const before = ctx.writes.length;
+      await grill(ctx, fake, token, "Change supplier", FEB, {});
+      await decided(ctx, fake, token, "Change supplier", FEB);
+      assert.deepEqual(ctx.writes.slice(before).filter((args) => args.some((part) => part.includes("outside"))), [], "fail closed");
+      assert.equal(seenDay(), "2026-01-02", "the day stops moving");
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.choices), { "2026-01-01": "2" }, "the February choice was not counted");
+      // The readout cannot see the server. It can see that the day stopped moving, and it says so.
+      const later = await readout(FEB + DAY);
+      assert.deepEqual(later.slice(0, 5), [
+        "Outside loop readout (UTC day 2026-02-02)",
+        "Counting since: 2026-01-01",
+        `${LAST} 2026-01-02`,
+        "Warning: that is 31 days ago. Either no account has used Grill since, or the internal list was unset on the server and nothing has been counted since. Check the list on the host before you read the numbers below.",
+        "Outside people who grilled: 1",
+      ]);
+
+      // The list is set again: the next event moves the day, and the warning goes.
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      resetHostedCaches();
+      await grill(ctx, fake, token, "Renew the lease", FEB + 2 * DAY, {});
+      assert.equal(seenDay(), "2026-02-03");
+      assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), "2026-01-01", "the day counting began does not move");
+      const back = await readout(FEB + 2 * DAY);
+      assert.equal(back[2], `${LAST} 2026-02-03`);
+      assert.equal(back.some((line) => line.startsWith("Warning:")), false);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("counts the first answer to the records question, and not a later switch", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = { ...judgeDeps(fake), waitMs: 20_000, now: JAN };
+      // The question, with no answer yet. Nothing is counted for a question.
+      const asked = await postMcp(ctx, call(1, "grill", { subject: "Decision: Hire contractor", quality_check: false }), { token, deps });
+      assert.equal(textOf(asked.json), CONSENT_TEXT);
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.recordsOn), {});
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.recordsOff), {});
+      await grill(ctx, fake, token, "Hire contractor", JAN, { keep_records: true });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.recordsOn), { "2026-01-01": "1" });
+      // Later they switch it off in chat, on again on the account page, and off on Your grills.
+      await grill(ctx, fake, token, "Move office", JAN + HOUR, { keep_records: false });
+      assert.equal((await form(ctx, handleAccount, "/account", "action=records&value=keep", JAN + 2 * HOUR)).status, 303);
+      assert.equal((await form(ctx, handleDecisions, "/decisions", "action=records&value=off", JAN + 3 * HOUR)).status, 303);
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.recordsOn), { "2026-01-01": "1" });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.recordsOff), {}, "a switch is not an answer to the question");
+
+      // A person who first answers no, the next day, on the account page.
+      const other = world();
+      other.env.GRILL_INTERNAL_EMAILS = LIST;
+      await postMcp(other, call(1, "no_such_tool", {}), { token });
+      assert.equal((await form(other, handleAccount, "/account", "action=records&value=off", JAN + 24 * HOUR)).status, 303);
+      assert.equal((await form(other, handleAccount, "/account", "action=records&value=off", JAN + 25 * HOUR)).status, 303);
+      assert.deepEqual(hash(other, OUTSIDE_KEYS.recordsOff), { "2026-01-02": "1" });
+      assert.deepEqual(hash(other, OUTSIDE_KEYS.recordsOn), {});
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("still answers the grill, the choice and the look-back when no counter can be written", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      const redis = ctx.redis;
+      let refused = 0;
+      ctx.redis = async (args) => {
+        if (HASH_OPS.includes(args[0]) || String(args[1]).includes("outside")) {
+          refused += 1;
+          throw new Error("boom");
+        }
+        return redis(args);
+      };
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const verdict = await grill(ctx, fake, token, "Hire contractor", JAN);
+      assert.match(verdict, /Private:/);
+      assert.match(await decided(ctx, fake, token, "Hire contractor", JAN), /^Saved\. Look-back 15 Jan\./);
+      const [row] = await exported(ctx, JAN);
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=review&id=${row.id}&value=set&review=2026-01-20`, JAN)).status, 303);
+      const said = await postMcp(ctx, call(3, "grill_look_back", { records: "Hire contractor", happened: "came_true: yes\nhappened: It worked." }), { token, deps: { now: FEB } });
+      assert.match(textOf(said.json), /Saved with your decision record\./);
+      assert.ok(refused >= 5, `the counters were tried and refused ${refused} times`);
+      const [after] = await exported(ctx);
+      assert.match(after.block, /^review: 2026-01-20$/m, "the person's own change was saved");
+      assert.match(after.lookback.happened, /It worked/);
+      for (const key of Object.values(OUTSIDE_KEYS)) assert.deepEqual(hash(ctx, key), {}, key);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("deleting the account removes its marks and leaves the counts as they were", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await grill(ctx, fake, token, "Hire contractor", JAN);
+      await decided(ctx, fake, token, "Hire contractor", JAN);
+      const id = personOf(ctx);
+      assert.deepEqual(marksOf(ctx), { first: new Date(JAN).toISOString(), lookback: "2026-01-15" });
+      const gone = await form(ctx, handleAccount, "/account", "action=delete-account&confirm=delete", JAN + HOUR);
+      assert.equal(gone.status, 303);
+      assert.deepEqual(hash(ctx, `grill:hosted:outside:${id}`), {}, "the marks go with the account");
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.firstGrills), { "2026-01-01": "1" });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.lookbacksDue), { "2026-01-15": "1" }, "a deleted look-back still counts as due");
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.lookbackPeople), { "2026-01-15": "1" });
+      assert.deepEqual(hash(ctx, OUTSIDE_KEYS.choices), { "2026-01-01": "1" });
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("adds nothing to the Monday email job, its route or the schedule, and opens no record to count", () => {
+    const hosted = readFileSync(join(ROOT, "api/_hosted.mjs"), "utf8");
+    const digest = hosted.slice(hosted.indexOf("export async function runImpactDigest"), hosted.indexOf("function calendarResponse"));
+    assert.ok(digest.length > 500, "found the Monday email job");
+    assert.doesNotMatch(digest, /outside|HINCRBY|HGETALL/i);
+    const entry = readFileSync(join(ROOT, "api/hosted.js"), "utf8");
+    assert.doesNotMatch(entry, /outside|HINCRBY/i);
+    assert.deepEqual(JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8")).crons, [{ path: "/api/hosted?__route=digest", schedule: "0 14 * * *" }]);
+    // The counting helpers never load or decrypt a record. They use what the person's request already holds.
+    const helpers = hosted.slice(hosted.indexOf("// ── Outside counters"), hosted.indexOf("/** A pilot count."));
+    assert.ok(helpers.length > 1000, "found the outside counter helpers");
+    assert.doesNotMatch(helpers, /loadRecords|loadPendings|decryptString|decryptJson|dataKeyFor|ZRANGE|SCAN|KEYS/);
+    assert.doesNotMatch(helpers, /console\./, "and nothing is logged, least of all the internal list");
+    assert.equal((hosted.match(/GRILL_INTERNAL_EMAILS/g) || []).length, 0, "the handler reads the list only through the pure core");
+    const core = readFileSync(join(ROOT, "scripts/outsideLoopCore.mjs"), "utf8");
+    const reads = core.split("\n").filter((line) => line.includes("GRILL_INTERNAL_EMAILS") && !/^\s*(\/\/|\*|\/\*)/.test(line));
+    assert.equal(reads.length, 1, "one line of code reads it");
+    // No address is committed anywhere a setting could be defaulted from.
+    for (const file of ["vercel.json", "api/_hosted.mjs", "scripts/outsideLoopCore.mjs", "scripts/outside-loop.mjs", "scripts/hostedCore.mjs"]) {
+      assert.doesNotMatch(readFileSync(join(ROOT, file), "utf8"), /GRILL_INTERNAL_EMAILS\s*[:=]\s*["'`][^"'`]*@/, file);
+    }
+  });
+
+  it("names the setting and the readout in the hosted notes, and both counter rows in the data ledger", () => {
+    const hostedDoc = readFileSync(join(ROOT, "docs/HOSTED.md"), "utf8");
+    assert.match(hostedDoc, /\| `GRILL_INTERNAL_EMAILS` \|/);
+    assert.match(hostedDoc, /node scripts\/outside-loop\.mjs/);
+    assert.match(hostedDoc, /not counted: internal list not set/);
+    const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
+    const counters = ledger.split("\n").find((line) => line.startsWith("| Outside-use counters"));
+    const marks = ledger.split("\n").find((line) => line.startsWith("| Outside-count marks"));
+    assert.ok(counters, "the ledger has a row for the counters");
+    assert.ok(marks, "the ledger has a row for the per-account marks");
+    assert.match(counters, /`grill:metric:outside:`/);
+    assert.match(counters, /They hold no title, text, verdict or account ID\./);
+    assert.match(counters, /Accounts on Grill's own list of maintainer, test and reviewer addresses are not counted\./);
+    assert.match(counters, /With few accounts these numbers describe a handful of people, and Grill's operators can tell who\./);
+    assert.match(counters, /No job opens a kept record to make them\./);
+    assert.match(marks, /`grill:hosted:outside:<account id>`/);
+    assert.match(marks, /Until you delete the account/);
+    for (const row of [counters, marks]) assert.doesNotMatch(row, /[\u2013\u2014]/);
+    // The approved privacy line is still there, byte for byte.
+    assert.ok(ledger.includes("Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us."));
+  });
+
+  it("says in the hosted notes and the ledger what the readout can see once the list is unset, and names both day keys", () => {
+    const hostedDoc = readFileSync(join(ROOT, "docs/HOSTED.md"), "utf8");
+    const setting = hostedDoc.split("\n").find((line) => line.startsWith("| `GRILL_INTERNAL_EMAILS` |"));
+    assert.match(setting, /Keep it set: if it is unset later, counting stops from then on, and what happens in that stretch is never counted\./);
+    const notes = hostedDoc.split("\n").find((line) => line.startsWith("With `GRILL_INTERNAL_EMAILS` set, an account that is not on the list"));
+    assert.ok(notes, "the hosted notes have the paragraph on the outside counters");
+    assert.match(notes, /The readout reads the store, not the server, so it cannot see whether the list is still set\./);
+    assert.match(notes, /It prints the last day the server handled one of those events, from any account, with the list set\./);
+    assert.match(notes, /When that day is more than 7 days old it prints a warning: either no account has used Grill since, or the list was unset on the server and nothing has been counted since\./);
+    assert.match(notes, /If the list was unset for a stretch and then set again, the readout does not show the gap\./);
+    assert.match(notes, new RegExp(`more than ${SEEN_STALE_DAYS} days old`), "the notes give the number the readout uses");
+    // The rule for a look-back that is already answered when its date is counted.
+    assert.match(notes, /A look-back that already has its answer when its date is counted is counted as due and as done\. That covers an early answer, and a record answered before counting began whose date is moved later\./);
+    const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
+    const counters = ledger.split("\n").find((line) => line.startsWith("| Outside-use counters"));
+    assert.match(counters, /Two more keys each hold one UTC day: the day counting began, and the last day Grill's server handled one of these events, from any account, while that list was set\./);
+    assert.doesNotMatch(counters, /One more key holds/);
+    for (const text of [setting, notes, counters]) assert.doesNotMatch(text, /[–—]/);
+    // Both keys sit under the prefix that row names.
+    for (const key of [OUTSIDE_LIVE_KEY, OUTSIDE_SEEN_KEY]) assert.ok(key.startsWith("grill:metric:outside:"), key);
   });
 });

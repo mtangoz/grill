@@ -34,20 +34,48 @@
  *                   passes looks the same as a judge that passed, so the weekly loop could stay
  *                   green for weeks without calling a judge once.
  *
+ * NOT MEASURED IS NEVER A SCORE. A run with a key can still measure nothing: a dead key, or
+ * one that is out of credit, gives no verdict for any case. Scored as usual that would read as
+ * every flaw missed, which is a claim about the judge that the run cannot support. So when no
+ * case gets a verdict back, the run prints "Not measured: 0 of N cases reached a judge.",
+ * writes no results file and no table, and exits 2, with or without --require-key.
+ *
+ * ALWAYS THE PRODUCT PATH. Each case goes to the judge the way a person's grill does: the
+ * default Auto Router and today's instructions. JUDGE_MODEL (a pinned judge) and
+ * GRILL_JUDGE_COMMIT (the candidate rule) are removed from the judge's environment, so a run
+ * with either set still scores, and records, the judge people use. It says so in one line.
+ *
+ * THE PUBLIC BLOCK. Beside the results file (latest.json gives latest.public.json) a measured
+ * run also writes its counts in the shape data/results.json keeps under regression.runs: whole
+ * numbers, the date, the Actions run number, a short commit hash and judge company ids. No
+ * case id, no model name, no cost. The written text is checked with
+ * resultsCore.validateRegressionRun first. A run with no Actions run number or commit cannot
+ * make a valid block, so it writes none and prints one line saying so. A held-out run writes
+ * none either: that block is the record of the public set. Nor does a run that replays
+ * JUDGE_FIXTURE: no judge was asked, so there is nothing to record.
+ *
  * ENVIRONMENT
- *   OPENROUTER_API_KEY / JUDGE_FIXTURE   same meaning as for judge.mjs. With NEITHER set,
- *                                        there is no way to get a real answer out of the judge
- *                                        CLI, so this script prints a notice and exits 0
- *                                        rather than failing a CI run that has no key
- *                                        configured (e.g. a fork PR with secrets withheld).
+ *   GRILL_API_KEY / OPENROUTER_API_KEY / the key file / JUDGE_FIXTURE
+ *                                        same meaning as for judge.mjs, and found the same way
+ *                                        (apiKey.resolveApiKey). With NONE of them there is no
+ *                                        way to get a real answer out of the judge CLI, so this
+ *                                        script prints a notice and exits 0 rather than failing
+ *                                        a CI run that has no key configured (e.g. a fork PR
+ *                                        with secrets withheld).
  *   GITHUB_STEP_SUMMARY                  when set, the rendered markdown is also appended here
  *                                        (GitHub Actions' own job-summary mechanism).
+ *   GITHUB_OUTPUT                        when set, `reached_judge=<count>` is appended, so the
+ *                                        workflow can tell a run that measured from one that
+ *                                        did not.
+ *   GITHUB_RUN_ID / GITHUB_SHA           the run number and commit for the public block.
+ *   JUDGE_MODEL / GRILL_JUDGE_COMMIT     never passed to the judge. See above.
  *
  * EXIT CODES
  *   0   ran clean (including the "skipped, no key" path without --require-key).
  *   1   at least one threshold in evals/thresholds.json regressed, or a case file is malformed,
  *       or a held-out run would put its cases or results inside this repository.
- *   2   --require-key was given and there was no key: nothing was measured.
+ *   2   nothing was measured: --require-key was given and there was no key, or no case got a
+ *       verdict back.
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -55,7 +83,9 @@ import { spawn } from "node:child_process";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { caseProblems, renderSummary, scoreCase, summarize } from "./evalCore.mjs";
+import { resolveApiKey } from "./apiKey.mjs";
+import { actionsRunOf, caseProblems, publicRunBlock, renderSummary, scoreCase, summarize } from "./evalCore.mjs";
+import { validateRegressionRun } from "./resultsCore.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, "..");
@@ -104,19 +134,26 @@ function parseArgs(argv) {
 
 const opts = parseArgs(process.argv.slice(2));
 
+/** Append to a file GitHub Actions reads: the job summary or the step outputs. Never fatal. */
+function appendTo(envName, text) {
+  const path = process.env[envName];
+  if (!path) return;
+  try {
+    writeFileSync(path, text, { flag: "a" });
+  } catch (e) {
+    console.error(`[eval] could not append to ${envName}: ${e?.message ?? e}`);
+  }
+}
+
 // ── The skip path: no way to reach a real judge, and nothing standing in for one. ──
-if (!process.env.OPENROUTER_API_KEY && !process.env.JUDGE_FIXTURE) {
+// The key is looked for the way judge.mjs looks for it (GRILL_API_KEY, OPENROUTER_API_KEY,
+// then the key file), so a run the judge could have answered is never reported as a skip.
+if (!resolveApiKey(process.env).key && !process.env.JUDGE_FIXTURE) {
   console.log("SKIPPED: no judge ran");
   if (!opts.requireKey) process.exit(0);
   const message = "Not measured: no OPENROUTER_API_KEY, so no case reached a judge.";
   console.log(`::error::${message}`);
-  if (process.env.GITHUB_STEP_SUMMARY) {
-    try {
-      writeFileSync(process.env.GITHUB_STEP_SUMMARY, `## Judge self-eval\n\n**${message}** Set the repository secret, then run this workflow again.\n`, { flag: "a" });
-    } catch (e) {
-      console.error(`[eval] could not append to GITHUB_STEP_SUMMARY: ${e?.message ?? e}`);
-    }
-  }
+  appendTo("GITHUB_STEP_SUMMARY", `## Judge self-eval\n\n**${message}** Set the repository secret, then run this workflow again.\n`);
   process.exit(2);
 }
 
@@ -152,6 +189,19 @@ if (heldOut) {
   if (insideRepo(opts.out)) fail("a held-out run writes its results outside this repository: pass --out <path outside the repo>");
 }
 
+// ── The judge's environment: the product path, whatever this shell has set ──
+// A pinned judge or the candidate rule would be scored, and written to the public block, as
+// if it were the judge people use. eval-verdicts.mjs is where the candidate rule is compared.
+const NOT_PASSED_TO_THE_JUDGE = ["JUDGE_MODEL", "GRILL_JUDGE_COMMIT"];
+const judgeEnv = { ...process.env };
+for (const name of NOT_PASSED_TO_THE_JUDGE) {
+  const value = judgeEnv[name];
+  delete judgeEnv[name];
+  if (typeof value === "string" && value.trim()) {
+    console.error(`[eval] ${name} is set and was not passed to the judge: the eval always runs the product path`);
+  }
+}
+
 // ── Run one case through the real judge CLI, timing it ──────────────────────
 function runOneCase(caseDef) {
   return new Promise((resolve) => {
@@ -165,7 +215,7 @@ function runOneCase(caseDef) {
     }
 
     const child = spawn(process.execPath, [JUDGE_CLI, ...args], {
-      env: process.env,
+      env: judgeEnv,
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -216,20 +266,69 @@ const scores = runs.map(({ caseDef, result, latencyMs }) => ({ ...scoreCase(case
 
 const thresholds = JSON.parse(readFileSync(THRESHOLDS_PATH, "utf8"));
 const summary = summarize(scores, thresholds);
+const reached = summary.counts.reachedJudge;
+
+// The workflow reads this to tell a run that measured from one that did not.
+appendTo("GITHUB_OUTPUT", `reached_judge=${reached}\n`);
+
+// ── No case got a verdict back: nothing was measured, so nothing is scored or written ──
+// A dead key, or one that is out of credit, lands here. Scoring it would report every flaw
+// as missed, and the weekly run would open "quality below threshold" for a judge that never ran.
+if (reached === 0) {
+  // Why, as far as a status code can say. Only the three digits are read out of the judge's
+  // own note: the rest of that note can carry a response body, and this goes to a public log.
+  const statuses = [];
+  for (const { caseDef, result, note } of runs) {
+    if (note) continue;
+    const notes = Array.isArray(result?.degraded) ? result.degraded : [];
+    const status = notes.map((d) => /\breturned (\d{3})\b/.exec(String(d))?.[1]).find(Boolean);
+    if (status && !statuses.includes(status)) statuses.push(status);
+    console.error(
+      `[eval] ${heldOut ? "a held-out case" : caseDef.id}: the judge returned no verdict${status ? ` (the router answered ${status})` : ""}`,
+    );
+  }
+  const message = `Not measured: 0 of ${scores.length} cases reached a judge.`;
+  console.log(message);
+  console.log(`::error::${message}`);
+  const seen = statuses.length > 0 ? ` The router answered with status ${statuses.sort().join(", ")}.` : "";
+  appendTo(
+    "GITHUB_STEP_SUMMARY",
+    `## Judge self-eval\n\n**${message}** No verdict came back, so no score is reported.${seen} The key may be dead or out of credit. Read this run's log, fix the cause, then run this workflow again.\n`,
+  );
+  process.exit(2);
+}
+
 const markdown = renderSummary(summary, scores, { heldOut });
 
 mkdirSync(dirname(opts.out), { recursive: true });
 writeFileSync(opts.out, JSON.stringify({ scores, summary }, null, 2), "utf8");
 console.error(`[eval] results written to ${opts.out}`);
 
-console.log(markdown);
-
-if (process.env.GITHUB_STEP_SUMMARY) {
+// ── The public block: this run as counts only, beside the results file ──────
+const publicPath = opts.out.endsWith(".json") ? `${opts.out.slice(0, -".json".length)}.public.json` : `${opts.out}.public.json`;
+const actionsRun = actionsRunOf(process.env);
+if (heldOut) {
+  console.error("[eval] no public block: a held-out run is not the record of the public set");
+} else if (!actionsRun) {
+  console.error("[eval] no public block: this run has no GitHub Actions run number and commit (GITHUB_RUN_ID, GITHUB_SHA)");
+} else if (process.env.JUDGE_FIXTURE) {
+  console.error("[eval] no public block: this run replayed JUDGE_FIXTURE, so no judge was asked");
+} else {
+  const block = publicRunBlock(scores, { date: new Date().toISOString().slice(0, 10), ...actionsRun });
+  const text = `${JSON.stringify(block, null, 2)}\n`;
   try {
-    writeFileSync(process.env.GITHUB_STEP_SUMMARY, `${markdown}\n`, { flag: "a" });
+    // Checked as it will be read back: the text, parsed, not the object it was built from.
+    validateRegressionRun(JSON.parse(text));
+    writeFileSync(publicPath, text, "utf8");
+    console.error(`[eval] public block written to ${publicPath}`);
+    console.error(`[eval] to publish these counts: node scripts/results.mjs merge-run ${publicPath}`);
   } catch (e) {
-    console.error(`[eval] could not append to GITHUB_STEP_SUMMARY: ${e?.message ?? e}`);
+    console.error(`[eval] no public block: ${e?.message ?? e}`);
   }
 }
+
+console.log(markdown);
+
+appendTo("GITHUB_STEP_SUMMARY", `${markdown}\n`);
 
 process.exit(summary.regressions.length > 0 ? 1 : 0);

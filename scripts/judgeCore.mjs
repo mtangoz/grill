@@ -8,11 +8,11 @@
 //
 // WHAT THIS IS FOR. Grill sends a piece of work — a plan, a proposal, a piece of
 // copy, a price, an argument — to a model from a DIFFERENT family than whichever model
-// helped produce it, and asks that model to try to break it. A model reviewing its own
-// kind of reasoning tends to re-derive the assumptions it already accepted while
-// producing it — it is structurally agreeable in exactly the places that matter. Routing
-// the artefact to a different model family buys a reader with different priors, who has
-// no stake in the conclusion.
+// helped produce it, and asks that model to try to break it. The model that helped produce
+// a piece of work did not come to it cold. Routing the artefact to a different model family
+// buys a reader that did not write it and does not get the author's memory or system
+// instructions. Whether that reader catches more than the same model starting fresh has
+// not been measured yet.
 //
 // A different family is not enough on its own. The write-up still arrives in its author's
 // framing — the reasons laid out, the objection already answered, the question put the way
@@ -123,8 +123,8 @@ export function decorrelationOf(servedModel, author) {
       decorrelated: false,
       reason: "author-family",
       note: isDefault
-        ? `served by \`${served}\` — the same model family the subject is assumed to be written by. A judge from the author's own family re-derives the premises it already accepted, so this run bought no independent judgment`
-        : `served by \`${served}\` — the same family the caller declared wrote this subject (\`${declared}\`). A judge from the author's own family re-derives the premises it already accepted, so this run bought no independent judgment`,
+        ? `served by \`${served}\`, the same model family the subject is assumed to be written by. The judge is from the author's own family, so this run is not an outside review`
+        : `served by \`${served}\`, the same family the caller declared wrote this subject (\`${declared}\`). The judge is from the author's own family, so this run is not an outside review`,
     };
   }
   return {

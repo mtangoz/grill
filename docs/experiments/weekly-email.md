@@ -43,6 +43,10 @@ Split into two, because a tap alone could rise while real use falls (from the gr
 - Look-backs confirmed from the email (`grill:metric:impact_email_lookbacks`).
 - No open tracking and no third-party trackers.
 
+## How it touches the kill threshold
+
+The kill threshold for the record bet ([STRATEGY.md](../STRATEGY.md)) counts look-backs from both groups. The outside counters do not record which group an account is in, so the threshold cannot be read by group today. Splitting them is an owner choice ([ROADMAP.md](../ROADMAP.md), "Waiting on the owner"). Look-backs due after the last send (25 Jan 2027) are reported apart, because no Monday note can reach them. What follows 25 Jan 2027, and whether the email becomes opt-in, is also on that list.
+
 ## Where to read it
 
 `node scripts/weekly-metrics.mjs` prints two `email test:` lines: people, sends, ready or not, guardrail, clicks, and each group's returns.
@@ -55,4 +59,4 @@ Verdict: **Solid if**. Defensible as a directional decision, not proof of a rete
 
 ## Changes
 
-None yet.
+- 2026-11-13: no number changed. A proposed paragraph under the first-grill records question would tell people that Grill may email them on a Monday while this test runs. Both groups would see it, so the comparison stays like for like. It is not live until the branch that carries it is merged and deployed.

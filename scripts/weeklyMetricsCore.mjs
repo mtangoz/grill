@@ -28,7 +28,12 @@ export const IMPACT_EMAIL_KEYS = Object.freeze({
 });
 export const START_VIEWS_KEY = "grill:metric:start_views";
 /** Fixed channel labels for /start?ref=. No SCAN. Unknown tags stay unread. */
-export const START_REF_LABELS = Object.freeze(["home", "askgrill", "hn", "smithery", "demo", "x"]);
+export const START_REF_LABELS = Object.freeze(["home", "askgrill", "hn", "smithery", "demo", "x", "readme", "notify", "data-flow", "how-we-test"]);
+/**
+ * Installed tools that opted in to the usage ping and sent one, once per install. A number only.
+ * api/_ping.mjs adds to it only while GRILL_PING_PEPPER is set, so 0 can mean "not set".
+ */
+export const INSTALL_PINGS_KEY = "grill:ping:unique";
 
 /** The weekly email test in two lines. Counts only. */
 export function emailTestLines(test) {
@@ -40,7 +45,7 @@ export function emailTestLines(test) {
   ];
 }
 
-export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) {
+export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch, now = Date.now()) {
   const url = typeof env.UPSTASH_REDIS_REST_URL === "string" ? env.UPSTASH_REDIS_REST_URL.trim() : "";
   const token = typeof env.UPSTASH_REDIS_REST_TOKEN === "string" ? env.UPSTASH_REDIS_REST_TOKEN.trim() : "";
   if (!url || !token) {
@@ -56,6 +61,8 @@ export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) 
   }
   return {
     label: "Weekly metrics",
+    // The UTC day of this reading, so two lines in metrics.jsonl can be told apart.
+    date: new Date(now).toISOString().slice(0, 10),
     countsAsUsers: false,
     paidIntentPricing: await n(PAID_INTENT_KEYS.pricing),
     paidIntentCheckout: await n(PAID_INTENT_KEYS.checkout),
@@ -71,6 +78,7 @@ export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch) 
     lookbacksDone: await n(FUNNEL_KEYS.lookbacksDone),
     emailLookbacks: await n(IMPACT_EMAIL_KEYS.lookbacks),
     emailUnsubscribes: await n(IMPACT_EMAIL_KEYS.unsubscribes),
+    installPings: await n(INSTALL_PINGS_KEY),
     emailTest: await readEmailExperiment(command).catch(() => null),
   };
 }
@@ -109,6 +117,7 @@ export function weeklyMetricLines(report) {
     `email look-backs: ${report.emailLookbacks ?? 0}`,
     `email unsubscribes: ${report.emailUnsubscribes ?? 0}`,
     ...emailTestLines(report.emailTest),
+    `opt-in install pings: ${report.installPings ?? 0}`,
     JSON.stringify(report),
   ];
 }

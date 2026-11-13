@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { addDays, isoDate, REVIEW_DAYS, reviewDateFor, shortDecision } from "./reflection.mjs";
+import { addDays, isoDate, lookBack, recordBlock, REVIEW_DAYS, reviewDateFor, shortDecision } from "./reflection.mjs";
 import {
   calendarFeed,
   decisionSource,
@@ -26,6 +26,19 @@ import {
   impactDetailLine,
   impactLines,
   scorecardLine,
+  LOOKBACK_LIST_MAX,
+  PENDING_KEEP_DAYS,
+  WAITING_GRILL_HOW,
+  lookBackTargets,
+  lookbackAskText,
+  lookbackLabel,
+  lookbackSavedText,
+  lookbackSaves,
+  lookbackWhichText,
+  rowsNamed,
+  setLookback,
+  titledAnswers,
+  waitingGrillLine,
 } from "./hostedCore.mjs";
 
 const FEB = Date.parse("2026-02-01T15:00:00Z");
@@ -464,5 +477,199 @@ describe("the Your grills list row", () => {
     const empty = renderDecisionsForTest({ records: "keep" }, [], { now: Date.parse("2026-11-08T12:00:00Z") });
     assert.equal(empty.includes("What Grill changed"), false);
     assert.equal(empty.includes("looked back"), false);
+  });
+});
+
+// The pure pieces behind a look-back answered in chat. Made-up records only.
+describe("a look-back answered in chat, when more than one saved decision is in view", () => {
+  const row = (id, title, extra = {}) => {
+    const fields = { date: "2026-01-01", title, prediction: "", verdict: "shaky", falsifier: "none named", confidence: "60%", review: "2026-01-15", ...extra };
+    return { id, title, date: fields.date, review: fields.review, block: recordBlock(fields), lookback: extra.lookback ?? null };
+  };
+  const LONG = "Move the whole support team to the new office in the spring because the lease on the old one runs out in May and the new one is cheaper";
+
+  it("names a decision by its title as the list shows it, and the day it fell due", () => {
+    assert.equal(lookbackLabel(row("a", "Hire contractor")), "Hire contractor (due 15 Jan)");
+    assert.equal(lookbackLabel(row("a", "Hire contractor", { review: "" })), "Hire contractor");
+    assert.equal(lookbackLabel(row("a", LONG)), `${shortDecision(LONG)} (due 15 Jan)`);
+    assert.ok(shortDecision(LONG).endsWith("…"));
+  });
+
+  it("matches a name only when it is the title, the label, or the date and title", () => {
+    const rows = [row("a", "Hire contractor"), row("b", "Hire contractor for the launch"), row("c", LONG), row("d", "Cut prices.", { date: "2026-01-03" })];
+    const ids = (name) => rowsNamed(rows, name).map((item) => item.id);
+    assert.deepEqual(ids("Hire contractor"), ["a"]);
+    assert.deepEqual(ids("  hire   CONTRACTOR. "), ["a"]);
+    assert.deepEqual(ids("Hire contractor (due 15 Jan)"), ["a"]);
+    assert.deepEqual(ids("2026-01-01 Hire contractor"), ["a"]);
+    assert.deepEqual(ids("Hire contractor for the launch"), ["b"]);
+    assert.deepEqual(ids(LONG), ["c"]);
+    assert.deepEqual(ids(shortDecision(LONG)), ["c"], "the cut-off title the list showed");
+    assert.deepEqual(ids(lookbackLabel(rows[2])), ["c"]);
+    assert.deepEqual(ids("Cut prices"), ["d"]);
+    assert.deepEqual(ids("2026-01-03 Cut prices."), ["d"]);
+    // A near miss is not a match: an answer must not land on the wrong decision.
+    for (const miss of ["Hire", "contractor", "the contractor hire", "Hire contractor (due 16 Jan)", "2026-01-02 Hire contractor", "", "   "]) {
+      assert.deepEqual(ids(miss), [], miss);
+    }
+    // Two decisions with one title: the title fits both, the label fits one.
+    const twins = [row("x", "Weekly stock order"), row("y", "Weekly stock order", { date: "2026-01-08", review: "2026-01-22" })];
+    assert.deepEqual(rowsNamed(twins, "Weekly stock order").map((item) => item.id), ["x", "y"]);
+    assert.deepEqual(rowsNamed(twins, "Weekly stock order (due 22 Jan)").map((item) => item.id), ["y"]);
+  });
+
+  it("splits an answer at its title lines, and leaves untitled lines with no decision", () => {
+    assert.deepEqual(titledAnswers("came_true: yes\nhappened: It went fine."), []);
+    assert.deepEqual(titledAnswers("came_true: yes\ntitle: Hire contractor\ncame_true: no\n\nhappened: Left.\n- Title:  Move office \n* happened: Still packing."), [
+      { title: "Hire contractor", text: "came_true: no\nhappened: Left." },
+      { title: "Move office", text: "happened: Still packing." },
+    ]);
+    assert.deepEqual(titledAnswers("title:\ncame_true: yes"), [], "a title line with no title names nothing");
+    assert.deepEqual(titledAnswers(""), []);
+  });
+
+  it("saves the whole answer on one decision, and on several only what each title says", () => {
+    const a = row("a", "Hire contractor");
+    const b = row("b", "Move office");
+    const plain = "came_true: yes\nhappened:   It went fine.";
+    assert.deepEqual(lookbackSaves([a], plain), { saves: [{ row: a, happened: "came_true: yes happened: It went fine.", lines: plain }], unmatched: [] });
+    assert.deepEqual(lookbackSaves([a, b], plain), { saves: [], unmatched: [] }, "no title, two decisions: saved on neither");
+    assert.deepEqual(lookbackSaves([a, b], "   "), { saves: [], unmatched: [] });
+    assert.deepEqual(lookbackSaves([], plain), { saves: [], unmatched: [] });
+    const titled = lookbackSaves([a, b], "came_true: yes\ntitle: Move office\ncame_true: no\nhappened: Took four weekends.\ntitle: Open a shop\ncame_true: yes\ntitle: Move office\ncame_true: yes");
+    assert.deepEqual(titled.saves.map((save) => [save.row.id, save.happened]), [["b", "came_true: no happened: Took four weekends."]], "the first answer for a decision stands");
+    assert.deepEqual(titled.unmatched, ["Open a shop"]);
+    // A title with nothing under it is not an answer.
+    assert.deepEqual(lookbackSaves([a, b], "title: Move office"), { saves: [], unmatched: [] });
+    // A long answer is cut where a single one always was.
+    assert.equal(lookbackSaves([a], "x".repeat(5000)).saves[0].happened.length, 2000);
+    assert.equal(lookbackSaves([a, b], `title: Hire contractor\n${"x".repeat(5000)}`).saves[0].happened.length, 2000);
+  });
+
+  it("picks the decisions a call is about: due, named exactly, or matched by a paste", () => {
+    const a = row("a", "Hire contractor");
+    const b = row("b", "Hire contractor for the launch");
+    const now = Date.parse("2026-02-01T12:00:00Z");
+    const due = recordsForLookBack([a, b], { now });
+    assert.deepEqual(lookBackTargets([a, b], due).map((item) => item.id), ["a", "b"]);
+    // The loose match finds both. The exact title picks one.
+    const named = recordsForLookBack([a, b], { records: "Hire contractor", now });
+    assert.deepEqual(named.rows.map((item) => item.id), ["a", "b"]);
+    assert.deepEqual(lookBackTargets([a, b], named, "Hire contractor").map((item) => item.id), ["a"]);
+    const loose = recordsForLookBack([a, b], { records: "contractor", now });
+    assert.deepEqual(lookBackTargets([a, b], loose, "contractor").map((item) => item.id), ["a", "b"], "a loose name leaves both in view, so the chat asks which");
+    const pasted = recordsForLookBack([a, b], { records: b.block, now });
+    assert.deepEqual(lookBackTargets([a, b], pasted).map((item) => item.id), ["b"]);
+    assert.deepEqual(lookBackTargets([a], pasted), [], "a pasted record that is not saved has nowhere to be saved");
+  });
+
+  it("lists at most five by name, then says where the rest are", () => {
+    const rows = Array.from({ length: 7 }, (_, index) => row(`r${index}`, `Call ${index + 1}`, { confidence: "", prediction: index === 0 ? "sales to double" : "" }));
+    const lines = lookbackAskText(rows).split("\n");
+    assert.equal(LOOKBACK_LIST_MAX, 5);
+    assert.equal(lines.length, 7);
+    assert.equal(lines[0], "Call 1 (due 15 Jan): You predicted sales to double. What happened?");
+    assert.equal(lines[4], "Call 5 (due 15 Jan): You didn't write a prediction. What happened?");
+    assert.equal(lines[5], "2 more are on https://grillyour.ai/decisions");
+    assert.equal(lines[6], "Say which one, and what happened.");
+    assert.equal(lookbackAskText(rows.slice(0, 6)).split("\n")[5], "1 more is on https://grillyour.ai/decisions");
+    const which = lookbackWhichText(rows.slice(0, 2)).split("\n");
+    assert.equal(which[0], "Nothing was saved. That answer did not name one of these decisions. Which one is it about?");
+    assert.equal(which.length, 3);
+    for (const text of [lookbackAskText(rows), lookbackWhichText(rows)]) assert.doesNotMatch(text, /[\u2013\u2014]/);
+  });
+
+  it("never says nothing is stored in a reply that says an answer was saved", () => {
+    const a = row("a", "Hire contractor");
+    const b = row("b", "Move office");
+    const scored = lookBack({ records: a.block, happened: "title: Hire contractor\ncame_true: yes" });
+    const unscored = lookBack({ records: a.block, happened: "title: Hire contractor\nhappened: Still going." });
+    assert.match(scored, /Nothing is stored\. This reading stays in the chat\./, "the paste route's reading says it, and it is true there");
+    assert.match(unscored, /Nothing is stored\. Those notes did not say/);
+    for (const reading of [scored, unscored]) {
+      for (const pasted of [false, true]) {
+        const text = lookbackSavedText({ reading, saved: [a], remaining: [b], pasted });
+        assert.doesNotMatch(text, /Nothing is stored/, text);
+        assert.match(text, /Saved with your decision record:\nHire contractor/);
+      }
+    }
+    assert.match(lookbackSavedText({ reading: scored, saved: [a], remaining: [b] }), /\n\nStill to answer:\nMove office \(due 15 Jan\): You were 60% sure\. What happened\?$/);
+    assert.equal(lookbackSavedText({ reading: scored, saved: [a] }).includes("Still to answer"), false);
+  });
+});
+
+describe("the first look-back time on a record", () => {
+  const T1 = Date.parse("2026-02-01T15:00:00Z");
+  const T2 = Date.parse("2026-02-03T09:30:00Z");
+  const iso = (ms) => new Date(ms).toISOString();
+
+  it("is set at the first answer and left alone by every later one", () => {
+    const row = { id: "a", lookback: null };
+    assert.equal(setLookback(row, "came_true: yes", T1), true, "the first time");
+    assert.deepEqual(row.lookback, { at: iso(T1), happened: "came_true: yes" });
+    assert.equal(row.lookbackFirstAt, iso(T1));
+    assert.equal(setLookback(row, "came_true: no", T2), false, "a later answer is not a first time");
+    assert.deepEqual(row.lookback, { at: iso(T2), happened: "came_true: no" }, "the edit keeps its own time");
+    assert.equal(row.lookbackFirstAt, iso(T1));
+  });
+
+  it("lets a note keep the time already there, and survives a cleared note", () => {
+    const row = { id: "a", lookback: null };
+    assert.equal(setLookback(row, "note: half done", T1, { keepAt: true }), true);
+    assert.equal(row.lookback.at, iso(T1));
+    assert.equal(setLookback(row, "note: nearly done", T2, { keepAt: true }), false);
+    assert.equal(row.lookback.at, iso(T1), "a note does not move the time of the tap it sits beside");
+    assert.equal(setLookback(row, "", T2, { keepAt: true }), false);
+    assert.equal(row.lookback, null);
+    assert.equal(hasLookback(row), false);
+    assert.equal(row.lookbackFirstAt, iso(T1));
+    assert.equal(setLookback(row, "came_true: yes", T2), false, "looked back once already, so this is not the first");
+    assert.equal(row.lookbackFirstAt, iso(T1));
+  });
+
+  it("gives a record looked back before this field existed the only time it has", () => {
+    const old = { id: "a", lookback: { at: iso(T1), happened: "came_true: yes" } };
+    assert.equal(setLookback(old, "came_true: no", T2), false, "it was already looked back");
+    assert.equal(old.lookbackFirstAt, iso(T1));
+    assert.equal(old.lookback.at, iso(T2));
+    // An old look-back with no time of its own: it still is not a first time now.
+    const bare = { id: "c", lookback: { happened: "it held" } };
+    assert.equal(setLookback(bare, "came_true: yes", T2), false);
+    assert.equal(bare.lookbackFirstAt, iso(T2), "the earliest time anyone can state");
+    assert.equal(setLookback(bare, "came_true: no", T2 + 60_000), false);
+    assert.equal(bare.lookbackFirstAt, iso(T2));
+    // A blank note was never a look-back, so the first answer after it is the first.
+    const blank = { id: "b", lookback: { at: iso(T1), happened: "   " } };
+    assert.equal(setLookback(blank, "came_true: yes", T2), true);
+    assert.equal(blank.lookbackFirstAt, iso(T2));
+  });
+});
+
+describe("the waiting line on Your grills", () => {
+  it("counts in plain words, and says nothing when nothing waits", () => {
+    assert.equal(waitingGrillLine(0), "");
+    assert.equal(waitingGrillLine(-2), "");
+    assert.equal(waitingGrillLine("x"), "");
+    assert.equal(waitingGrillLine(1), "1 grill is waiting for your call.");
+    assert.equal(waitingGrillLine(3), "3 grills are waiting for your call.");
+    assert.equal(PENDING_KEEP_DAYS, 14);
+    assert.match(WAITING_GRILL_HOW, /A waiting grill is deleted after 14 days\.$/);
+  });
+
+  it("shows only while records are on and no filter is set, and replaces the empty line", async () => {
+    const { renderDecisionsForTest } = await import("../api/_hosted.mjs");
+    const now = Date.parse("2026-11-08T12:00:00Z");
+    const waiting = renderDecisionsForTest({ records: "keep" }, [], { now, waiting: 2 });
+    assert.match(waiting, /<strong>2 grills are waiting for your call\.<\/strong>/);
+    assert.equal(waiting.includes("No decisions saved yet."), false);
+    const none = renderDecisionsForTest({ records: "keep" }, [], { now, waiting: 0 });
+    assert.match(none, /No decisions saved yet\./);
+    assert.equal(none.includes('id="waiting"'), false);
+    // Records off: a waiting grill cannot be saved, so the page does not tell the person to save it.
+    const off = renderDecisionsForTest({ records: "off" }, [], { now, waiting: 2 });
+    assert.equal(off.includes('id="waiting"'), false);
+    assert.match(off, /No decisions saved yet\./);
+    const filtered = renderDecisionsForTest({ records: "keep" }, [], { now, waiting: 2, type: "work" });
+    assert.equal(filtered.includes('id="waiting"'), false);
   });
 });

@@ -1,0 +1,80 @@
+{
+  "about": "Reviewer test cases for the hosted Grill connector at https://grillyour.ai/mcp. Five prompts that should call a Grill tool and three that should not. Each expected text is quoted from the product's own constants; scripts/submissions.test.mjs checks them against the code. Copy them into whatever form a directory asks for. Do not invent a manifest format from them.",
+  "connector": "https://grillyour.ai/mcp",
+  "positive": [
+    {
+      "id": "first-grill",
+      "prompt": "Grill this: we're raising the price 20% next month. I expect churn to stay under 4%, and I'm 70% sure.",
+      "tool": "grill",
+      "arguments": { "subject": "We're raising the price 20% next month. I expect churn to stay under 4%, and I'm 70% sure." },
+      "expected": [
+        { "source": "RECORDS_QUESTION", "text": "Keep a record of your decisions on your Grill account? Yes / No" }
+      ],
+      "then": "On a new account the first call returns the records question with one paragraph under it. The assistant asks it once, then calls grill again with keep_records true or false. The verdict comes back in the chat, sometimes after a short wait and a grill_result call, and ends with the closing line and the two-line run note.",
+      "then_tool": "grill",
+      "then_arguments": { "subject": "We're raising the price 20% next month. I expect churn to stay under 4%, and I'm 70% sure.", "keep_records": true },
+      "then_expected": [
+        { "source": "CLOSING_ASK", "text": "Say 'more', 'options', or your call." },
+        { "source": "RUN_PRIVACY_LINE", "text": "Private: sent only to zero-data-retention endpoints" }
+      ]
+    },
+    {
+      "id": "more",
+      "prompt": "more",
+      "tool": "grill_result",
+      "arguments": { "detail": "more" },
+      "expected": [],
+      "then": "The next challenge, its cheap test, and the one or two facts that would flip the call, about 60 to 80 words. The assistant passes the job id it already has, or none for the latest grill."
+    },
+    {
+      "id": "decided",
+      "prompt": "I'll do it, with a two-week pilot first.",
+      "tool": "grill_decided",
+      "arguments": { "decided": "do it, with a two-week pilot first" },
+      "expected": [
+        { "source": "savedConfirmation", "text": "Saved." }
+      ],
+      "then": "Only with records on. The reply starts Saved., names the look-back day and links Your grills."
+    },
+    {
+      "id": "look-back",
+      "prompt": "Look back: churn came in at 6%.",
+      "tool": "grill_look_back",
+      "arguments": { "happened": "churn came in at 6%" },
+      "expected": [
+        { "source": "LOOKBACK_SAVED", "text": "Saved with your decision record." }
+      ],
+      "then": "Needs the seeded account to hold one saved decision that is due. With two or more due, the reply lists them by title and asks which one."
+    },
+    {
+      "id": "reaction",
+      "prompt": "That grill helped.",
+      "tool": "grill_feedback",
+      "arguments": { "rating": "helped" },
+      "expected": [
+        { "source": "FEEDBACK_KEPT_TEXT", "text": "Noted. Grill keeps the rating, your one-line reason, the verdict label and the judge model for 180 days. Not the decision." }
+      ],
+      "then": "The decision is not sent unless the person says yes to sending that grill."
+    }
+  ],
+  "negative": [
+    {
+      "id": "cooking",
+      "prompt": "How long should I grill a ribeye on each side?",
+      "tool": null,
+      "then": "A cooking question that uses the word grill. No Grill tool is called."
+    },
+    {
+      "id": "summary",
+      "prompt": "Summarise this article in three bullet points.",
+      "tool": null,
+      "then": "Not a decision. No Grill tool is called."
+    },
+    {
+      "id": "translate",
+      "prompt": "Translate \"good morning\" into French.",
+      "tool": null,
+      "then": "Not a decision. No Grill tool is called."
+    }
+  ]
+}
