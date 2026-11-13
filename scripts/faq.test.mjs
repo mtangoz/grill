@@ -29,9 +29,9 @@ const ANSWERS = [
   "No. Whether an outside judge catches more than the same model starting fresh is not measured yet. Grill’s weekly check of its judge is a regression check on made-up cases. Those cases were used to write the judge’s instructions, so a full score says nothing about how good the judge is. The counts from that check, and what has not been measured, are at grillyour.ai/how-we-test/ (How Grill tests its judge). Examples on this site use invented numbers. They are not a benchmark.",
 ];
 
-// The page lede, and the one-line summary the build gives the page in its head and in llms.txt.
+// The page lede. The one-line summary the build gives the page, in its head and in llms.txt,
+// is checked on a built page in scripts/howWeTest.test.mjs.
 const LEDE = "Plain answers, including what has not been measured yet.";
-const SUMMARY = "How Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and what has not been measured yet.";
 
 function textOf(html) {
   return html
@@ -67,6 +67,12 @@ describe("the FAQ", () => {
 
   // The benchmarks answer is copied into llms.txt, so it is what an assistant quotes. It says what
   // has and has not been measured, claims no result, and sends the reader to the page with the counts.
+  //
+  // This test reads the page source and nothing that was built. The built page, its Markdown
+  // twin and llms.txt are checked in scripts/howWeTest.test.mjs, which builds in a folder of its
+  // own. A build here goes into _site, where other test files build at the same time, so what
+  // is read back from it is not always this test's own build. A test there fails if a built
+  // file is read here.
   it("says what has and has not been measured, and points at /how-we-test/ for the counts", () => {
     const faq = readFileSync(faqPath, "utf8");
     assert.ok(faq.includes(`<p class="lede">${LEDE}</p>`));
@@ -81,16 +87,6 @@ describe("the FAQ", () => {
     assert.doesNotMatch(plain, /%|\bpercent\b/i, "the FAQ quotes no rate");
     assert.doesNotMatch(ANSWERS[7], /\d/, "the counts live on the page, not in the answer");
     assert.doesNotMatch(ANSWERS[7], /different company|accura|guarantee|proves?\b|outperform|more reliable/i);
-
-    execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
-    const built = readFileSync(join(ROOT, "_site/faq/index.html"), "utf8");
-    assert.ok(built.includes(`<meta name="description" content="Plain answers: ${SUMMARY.replace("How Grill", "how Grill")}">`));
-    const llms = readFileSync(join(ROOT, "_site/llms.txt"), "utf8");
-    assert.ok(llms.includes(`- [FAQ](https://grillyour.ai/faq/): ${SUMMARY}\n`));
-    assert.ok(llms.includes(`### Are there benchmarks?\n\n${ANSWERS[7]}\n`), "llms.txt carries the answer word for word, with the address in it");
-    assert.doesNotMatch(llms, /no benchmarks are published/i);
-    const md = readFileSync(join(ROOT, "_site/faq/index.md"), "utf8");
-    assert.ok(md.includes("are at [grillyour.ai/how-we-test/](https://grillyour.ai/how-we-test/) (How Grill tests its judge)."));
   });
 
   it("copies the same answers into llms.txt after the page list, and the page has no script of its own", () => {

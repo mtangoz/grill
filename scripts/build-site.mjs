@@ -16,7 +16,7 @@
  *
  *   node scripts/build-site.mjs        # writes _site/index.html, a Markdown twin for every public page, and 404.md
  */
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { billingMode, couponId, starterAllowanceUsd } from "../api/_pro.mjs";
@@ -409,10 +409,35 @@ if (homeBody.includes('id="pro"')) {
   }
 }
 
+/** The text of every file this build has written, by path. */
+const builtText = new Map();
+
+/**
+ * Write one built file whole. The text goes to a scratch file beside the target, and the
+ * scratch file is then renamed over it. A rename swaps the file in one step, so anything that
+ * reads _site while a build runs gets the file as it was or as it now is, never an empty or
+ * half-written one. The tests need this: several test files build into _site at the same time
+ * and read it back. If the swap cannot be made, the file is written in place.
+ *
+ * The text is also kept, so a later step of this build reads its own page and not the folder,
+ * where another build may have put a page of its own since.
+ */
+function writeBuilt(path, text) {
+  builtText.set(path, text);
+  const scratch = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(scratch, text);
+    renameSync(scratch, path);
+  } catch {
+    rmSync(scratch, { force: true });
+    writeFileSync(path, text);
+  }
+}
+
 mkdirSync(OUT, { recursive: true });
 cpSync(join(ROOT, "site/brand"), join(OUT, "brand"), { recursive: true });
 cpSync(join(ROOT, "site/brand/favicon.ico"), join(OUT, "favicon.ico"));
-writeFileSync(
+writeBuilt(
   join(OUT, "index.html"),
   doc(headFor({ description: DESCRIPTION, url: SITE_URL, title: HOME_TITLE }), `${pageHead}\n${jsonLdScript(SOFTWARE_APPLICATION)}`, homeBody, "site/page.html"),
 );
@@ -455,7 +480,7 @@ function writePage(file, { description, url, outDir, name, blurb }) {
   const title = openingTitle(source, `site/${file}`);
   mkdirSync(join(OUT, outDir), { recursive: true });
   addPublicPage({ url, name, blurb });
-  writeFileSync(
+  writeBuilt(
     join(OUT, outDir, "index.html"),
     doc(headFor({ description, url, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length), `site/${file}`),
   );
@@ -566,20 +591,20 @@ if (process.env.GRILL_MISS === "1") {
     name: "Share a miss",
     blurb: "Share a miss, not your decision. When AI got a decision wrong, tell Grill how it went wrong.",
   });
-  writeFileSync(
+  writeBuilt(
     join(OUT, "miss", "index.html"),
     doc(headFor({ description: "Share how AI got a decision wrong, without the decision.", url: `${SITE_URL}miss/`, title: title.text }), `${title.tag}\n${style}`, source.slice(title.tag.length), "site/miss.html"),
   );
 }
-writeFileSync(join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}sitemap.xml\n`);
+writeBuilt(join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}sitemap.xml\n`);
 // IndexNow's public key file, at the site root. The body is the key. A trailing newline is allowed.
 // text/plain comes from the vercel.json route. Not a page, so it is not added to publicPages.
-writeFileSync(join(OUT, `${INDEXNOW_KEY}.txt`), `${INDEXNOW_KEY}\n`);
+writeBuilt(join(OUT, `${INDEXNOW_KEY}.txt`), `${INDEXNOW_KEY}\n`);
 // OpenAI's public domain-verification token. The body is these bytes and nothing else:
 // no newline, and text/plain comes from the vercel.json route for this path.
 mkdirSync(join(OUT, ".well-known"), { recursive: true });
-writeFileSync(join(OUT, ".well-known", "openai-apps-challenge"), "qUFqSGmOG8CWwJUnLKQuZ-6pUmSzTgCZRDsib-tA2j0");
-writeFileSync(
+writeBuilt(join(OUT, ".well-known", "openai-apps-challenge"), "qUFqSGmOG8CWwJUnLKQuZ-6pUmSzTgCZRDsib-tA2j0");
+writeBuilt(
   join(OUT, "sitemap.xml"),
   `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${publicPages.map((p) => `  <url><loc>${p.url}</loc></url>`).join("\n")}\n</urlset>\n`,
 );
@@ -602,7 +627,7 @@ const WHEN_TO_USE = [
   "Get the strongest case against your plan from a different AI, right in the chat you already use.",
   "Then you decide.",
 ];
-writeFileSync(
+writeBuilt(
   join(OUT, "llms.txt"),
   [
     "# Grill",
@@ -631,17 +656,19 @@ writeFileSync(
 for (const p of publicPages) {
   if (p.url === SITE_URL) continue;
   const rel = p.url.slice(SITE_URL.length);
-  let md = htmlToMarkdown(readFileSync(join(OUT, rel, "index.html"), "utf8"));
+  const html = builtText.get(join(OUT, rel, "index.html"));
+  if (html === undefined) throw new Error(`no page was built for ${p.url}, so it cannot get a Markdown twin`);
+  let md = htmlToMarkdown(html);
   // /start HTML replaces this sentence with the live count. The twin is built once,
   // so a number here would disagree with the page. Keep the sentence, drop the count.
   if (rel === "start/") {
     md = md.replace(/First 100 users get Grill free for life, \d+ spots? left\./g, "First 100 users get Grill free for life.");
   }
-  writeFileSync(join(OUT, rel, "index.md"), md);
+  writeBuilt(join(OUT, rel, "index.md"), md);
 }
 // Same words as the homepage, for an agent that sends Accept: text/markdown. vercel.json
 // routes / to this file only for that header. Nothing here is a new claim.
-writeFileSync(
+writeBuilt(
   join(OUT, "index.md"),
   [
     "# Grill your AI before you send it to your boss.",
@@ -656,7 +683,7 @@ writeFileSync(
     "",
   ].join("\n"),
 );
-writeFileSync(
+writeBuilt(
   join(OUT, "404.md"),
   [
     "# This page doesn’t exist",

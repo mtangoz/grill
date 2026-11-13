@@ -12,9 +12,9 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { latestRun, renderResults, validateResults } from "./resultsCore.mjs";
 import { START_REF_LABELS } from "./weeklyMetricsCore.mjs";
@@ -33,6 +33,14 @@ const BLURB = `${LEDE} What has been measured, as counts: a weekly regression ch
 const RULE = "The judge is from a different company than the one that wrote the plan, when Grill can tell which that is. When it cannot, the verdict says so.";
 const CTA = '<p class="cta"><a class="button" href="/start/?ref=how-we-test">Connect Grill</a></p>';
 const SOURCE = "https://github.com/mtangoz/grill";
+
+// The FAQ sends its reader here, so the built FAQ is checked in this file, on this file's own
+// build. FAQ_SUMMARY is the one line the build gives the FAQ in its head and in llms.txt.
+// FAQ_ANSWER is the answer under "Are there benchmarks?". scripts/faq.test.mjs pins the same
+// answer against the page source, so a new wording is changed there and here.
+const FAQ_SUMMARY = "How Grill differs from a pre-mortem, a decision matrix, asking the same AI again, and a crux finder. Where it works, and what has not been measured yet.";
+const FAQ_ANSWER =
+  "No. Whether an outside judge catches more than the same model starting fresh is not measured yet. Grill’s weekly check of its judge is a regression check on made-up cases. Those cases were used to write the judge’s instructions, so a full score says nothing about how good the judge is. The counts from that check, and what has not been measured, are at grillyour.ai/how-we-test/ (How Grill tests its judge). Examples on this site use invented numbers. They are not a benchmark.";
 
 /** An en dash or an em dash, built from code points so this file holds neither. */
 const LONG_DASH = new RegExp(`[${String.fromCharCode(0x2013, 0x2014)}]`);
@@ -867,7 +875,13 @@ describe("the way to /how-we-test/", () => {
 
     const faq = read("site/faq.html");
     assert.equal((faq.match(/href="\/how-we-test\/"/g) ?? []).length, 1);
-    assert.ok(today.out("faq/index.md").includes("[grillyour.ai/how-we-test/](https://grillyour.ai/how-we-test/)"));
+    assert.ok(today.out("faq/index.md").includes("are at [grillyour.ai/how-we-test/](https://grillyour.ai/how-we-test/) (How Grill tests its judge)."));
+    // The built FAQ says what has not been measured yet in its description and in its llms.txt
+    // line, and llms.txt carries the answer an assistant will quote, with this page's address in it.
+    assert.ok(today.out("faq/index.html").includes(`<meta name="description" content="Plain answers: ${FAQ_SUMMARY.replace("How Grill", "how Grill")}">`));
+    assert.ok(today.llms.includes(`- [FAQ](https://grillyour.ai/faq/): ${FAQ_SUMMARY}\n`));
+    assert.ok(today.llms.includes(`### Are there benchmarks?\n\n${FAQ_ANSWER}\n`), "llms.txt carries the answer word for word, with the address in it");
+    assert.doesNotMatch(today.llms, /no benchmarks are published/i);
 
     const readme = read("README.md");
     const readmeLink = "What has been measured about the judge, and what has not: [grillyour.ai/how-we-test](https://grillyour.ai/how-we-test/).";
@@ -883,6 +897,21 @@ describe("the way to /how-we-test/", () => {
     assert.ok(pagesAt > 0 && lineAt > pagesAt && faqAt > lineAt);
     // Three places in llms.txt name the page: its own line, and the address and the name in the FAQ answer.
     assert.ok(today.llms.slice(faqAt).includes("are at grillyour.ai/how-we-test/ (How Grill tests its judge)."));
+  });
+
+  // Why the built FAQ is checked above and not in scripts/faq.test.mjs. That file builds into
+  // _site, the one folder the other test files build into at the same time. Its test of this
+  // answer read that folder back and failed now and then, on a file another build was in the
+  // middle of writing. It now reads the page source only, and this test fails if a built file
+  // is read there again.
+  it("leaves the built FAQ to this file's own build: the FAQ's test of the benchmarks answer reads nothing that was built", () => {
+    const source = read("scripts/faq.test.mjs");
+    const from = source.indexOf('it("says what has and has not been measured, and points at /how-we-test/ for the counts"');
+    assert.ok(from > 0, "the FAQ's test is still there under its name");
+    const next = source.indexOf("\n  it(", from + 1);
+    const body = source.slice(from, next > from ? next : source.length);
+    assert.ok(body.includes("ANSWERS[7]") && body.includes("faqPath"), "the slice is that test: it reads the page source");
+    assert.doesNotMatch(body, /_site|build-site|execFileSync/, "that test builds nothing and reads nothing from the shared _site folder");
   });
 });
 
@@ -936,6 +965,77 @@ describe("the site build stops rather than publish a broken /how-we-test/", () =
 
   it("and builds again from an unbroken copy", () => {
     assert.equal(buildFailure(scratchTree()), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Building beside another build.
+//
+// Other test files build into the one _site folder at the same time and read it back. Two
+// things in the build made that go wrong now and then. It wrote each file in place, which
+// empties the file first, so a reader in that moment found it empty or half written. And it
+// read each page back from the folder to make the Markdown twin, so a twin could be made from
+// a page another build was in the middle of writing. These two tests hold the two fixes.
+describe("the site build can run beside another build of the same folder", () => {
+  it("swaps each file in whole: a second build leaves a new file under every name it writes, with the same bytes, and no scratch file", () => {
+    const dir = scratchTree();
+    buildIn(dir);
+    const site = join(dir, "_site");
+    const files = () =>
+      readdirSync(site, { recursive: true })
+        .map(String)
+        .filter((name) => statSync(join(site, name)).isFile())
+        .sort();
+    // The brand images are copied, not written. Everything else is text the build writes.
+    const copied = (name) => name.startsWith(`brand${sep}`) || name === "favicon.ico";
+    const names = files();
+    const written = names.filter((name) => !copied(name));
+    assert.ok(written.length >= 30, `the build wrote ${written.length} files`);
+    for (const name of ["index.html", "llms.txt", "sitemap.xml", "robots.txt", join("faq", "index.html"), join("faq", "index.md"), join(URL_PATH, "index.md")]) {
+      assert.ok(written.includes(name), `${name} is one of them`);
+    }
+    const before = new Map(written.map((name) => [name, { ino: statSync(join(site, name)).ino, bytes: readFileSync(join(site, name)) }]));
+
+    buildIn(dir);
+    assert.deepEqual(files(), names, "the same files as before, with no scratch file left among them");
+    for (const [name, was] of before) {
+      // A file written in place keeps its number. A file renamed over the old one is a new file.
+      assert.notEqual(statSync(join(site, name)).ino, was.ino, `${name} was written in place, so a reader could have found it empty`);
+      assert.ok(readFileSync(join(site, name)).equals(was.bytes), `${name} holds the same bytes as before`);
+    }
+  });
+
+  it("reads nothing back from the folder it writes, so each Markdown twin is made from this build's own page", () => {
+    const dir = scratchTree();
+    // Loaded into the build before it starts: it notes the path of every file the build reads.
+    const watch = join(dir, "watch-reads.cjs");
+    const log = join(dir, "reads.log");
+    writeFileSync(
+      watch,
+      [
+        'const fs = require("node:fs");',
+        "const readFile = fs.readFileSync;",
+        "fs.readFileSync = function (path, ...rest) {",
+        '  fs.appendFileSync(process.env.READS_LOG, String(path) + "\\n");',
+        "  return readFile.call(this, path, ...rest);",
+        "};",
+        'require("node:module").syncBuiltinESMExports();',
+        "",
+      ].join("\n"),
+    );
+    const built = buildIn(dir, { NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require ${JSON.stringify(watch)}`.trim(), READS_LOG: log });
+    const reads = readFileSync(log, "utf8").split("\n").filter(Boolean);
+    // Paths are matched by their ends: a scratch folder can be reached under two names.
+    const noted = (...parts) => reads.some((path) => path.endsWith(sep + parts.join(sep)));
+    assert.ok(noted("site", "page.html") && noted("site", "faq.html") && noted("data", "results.json"), "the build's reads were noted");
+    assert.deepEqual(
+      reads.filter((path) => path.includes(`${sep}_site${sep}`)),
+      [],
+      "the build read a file back from _site",
+    );
+    // The twins are there all the same, and they are the ones the plain build makes.
+    assert.equal(built.md, today.md);
+    assert.equal(built.out("faq/index.md"), today.out("faq/index.md"));
   });
 });
 
