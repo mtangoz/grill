@@ -525,3 +525,49 @@ describe("the hosted grill tool reads true on every host", () => {
     assert.match(grill.description, /keep_records true or false only after they answer Yes or No\./);
   });
 });
+
+describe("the records question, asked before the first send", () => {
+  const lines = hostedCore.CONSENT_TEXT.split("\n");
+  // The paragraph the plan proposes, word for word. It waits on the owner's yes.
+  const PROPOSED_NOTE =
+    "Either way, your decision goes through Grill's server to an outside AI judge that OpenRouter picks, and to a quality check by TypeSafe. If you say yes, Grill keeps an encrypted record that its operators could open, and emails you on Mondays when a look-back is due unless you turn that off. What is kept and for how long: https://grillyour.ai/data-flow/";
+
+  it("keeps the question byte for byte, and asks one question only", () => {
+    assert.equal(lines[0], "Keep a record of your decisions on your Grill account? Yes / No");
+    assert.equal(hostedCore.RECORDS_QUESTION, lines[0]);
+    // One question mark in the whole reply: the note and the line for the assistant ask nothing.
+    assert.equal(hostedCore.CONSENT_TEXT.split("?").length, 2);
+    assert.equal(lines.length, 5);
+    assert.equal(lines[1], "");
+    assert.equal(lines[3], "");
+  });
+
+  it("says under the question where the decision goes and what a yes keeps", () => {
+    assert.equal(lines[2], PROPOSED_NOTE);
+    assert.equal(hostedCore.RECORDS_NOTE, PROPOSED_NOTE);
+    assert.match(hostedCore.CONSENT_TEXT, /Monday/);
+    assert.match(hostedCore.CONSENT_TEXT, /data-flow/);
+    assert.match(hostedCore.CONSENT_TEXT, /OpenRouter/);
+    assert.match(hostedCore.CONSENT_TEXT, /TypeSafe/);
+    assert.match(hostedCore.CONSENT_TEXT, /operators could open/);
+    // Shown before Grill has looked at who is asking, so it claims nothing about the judge's company,
+    // and nothing about what the judge or the check keep.
+    assert.doesNotMatch(hostedCore.CONSENT_TEXT, /different company/i);
+    assert.doesNotMatch(hostedCore.CONSENT_TEXT, /Both are asked/i);
+    assert.doesNotMatch(hostedCore.CONSENT_TEXT, /nothing is kept|in memory|zero.retention|does not keep|guarantee/i);
+    assert.doesNotMatch(hostedCore.CONSENT_TEXT, /[–—]/);
+  });
+
+  it("keeps the address in hostedCore.mjs, and tells the assistant to show the paragraph", () => {
+    assert.equal(hostedCore.DATA_FLOW_URL, "https://grillyour.ai/data-flow/");
+    assert.ok(hostedCore.RECORDS_NOTE.endsWith(hostedCore.DATA_FLOW_URL));
+    assert.doesNotMatch(read("api/_hosted.mjs"), /data-flow/, "the address is a constant in hostedCore.mjs, not a literal in api/_hosted.mjs");
+    assert.equal(
+      lines[4],
+      "Ask that once, and show the paragraph under the question with it. Then call grill again with keep_records true or false. Do not send the decision until they answer.",
+    );
+    const grill = hostedCore.hostedTools().find((tool) => tool.name === "grill");
+    assert.match(grill.description, /show that one question and the paragraph under it, and call again with keep_records true or false only after they answer Yes or No\./);
+    assert.match(hostedCore.HOSTED_INSTRUCTIONS, /Relay that one question and the paragraph under it, and call again with keep_records true or false only after they answer\./);
+  });
+});

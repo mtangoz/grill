@@ -62,10 +62,27 @@ export function inviteOnlyText(origin = "") {
 }
 
 export const INVITE_ONLY = inviteOnlyText();
+/** The page that says what goes where and what is kept. The records note points at it. */
+export const DATA_FLOW_URL = "https://grillyour.ai/data-flow/";
+
+/** The one question. /judge shows this line above its Yes and No buttons. It does not change. */
+export const RECORDS_QUESTION = "Keep a record of your decisions on your Grill account? Yes / No";
+
+/**
+ * PROPOSED WORDING, waiting on the owner's yes.
+ * What the person reads under the question, before anything is sent: where the decision goes
+ * whichever way they answer, and what a yes adds. It asks nothing, so the first reply still
+ * holds one question. It makes no claim about which company the judge is from, because this
+ * is shown before Grill has looked at who is asking.
+ */
+export const RECORDS_NOTE = `Either way, your decision goes through Grill's server to an outside AI judge that OpenRouter picks, and to a quality check by TypeSafe. If you say yes, Grill keeps an encrypted record that its operators could open, and emails you on Mondays when a look-back is due unless you turn that off. What is kept and for how long: ${DATA_FLOW_URL}`;
+
 export const CONSENT_TEXT = [
-  "Keep a record of your decisions on your Grill account? Yes / No",
+  RECORDS_QUESTION,
   "",
-  "Ask that once, then call grill again with keep_records true or false. Do not send the decision until they answer.",
+  RECORDS_NOTE,
+  "",
+  "Ask that once, and show the paragraph under the question with it. Then call grill again with keep_records true or false. Do not send the decision until they answer.",
 ].join("\n");
 
 /** When three grills are still running after the wait. The assistant retries. The person is not asked for a job id. */
@@ -1127,7 +1144,7 @@ export function recordsForLookBack(saved, { records = "", now = Date.now() } = {
  * first-use line and the scope rule, so this does not say them again.
  */
 const HOSTED_GRILL_TAIL =
-  "The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. The first time, Grill asks whether to keep decision records before anything is sent: show that one question, and call again with keep_records true or false only after they answer Yes or No. A follow: line is a job id for you. Never show it.";
+  "The judge is always picked by openrouter/auto, excluding only the company that wrote the write-up. It never falls back to this chat's own model, for speed or cost, and it never pins a model. If the result is a job id, call grill_result with that job id right now, before you reply to the person, and keep calling until the verdict arrives. The first time, Grill asks whether to keep decision records before anything is sent: show that one question and the paragraph under it, and call again with keep_records true or false only after they answer Yes or No. A follow: line is a job id for you. Never show it.";
 
 // The installed tool's description assumes Claude wrote the subject unless a setting says
 // otherwise, and it describes a judge model named in settings. Neither is true of Grill in
@@ -1314,7 +1331,7 @@ export const HOSTED_INSTRUCTIONS = [
   "Exclude only the company that wrote the write-up. Never use this chat's own model as the judge, and never pin a model, including for speed or cost.",
   "Do not rewrite the decision, do not add your own case against, and do not wait for an OK.",
   "Ask at most one short question, and only if the decision is truly unclear, such as what the goal is.",
-  "The first time, grill asks whether to keep decision records before anything is sent. Relay that one question and call again with keep_records true or false only after they answer.",
+  "The first time, grill asks whether to keep decision records before anything is sent. Relay that one question and the paragraph under it, and call again with keep_records true or false only after they answer.",
   `If the result starts with the outside-judge sentence, show that one line once, and do not repeat it later. ${OWN_DISCLOSURE_RULE} Every result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY}`,
   "If grill returns a job id, call grill_result right now with that job id, before you reply to the person, and keep calling until the note arrives. Do not ask the person to check, and do not ask them for a job id.",
   "If three grills are still running, wait about 2 minutes and call grill again yourself. Do not ask the person for a job id.",

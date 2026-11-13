@@ -70,6 +70,7 @@ import {
   CONSENT_TEXT,
   CREDIT_CACHE_MS,
   DAILY_GRILL_LIMIT,
+  DATA_FLOW_URL,
   EMAIL_CLAIMED_TEXT,
   HOSTED_INSTRUCTIONS,
   JOB_TTL_SECONDS,
@@ -79,6 +80,8 @@ import {
   MAX_SUBJECT_CHARS,
   JUDGE_PAGE_UNVERIFIED_LINE,
   OUT_OF_CREDIT,
+  RECORDS_NOTE,
+  RECORDS_QUESTION,
   RUNNING_JOB_LIMIT,
   CAP_COUNTER_TTL_SECONDS,
   allowlistAllows,
@@ -3442,6 +3445,12 @@ function personVerdict(text) {
   return raw.replace(/\n*follow:\s*\S+\s*$/g, "").trim();
 }
 
+/** The records note as HTML, with its address as a link. The words are the ones the chat shows. */
+function recordsNoteHtml() {
+  const [before, after = ""] = RECORDS_NOTE.split(DATA_FLOW_URL);
+  return `${esc(before)}<a href="${esc(DATA_FLOW_URL)}">${esc(DATA_FLOW_URL)}</a>${esc(after)}`;
+}
+
 function renderJudge({ packet, tooLong, askRecords, verdict, note, hint }) {
   const capped = tooLong ? `<p>That decision is over ${JUDGE_PACKET_MAX} characters. Shorten it, then try again.</p>` : "";
   const empty = note ? `<p>${esc(note)}</p>` : "";
@@ -3453,7 +3462,8 @@ function renderJudge({ packet, tooLong, askRecords, verdict, note, hint }) {
     <pre id="verdict" class="config">${esc(verdict)}</pre>`
     : "";
   const buttons = askRecords
-    ? `<p>${esc(CONSENT_TEXT.split("\n")[0])}</p>
+    ? `<p>${esc(RECORDS_QUESTION)}</p>
+    <p class="small">${recordsNoteHtml()}</p>
     <div class="row"><button type="submit" name="keep" value="yes">Yes</button> <button type="submit" name="keep" value="no">No</button></div>`
     : `<p class="row"><button type="submit">Grill this</button></p>`;
   return page(

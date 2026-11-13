@@ -12,7 +12,10 @@ import {
   CLAUDE_CODE_CLIENT_ID,
   CLAUDE_WEB_REDIRECT,
   CONSENT_TEXT,
+  DATA_FLOW_URL,
   EMAIL_CLAIMED_TEXT,
+  RECORDS_NOTE,
+  RECORDS_QUESTION,
   inviteOnlyText,
   OUT_OF_CREDIT,
   SERVICE_CAP_TEXT,
@@ -1361,6 +1364,69 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.match(textOf(off.json), /Say 'more', 'options', or your call\./);
       assert.doesNotMatch(textOf(off.json), /credit left|grill-record/);
       assert.equal(offCtx.writes.some((row) => row[0] === "SET" && row[1].includes(":record:")), false);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("shows the note under the records question, in chat and on /judge, before anything is sent", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const subject = `Decision: ${CANARY}\nI'm 70% sure.`;
+      const deps = { ...judgeDeps(fake), waitMs: 20_000, now: Date.parse("2026-11-13T15:00:00Z") };
+      const ask = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "grill", arguments: { subject } } },
+        { token, deps },
+      );
+      const reply = textOf(ask.json);
+      assert.equal(reply, CONSENT_TEXT);
+      const [question, gap, note] = reply.split("\n");
+      assert.equal(question, RECORDS_QUESTION);
+      assert.equal(gap, "");
+      assert.equal(note, RECORDS_NOTE);
+      // Still one question. The note tells; it does not ask.
+      assert.equal(reply.split("?").length, 2, reply);
+      // The note is read before the decision goes anywhere: no judge call, and nothing written from it.
+      assert.equal(fake.seen.chat.length, 0);
+      assert.equal(ctx.writes.some((row) => row.join(" ").includes(CANARY)), false);
+
+      // The same account on /judge, still unanswered: the question, the note under it, then the buttons.
+      const cookie = `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+      const judgePage = async (path, body) => {
+        const headers = { cookie };
+        if (body) headers["content-type"] = "application/x-www-form-urlencoded";
+        const res = await handleJudge(
+          new Request(`https://grillyour.ai${path}`, { method: body ? "POST" : "GET", headers, body: body ? new URLSearchParams(body).toString() : undefined }),
+          { ...ctx, ...deps },
+        );
+        return res.text();
+      };
+      const shown = await judgePage(`/judge?q=${encodeURIComponent(subject)}&from=claude`);
+      const words = RECORDS_NOTE.slice(0, RECORDS_NOTE.length - DATA_FLOW_URL.length);
+      const noteHtml = `<p class="small">${esc(words)}<a href="${DATA_FLOW_URL}">${DATA_FLOW_URL}</a></p>`;
+      assert.ok(shown.includes(`<p>${esc(RECORDS_QUESTION)}</p>`), shown);
+      assert.ok(shown.includes(noteHtml), shown);
+      assert.ok(shown.indexOf(esc(RECORDS_QUESTION)) < shown.indexOf(noteHtml));
+      assert.ok(shown.indexOf(noteHtml) < shown.indexOf('<button type="submit" name="keep" value="yes">'));
+      assert.equal(shown.includes("<script"), false);
+      assert.equal(fake.seen.chat.length, 0, "opening the page sends nothing");
+
+      // Once they answer, the question and the note are not shown again.
+      const grilled = await judgePage("/judge", { q: subject, keep: "no", from: "claude" });
+      assert.match(grilled, /<pre id="verdict" class="config">/);
+      assert.equal(fake.seen.chat.length, 1);
+      assert.equal(grilled.includes(esc(RECORDS_QUESTION)), false);
+      assert.equal(grilled.includes(DATA_FLOW_URL), false);
+      const again = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: a second one.", quality_check: false } } },
+        { token, deps },
+      );
+      assert.equal(textOf(again.json).includes(RECORDS_QUESTION), false);
+      assert.equal(textOf(again.json).includes(DATA_FLOW_URL), false);
     } finally {
       await fake.close();
     }
