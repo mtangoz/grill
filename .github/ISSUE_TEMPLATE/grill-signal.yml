@@ -25,7 +25,7 @@ body:
     id: judge
     attributes:
       label: Judge family
-      options: ["openai", "google", "deepseek", "meta", "mistral", "qwen", "xai", "moonshot", "other", "paste-route"]
+      options: ["anthropic", "openai", "google", "deepseek", "meta", "mistral", "qwen", "xai", "moonshot", "other", "paste-route"]
     validations:
       required: true
   - type: dropdown

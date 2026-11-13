@@ -23,7 +23,7 @@ export const FIELDS = Object.freeze({
   },
   judge: {
     label: "Judge family",
-    options: ["openai", "google", "deepseek", "meta", "mistral", "qwen", "xai", "moonshot", "other", "paste-route"],
+    options: ["anthropic", "openai", "google", "deepseek", "meta", "mistral", "qwen", "xai", "moonshot", "other", "paste-route"],
     required: true,
   },
   verdict: { label: "Verdict", options: ["solid", "solid if", "shaky", "doesn't hold up"], required: true },

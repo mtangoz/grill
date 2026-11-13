@@ -29,6 +29,22 @@ describe("the form and the parser agree", () => {
     }
     assert.doesNotMatch(form, /type: (input|textarea|checkboxes)/, "the form must stay dropdown-only");
   });
+
+  it("offers anthropic as a judge family, and the parser and the tally read it", () => {
+    const form = readFileSync(join(ROOT, ".github/ISSUE_TEMPLATE/grill-signal.yml"), "utf8");
+    // A Claude model can be the judge whenever another company's assistant wrote the write-up.
+    const judgeDropdown = form.slice(form.indexOf("id: judge"), form.indexOf("id: verdict"));
+    assert.match(judgeDropdown, /options: \[.*"anthropic".*\]/);
+    assert.ok(FIELDS.judge.options.includes("anthropic"));
+    assert.equal(parseSignal(body(rated("anthropic", "yes"))).judge, "anthropic");
+    assert.deepEqual(aggregate([rated("anthropic", "yes"), rated("anthropic", "no")]).worthEngaging.byJudge.anthropic, { yes: 1, n: 2 });
+    // Every family the form offered before is still there, so an older signal still parses.
+    for (const family of ["openai", "google", "deepseek", "meta", "mistral", "qwen", "xai", "moonshot", "other", "paste-route"]) {
+      assert.ok(FIELDS.judge.options.includes(family), family);
+    }
+    // A name the form does not offer is still dropped whole.
+    assert.equal(parseSignal(body(rated("claude", "yes"))), null);
+  });
 });
 
 describe("parseSignal", () => {
