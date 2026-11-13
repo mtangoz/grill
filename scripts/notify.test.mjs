@@ -294,3 +294,64 @@ describe("the launch email", () => {
     assert.equal(CONFIRM_SUBJECT, "Confirm: tell me when Grill Pro is ready");
   });
 });
+
+describe("saved history and look-back reminders are live and free", () => {
+  const START = "https://grillyour.ai/start/?ref=notify";
+
+  it("the form, the confirmation email and the on-the-list page say they work today, and link to /start", async () => {
+    const w = world();
+    const d = deps(w.fetchImpl);
+
+    const form = await (await handleNotify(new Request("https://grillyour.ai/notify?via=site"), d)).text();
+    assert.match(form, /<h1>Saved history and look-back reminders work today<\/h1>/);
+    assert.match(form, /They are free with Grill in your chat\./);
+    assert.ok(form.includes(`<a href="${START}">Set up Grill in your chat</a>`), form);
+    assert.match(form, /Grill Pro, a paid plan, is not live\./);
+    // Still a form to hear about Pro, with the same button.
+    assert.match(form, /Email me when Pro is ready:/);
+    assert.match(form, /<button type="submit">Notify me<\/button>/);
+
+    await post(handleNotify, "/notify", signupFields(), d);
+    const email = w.calls.find((c) => c.url === "https://api.resend.com/emails").body;
+    assert.equal(email.subject, CONFIRM_SUBJECT);
+    assert.ok(email.text.includes("What you'll get: one email when Grill Pro is ready. No newsletter."), email.text);
+    assert.ok(email.text.includes(`Saved history and look-back reminders work today, free, with Grill in your chat: ${START}`), email.text);
+
+    const { url, token } = confirmUrl(w.calls);
+    const confirm = await (await handleNotifyConfirm(new Request(url), d)).text();
+    assert.match(confirm, /One email when Grill Pro is ready\. No newsletter\. Nothing is saved until you press the button\./);
+
+    const listed = await (await post(handleNotifyConfirm, "/notify/confirm", { t: token }, d)).text();
+    assert.match(listed, /You're on the list/);
+    assert.ok(
+      listed.includes(`Saved history and look-back reminders work today, free, with Grill in your chat. <a href="${START}">Set up Grill in your chat</a>.`),
+      listed,
+    );
+
+    // Nothing in the flow still calls them something to wait for.
+    for (const [where, text] of [["form", form], ["email", email.text], ["confirm page", confirm], ["on the list", listed]]) {
+      assert.doesNotMatch(text, /Coming later|coming soon|when Pro ships|will keep your decision records/i, where);
+      assert.doesNotMatch(text, /when saved history and look-back reminders are available/i, where);
+      assert.doesNotMatch(text, /[–—]/, where);
+    }
+    // The link names where the person came from and nothing about them.
+    assert.equal(new URL(START).search, "?ref=notify");
+    assert.equal(email.text.split(START).length, 2);
+  });
+
+  it("joining is still a sign-up for news, counted as interest and never as a user", async () => {
+    const w = world();
+    const d = deps(w.fetchImpl);
+    await post(handleNotify, "/notify", signupFields(), d);
+    const { token } = confirmUrl(w.calls);
+    await post(handleNotifyConfirm, "/notify/confirm", { t: token }, d);
+    const interest = await readNotifyInterest(ENV, w.fetchImpl);
+    assert.equal(interest.label, "Pro interest");
+    assert.equal(interest.countsAsUsers, false);
+    assert.equal(interest.notify_list, 1);
+    assert.equal(interest.users, undefined);
+    // The new link sends no request and writes no counter from this flow.
+    assert.equal(w.calls.some((c) => c.url.includes("/start")), false);
+    assert.equal([...w.store.keys()].some((key) => /start|user/i.test(String(key))), false, [...w.store.keys()].join(", "));
+  });
+});
