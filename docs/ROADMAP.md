@@ -8,12 +8,67 @@ Each idea has three parts. **Impact** says what it moves (usage, retention, reve
 
 Most triggers read the real-user count in STRATEGY.md. That count is 1 as of 2026-11-09, so every user-count trigger below reads as not met.
 
+The 2026-11-13 strategy puts reach first: at today's reach the kill threshold in STRATEGY.md is expected to read "not tested: the constraint is reach" on 2027-02-28, so the next quarter is reach work. Most of that work is the owner's, and it is listed next.
+
+### Waiting on the owner
+
+Ordered by effect on reach. Times are rough guesses of the owner's own time, not elapsed time. Nothing here is built by an agent.
+
+1. **File the Claude directory listing.** The kit is in [DIRECTORY-SUBMISSIONS.md](DIRECTORY-SUBMISSIONS.md): submit the hosted connector, not the plugin. Needs a paid Claude plan and a reviewer sign-in (item 17). About 1 hour.
+2. **File the ChatGPT listing.** Same kit, plus OpenAI identity verification, a demo video and the reviewer account. About 3 hours, plus OpenAI's wait.
+3. **Cut release 0.2.0 and republish the MCP Registry entry.** Installed users still run 0.1.1 from 2026-09-29, so none of the installed-tool changes in CHANGELOG.md reach npm, the `.mcpb` or the skill zip until then. Do item 27 first, and update the `server.json` description in the conditional form at the same time (item 29). About 1 hour.
+4. **Tell the launch list that saved history and look-back reminders are live and free.** An agent drafts two sentences; the owner sends. First rewrite the launch email template in `api/_notify.mjs` (`LAUNCH_SUBJECT` and `launchEmailText`) before anyone sends it: it still lists saved history and reminders as what Pro adds. About 30 minutes.
+5. **Talk to the one real user, and recruit one team pilot** (STRATEGY recommendations 2 and 6). About 2 hours over a few weeks.
+6. **Set `GRILL_INTERNAL_EMAILS` in production BEFORE this branch deploys.** Comma-separated. Include maintainer, test, reviewer and agent addresses (an agent is matched by its own email and by its person's email). An entry needs an @: a value such as `on` counts nobody. Unset, no outside counter is written and the readout prints "not counted: internal list not set". After setting it, run one grill from any account so `node scripts/outside-loop.mjs` shows `Counting since: <day>`. If it is set late, look-back dates set earlier are never counted. Add a reviewer's address before they sign in. Keep it set afterwards. If it is unset later, counting stops from then on and that stretch is never counted. `node scripts/outside-loop.mjs` shows the last day the server counted. About 10 minutes.
+7. **The four-arm comparison:** read a sample of the seeds, add or commission non-Anthropic seeds, register the protocol, and fund the run (about $25 to $45). The owner's steps are the nine under "What the owner does" in [evals/four-arm/README.md](../evals/four-arm/README.md). Register and fund only after the seed set is fixed. Two drafting rounds showed blind readers find every planted flaw, so the set is too easy as drafted. The drafts are not committed. About 4 hours, plus the run cost.
+8. **The founding-spot line on /start under open sign-up.** "First 100 users get Grill free for life" still shows while open sign-up does not take a spot. Honour it or reword it; more traffic now goes to /start. About 15 minutes to decide.
+9. **The Monday email: opt-in or opt-out, and what follows 2027-01-25.** The paragraph under the records question says Grill may email on a Monday while the test runs; it is not true for held-out accounts, and it stops being true after 2027-01-25. About 30 minutes.
+10. **Whether the chat's own company may judge when the assistant names a different author** (in Claude, `author: openai` now excludes OpenAI and not Anthropic). About 15 minutes to decide.
+11. **Enforce the records choice on the server** (never accept a yes before the question was returned). Since this branch, an assistant that sends `keep_records: false` by mistake also deletes waiting drafts, not only future saving. Saved records are untouched. About 15 minutes to decide.
+12. **Mask before storing on the hosted route.** Today what Grill keeps is not masked. About 15 minutes to decide.
+13. **A zero-retention flag on the Jev request.** Needs one live call to check TypeSafe accepts it. About 30 minutes.
+14. **Ask the assistant for its company on unknown clients**, as a flagged build. About 15 minutes to decide.
+15. **Grill CI: an unknown author should not clear needs-review.** About 10 minutes to decide.
+16. **Stop storing the reaction reason unless the person says yes.** About 10 minutes to decide.
+17. **Reviewer sign-in without an emailed code.** The options are in the kit. About 30 minutes to choose.
+18. **Auth on the digest route.** About 10 minutes to decide.
+19. **A call to action on the share page.** ICP.md says share links are proof only. About 10 minutes to decide.
+20. **A homepage link to /demo, and a work-decision starter prompt.** Both are queued as experiments in [experiments/analytics-loop.md](experiments/analytics-loop.md), with their triggers. Both change copy the owner chose. About 15 minutes to approve or refuse each.
+21. **Count verdict labels and quality checks by judge company on the server.** About 15 minutes to decide.
+22. **Add sound cases to the public eval set.** Six sound cases make the false-alarm gate flap: the weekly gate went red on 2026-11-13 at 3 of 6 and green on the next run with the same judge files. About 1 hour to review new cases.
+23. **A judge quality floor** (the router's cost tier and a price ceiling), without pinning a model. About 30 minutes to decide.
+24. **Change the PRINCIPLES definition of evidenced look-backs.** Today it counts public signal issues and outreach replies, and the Pro bar reads it. Look-backs saved on Grill accounts are a separate count and are never added to it. About 15 minutes to decide.
+25. **State a choice on the web, and outcome buttons on the due list.** The new waiting line on Your grills tells people to say the choice in a chat where Grill is connected, so a /judge-only user still has no way to turn a waiting grill into a record. About 15 minutes to decide.
+26. **Refresh the 16-name vendor list when the router adds a company.** `AUTHOR_VENDORS` in `server/index.mjs` now decides exclusion: a real vendor outside the 16 names is ignored as an author. Check it against the live OpenRouter catalogue. About 15 minutes each time.
+27. **Confirm what Claude Desktop and Claude Code send as `clientInfo.name`** before release 0.2.0. If neither is recognised, every installed verdict there says "Independence not verified:". About 15 minutes.
+28. **The business-model sentence "Grill is paid for by subscriptions only."** in docs/PRIVACY.md and site/contribute.html. Nothing is for sale today (STRATEGY.md, Money). Keep it as intent or reword it. About 10 minutes.
+29. **The `server.json` description**, in the conditional independence form, at the next release. About 5 minutes.
+30. **Short unconditional "different AI" lines.** The home page description and JSON-LD say "A different AI argues the case against your plan", and the home lede says "from a different AI", with no condition. On a run where nobody is excluded the judge can be the same company's model. Tighten or keep. About 10 minutes.
+31. **Two counter choices.** Split the email arms in the outside counters, or leave them unread. Whether a look-back deleted before its day should stay in the count (today it does). About 15 minutes.
+32. **GitHub upkeep.** Close issues #22 and #123, the two empty monthly learning reports (the workflow now keeps one rolling issue and never touches them). Add a `Written-by-model: <vendor>/<model>` line to the prompts of the automations that open pull requests through the API. Merge the `learn.yml` and `eval.yml` changes by hand: workflow files never merge themselves. About 20 minutes.
+33. **Sentences that still say "different company" with no condition, in files no package on this branch owned.** The installed judge setting ("it must be from a different company than the assistant that wrote the subject. A same-company pin is refused."), which in a guessed session refuses only an Anthropic pin; `HOSTED_INSTRUCTIONS` ("Exclude only the company that wrote the write-up."); the `judge_model` text in `smithery.yaml` (pinned by scripts/packaging.test.mjs); and docs/ICP.md lines 5 and 15. Give each the condition, or keep it. About 20 minutes.
+
+### Proposed on this branch, needs the owner's yes before merge
+
+The branch `claude/sleepy-curie-ze1wxi` changed 161 promise-level, legal or positioning sentences. None has the owner's yes. The full list, one row per sentence with the file, the old text, the new text and the commit, is in [PROPOSED-WORDING.md](PROPOSED-WORDING.md). It was built from every commit since 311ea3f whose subject starts "Proposed", plus the positioning commits without that label. The groups:
+
+| Group | Rows | What changed, in short |
+|---|---|---|
+| Public site pages | 46 | about, check-your-ai, FAQ, contribute, privacy, terms, the home description and llms.txt: every "different company" line takes the condition; no "blind spots"; the FAQ says what is not measured yet; privacy and terms say what Grill keeps (the 15-minute copy, the account row, the counts, the Monday email). Two new pages: /data-flow/ and /how-we-test/. |
+| README and docs | 59 | README, WHY, PRINCIPLES (approval, telemetry, judge, models, paid plans, speed, North Star), PRIVACY.md, DATA-LEDGER (new rows and the key-family table), HOSTED, ANY-APP, PRO, the reminders PRD, LEARNING, and two new sentences in evals/README.md. |
+| Grill in chat (hosted tool text) | 24 | "Independence not verified:" lines; the first-use line without "from a different company" on unverified runs and linking /data-flow/; the paragraph under the records question; the reaction reply; the look-back reply no longer says nothing is stored; the tool description for every host; no "credit" in limit messages; /notify says saved history and reminders work today. |
+| The installed tool | 16 | The guessed-author line and opening; the reaction reply; no Grill Pro line in the no-key reply; the same-family note; manifest.json and plugin.json descriptions and settings. |
+| Skills and the paste prompt | 13 | No "correlated with" or "blind spots"; the conditional company line; the first-use link to /data-flow/; the paste prompt sends a short summary; the paste-route Pro news line deleted. |
+| Directory submission kit | 3 | Listing copy in the conditional form, data-handling answers quoted from /data-flow/, reviewer prompts. |
+
+To say no to one row, revert the commit named in it, or reword that sentence alone.
+
 ### At a glance
 
 | Idea | Impact | Trigger | Status |
 |---|---|---|---|
 | Record the real-user count | High, enables every other trigger | Now | Done |
-| Close the unknown-client judge gap | High, trust | Now | Draft PR open |
+| Close the unknown-client judge gap | High, trust | Now | Labelled on this branch, not enforced |
 | Publish the hosted address on the MCP Registry | Medium, usage | Now | Trigger met |
 | ChatGPT and Claude connector directory listings | High, usage | Now, with the owner's approval | Trigger met, blocked |
 | Hand-run partnerships | Medium, usage | Now | Trigger met |
@@ -23,7 +78,7 @@ Most triggers read the real-user count in STRATEGY.md. That count is 1 as of 202
 | Pre-mortem reply angle | Low, usage | Now, content only | Trigger met |
 | Public launch (Show HN, Product Hunt) | High, usage, one-off | Real-user count recorded and activation measured | Not met |
 | Plan for after the founding 100 | Medium, revenue | Founding count reaches 80 of 100 | Not met |
-| Paid tier (turn Pro on) | High, revenue | 100 real users and 20 evidenced look-backs | Not met |
+| Paid tier (turn Pro on) | High, revenue | 100 real users and 20 evidenced look-backs, after the kill threshold reaches rule 3 | Not met |
 | Pay-as-you-go above the allowance | Low, revenue | 30 paying users, and over 15% reach the allowance | Not met |
 | Team pilot, then a team plan | High, revenue and retention | 100 users, or a team asks | Not met |
 | Shared/team sessions with a decision owner | High, retention | 100 users, or team demand | Not met |
@@ -41,7 +96,8 @@ Most triggers read the real-user count in STRATEGY.md. That count is 1 as of 202
 | Contributor votes on the roadmap | Low, contributors | 10+ active contributors | Not met |
 | Privacy work for work use (work mode, Spaces, org view) | High, revenue later | The triggers in the privacy PRD | Not met |
 | Look-back reminders through ChatGPT MCP events | Medium, retention | ChatGPT listing live and 5 real users with a look-back date, or a user asks | Not met |
-| Publish our eval results in plain words | Low, trust | 10 real users, or a user or reviewer asks | Not met |
+| Publish our eval results in plain words | Low, trust | 10 real users, or a user or reviewer asks | Done |
+| Parked from the 2026-11-13 strategy | Mixed, see the section | The owner's call on each | Waiting on the owner |
 
 ### Triggers that bring several ideas forward at once
 
@@ -54,6 +110,7 @@ Most triggers read the real-user count in STRATEGY.md. That count is 1 as of 202
 | Monthly judge spend nears the service cap | Paid tier, invite bonus budget, optional second judge |
 | A team or an agent platform asks | Team pilot, agent-to-agent harness, pinned judge |
 | Repeated feedback asking for the same thing | The idea that feedback names. A single request is not a theme. |
+| The kill threshold for the record bet is read (2027-02-28 at the latest) | Paid tier, personal calibration view, look-back reminders through ChatGPT MCP events, team pilot |
 
 The cost line: the hosted service cap is `GRILL_MONTHLY_CAP_USD`, default $20 in the code ([HOSTED.md](HOSTED.md)). Earlier notes here said "about $40 a month", with no source. Use the production value of that cap. The owner sets it.
 
@@ -139,7 +196,9 @@ The share-link half of this trigger is met. The share page has shipped. See Arch
 
 Impact: high, revenue. Pro is built and priced at $9 a month or $90 a year (owner decision, 2026-11-07). At the default $3 monthly key cap, gross margin is about 59% for someone who uses the whole allowance and about 88% for a typical user ([PRD-hosted-pro.md](PRD-hosted-pro.md)). Founding members stay free for life.
 
-A simple paid plan above the free monthly allowance. Revenue stays parked until the trigger. Sell look-back reminders and "Where your calls changed", not calibration (STRATEGY rec 4).
+A simple paid plan above the free monthly allowance. Revenue stays parked until the trigger. Not calibration, and not what is already free (STRATEGY rec 4).
+
+Status 2026-11-13: STRATEGY.md now says there is no defined paid product for one person. Saved records and look-back reminders are free with Grill in your chat, and the free allowance ($5 a month) is more than a paid key allows ($3). Rec 4 holds this until the kill threshold for the record bet reaches rule 3.
 
 Consider when: 100 evidenced users (people who ran a grill) and at least 20 evidenced look-backs from people other than the maintainers, as STRATEGY.md rec 4 sets. Or Tony says so. Monthly judge spend nearing the service cap is a reason to look again. On its own it means tightening the free allowance, not selling.
 
@@ -219,6 +278,8 @@ Two judges, from two companies that are not the one that wrote the answer, with 
 
 Consider when: feedback says one judge is not enough, and the cost of a grill is well under the ~$40/month line at 100 real users. Both feedback and cost. (competitor-only, needs user signal)
 
+Status 2026-11-13: not now (STRATEGY.md). The four-arm comparison comes first.
+
 ## Perplexity on the connect page
 
 Impact: low, usage.
@@ -243,13 +304,15 @@ Done: recorded 2026-11-09 in STRATEGY.md. Monthly refresh.
 
 On the hosted connector, an unrecognised client with no author named excludes nobody. It does not exclude Anthropic. The judge can then be the same company as the assistant, and the verdict used to say nothing about that. Say so on the verdict: one line after the privacy note, naming the judge's company, and saying to grill again and name the assistant if that company is the same. A recognised client gets no line. Cursor is recognised and still excludes nobody, on purpose, because it runs several companies' models, so it gets no line either. The installed MCP server still excludes Anthropic when it does not recognise the client and no company is named. This touches what the verdict says about the judge, so it needs its own pull request and review (STRATEGY rec 3).
 
-Impact: high, trust. A judge from a different company is the product (STRATEGY principle 1).
+Impact: high, trust. A judge from a different company is the trust rule (STRATEGY principle 1).
 
 Consider when: now, before any launch that brings people from non-Claude MCP apps.
 
 Trigger met: the consider-when is now (2026-11-08).
 
 Draft PR open: 2026-11-10. The hosted reply adds the line. Who is excluded is unchanged.
+
+Status 2026-11-13, on this branch: every route where Grill cannot tell which company wrote the plan is labelled. Hosted unknown clients, Cursor, a judge from a company Grill has no name for, the installed tool's guess, a /judge link with no usable `from`, and a misnamed author all end the verdict with a line that starts "Independence not verified:". None of them is enforced. The paragraph above describes the code before this branch. Still open, under Waiting on the owner: asking the assistant for its company (item 14), a valid different author replacing the chat's company (item 10), and Grill CI on an unknown author (item 15).
 
 ## Verify Meta AI (Muse) in chat
 
@@ -303,6 +366,8 @@ Impact: medium, retention, for the few heavy users who get there. It is not a re
 
 Consider when: at least one person has 30 resolved calls with a stated confidence. Before that, "Where your calls changed" already refuses to compare small samples.
 
+Status 2026-11-13: not now (STRATEGY.md). A kill under the record bet's threshold rules it out.
+
 ## Pinned judge for agent audits (separate product)
 
 A check before an irreversible agent action, with a signed record that can be reproduced. Reproducing a verdict needs a pinned model, and the free tool never pins one. By STRATEGY principle 10, this could only ship as a separate product with its own name and rules.
@@ -337,7 +402,83 @@ Cruxes lists every study, failures included. Grill could publish counts-only sum
 
 Consider when: 10 real users, or a user or reviewer asks how Grill knows its verdicts are any good. (competitor-only, needs user signal)
 
-Status: not met.
+Done: 2026-11-13. /how-we-test/ shows counts from data/results.json: one run of the weekly regression check, holdout v1, the four-arm comparison as a draft that has not run, real users and the two look-back counts. The 2026-11-13 strategy makes publication unconditional. A measured weekly run is added with `node scripts/results.mjs merge-run <public block>` (LEARNING.md).
+
+## Parked from the 2026-11-13 strategy
+
+Impact: mixed. These are the ideas on the owner's list above, written down so the daily growth work does not pull them forward on its own. Owner actions that are not ideas (listings, the release, the launch list, interviews, the setting, the comparison) are only in that list. Each idea needs the owner's yes before anyone builds it.
+
+### The chat's own company as judge when the assistant names another author (item 10)
+
+Consider when: the owner decides; or a user reports a same-company verdict in Claude after naming another author.
+
+### Enforce the records choice on the server (item 11)
+
+Never accept a yes before the question was returned. Since this branch, `keep_records: false` sent by mistake also deletes waiting drafts.
+
+Consider when: the owner decides, or before the ChatGPT listing is filed.
+
+### Mask before storing on the hosted route (item 12)
+
+Consider when: the owner decides, or Gate T in [PRD-privacy-foundations.md](PRD-privacy-foundations.md) opens.
+
+### A zero-retention flag on the Jev request (item 13)
+
+Consider when: one live call shows TypeSafe's endpoint accepts it.
+
+### Ask the assistant for its company on unknown clients (item 14)
+
+A flagged build. Today such a run is labelled "Independence not verified:".
+
+Consider when: the owner says yes, or the outside counters show first grills from unknown apps.
+
+### Grill CI: an unknown author does not clear needs-review (item 15)
+
+Consider when: the owner decides; or a pull request with no `Written-by-model` line merges with an unverified judge.
+
+### Stop storing the reaction reason unless the person says yes (item 16)
+
+Consider when: the owner decides, or the first reaction from an outside account arrives.
+
+### Reviewer sign-in without an emailed code (item 17)
+
+Consider when: before the ChatGPT listing is filed. OpenAI's reviewer account cannot use an email code.
+
+### Auth on the digest route (item 18)
+
+Consider when: the owner decides; or the digest route is called by anyone but the weekly job.
+
+### A call to action on the share page (item 19)
+
+Consider when: the share link is used by outside accounts, and the owner says yes.
+
+### A homepage link to /demo, and a work-decision starter (item 20)
+
+Queued in [experiments/analytics-loop.md](experiments/analytics-loop.md) with their triggers and measures.
+
+Consider when: the connect leak or the activation leak in that file shows for a week, and the owner says yes to that experiment.
+
+### Count verdict labels and quality checks by judge company on the server (item 21)
+
+Consider when: the four-arm comparison is registered, or 30 outside grills a month.
+
+### More sound cases in the public eval (item 22)
+
+Consider when: now. The false-alarm gate went red on 2026-11-13 at 3 of 6 and green on the next run with the same judge files.
+
+### A judge quality floor (item 23)
+
+The router's cost tier and a price ceiling, without pinning a model.
+
+Consider when: the four-arm comparison finds the product path worse than the same model starting fresh, or the router's defaults change.
+
+### The PRINCIPLES definition of evidenced look-backs (item 24)
+
+Consider when: the first look-back saved on an outside Grill account is counted.
+
+### State a choice on the web, and outcome buttons on the due list (item 25)
+
+Consider when: a /judge-only user has a waiting grill, or the kill threshold reaches rule 4 and the reminder needs one change.
 
 ## Archived
 
