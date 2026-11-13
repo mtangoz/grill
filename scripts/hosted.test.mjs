@@ -310,6 +310,32 @@ describe("hosted Grill", { concurrency: false }, () => {
     assert.notEqual(personOf(ctx), "user_agent");
   });
 
+  it("tells a person whose email is already set up on another sign-in, in one plain sentence, and runs no judge", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const emailHash = createHash("sha256").update("invitee@example.com").digest("hex");
+      const agent = { id: "user_agent", email: "agent@inbox.example", human: "invitee@example.com", spend: [], createdAt: "2026-10-01T00:00:00Z" };
+      ctx.memory.command(["SET", "grill:hosted:acct:user_agent", JSON.stringify(agent)]);
+      ctx.memory.command(["SET", `grill:hosted:email:${emailHash}`, "user_agent"]);
+      const { json } = await postMcp(
+        ctx,
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: a second sign-in.", keep_records: false, quality_check: false } } },
+        { token: signJwt(claims()), deps: { ...judgeDeps(fake), waitMs: 20_000 } },
+      );
+      assert.equal(textOf(json), EMAIL_CLAIMED_TEXT);
+      assert.equal(
+        textOf(json),
+        "This email is already set up with Grill on another sign-in. Sign in with that one instead, or write to support@grillyour.ai if you've lost it.",
+      );
+      assert.equal(json.result.isError, true);
+      assert.equal(fake.seen.chat.length, 0);
+      assert.equal(ctx.management.creates.length, 0, "no second key is made");
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("an unverified email never links to someone else's records", async () => {
     const ctx = world();
     await postMcp(ctx, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "no_such_tool", arguments: {} } }, { token: signJwt(claims()) });
