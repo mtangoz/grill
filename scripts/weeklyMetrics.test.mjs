@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FUNNEL_KEYS as HOSTED_FUNNEL_KEYS } from "./hostedCore.mjs";
+import { FUNNEL_KEYS as HOSTED_FUNNEL_KEYS, MCP_CONNECT_KEY as HOSTED_MCP_CONNECT_KEY, MCP_SIGNED_IN_KEY as HOSTED_MCP_SIGNED_IN_KEY } from "./hostedCore.mjs";
 import { IMPACT_LOOKBACKS_KEY, IMPACT_UNSUB_KEY } from "./impactDigest.mjs";
-import { FOUNDING_COUNT_KEY, FREE_TO_PAID_KEY, FUNNEL_KEYS, IMPACT_EMAIL_KEYS, PAID_INTENT_KEYS, START_VIEWS_KEY, WAITLIST_SIGNUPS_KEY, readWeeklyMetrics, weeklyMetricLines } from "./weeklyMetricsCore.mjs";
+import { FOUNDING_COUNT_KEY, FREE_TO_PAID_KEY, FUNNEL_KEYS, IMPACT_EMAIL_KEYS, MCP_CONNECT_KEY, MCP_SIGNED_IN_KEY, PAID_INTENT_KEYS, START_VIEWS_KEY, WAITLIST_SIGNUPS_KEY, readWeeklyMetrics, weeklyMetricLines } from "./weeklyMetricsCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV = {
@@ -43,6 +43,8 @@ describe("weekly metrics", () => {
         [START_VIEWS_KEY]: "9",
         "grill:metric:start_ref:home": "5",
         "grill:metric:start_ref:askgrill": "2",
+        [MCP_CONNECT_KEY]: "4",
+        [MCP_SIGNED_IN_KEY]: "1",
       }),
     );
     assert.equal(report.label, "Weekly metrics");
@@ -59,7 +61,9 @@ describe("weekly metrics", () => {
     assert.equal(lines[5], "founding members: 7/100");
     assert.equal(lines[6], "start views: 9");
     assert.equal(lines[7], "start refs: home 5 · askgrill 2");
-    assert.deepEqual(lines.slice(8, 14), ["grills: 11", "choices logged: 6", "look-backs set: 5", "look-backs done: 2", "email look-backs: 4", "email unsubscribes: 1"]);
+    assert.equal(lines[8], "connect attempts: 4");
+    assert.equal(lines[9], "signed-in connects: 1");
+    assert.deepEqual(lines.slice(10, 16), ["grills: 11", "choices logged: 6", "look-backs set: 5", "look-backs done: 2", "email look-backs: 4", "email unsubscribes: 1"]);
     assert.equal(IMPACT_EMAIL_KEYS.lookbacks, IMPACT_LOOKBACKS_KEY);
     assert.equal(IMPACT_EMAIL_KEYS.unsubscribes, IMPACT_UNSUB_KEY);
     assert.equal(JSON.parse(lines.at(-1)).lookbacksDone, 2);
@@ -68,9 +72,18 @@ describe("weekly metrics", () => {
     assert.equal(JSON.parse(lines.at(-1)).freeToPaid, 1);
     assert.equal(JSON.parse(lines.at(-1)).waitlist, 3);
     assert.equal(JSON.parse(lines.at(-1)).founding, 7);
+    assert.equal(MCP_CONNECT_KEY, HOSTED_MCP_CONNECT_KEY);
+    assert.equal(MCP_SIGNED_IN_KEY, HOSTED_MCP_SIGNED_IN_KEY);
+    assert.equal(MCP_CONNECT_KEY, "grill:metric:mcp_connect");
+    assert.equal(MCP_SIGNED_IN_KEY, "grill:metric:mcp_signed_in");
+    assert.equal(JSON.parse(lines.at(-1)).connectAttempts, 4);
+    assert.equal(JSON.parse(lines.at(-1)).signedInConnects, 1);
+    assert.doesNotMatch(lines.at(-1), /user_invitee|@example|user-agent|decision text/i);
     const missing = await readWeeklyMetrics(ENV, fetchFor({}));
     assert.equal(missing.paidIntentPricing, 0);
     assert.equal(missing.freeToPaid, 0);
+    assert.equal(missing.connectAttempts, 0);
+    assert.equal(missing.signedInConnects, 0);
     await assert.rejects(readWeeklyMetrics({}, fetchFor({})), (err) => err.code === "unconfigured");
   });
 

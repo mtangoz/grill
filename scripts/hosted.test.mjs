@@ -44,6 +44,8 @@ import {
   sourceAppFromClient,
   unknownClientJudgeLine,
   wwwAuthenticate,
+  MCP_CONNECT_KEY,
+  MCP_SIGNED_IN_KEY,
 } from "./hostedCore.mjs";
 import { countWords } from "./judgeCore.mjs";
 import { ONCE_DISCLOSURE as LOCAL_DISCLOSURE } from "../server/index.mjs";
@@ -367,6 +369,118 @@ describe("hosted Grill", { concurrency: false }, () => {
     assert.deepEqual(body.authorization_servers, ["https://clerk.example.test"]);
     assert.deepEqual(body.bearer_methods_supported, ["header"]);
     assert.deepEqual(body.scopes_supported, ["openid", "profile", "email", "offline_access"]);
+  });
+
+  it("counts an MCP initialize before sign-in, and an initialize after it, as numbers only", async () => {
+    const connectKey = MCP_CONNECT_KEY;
+    const signedInKey = MCP_SIGNED_IN_KEY;
+    const accept = "application/json, text/event-stream";
+    const ua = "ConnectProbe/ua-sentinel-9f3a";
+    const init = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", clientInfo: { name: "Cursor" } } });
+    const post = (ctx, { body = init, headers = {}, method = "POST", url = RESOURCE, deps = {} } = {}) =>
+      handleMcp(new Request(url, { method, headers: { accept, "content-type": "application/json", "user-agent": ua, ...headers }, body }), { ...ctx, ...deps });
+
+    const ctx = world();
+    const refused = await post(ctx);
+    assert.equal(refused.status, 401);
+    assert.equal(refused.headers.get("www-authenticate"), wwwAuthenticate("https://mcp.example"));
+    assert.equal(refused.headers.get("set-cookie"), null);
+    assert.equal(await refused.text(), JSON.stringify({ error: "unauthorized" }));
+    assert.equal(ctx.memory.command(["GET", connectKey]), "1");
+    assert.equal(ctx.memory.command(["GET", signedInKey]), null);
+    for (const args of ctx.writes) {
+      const flat = args.join(" ");
+      assert.equal(flat.includes(ua), false);
+      assert.equal(flat.includes("user_invitee"), false);
+      assert.equal(flat.includes("invitee@example.com"), false);
+      assert.equal(flat.includes("Cursor"), false);
+    }
+
+    const again = await post(ctx);
+    assert.equal(again.status, 401);
+    assert.equal(ctx.memory.command(["GET", connectKey]), "2");
+
+    const quiet = world();
+    const bare = await handleMcp(new Request(RESOURCE, { method: "POST", body: "{}" }), quiet);
+    assert.equal(bare.status, 401);
+    assert.equal(quiet.memory.command(["GET", connectKey]), null);
+    const get = await handleMcp(new Request(RESOURCE, { method: "GET", headers: { accept, "user-agent": ua } }), quiet);
+    assert.equal(get.status, 401);
+    const ping = await post(quiet, { body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) });
+    assert.equal(ping.status, 401);
+    const jsonOnly = await post(quiet, { headers: { accept: "application/json" } });
+    assert.equal(jsonOnly.status, 401);
+    const metadata = await handleProtectedResource(new Request("https://mcp.example/.well-known/oauth-protected-resource"), quiet);
+    assert.equal(metadata.status, 200);
+    const tokenInQuery = signJwt(claims());
+    const query = await post(quiet, { url: `${RESOURCE}?access_token=${tokenInQuery}` });
+    assert.equal(query.status, 401);
+    const oversized = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { pad: "x".repeat(9000) } });
+    assert.ok(Buffer.byteLength(oversized) > 8192);
+    const huge = await post(quiet, { body: oversized });
+    assert.equal(huge.status, 401);
+    assert.equal(quiet.memory.command(["GET", connectKey]), null);
+    assert.equal(quiet.memory.command(["GET", signedInKey]), null);
+
+    const down = world();
+    down.redis = async () => {
+      throw new Error("store down");
+    };
+    const stillRefused = await post(down);
+    assert.equal(stillRefused.status, 401);
+    assert.equal(stillRefused.headers.get("www-authenticate"), wwwAuthenticate("https://mcp.example"));
+    assert.equal(await stillRefused.text(), JSON.stringify({ error: "unauthorized" }));
+
+    const off = world();
+    const hidden = await post(off, { deps: { env: { ...off.env, GRILL_HOSTED: "" } } });
+    assert.equal(hidden.status, 404);
+    assert.equal(off.memory.command(["GET", connectKey]), null);
+
+    const signed = world();
+    const token = signJwt(claims());
+    const ok = await postMcp(signed, { jsonrpc: "2.0", id: 7, method: "initialize", params: { protocolVersion: "2025-06-18", clientInfo: { name: "Cursor" } } }, { token, accept, userAgent: ua });
+    assert.equal(ok.res.status, 200);
+    assert.equal(ok.res.headers.get("set-cookie"), null);
+    assert.equal(ok.json.result.protocolVersion, "2025-06-18");
+    assert.equal(signed.memory.command(["GET", signedInKey]), "1");
+    assert.equal(signed.memory.command(["GET", connectKey]), null);
+    for (const args of signed.writes) {
+      const flat = args.join(" ");
+      assert.equal(flat.includes(ua), false);
+      assert.equal(flat.includes("user_invitee"), false);
+      assert.equal(flat.includes("Cursor"), false);
+    }
+    const second = await postMcp(signed, { jsonrpc: "2.0", id: 8, method: "initialize", params: { protocolVersion: "2025-03-26" } }, { token });
+    assert.equal(second.json.result.protocolVersion, "2025-03-26");
+    assert.equal(signed.memory.command(["GET", signedInKey]), "2");
+    const listed = await postMcp(signed, { jsonrpc: "2.0", id: 9, method: "tools/list" }, { token, accept });
+    assert.equal(listed.res.status, 200);
+    const pinged = await postMcp(signed, { jsonrpc: "2.0", id: 10, method: "ping" }, { token, accept });
+    assert.equal(pinged.res.status, 200);
+    assert.equal(signed.memory.command(["GET", signedInKey]), "2");
+    assert.equal(signed.memory.command(["GET", connectKey]), null);
+
+    const dead = signJwt(claims({ exp: Math.floor(Date.now() / 1000) - 120 }));
+    const expired = await post(signed, { headers: { authorization: `Bearer ${dead}` } });
+    assert.equal(expired.status, 401);
+    assert.equal(signed.memory.command(["GET", connectKey]), "1");
+    assert.equal(signed.memory.command(["GET", signedInKey]), "2");
+
+    const broken = world();
+    const orig = broken.redis;
+    broken.redis = async (args) => {
+      if (String(args[0]).toUpperCase() === "INCR") throw new Error("store down");
+      return orig(args);
+    };
+    const countedAnyway = await postMcp(broken, { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } }, { token: signJwt(claims()) });
+    assert.equal(countedAnyway.res.status, 200);
+    assert.equal(countedAnyway.json.result.protocolVersion, "2025-06-18");
+
+    const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
+    assert.match(ledger, /grill:metric:mcp_connect/);
+    assert.match(ledger, /grill:metric:mcp_signed_in/);
+    assert.match(ledger, /text\/event-stream/);
+    assert.match(ledger, /no cookie/i);
   });
 
   it("rejects a bad signature, the wrong issuer, an expired token, a missing token, and a query-string token", async () => {
