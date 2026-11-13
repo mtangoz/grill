@@ -1261,6 +1261,8 @@ describe("eval-four-arm.mjs validate-seeds and assign-authors", () => {
     assert.match(stdout, /^By category: pricing-and-sales 13$/m);
     assert.match(stdout, /^By flaw type: hidden-dependency 8, none 3, loaded-question 2$/m);
     assert.match(stdout, /^By drafter family: anthropic 13$/m);
+    assert.match(stdout, /^By author family: anthropic 8, openai 5$/m);
+    assert.match(stdout, /^Frozen by kind and author family: flawed anthropic 4 and openai 3; sound anthropic 2 and openai 1; loaded anthropic 1 and openai 1$/m);
     assert.ok(stdout.includes(`Frozen checksum: ${seedsChecksum(tinySet())}`));
     assert.ok(stdout.includes(renderSeedCounts(tinySet())));
     assert.match(stdout, /^Problems: none$/m);

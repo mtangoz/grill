@@ -452,6 +452,12 @@ export function seedCounts(seeds) {
     frozen: kindsIn("frozen"),
     dev: kindsIn("dev"),
     frozen_by_drafter: tally(list.filter((seed) => seed.split === "frozen"), (seed) => String(seed.drafter_family)),
+    frozen_by_kind_and_author: Object.fromEntries(
+      SEED_KINDS.map((kind) => [
+        kind,
+        Object.fromEntries(AUTHOR_FAMILIES.map((family) => [family, list.filter((seed) => seed.split === "frozen" && seed.kind === kind && seed.author_family === family).length])),
+      ]),
+    ),
     single_drafter: singleDrafter(list),
   };
 }

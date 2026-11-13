@@ -528,7 +528,12 @@ function validateSeeds(opts) {
   console.log(`By flaw type: ${listCounts(counts.by_flaw_type)}`);
   console.log(`By drafter family: ${listCounts(counts.by_drafter)}`);
   console.log(`By author family: ${listCounts(counts.by_author)}`);
-  if (seeds.length && seeds.every((seed) => seed && seed.author_family === "")) console.log("Author families are not assigned yet. That is fine for a draft batch. Run assign-authors when the batches are merged.");
+  if (seeds.length && seeds.every((seed) => seed && seed.author_family === "")) {
+    console.log("Author families are not assigned yet. That is fine for a draft batch. Run assign-authors when the batches are merged.");
+  } else {
+    const byKind = counts.frozen_by_kind_and_author;
+    console.log(`Frozen by kind and author family: ${Object.entries(byKind).map(([kind, families]) => `${kind} ${Object.entries(families).map(([family, n]) => `${family} ${n}`).join(" and ")}`).join("; ")}`);
+  }
   console.log(`Frozen checksum: ${seedsChecksum(seeds)}`);
   console.log("");
   console.log("README lines (between the seed-count markers in evals/four-arm/README.md):");
