@@ -3,7 +3,7 @@
  * The installed local tool does not import this file.
  */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
-import { addDays, confidenceValue, isoDate, parseDecided, parseOutcomes, parseRecords, plainVerdict, REVIEW_DAYS, reviewDateFor } from "./reflection.mjs";
+import { addDays, confidenceValue, isoDate, lookBackPrompt, parseDecided, parseOutcomes, parseRecords, plainVerdict, REVIEW_DAYS, reviewDateFor, shortDecision } from "./reflection.mjs";
 import { CHALLENGE_KINDS, SCOPE_GUARD, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
 import { INDEPENDENCE_NOT_VERIFIED, INDEPENDENCE_RELAY, buildGrillTools, groundedAuthor } from "../server/index.mjs";
 import { FEEDBACK_KEEP_DAYS, FEEDBACK_POINTER } from "./feedbackCore.mjs";
@@ -1169,6 +1169,157 @@ export function recordsForLookBack(saved, { records = "", now = Date.now() } = {
   return { mode: "named", text: rows.map((row) => row.block).join("\n\n"), rows };
 }
 
+// A look-back answered in chat.
+// With one saved decision in view, one answer is that decision's answer. With two or more,
+// the chat names each one, and an answer is saved only on the decision it names.
+
+/** How many decisions one chat reply names. The page lists the rest. */
+export const LOOKBACK_LIST_MAX = 5;
+
+const LOOKBACK_NOTE_MAX = 2000;
+
+function squash(text) {
+  return String(text ?? "").replace(/\s+/g, " ").trim();
+}
+
+/** A name without its case, spacing, closing full stop or cut-off mark, so two spellings of one title match. */
+function nameKey(text) {
+  return squash(text)
+    .replace(/[….\s]+$/u, "")
+    .toLowerCase();
+}
+
+/** How the chat names one saved decision: its title as the list shows it, and the day its look-back falls due. */
+export function lookbackLabel(row) {
+  const title = shortDecision(row?.title);
+  const day = formatDay(row?.review);
+  return day ? `${title} (due ${day})` : title;
+}
+
+/**
+ * The saved decisions a name points at. A name is a title, the label the chat showed, or a
+ * date and a title. Only an exact match counts, so an answer never lands on a near miss.
+ */
+export function rowsNamed(rows, name) {
+  const needle = nameKey(name);
+  if (!needle) return [];
+  return (rows || []).filter((row) => {
+    const title = String(row?.title || "");
+    if (!title.trim()) return false;
+    return [title, shortDecision(title), lookbackLabel(row), `${row?.date || ""} ${title}`].some((form) => nameKey(form) === needle);
+  });
+}
+
+/**
+ * The saved decisions one look-back call is about. Pasted records point at the saved
+ * decisions with the same date and title. With nothing pasted they are the ones that are due,
+ * or the ones a name matched. A name that fits a saved decision exactly wins over a loose match.
+ */
+export function lookBackTargets(saved, picked, name = "") {
+  if (picked?.mode === "pasted") {
+    const pasted = picked.parsed || [];
+    return (saved || []).filter((row) => pasted.some((item) => item.date === row.date && item.title === row.title));
+  }
+  const rows = picked?.rows || [];
+  if (picked?.mode !== "named") return rows;
+  const exact = rowsNamed(saved, name);
+  return exact.length ? exact : rows;
+}
+
+/** An answer split at its `title:` lines. Lines above the first title belong to no decision. */
+export function titledAnswers(happened) {
+  const answers = [];
+  let current = null;
+  for (const raw of String(happened || "").split(/\r?\n/)) {
+    const line = raw.trim().replace(/^[-*]\s*/, "");
+    const title = line.match(/^title\s*:\s*(.*)$/i);
+    if (title) {
+      current = { title: squash(title[1]), lines: [] };
+      answers.push(current);
+    } else if (current && line) current.lines.push(line);
+  }
+  return answers.filter((answer) => answer.title).map((answer) => ({ title: answer.title, text: answer.lines.join("\n") }));
+}
+
+/**
+ * Which saved decisions an answer is saved on, and with which words.
+ * One decision in view: the whole answer is its answer.
+ * Two or more: a decision gets an answer only when the answer names it on a `title:` line,
+ * and it gets only the lines under that title. An answer that names none is saved nowhere.
+ * `unmatched` lists titles that fit no single decision in view.
+ */
+export function lookbackSaves(targets, happened) {
+  const rows = targets || [];
+  const whole = squash(happened).slice(0, LOOKBACK_NOTE_MAX);
+  if (!whole || !rows.length) return { saves: [], unmatched: [] };
+  if (rows.length === 1) return { saves: [{ row: rows[0], happened: whole, lines: String(happened) }], unmatched: [] };
+  const saves = [];
+  const unmatched = [];
+  for (const answer of titledAnswers(happened)) {
+    const named = rowsNamed(rows, answer.title);
+    const words = squash(answer.text).slice(0, LOOKBACK_NOTE_MAX);
+    if (named.length !== 1) unmatched.push(answer.title);
+    else if (words && !saves.some((save) => save.row === named[0])) saves.push({ row: named[0], happened: words, lines: answer.text });
+  }
+  return { saves, unmatched };
+}
+
+function lookbackLine(row) {
+  return `${lookbackLabel(row)}: ${lookBackPrompt(parseRecords(row?.block || "")[0] || {})}`;
+}
+
+function lookbackLines(rows) {
+  const list = rows || [];
+  const lines = list.slice(0, LOOKBACK_LIST_MAX).map(lookbackLine);
+  const more = list.length - lines.length;
+  if (more > 0) lines.push(`${more} more ${more === 1 ? "is" : "are"} on ${PUBLIC_SITE_ORIGIN}/decisions`);
+  return lines;
+}
+
+export const LOOKBACK_ASK_WHICH = "Say which one, and what happened.";
+export const LOOKBACK_NOT_NAMED = "Nothing was saved. That answer did not name one of these decisions. Which one is it about?";
+/** What the one-decision reply has always ended with. */
+export const LOOKBACK_SAVED = "Saved with your decision record.";
+
+/** Several saved decisions are in view and nothing was said yet: one line each, by name. */
+export function lookbackAskText(rows) {
+  return [...lookbackLines(rows), LOOKBACK_ASK_WHICH].join("\n");
+}
+
+/** An answer came in for several decisions and named none of them. Nothing is saved on a guess. */
+export function lookbackWhichText(rows) {
+  return [LOOKBACK_NOT_NAMED, ...lookbackLines(rows)].join("\n");
+}
+
+// The reading is written for the paste route, which stores nothing and says so. When an answer
+// was saved, those words would be false, so they are taken out before the reply says "Saved".
+const PASTE_STORES_NOTHING = "Nothing is stored. This reading stays in the chat.\n\n";
+const PASTE_NOT_SCORED = "Nothing is stored. Those notes did not say whether each call came true, so nothing was scored.";
+const NOT_SCORED = "Those notes did not say whether each call came true, so nothing was scored.";
+
+function readingForSaved(reading, pasted) {
+  const text = String(reading || "").replace(PASTE_STORES_NOTHING, "");
+  if (text.includes(PASTE_NOT_SCORED)) return pasted ? text.replace(PASTE_NOT_SCORED, NOT_SCORED).trim() : `## Look back\n\n${NOT_SCORED}`;
+  return (pasted ? text : text.split("\nStill to answer:")[0]).trim();
+}
+
+/**
+ * The reply after an answer was saved while several saved decisions were in view. It says
+ * which decisions the answer went on, which named titles fit none, and what is still open.
+ */
+export function lookbackSavedText({ reading = "", saved = [], unmatched = [], remaining = [], pasted = false } = {}) {
+  const lines = [];
+  const body = readingForSaved(reading, pasted);
+  if (body) lines.push(body, "");
+  lines.push("Saved with your decision record:", ...saved.map((row) => shortDecision(row?.title)));
+  if (unmatched.length) {
+    const names = unmatched.map((title) => `"${squash(title).slice(0, 120)}"`).join(", ");
+    lines.push("", `Nothing was saved for ${names}. That title matches no single decision here.`);
+  }
+  if (remaining.length) lines.push("", "Still to answer:", ...lookbackLines(remaining));
+  return lines.join("\n");
+}
+
 /**
  * What only the hosted grill tool says, after the text it shares with the installed tool.
  * Each sentence is here once. The shared text already covers the layers, deepen, the
@@ -1202,6 +1353,16 @@ export const HOSTED_CHECK_DISCLOSURE =
  */
 export const OWN_DISCLOSURE_RULE =
   "Do not add a disclosure of your own to Grill's text. Anything your own rules require, say it separately, after the run note.";
+
+/**
+ * What the assistant reads from grill_look_back. A Grill account can read saved records, so
+ * nothing has to be pasted. When several are due the result names them, and the assistant
+ * passes back the one title the person picks, so an answer is saved on that record only.
+ */
+export const HOSTED_LOOK_BACK_DESCRIPTION =
+  "Score decision records against what actually happened. If they have not said what happened, ask. With no records argument, read this account's saved records that are due. When several are due, the result lists them by title: ask which one they mean, then call again with that title in records and what happened in happened. With view changes, read all saved records and show where their calls changed after a challenge. When they chose to keep records, a look-back answer is saved on the one record in view, or, when several are, only on the record it names. The judge's verdict is not revised.";
+export const HOSTED_LOOK_BACK_RECORDS =
+  "Optional. Omit it to read the saved decisions that are due. Or the title of one saved decision, as the result listed it. Or one or more decision record blocks the person pasted.";
 
 /** What the assistant reads from grill_result. The next step, if the job is still running, is another call. */
 const HOSTED_RESULT_DESCRIPTION =
@@ -1304,12 +1465,14 @@ export function hostedTools() {
     },
     {
       ...look,
-      description:
-        "Score decision records against what actually happened. If they have not said what happened, ask. With no records argument, read this account's saved records that are due, or the ones they named. With view changes, read all saved records and show where their calls changed after a challenge. When they chose to keep records, save the look-back answers. The judge's verdict is not revised.",
+      description: HOSTED_LOOK_BACK_DESCRIPTION,
       annotations: { title: "Look back", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       inputSchema: {
         type: "object",
-        properties: look.inputSchema.properties,
+        properties: {
+          ...look.inputSchema.properties,
+          records: { ...look.inputSchema.properties.records, description: HOSTED_LOOK_BACK_RECORDS },
+        },
         additionalProperties: false,
       },
     },
@@ -1375,7 +1538,7 @@ export const HOSTED_INSTRUCTIONS = [
   "The verdict never becomes the decision. If they ask whether they should do it, hand the choice back and name the cheap test.",
   "When they state a choice, such as do it, yes, keep it, or delay, call grill_decided with their words. Confidence is optional. Omit it if they did not say a percent, and do not ask. Relay the confirmation as written, and sometimes one more line saying earlier calls are due for a look-back. If they never answer, do not call it, and there is no record and no look-back.",
   "Add supersedes and changed only when they say the choice changed, in their words. A re-run with nothing changed leaves those off.",
-  "When they say look back, call grill_look_back and relay its one line. With a Grill account it can read saved records, so they do not have to paste.",
+  "When they say look back, call grill_look_back and relay what it returns. With a Grill account it can read saved records, so they do not have to paste. When it lists several decisions, ask which one they mean, then call it again with that title in records and what happened in happened.",
   "When they ask what Grill has done for them, call grill_look_back with view changes and relay it as written.",
   FEEDBACK_POINTER,
   SCOPE_GUARD,

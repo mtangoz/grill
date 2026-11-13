@@ -160,6 +160,12 @@ import {
   publicOrigin,
   queryHasToken,
   recordsForLookBack,
+  lookBackTargets,
+  lookbackAskText,
+  lookbackSavedText,
+  lookbackSaves,
+  lookbackWhichText,
+  LOOKBACK_SAVED,
   PENDING_KEEP_DAYS,
   waitingGrillLine,
   WAITING_GRILL_HOW,
@@ -1862,32 +1868,47 @@ async function callLookBack(args, account, deps) {
   }
   const now = typeof deps.now === "number" ? deps.now : Date.now();
   const picked = recordsForLookBack(saved, { records, now });
-  if (!picked.text.trim()) {
+  // The saved decisions this call is about: the ones due, the ones named, or the ones a paste matches.
+  const targets = lookBackTargets(saved, picked, records);
+  const pasted = picked.mode === "pasted";
+  const recordText = pasted ? picked.text : targets.map((row) => row.block).join("\n\n");
+  if (!recordText.trim()) {
     if (picked.mode === "due") return toolText("No saved decision is due for a look-back yet. Name one by its title, or paste a record.");
     if (picked.mode === "named") return toolText("No saved decision matched that name.");
     return toolText("Paste one or more decision records. Grill stores nothing until you choose to keep them.", true);
   }
-  const text = lookBack({ records: picked.text, happened });
-  let savedAny = false;
-  if (happened.trim() && account.records === "keep") {
-    const scored = parseRecords(picked.text);
-    for (const row of saved) {
-      const hit = scored.some((item) => item.date === row.date && item.title === row.title);
-      if (!hit) continue;
-      const firstLook = !hasLookback(row);
-      row.lookback = {
-        at: new Date(now).toISOString(),
-        happened: happened.replace(/\s+/g, " ").trim().slice(0, 2000),
-      };
-      await writeRecord(account, deps, row);
-      if (firstLook) {
-        await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
-        await markEmailReturn(account, deps, "lookback");
-      }
-      savedAny = true;
+  const several = targets.length > 1;
+  // Several saved decisions and one prompt: name each, so the person can say which one they mean.
+  if (several && !pasted && !happened.trim()) return toolText(lookbackAskText(targets));
+  const plan = account.records === "keep" ? lookbackSaves(targets, happened) : { saves: [], unmatched: [] };
+  // An answer that names none of several decisions is not scored against all of them either.
+  if (several && !pasted && !plan.saves.length) return toolText(lookbackWhichText(targets));
+  const savedRows = [];
+  for (const save of plan.saves) {
+    const row = save.row;
+    const firstLook = !hasLookback(row);
+    row.lookback = { at: new Date(now).toISOString(), happened: save.happened };
+    await writeRecord(account, deps, row);
+    if (firstLook) {
+      await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
+      await markEmailReturn(account, deps, "lookback");
     }
+    savedRows.push(row);
   }
-  return toolText(savedAny ? `${text}\n\nSaved with your decision record.` : text);
+  if (!several || pasted) {
+    const text = lookBack({ records: recordText, happened });
+    if (!savedRows.length) return toolText(text);
+    // One decision: the reply it has always had.
+    if (!several) return toolText(`${text}\n\n${LOOKBACK_SAVED}`);
+    return toolText(lookbackSavedText({ reading: text, saved: savedRows, pasted: true }));
+  }
+  // Read back only the decisions the answer named, each against its own lines.
+  const reading = lookBack({
+    records: plan.saves.map((save) => save.row.block).join("\n\n"),
+    happened: plan.saves.map((save) => `title: ${parseRecords(save.row.block || "")[0]?.title || save.row.title}\n${save.lines}`).join("\n"),
+  });
+  const remaining = targets.filter((row) => !savedRows.includes(row) && !hasLookback(row));
+  return toolText(lookbackSavedText({ reading, saved: savedRows, unmatched: plan.unmatched, remaining }));
 }
 
 /** How many saved records the changes view reads. Older ones are left out. */

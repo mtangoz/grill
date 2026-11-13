@@ -55,6 +55,8 @@ import {
   provenanceLine,
   sourceAppFromClient,
   wwwAuthenticate,
+  HOSTED_LOOK_BACK_DESCRIPTION,
+  HOSTED_LOOK_BACK_RECORDS,
 } from "./hostedCore.mjs";
 import { RUN_PRIVACY_LINE, countWords } from "./judgeCore.mjs";
 import {
@@ -64,7 +66,7 @@ import {
   ONCE_DISCLOSURE_UNVERIFIED as LOCAL_DISCLOSURE_UNVERIFIED,
 } from "../server/index.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
-import { parseRecords, recordBlock, sourceAppLabel } from "./reflection.mjs";
+import { lookBack, parseRecords, recordBlock, sourceAppLabel } from "./reflection.mjs";
 import { readFeedbackRecords } from "./feedbackCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -1707,19 +1709,27 @@ describe("hosted Grill", { concurrency: false }, () => {
         { token },
       );
       assert.equal(empty.json.result.isError, true);
-      const look = await postMcp(
-        ctx,
-        {
-          jsonrpc: "2.0",
-          id: 5,
-          method: "tools/call",
-          params: { name: "grill_look_back", arguments: { happened: "came_true: yes\nhappened: The in-house hire started." } },
-        },
-        { token, deps: { now: Date.parse("2026-03-01T15:00:00Z") } },
-      );
+      // Both calls are due by 1 March: the first one, and the one that replaced it. An answer
+      // with no title could be about either, so it is saved on neither.
+      const readJson = async () =>
+        JSON.parse(await (await handleDecisions(new Request("https://grillyour.ai/decisions?export=json", { headers: { cookie: `__session=${session}` } }), ctx)).text());
+      const lookAt = (id, happened) =>
+        postMcp(ctx, { jsonrpc: "2.0", id, method: "tools/call", params: { name: "grill_look_back", arguments: { happened } } }, { token, deps: { now: Date.parse("2026-03-01T15:00:00Z") } });
+      const unnamed = await lookAt(5, "came_true: yes\nhappened: The in-house hire started.");
+      assert.match(textOf(unnamed.json), /^Nothing was saved\./);
+      assert.match(textOf(unnamed.json), /Hire contractor \(due 24 Jan\)/);
+      assert.match(textOf(unnamed.json), /Hire in house \(due 15 Feb\)/);
+      assert.equal((await readJson()).some((row) => row.lookback), false);
+      const look = await lookAt(6, "title: Hire in house\ncame_true: yes\nhappened: The in-house hire started.");
       assert.match(textOf(look.json), /Look back/);
-      const after = JSON.parse(await (await handleDecisions(new Request("https://grillyour.ai/decisions?export=json", { headers: { cookie: `__session=${session}` } }), ctx)).text());
-      assert.ok(after.some((row) => /in-house hire started/.test(row.lookback?.happened || "")));
+      const after = await readJson();
+      assert.deepEqual(
+        after.map((row) => [row.block.match(/^title: (.*)$/m)[1], row.lookback?.happened || ""]),
+        [
+          ["Hire contractor", ""],
+          ["Hire in house", "came_true: yes happened: The in-house hire started."],
+        ],
+      );
       const id = after.find((row) => row.block.includes("Hire in house")).id;
       const removed = await handleDecisions(
         new Request("https://grillyour.ai/decisions", {
@@ -3675,5 +3685,277 @@ describe("fair check counting", () => {
     } finally {
       await fake.close();
     }
+  });
+});
+
+// A look-back answered in chat. With one decision due, one answer is that decision's answer.
+// With two or more due, Grill names each one, and an answer is saved only on the decision it
+// names. An answer that names none of them is saved nowhere and counted nowhere.
+describe("chat look-back when more than one decision is due", { concurrency: false }, () => {
+  beforeEach(() => resetHostedCaches());
+
+  const JAN = Date.parse("2026-01-01T15:00:00Z");
+  const FEB = Date.parse("2026-02-01T15:00:00Z");
+  const call = (id, name, args) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
+  const cookie = () => `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_invitee", exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+  const exported = async (ctx, now = FEB) =>
+    JSON.parse(await (await handleDecisions(new Request("https://grillyour.ai/decisions?export=json", { headers: { cookie: cookie() } }), { ...ctx, now })).text());
+  const rowFor = (rows, title) => rows.find((row) => row.block.includes(`title: ${title}\n`));
+  const done = (ctx) => ctx.memory.command(["GET", "grill:metric:funnel_lookbacks_done"]);
+  const look = async (ctx, token, args, now = FEB) => textOf((await postMcp(ctx, call(9, "grill_look_back", args), { token, deps: { now } })).json);
+
+  async function decide(ctx, fake, token, title, now, { subject = `Decision: ${title}\nI'm 60% sure.`, confidence } = {}) {
+    const deps = { ...judgeDeps(fake), waitMs: 20_000, now };
+    const grilled = await postMcp(ctx, call(1, "grill", { subject, keep_records: true, quality_check: false }), { token, deps });
+    assert.equal(grilled.json.result.isError, false, textOf(grilled.json));
+    const args = { decided: `Go with ${title}.` };
+    if (confidence) args.confidence = confidence;
+    const saved = textOf((await postMcp(ctx, call(2, "grill_decided", args), { token, deps })).json);
+    assert.match(saved, /^Saved\./);
+  }
+
+  it("names each decision that is due, and writes nothing when one answer names none of them", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN, { confidence: "60%" });
+      await decide(ctx, fake, token, "Move office", JAN, { subject: "Decision: Move office\nI expect the move to take two weekends." });
+
+      // Both came due on 15 Jan. The prompt says which is which.
+      const asked = await look(ctx, token, {});
+      assert.equal(
+        asked,
+        [
+          "Hire contractor (due 15 Jan): You were 60% sure. What happened?",
+          "Move office (due 15 Jan): You predicted the move to take two weekends. What happened?",
+          "Say which one, and what happened.",
+        ].join("\n"),
+      );
+
+      // One answer, no title. It could be about either, so it is saved on neither.
+      const loose = await look(ctx, token, { happened: "came_true: yes\nhappened: It went fine." });
+      assert.match(loose, /^Nothing was saved\. That answer did not name one of these decisions\. Which one is it about\?\n/);
+      assert.match(loose, /Hire contractor \(due 15 Jan\)/);
+      assert.match(loose, /Move office \(due 15 Jan\)/);
+      assert.doesNotMatch(loose, /Saved with your decision record/);
+      assert.doesNotMatch(loose, /came true|calls? back/, "an answer that names no decision is not scored against every decision");
+      const rows = await exported(ctx);
+      assert.equal(rows.length, 2);
+      for (const row of rows) assert.equal(row.lookback, null, "no record got the answer");
+      assert.equal(done(ctx), null, "nothing was counted as a look-back done");
+      const page = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: cookie() } }), { ...ctx, now: FEB })).text();
+      assert.match(page, /2 decisions due for a look-back/);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("does not copy one answer onto every decision that is due, or count it once for each", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN);
+      await decide(ctx, fake, token, "Move office", JAN);
+      await decide(ctx, fake, token, "Cut prices", JAN);
+      const reply = await look(ctx, token, { happened: "came_true: yes\nhappened: The contractor shipped on time." });
+      const rows = await exported(ctx);
+      assert.deepEqual(
+        rows.map((row) => row.lookback),
+        [null, null, null],
+        "the answer named no decision, so no record holds it",
+      );
+      assert.equal(done(ctx), null);
+      assert.doesNotMatch(reply, /3 calls back, 3 came true/);
+      assert.doesNotMatch(reply, /Nothing is stored[\s\S]*Saved with your decision record/, "one reply never says both");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("saves a titled answer on the decision it names, with its own lines, and counts one look-back", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN, { confidence: "60%" });
+      await decide(ctx, fake, token, "Move office", JAN, { confidence: "60%" });
+      await decide(ctx, fake, token, "Cut prices", JAN, { confidence: "60%" });
+
+      const reply = await look(ctx, token, { happened: "title: Hire contractor\ncame_true: no\nhappened: The contractor left after a week." });
+      let rows = await exported(ctx);
+      assert.deepEqual(rowFor(rows, "Hire contractor").lookback, { at: "2026-02-01T15:00:00.000Z", happened: "came_true: no happened: The contractor left after a week." });
+      assert.equal(rowFor(rows, "Move office").lookback, null);
+      assert.equal(rowFor(rows, "Cut prices").lookback, null);
+      assert.equal(done(ctx), "1", "one decision was looked back on, so one is counted");
+      // The reply reads that one call back, says where the answer went, and names what is left.
+      assert.match(reply, /\*\*Hire contractor\.\*\* Verdict then: shaky\./);
+      assert.match(reply, /1 call back, 0 came true\./);
+      assert.match(reply, /\n\nSaved with your decision record:\nHire contractor\n\nStill to answer:\nMove office \(due 15 Jan\): You were 60% sure\. What happened\?\nCut prices \(due 15 Jan\): You were 60% sure\. What happened\?$/);
+      assert.doesNotMatch(reply, /Nothing is stored|Nothing was saved/, "something was stored, so the reply does not say otherwise");
+      assert.doesNotMatch(reply, /\*\*Move office|\*\*Cut prices/, "the other decisions are not scored");
+
+      // Two answers in one reply, each under its own title. A title that fits no decision is said, not guessed.
+      const both = await look(ctx, token, {
+        happened: ["title: Cut prices", "came_true: yes", "happened: Sales held.", "title: Raise prices", "came_true: no", "- title: move office.", "happened: Still packing."].join("\n"),
+      });
+      rows = await exported(ctx);
+      assert.equal(rowFor(rows, "Cut prices").lookback.happened, "came_true: yes happened: Sales held.");
+      assert.equal(rowFor(rows, "Move office").lookback.happened, "happened: Still packing.");
+      assert.equal(rowFor(rows, "Hire contractor").lookback.happened, "came_true: no happened: The contractor left after a week.", "an earlier answer is not overwritten");
+      assert.equal(done(ctx), "3");
+      assert.match(both, /Saved with your decision record:\nCut prices\nMove office\n\nNothing was saved for "Raise prices"\. That title matches no single decision here\.$/);
+      assert.doesNotMatch(both, /Nothing is stored/);
+      assert.doesNotMatch(both, /Still to answer/, "nothing is left");
+      assert.match(await look(ctx, token, {}), /^No saved decision is due for a look-back yet\./);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("says a note was saved and not scored, without saying nothing is stored", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN);
+      await decide(ctx, fake, token, "Move office", JAN);
+      const reply = await look(ctx, token, { happened: "title: Move office\nhappened: Still packing." });
+      assert.equal(
+        reply,
+        [
+          "## Look back",
+          "",
+          "Those notes did not say whether each call came true, so nothing was scored.",
+          "",
+          "Saved with your decision record:",
+          "Move office",
+          "",
+          "Still to answer:",
+          "Hire contractor (due 15 Jan): You didn't write a prediction. What happened?",
+        ].join("\n"),
+      );
+      assert.equal(rowFor(await exported(ctx), "Move office").lookback.happened, "happened: Still packing.");
+      assert.equal(done(ctx), "1");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("takes the decision's title in records, and then gives the reply one due decision has always had", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN, { confidence: "60%" });
+      await decide(ctx, fake, token, "Move office", JAN, { confidence: "60%" });
+      const blocks = Object.fromEntries((await exported(ctx)).map((row) => [row.block.match(/^title: (.*)$/m)[1], row.block]));
+
+      // Named by the label the list showed. A plain sentence is enough: one decision is in view.
+      const happened = "The move took four weekends, not two.";
+      const named = await look(ctx, token, { records: "Move office (due 15 Jan)", happened });
+      assert.equal(named, `${lookBack({ records: blocks["Move office"], happened })}\n\nSaved with your decision record.`);
+      let rows = await exported(ctx);
+      assert.equal(rowFor(rows, "Move office").lookback.happened, happened);
+      assert.equal(rowFor(rows, "Hire contractor").lookback, null);
+      assert.equal(done(ctx), "1");
+
+      // One decision is left due. From here every reply is the one-decision reply, word for word.
+      const asked = await look(ctx, token, {});
+      assert.equal(asked, lookBack({ records: blocks["Hire contractor"], happened: "" }));
+      assert.equal(asked, "You were 60% sure. What happened?");
+      const answer = "came_true: yes\nhappened: The contractor shipped.";
+      const answered = await look(ctx, token, { happened: answer });
+      assert.equal(answered, `${lookBack({ records: blocks["Hire contractor"], happened: answer })}\n\nSaved with your decision record.`);
+      assert.match(answered, /^## Look back\n\nNothing is stored\. This reading stays in the chat\.\n\n\*\*Hire contractor\.\*\*/, "the one-decision reply is unchanged, sentence for sentence");
+      rows = await exported(ctx);
+      assert.equal(rowFor(rows, "Hire contractor").lookback.happened, "came_true: yes happened: The contractor shipped.");
+      assert.equal(done(ctx), "2");
+
+      // A name that fits no saved decision changes nothing.
+      const missed = await look(ctx, token, { records: "Open a second shop", happened: "came_true: yes" });
+      assert.equal(missed, "No saved decision matched that name.");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("tells two decisions with the same title apart by the day each fell due", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const WEEK = 7 * 24 * 60 * 60 * 1000;
+      await decide(ctx, fake, token, "Weekly stock order", JAN);
+      await decide(ctx, fake, token, "Weekly stock order", JAN + WEEK);
+      const asked = await look(ctx, token, {});
+      assert.match(asked, /^Weekly stock order \(due 15 Jan\): .*\nWeekly stock order \(due 22 Jan\): /);
+      // The title alone fits both, so nothing is saved on either.
+      const vague = await look(ctx, token, { records: "Weekly stock order", happened: "came_true: yes" });
+      assert.match(vague, /^Nothing was saved\./);
+      assert.equal((await exported(ctx)).some((row) => row.lookback), false);
+      const exact = await look(ctx, token, { records: "Weekly stock order (due 22 Jan)", happened: "came_true: yes\nhappened: It sold out by Friday." });
+      assert.match(exact, /Saved with your decision record\.$/);
+      const rows = await exported(ctx);
+      assert.deepEqual(
+        rows.map((row) => [row.block.match(/^review: (.*)$/m)[1], row.lookback?.happened || ""]),
+        [
+          ["2026-01-15", ""],
+          ["2026-01-22", "came_true: yes happened: It sold out by Friday."],
+        ],
+      );
+      assert.equal(done(ctx), "1");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("reads pasted records as the paste route does, and saves only where a title says", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN, { confidence: "60%" });
+      await decide(ctx, fake, token, "Move office", JAN, { confidence: "60%" });
+      const paste = (await exported(ctx)).map((row) => row.block).join("\n\n");
+
+      // One answer with no title. The reading is the paste route's own. Nothing is saved, and it says so.
+      const loose = await look(ctx, token, { records: paste, happened: "came_true: yes" });
+      assert.equal(loose, lookBack({ records: paste, happened: "came_true: yes" }));
+      assert.match(loose, /Nothing is stored\./);
+      assert.equal((await exported(ctx)).some((row) => row.lookback), false);
+      assert.equal(done(ctx), null);
+
+      const titled = await look(ctx, token, { records: paste, happened: "title: Hire contractor\ncame_true: no\nhappened: Left after a week." });
+      const rows = await exported(ctx);
+      assert.equal(rowFor(rows, "Hire contractor").lookback.happened, "came_true: no happened: Left after a week.");
+      assert.equal(rowFor(rows, "Move office").lookback, null);
+      assert.equal(done(ctx), "1");
+      assert.match(titled, /\n\nSaved with your decision record:\nHire contractor$/);
+      assert.doesNotMatch(titled, /Nothing is stored/);
+      assert.match(titled, /Still to answer:\n\nYou were 60% sure\. What happened\?/, "the paste route's own list of what is left stays");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("tells the assistant to relay the list and pass back the title the person picks", () => {
+    assert.match(
+      HOSTED_INSTRUCTIONS,
+      /When they say look back, call grill_look_back and relay what it returns\. With a Grill account it can read saved records, so they do not have to paste\. When it lists several decisions, ask which one they mean, then call it again with that title in records and what happened in happened\./,
+    );
+    assert.doesNotMatch(HOSTED_INSTRUCTIONS, /relay its one line/);
+    const tool = hostedTools().find((item) => item.name === "grill_look_back");
+    assert.equal(tool.description, HOSTED_LOOK_BACK_DESCRIPTION);
+    assert.match(tool.description, /When several are due, the result lists them by title: ask which one they mean, then call again with that title in records and what happened in happened\./);
+    assert.match(tool.description, /a look-back answer is saved on the one record in view, or, when several are, only on the record it names\./);
+    assert.equal(tool.inputSchema.properties.records.description, HOSTED_LOOK_BACK_RECORDS);
+    assert.match(HOSTED_LOOK_BACK_RECORDS, /^Optional\. Omit it to read the saved decisions that are due\. Or the title of one saved decision, as the result listed it\./);
+    assert.equal(tool.inputSchema.required, undefined, "nothing has to be pasted");
+    for (const text of [HOSTED_LOOK_BACK_DESCRIPTION, HOSTED_LOOK_BACK_RECORDS]) assert.doesNotMatch(text, /[\u2013\u2014]/);
+    // The data ledger says the same thing about titles in the chat.
+    const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
+    assert.match(ledger, /two or more saved decisions are due, the reply lists them by title so you can say which one you mean, and an answer is saved only on the decision it names\./);
   });
 });
