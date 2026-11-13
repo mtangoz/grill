@@ -6,7 +6,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes }
 import { addDays, confidenceValue, isoDate, parseDecided, parseOutcomes, parseRecords, plainVerdict, REVIEW_DAYS, reviewDateFor } from "./reflection.mjs";
 import { CHALLENGE_KINDS, SCOPE_GUARD, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
 import { INDEPENDENCE_NOT_VERIFIED, INDEPENDENCE_RELAY, buildGrillTools, groundedAuthor } from "../server/index.mjs";
-import { FEEDBACK_POINTER } from "./feedbackCore.mjs";
+import { FEEDBACK_KEEP_DAYS, FEEDBACK_POINTER } from "./feedbackCore.mjs";
 
 export { SCOPE_GUARD };
 
@@ -84,6 +84,20 @@ export const CONSENT_TEXT = [
   "",
   "Ask that once, and show the paragraph under the question with it. Then call grill again with keep_records true or false. Do not send the decision until they answer.",
 ].join("\n");
+
+/**
+ * PROPOSED WORDING, waiting on the owner's yes.
+ * What the person is told after a reaction when the grill itself was not sent. It names what
+ * buildFeedbackRecord stores that came from them or from the grill, and for how long.
+ */
+export const FEEDBACK_KEPT_TEXT = `Noted. Grill keeps the rating, your one-line reason, the verdict label and the judge model for ${FEEDBACK_KEEP_DAYS} days. Not the decision.`;
+
+/** The reply to grill_feedback. `record` is what was stored: it holds the grill only when they said yes to sending it. */
+export function hostedFeedbackReply(share, record) {
+  if (share && (record?.subject || record?.layer1)) return "Noted. This grill was sent so Grill can learn from it.";
+  if (share) return "Noted. The rating was stored. That grill's text was no longer available to send.";
+  return FEEDBACK_KEPT_TEXT;
+}
 
 /** When three grills are still running after the wait. The assistant retries. The person is not asked for a job id. */
 export const CAP_RETRY_TEXT =

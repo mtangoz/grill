@@ -1076,8 +1076,14 @@ describe("the server as a command (npx -y grillyour …)", () => {
       assert.equal(seen.length, 0);
       const quiet = await c.request("tools/call", { name: "grill_feedback", arguments: { rating: "meh", reason: "too vague" } });
       assert.equal(quiet.result.isError, false, textOf(quiet));
-      assert.equal(textOf(quiet).trim(), "Noted.");
+      // A reaction is the one thing this tool sends to Grill's server, so the reply says so and says what went.
+      assert.equal(
+        textOf(quiet).trim(),
+        "Noted. That was sent to Grill: the rating, your one-line reason, the verdict label and the judge model, kept 180 days. Not the decision.",
+      );
       assert.equal(seen.length, 1);
+      // What went is what the reply lists, plus a random id for this install and the yes or no on sending the grill.
+      assert.deepEqual(Object.keys(JSON.parse(seen[0])).sort(), ["account_id", "model", "rating", "reason", "share_grill", "verdict"]);
       assert.equal(seen[0].includes("CANARY-FEEDBACK-SUBJECT-9f3a"), false);
       assert.equal(seen[0].includes("headline number"), false);
       const body = JSON.parse(seen[0]);

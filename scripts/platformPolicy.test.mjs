@@ -133,6 +133,9 @@ function resultRows() {
   add("provenanceLine", hostedCore.provenanceLine({ servedModel: "openai/gpt-5.6-sol", declaredAuthor: "anthropic", decorrelated: true }, new Date(0)));
   add("provenanceLine, nobody excluded", hostedCore.provenanceLine({ servedModel: "openai/gpt-5.6-sol", declaredAuthor: "none", decorrelated: true }, new Date(0)));
   add("author error", hostedCore.authorForJudge({ explicit: "Open AI!" }).error);
+  add("reaction reply", hostedCore.hostedFeedbackReply(false, {}));
+  add("reaction reply, grill sent", hostedCore.hostedFeedbackReply(true, { subject: "x" }));
+  add("reaction reply, grill gone", hostedCore.hostedFeedbackReply(true, {}));
   add("service cap", hostedCore.capBlock({ serviceMicros: 20_000_000, userMicros: 0 }).text);
   add("person cap", hostedCore.capBlock({ serviceMicros: 0, userMicros: 5_000_000 }).text);
   for (const stderr of JUDGE_ERRORS) add(`judgeFailureText(${JSON.stringify(stderr)})`, hostedCore.judgeFailureText(stderr, "ab12cd34"));

@@ -3614,7 +3614,11 @@ describe("fair check counting", () => {
         { token, deps },
       );
       assert.equal(quiet.json.result.isError, false, textOf(quiet.json));
-      assert.equal(textOf(quiet.json).trim(), "Noted.");
+      // The reply says what was kept and for how long, so the person is not left to guess.
+      assert.equal(
+        textOf(quiet.json).trim(),
+        "Noted. Grill keeps the rating, your one-line reason, the verdict label and the judge model for 180 days. Not the decision.",
+      );
       const rows = await readFeedbackRecords((args) => ctx.memory.command(args), key);
       assert.equal(rows.length, 1);
       assert.equal(rows[0].rating, "meh");

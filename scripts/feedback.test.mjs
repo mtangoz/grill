@@ -7,9 +7,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleFeedback } from "../api/_hosted.mjs";
 import { createMemoryRedis } from "./hostedCore.mjs";
-import { buildGrillTools } from "../server/index.mjs";
-import { hostedTools } from "./hostedCore.mjs";
+import { FEEDBACK_SENT_TEXT, buildGrillTools } from "../server/index.mjs";
+import { FEEDBACK_KEPT_TEXT, hostedFeedbackReply, hostedTools } from "./hostedCore.mjs";
 import {
+  FEEDBACK_KEEP_DAYS,
   FEEDBACK_POINTER,
   FEEDBACK_TOOL_DESCRIPTION,
   FEEDBACK_TTL_SECONDS,
@@ -162,6 +163,39 @@ describe("grill_feedback on the tool list", () => {
     assert.equal(decided.description.includes("grill_feedback"), false);
     assert.equal(hosted.find((tool) => tool.name === "grill_feedback").annotations.openWorldHint, false);
     assert.equal(local.find((tool) => tool.name === "grill_feedback").annotations.openWorldHint, true);
+  });
+});
+
+describe("the reply after a reaction", () => {
+  it("says what is kept and for how long, on both routes, and that the decision is not", () => {
+    assert.equal(FEEDBACK_KEEP_DAYS, 180);
+    assert.equal(FEEDBACK_KEEP_DAYS * 24 * 60 * 60, FEEDBACK_TTL_SECONDS);
+    assert.equal(
+      FEEDBACK_KEPT_TEXT,
+      "Noted. Grill keeps the rating, your one-line reason, the verdict label and the judge model for 180 days. Not the decision.",
+    );
+    assert.equal(
+      FEEDBACK_SENT_TEXT,
+      "Noted. That was sent to Grill: the rating, your one-line reason, the verdict label and the judge model, kept 180 days. Not the decision.",
+    );
+    // The reply names every stored field that came from the person or the grill. The other two
+    // are the time and a hash of the account. A new field here means the two replies need a new look.
+    const { record: kept } = record();
+    assert.deepEqual(Object.keys(kept), ["rating", "reason", "at", "model", "verdict", "account"]);
+    assert.equal(hostedFeedbackReply(false, kept), FEEDBACK_KEPT_TEXT);
+    // Sending the grill is a separate yes, and its two replies are unchanged.
+    const { record: sent } = record({ share: true, subject: CANARY, layer1: LAYER });
+    assert.equal(hostedFeedbackReply(true, sent), "Noted. This grill was sent so Grill can learn from it.");
+    assert.equal(hostedFeedbackReply(true, kept), "Noted. The rating was stored. That grill's text was no longer available to send.");
+    // share must be true, not just a record that happens to hold text.
+    assert.equal(hostedFeedbackReply(false, sent), FEEDBACK_KEPT_TEXT);
+  });
+
+  it("tells the assistant to show that reply", () => {
+    assert.ok(FEEDBACK_TOOL_DESCRIPTION.endsWith("Show the reply as written. It says what Grill keeps."));
+    for (const tools of [buildGrillTools({ checkOn: true }), hostedTools()]) {
+      assert.equal(tools.find((tool) => tool.name === "grill_feedback").description, FEEDBACK_TOOL_DESCRIPTION);
+    }
   });
 });
 

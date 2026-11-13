@@ -95,6 +95,7 @@ import {
   storedInviteListed,
   storedInvitesEnabled,
   authorForJudge,
+  hostedFeedbackReply,
   companyLabel,
   independenceLine,
   onceDisclosureFor,
@@ -1767,12 +1768,6 @@ async function loadReaction(account, deps, slot) {
   }
 }
 
-function feedbackReply(share, record) {
-  if (share && (record.subject || record.layer1)) return "Noted. This grill was sent so Grill can learn from it.";
-  if (share) return "Noted. The rating was stored. That grill's text was no longer available to send.";
-  return "Noted.";
-}
-
 async function callFeedback(args, account, deps) {
   const rating = typeof args.rating === "string" ? args.rating.trim() : "";
   if (rating !== "helped" && rating !== "meh") return toolText("rating is helped or meh.", true);
@@ -1819,7 +1814,7 @@ async function callFeedback(args, account, deps) {
     logHosted(deps.requestId, "feedback");
     return toolText("Grill couldn't store that reaction.", true);
   }
-  return toolText(feedbackReply(share, built.record));
+  return toolText(hostedFeedbackReply(share, built.record));
 }
 
 async function callLookBack(args, account, deps) {

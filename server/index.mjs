@@ -98,7 +98,7 @@ export const GUESSED_AUTHOR_LINE = `${INDEPENDENCE_NOT_VERIFIED} Grill couldn't 
 export const INDEPENDENCE_RELAY =
   "If a line that starts with Independence not verified follows the run note, show that line as written.";
 import { changesView, lookBack, plainVerdict } from "../scripts/reflection.mjs";
-import { FEEDBACK_POINTER, FEEDBACK_TOOL_DESCRIPTION, buildFeedbackRecord } from "../scripts/feedbackCore.mjs";
+import { FEEDBACK_KEEP_DAYS, FEEDBACK_POINTER, FEEDBACK_TOOL_DESCRIPTION, buildFeedbackRecord } from "../scripts/feedbackCore.mjs";
 import { scheduleUsagePing, sendGrillFeedback } from "../scripts/usageStats.mjs";
 
 /** Not an account. The installed tool has none. Hashed before it is stored. */
@@ -765,10 +765,17 @@ async function callTool(name, args = {}, onTick) {
   return text(`Unknown tool: ${name}`, true);
 }
 
+/**
+ * PROPOSED WORDING, waiting on the owner's yes.
+ * After a reaction on the installed tool. Nothing else this tool does calls Grill's server, so
+ * the reply says that this did, what was sent, and how long it is kept.
+ */
+export const FEEDBACK_SENT_TEXT = `Noted. That was sent to Grill: the rating, your one-line reason, the verdict label and the judge model, kept ${FEEDBACK_KEEP_DAYS} days. Not the decision.`;
+
 function feedbackReply(share, record) {
   if (share && (record.subject || record.layer1)) return "Noted. This grill was sent so Grill can learn from it.";
   if (share) return "Noted. The rating was stored. That grill's text was no longer available to send.";
-  return "Noted.";
+  return FEEDBACK_SENT_TEXT;
 }
 
 async function feedbackTool(args) {
