@@ -12,6 +12,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
+import { isIsoDate, validateRegressionRun } from "./resultsCore.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = join(HERE, "eval.mjs");
@@ -43,6 +44,11 @@ function envFor(overrides = {}) {
     "JUDGE_DECISIONS_URL",
     "GITHUB_STEP_SUMMARY",
     "GRILL_JUDGE_COMMIT",
+    // In CI these are set for the job that runs this test. A child that inherited them would
+    // write its count to the real step outputs and a public block beside every --out.
+    "GITHUB_OUTPUT",
+    "GITHUB_RUN_ID",
+    "GITHUB_SHA",
   ]) {
     delete env[k];
   }
@@ -313,5 +319,213 @@ describe("a held-out set stays private", () => {
     assert.equal(code, 1);
     assert.match(stderr, /is malformed: "nowhere in the subject" not found in subject/);
     assert.ok(!existsSync(outPath));
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("the key is found the way the judge finds it", () => {
+  it("a key in GRILL_API_KEY or in the key file counts as a key, so the run is not skipped", async () => {
+    for (const where of ["GRILL_API_KEY", "the key file"]) {
+      const fake = await startFakeOpenRouter();
+      const dir = tempCasesDir("sound-ab-test-pricing-page");
+      const outPath = join(mkdtempSync(join(tmpdir(), "eval-key-out-")), "out.json");
+      const keyFile = join(mkdtempSync(join(tmpdir(), "eval-key-")), "key");
+      if (where === "the key file") writeFileSync(keyFile, "test-key-loopback-only\n", { mode: 0o600 });
+      const key = where === "GRILL_API_KEY" ? { GRILL_API_KEY: "test-key-loopback-only" } : { GRILL_KEY_FILE: keyFile };
+
+      const { code, stdout } = await runCli(["--require-key", "--cases", dir, "--out", outPath], envFor({ ...fake.env, ...key }));
+      await fake.close();
+
+      assert.ok(!stdout.includes("SKIPPED: no judge ran"), where);
+      assert.notEqual(code, 2, where);
+      assert.equal(fake.seen.chat.length, 1, `${where}: the case reached the judge`);
+      assert.equal(fake.seen.chat[0].headers.authorization, "Bearer test-key-loopback-only", where);
+      assert.ok(existsSync(outPath), where);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("not measured is never reported as a score", () => {
+  const SCORE_WORDS = /PASS|FAIL|Catch rate|False alarm|catchRate|falseAlarmRate|Threshold regressions|Failed cases|# Grill self-eval results/;
+  const NOT_MEASURED = "Not measured: 0 of 2 cases reached a judge.";
+  const twoCases = () => tempCasesDir("hidden-assumption-annual-billing", "sound-ab-test-pricing-page");
+
+  it("when no case returns a verdict, exits 2 with the not-measured line and no score, with or without --require-key", async () => {
+    for (const flags of [[], ["--require-key"]]) {
+      const outDir = mkdtempSync(join(tmpdir(), "eval-not-measured-"));
+      const outPath = join(outDir, "latest.json");
+      const summary = join(outDir, "summary.md");
+      const output = join(outDir, "output.txt");
+      const env = envFor({
+        JUDGE_FIXTURE: join(FIXTURES, "no-tool-call-response.json"),
+        GITHUB_STEP_SUMMARY: summary,
+        GITHUB_OUTPUT: output,
+        GITHUB_RUN_ID: "4242",
+        GITHUB_SHA: "a".repeat(40),
+      });
+
+      const { code, stdout, stderr } = await runCli([...flags, "--cases", twoCases(), "--out", outPath], env);
+
+      assert.equal(code, 2, "exit 2 is not measured; exit 1 would read as quality below threshold");
+      assert.ok(stdout.split("\n").includes(NOT_MEASURED), "the line stands on its own");
+      assert.ok(stdout.split("\n").includes(`::error::${NOT_MEASURED}`), "and is an annotation in Actions");
+      assert.doesNotMatch(stdout, SCORE_WORDS);
+      assert.doesNotMatch(stdout, /SKIPPED/, "cases ran; this is not the no-key skip");
+      const posted = readFileSync(summary, "utf8");
+      assert.ok(posted.includes(NOT_MEASURED));
+      assert.doesNotMatch(posted, SCORE_WORDS);
+      assert.ok(!existsSync(outPath), "no results file: there is no result");
+      assert.ok(!existsSync(join(outDir, "latest.public.json")), "and no public block");
+      assert.equal(readFileSync(output, "utf8"), "reached_judge=0\n", "the workflow can see that nothing was measured");
+      assert.equal(stderr.match(/the judge returned no verdict/g)?.length, 2, "one line per case says why");
+    }
+  });
+
+  it("a key the router rejects, or one that is out of credit, is not measured rather than a failed threshold", async () => {
+    for (const status of [401, 402]) {
+      const fake = await startFakeOpenRouter({ chat: () => ({ status, text: JSON.stringify({ error: { message: "refused", code: status } }) }) });
+      const outDir = mkdtempSync(join(tmpdir(), "eval-dead-key-"));
+      const outPath = join(outDir, "latest.json");
+      const summary = join(outDir, "summary.md");
+      const env = envFor({ OPENROUTER_API_KEY: "test-key-loopback-only", ...fake.env, GITHUB_STEP_SUMMARY: summary });
+
+      const { code, stdout, stderr } = await runCli(["--require-key", "--cases", twoCases(), "--out", outPath], env);
+      await fake.close();
+
+      assert.equal(fake.seen.chat.length, 2, "both cases were sent");
+      assert.equal(fake.seen.decisions.length, 0, "no verdict, so nothing went to the quality check");
+      assert.equal(code, 2, String(status));
+      assert.ok(stdout.split("\n").includes(NOT_MEASURED));
+      assert.doesNotMatch(stdout, SCORE_WORDS);
+      assert.match(stderr, new RegExp(`the judge returned no verdict \\(the router answered ${status}\\)`));
+      assert.ok(!stderr.includes("refused"), "the response body is not echoed, only its status");
+      const posted = readFileSync(summary, "utf8");
+      assert.ok(posted.includes(`The router answered with status ${status}.`));
+      assert.doesNotMatch(posted, SCORE_WORDS);
+      assert.ok(!existsSync(outPath));
+    }
+  });
+
+  it("one verdict is enough to score the run, and the summary says how many cases reached a judge", async () => {
+    const usable = readFileSync(join(FIXTURES, "usable-response.json"), "utf8");
+    let calls = 0;
+    // The first case gets an answer. The key then runs out.
+    const fake = await startFakeOpenRouter({
+      chat: () => (calls++ === 0 ? { text: usable } : { status: 402, text: JSON.stringify({ error: { message: "refused", code: 402 } }) }),
+    });
+    const outDir = mkdtempSync(join(tmpdir(), "eval-partial-"));
+    const outPath = join(outDir, "latest.json");
+    const output = join(outDir, "output.txt");
+    const env = envFor({ OPENROUTER_API_KEY: "test-key-loopback-only", ...fake.env, GITHUB_OUTPUT: output });
+
+    const { code, stdout } = await runCli(["--require-key", "--cases", twoCases(), "--out", outPath, "--concurrency", "1"], env);
+    await fake.close();
+
+    assert.equal(code, 1, "a run that reached a judge is scored, and the case with no verdict counts against it");
+    assert.match(stdout, /^Reached a judge: 1 of 2 cases\. 1 case got no verdict\. It is scored below as a miss or a false alarm\.$/m);
+    assert.match(stdout, /_One run\. Too few cases to compare companies\. 1 case got no verdict and is in no row\._/);
+    assert.equal(readFileSync(output, "utf8"), "reached_judge=1\n");
+    assert.equal(JSON.parse(readFileSync(outPath, "utf8")).summary.counts.reachedJudge, 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("the public block: one run as counts only", () => {
+  const SHA = "0123456789abcdef0123456789abcdef01234567";
+  const fixtureEnv = (extra = {}) => envFor({ JUDGE_FIXTURE: join(FIXTURES, "usable-response.json"), ...extra });
+  const twoSound = () => tempCasesDir("sound-ab-test-pricing-page", "sound-vendor-pilot-before-commit");
+
+  it("is written beside the results file, and the written text passes the results validator", async () => {
+    // A loopback router answers, so this run asked a judge: one flawed case and one sound case.
+    const fake = await startFakeOpenRouter();
+    const dir = tempCasesDir("hidden-assumption-annual-billing", "sound-ab-test-pricing-page");
+    const outDir = mkdtempSync(join(tmpdir(), "eval-public-"));
+    const outPath = join(outDir, "latest.json");
+    const output = join(outDir, "output.txt");
+
+    const { code, stdout, stderr } = await runCli(
+      ["--cases", dir, "--out", outPath],
+      envFor({ OPENROUTER_API_KEY: "test-key-loopback-only", ...fake.env, GITHUB_RUN_ID: "43354935479", GITHUB_SHA: SHA, GITHUB_OUTPUT: output }),
+    );
+    await fake.close();
+
+    assert.equal(code, 1, "a miss and a false alarm under this answer; the block is written all the same");
+    const text = readFileSync(join(outDir, "latest.public.json"), "utf8");
+    const { date, ...counts } = validateRegressionRun(JSON.parse(text));
+    assert.ok(isIsoDate(date));
+    assert.ok(date <= new Date().toISOString().slice(0, 10));
+    assert.deepEqual(counts, {
+      run_id: 43354935479,
+      commit: "0123456",
+      cases: 2,
+      reached_judge: 2,
+      flawed: { caught: 0, of: 1 },
+      wrong_figure: { caught: 0, of: 0 },
+      loaded: { caught: 0, of: 0 },
+      sound: { false_alarms: 1, of: 1 },
+      schema_violations: { k: 0, of: 2 },
+      different_company: { k: 2, of: 2 },
+      quotes: { found: 0, of: 2 },
+      semantic: { caught: 1, of: 1 },
+      by_company: [{ company: "openai", cases: 2 }],
+    });
+    for (const leak of ["hidden-assumption", "sound-ab-test", "gpt-", "weak", "Usd", "latency", "$", "typesafe"]) {
+      assert.ok(!text.includes(leak), `the public block holds no ${leak}`);
+    }
+    assert.match(stderr, /\[eval\] public block written to /);
+    assert.equal(readFileSync(output, "utf8"), "reached_judge=2\n");
+
+    // The same counts are in the summary a person reads.
+    assert.match(stdout, /^Reached a judge: 2 of 2 cases\.$/m);
+    assert.match(stdout, /## By judge company \(counts, not gated\)/);
+    assert.match(stdout, /^\| openai \| 2 \| 0 of 1 \| 1 of 1 \|$/m);
+    assert.match(stdout, /\| False alarm rate \(sound\) \| 1\.00 \| <= 0\.34 \| FAIL \| 1 of 1 \|/);
+  });
+
+  it("a replayed fixture writes none: no judge was asked", async () => {
+    const outDir = mkdtempSync(join(tmpdir(), "eval-public-fixture-"));
+    const outPath = join(outDir, "latest.json");
+
+    const { stderr } = await runCli(["--cases", twoSound(), "--out", outPath], fixtureEnv({ GITHUB_RUN_ID: "43354935479", GITHUB_SHA: SHA }));
+
+    assert.ok(existsSync(outPath), "the results file is still written");
+    assert.ok(!existsSync(join(outDir, "latest.public.json")));
+    const said = stderr.split("\n").filter((line) => line.startsWith("[eval] no public block: "));
+    assert.equal(said.length, 1);
+    assert.match(said[0], /replayed JUDGE_FIXTURE/);
+  });
+
+  it("with no Actions run number or commit, writes none and says so in one line", async () => {
+    for (const ids of [{}, { GITHUB_RUN_ID: "43354935479" }, { GITHUB_SHA: SHA }, { GITHUB_RUN_ID: "0", GITHUB_SHA: SHA }, { GITHUB_RUN_ID: "43354935479", GITHUB_SHA: "main" }]) {
+      const outDir = mkdtempSync(join(tmpdir(), "eval-public-none-"));
+      const outPath = join(outDir, "latest.json");
+
+      const { stderr } = await runCli(["--cases", twoSound(), "--out", outPath], fixtureEnv(ids));
+
+      assert.ok(existsSync(outPath), "the results file is still written");
+      assert.ok(!existsSync(join(outDir, "latest.public.json")), JSON.stringify(ids));
+      const said = stderr.split("\n").filter((line) => line.startsWith("[eval] no public block: "));
+      assert.equal(said.length, 1, JSON.stringify(ids));
+      assert.match(said[0], /no GitHub Actions run number and commit/);
+    }
+  });
+
+  it("a held-out run writes none: that block is the record of the public set", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "eval-held-out-public-"));
+    const c = JSON.parse(readFileSync(join(CASES_DIR, "hidden-assumption-annual-billing.json"), "utf8"));
+    writeFileSync(join(dir, "private-held-out-case.json"), JSON.stringify({ ...c, id: "private-held-out-case", heldOut: true }));
+    const outDir = mkdtempSync(join(tmpdir(), "eval-held-out-public-results-"));
+    const outPath = join(outDir, "results.json");
+
+    const { stdout, stderr } = await runCli(["--cases", dir, "--out", outPath], fixtureEnv({ GITHUB_RUN_ID: "43354935479", GITHUB_SHA: SHA }));
+
+    assert.ok(existsSync(outPath));
+    assert.ok(!existsSync(join(outDir, "results.public.json")));
+    assert.equal(stderr.split("\n").filter((line) => line.startsWith("[eval] no public block: ")).length, 1);
+    // Counts by company carry no case, so a held-out summary shows them too.
+    assert.match(stdout, /^Reached a judge: 1 of 1 cases\.$/m);
+    assert.match(stdout, /^\| openai \| 1 \| 0 of 1 \| 0 of 0 \|$/m);
+    assert.ok(!stdout.includes("private-held-out-case") && !stderr.includes("private-held-out-case"));
   });
 });

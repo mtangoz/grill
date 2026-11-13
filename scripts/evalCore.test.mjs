@@ -7,10 +7,13 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { caseProblems, renderSummary, scoreCase, summarize } from "./evalCore.mjs";
+import { actionsRunOf, caseProblems, countRun, publicRunBlock, renderSummary, scoreCase, summarize } from "./evalCore.mjs";
+import { JUDGE_COMPANY_IDS, isCommitHash, isIsoDate, validateRegressionRun } from "./resultsCore.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CASES_DIR = join(HERE, "..", "evals", "cases");
+const RESULTS_PATH = join(HERE, "..", "data", "results.json");
+const FIRST_RUN_PATH = join(HERE, "fixtures", "eval-run-43354935479.json");
 
 /** A minimal challenge satisfying the shape scoreCase reads. */
 function challenge(over = {}) {
@@ -985,5 +988,256 @@ describe("renderSummary — the Quality (informational, not gated) section", () 
 
   it("omits the section for a summary built without it", () => {
     assert.doesNotMatch(renderSummary({ metrics: { n: 0 }, regressions: [], checks: [] }, []), /Quality \(informational/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// One run as counts. These rows are shaped like scoreCase's output, cut to what a count reads.
+const answered = (over) => ({ verdict: "weak", decorrelated: true, schemaIssues: 0, servedModel: "openai/gpt-6.1-sol", challengeSummary: [], ...over });
+const unanswered = (over) => ({ verdict: null, decorrelated: false, schemaIssues: 0, servedModel: null, challengeSummary: [], ...over });
+const MIXED_RUN = [
+  answered({ kind: "flawed", caught: true, semanticCaught: true, grounding: { checked: 3, found: 2 } }),
+  answered({ kind: "flawed", caught: false, semanticCaught: true, servedModel: "google/gemini-4-carbon", grounding: { checked: 2, found: 2 } }),
+  answered({ kind: "flawed", caught: true, semanticCaught: null, expect: { catch_in: "checked-or-verdict" }, servedModel: "moonshotai/kimi-k3.1-pro" }),
+  answered({ kind: "loaded", caught: true, semanticCaught: false, servedModel: "some-new-lab/model-1", schemaIssues: 2 }),
+  answered({ kind: "sound", falseAlarm: true, servedModel: "openai/gpt-6.1-terra" }),
+  answered({ kind: "sound", falseAlarm: false, servedModel: "claude-opus-5", decorrelated: false }),
+  answered({ kind: "sound", falseAlarm: false, servedModel: null }),
+  unanswered({ kind: "flawed", caught: false, semanticCaught: null }),
+  unanswered({ kind: "sound", falseAlarm: true, servedModel: "openai/gpt-5.3-codex" }),
+];
+
+describe("countRun: one run as whole numbers", () => {
+  it("counts each kind, and keeps the wrong-figure cases apart from the other flawed cases", () => {
+    const c = countRun(MIXED_RUN);
+    assert.equal(c.cases, 9);
+    assert.deepEqual(c.flawed, { caught: 1, of: 3 });
+    assert.deepEqual(c.wrongFigure, { caught: 1, of: 1 });
+    assert.deepEqual(c.loaded, { caught: 1, of: 1 });
+    assert.deepEqual(c.sound, { falseAlarms: 2, of: 4 });
+    assert.deepEqual(c.schemaViolations, { k: 1, of: 9 });
+    assert.deepEqual(c.differentCompany, { k: 6, of: 9 });
+    assert.deepEqual(c.quotes, { found: 4, of: 5 });
+    assert.deepEqual(c.semantic, { caught: 2, of: 3, phraseCaught: 2 });
+  });
+
+  it("counts a case as reaching a judge only when a verdict came back", () => {
+    assert.equal(countRun(MIXED_RUN).reachedJudge, 7);
+    // A model that answered in prose, with no verdict, did not judge the case.
+    assert.equal(countRun([unanswered({ kind: "sound", falseAlarm: true, servedModel: "openai/gpt-5.3-codex" })]).reachedJudge, 0);
+    assert.equal(countRun([answered({ kind: "sound", falseAlarm: false })]).reachedJudge, 1);
+  });
+
+  it("files each answered case under its judge's company, in order of first appearance, and what it cannot place under other", () => {
+    const { byCompany, reachedJudge } = countRun(MIXED_RUN);
+    assert.deepEqual(byCompany, [
+      { company: "openai", cases: 2, planted: 1, caught: 1, sound: 1, falseAlarms: 1 },
+      { company: "google", cases: 1, planted: 1, caught: 0, sound: 0, falseAlarms: 0 },
+      { company: "moonshotai", cases: 1, planted: 1, caught: 1, sound: 0, falseAlarms: 0 },
+      { company: "other", cases: 2, planted: 1, caught: 1, sound: 1, falseAlarms: 0 },
+      { company: "anthropic", cases: 1, planted: 0, caught: 0, sound: 1, falseAlarms: 0 },
+    ]);
+    assert.equal(byCompany.reduce((sum, row) => sum + row.cases, 0), reachedJudge, "a case with no verdict is in no row");
+    for (const row of byCompany) assert.ok(JUDGE_COMPANY_IDS.includes(row.company), row.company);
+  });
+
+  it("survives an empty run, a non-array and a hole in the list", () => {
+    for (const nothing of [[], null, undefined, "scores"]) {
+      const c = countRun(nothing);
+      assert.equal(c.cases, 0);
+      assert.equal(c.reachedJudge, 0);
+      assert.deepEqual(c.byCompany, []);
+    }
+    assert.equal(countRun([null, answered({ kind: "sound", falseAlarm: false })]).cases, 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("summarize and renderSummary: the counts beside the rates", () => {
+  const thresholds = { catchRate: 0.67, figureCatchRate: 1, falseAlarmRate: 0.34, loadedCatchRate: 0.67, decorrelatedRate: 1.0, schemaViolationRate: 0.1 };
+
+  it("carries the count behind each gated rate, and the run's counts", () => {
+    const { checks, counts, metrics } = summarize(MIXED_RUN, thresholds);
+    const behind = Object.fromEntries(checks.map((c) => [c.key, [c.k, c.of]]));
+    assert.deepEqual(behind, {
+      catchRate: [1, 3],
+      figureCatchRate: [1, 1],
+      falseAlarmRate: [2, 4],
+      loadedCatchRate: [1, 1],
+      decorrelatedRate: [6, 9],
+      schemaViolationRate: [1, 9],
+    });
+    for (const c of checks) assert.equal(c.actual, c.k / c.of, c.key);
+    assert.deepEqual(counts, countRun(MIXED_RUN));
+    assert.equal(metrics.n, 9);
+  });
+
+  it("renders a Count column after Status, and keeps each row as it was before it", () => {
+    const md = renderSummary(summarize(MIXED_RUN, thresholds), MIXED_RUN);
+    assert.match(md, /^\| Metric \| Value \| Threshold \| Status \| Count \|$/m);
+    assert.match(md, /^\| Catch rate \(flawed\) \| 0\.33 \| >= 0\.67 \| FAIL \| 1 of 3 \|$/m);
+    assert.match(md, /^\| Catch rate \(wrong figure\) \| 1\.00 \| >= 1 \| PASS \| 1 of 1 \|$/m);
+    assert.match(md, /^\| False alarm rate \(sound\) \| 0\.50 \| <= 0\.34 \| FAIL \| 2 of 4 \|$/m);
+    assert.match(md, /^\| Schema violation rate \| 0\.11 \| <= 0\.1 \| FAIL \| 1 of 9 \|$/m);
+  });
+
+  it("names the routing check in plain words, not as a decorrelated rate", () => {
+    const md = renderSummary(summarize(MIXED_RUN, thresholds), MIXED_RUN);
+    assert.match(md, /^\| Judge from a different company than the declared author \| 0\.67 \| >= 1 \| FAIL \| 6 of 9 \|$/m);
+    assert.doesNotMatch(md, /Decorrelated rate/);
+  });
+
+  it("says how many cases reached a judge, and that the rest are scored as misses or false alarms", () => {
+    const md = renderSummary(summarize(MIXED_RUN, thresholds), MIXED_RUN);
+    assert.match(md, /^Reached a judge: 7 of 9 cases\. 2 cases got no verdict\. They are scored below as misses or false alarms\.$/m);
+    assert.ok(md.indexOf("Reached a judge:") < md.indexOf("| Metric | Value | Threshold |"), "before the table it qualifies");
+
+    const all = MIXED_RUN.filter((s) => s.verdict !== null);
+    assert.match(renderSummary(summarize(all, thresholds), all), /^Reached a judge: 7 of 7 cases\.$/m);
+  });
+
+  it("lists judge companies with counts only: no rate, no pass or fail, no model name", () => {
+    const md = renderSummary(summarize(MIXED_RUN, thresholds), MIXED_RUN);
+    const from = md.indexOf("## By judge company (counts, not gated)");
+    assert.ok(from > md.indexOf("| Metric | Value | Threshold |"), "after the gated table");
+    const section = md.slice(from, md.indexOf("## Failed cases"));
+    assert.deepEqual(
+      section.split("\n").filter((line) => line.startsWith("| ")),
+      [
+        "| Judge company | Cases | Planted flaws caught | False alarms on sound cases |",
+        "| --- | --- | --- | --- |",
+        "| openai | 2 | 1 of 1 | 1 of 1 |",
+        "| google | 1 | 0 of 1 | 0 of 0 |",
+        "| moonshotai | 1 | 1 of 1 | 0 of 0 |",
+        "| other | 2 | 1 of 1 | 0 of 1 |",
+        "| anthropic | 1 | 0 of 0 | 0 of 1 |",
+      ],
+    );
+    assert.match(section, /_One run\. Too few cases to compare companies\. 2 cases got no verdict and are in no row\._/);
+    assert.doesNotMatch(section, /PASS|FAIL|\d\.\d\d|%|gpt|gemini|kimi|claude|\$/);
+  });
+
+  it("a held-out run shows the company counts and still no case", () => {
+    const scores = [
+      answered({ id: "secret-flawed-case", kind: "flawed", verdict: "holds", caught: false, expect: { must_target: ["a private phrase"] }, challengeSummary: [] }),
+      answered({ id: "secret-sound-case", kind: "sound", falseAlarm: true, expect: { verdict_in: ["holds"], max_severity: "moderate" }, challengeSummary: [{ severity: "serious", kind: "unsupported-claim" }] }),
+    ];
+    const md = renderSummary(summarize(scores, thresholds), scores, { heldOut: true });
+    assert.match(md, /^Reached a judge: 2 of 2 cases\.$/m);
+    assert.match(md, /^\| openai \| 2 \| 0 of 1 \| 1 of 1 \|$/m);
+    for (const secret of ["secret-flawed-case", "secret-sound-case", "a private phrase", "unsupported-claim", "gpt-6.1"]) {
+      assert.ok(!md.includes(secret), `held-out report leaked ${secret}`);
+    }
+  });
+
+  it("a summary that carries no counts renders no reached line and no company table", () => {
+    const old = { metrics: { n: 1 }, regressions: [], checks: [{ key: "catchRate", direction: "atLeast", threshold: 0.67, actual: 1, pass: true }] };
+    const md = renderSummary(old, []);
+    assert.doesNotMatch(md, /Reached a judge|By judge company/);
+    assert.match(md, /^\| Catch rate \(flawed\) \| 1\.00 \| >= 0\.67 \| PASS \|  \|$/m);
+  });
+
+  it("omits the company table when no case reached a judge", () => {
+    const none = [unanswered({ kind: "flawed", caught: false })];
+    const md = renderSummary(summarize(none, thresholds), none);
+    assert.match(md, /^Reached a judge: 0 of 1 cases\. 1 case got no verdict\. It is scored below as a miss or a false alarm\.$/m);
+    assert.doesNotMatch(md, /By judge company/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("publicRunBlock: the run as data/results.json keeps it", () => {
+  const firstRun = JSON.parse(readFileSync(FIRST_RUN_PATH, "utf8"));
+  const identity = { date: firstRun.date, runId: firstRun.run_id, commit: firstRun.commit };
+
+  it("the fixture of the first measured run holds only the fields a count is made from", () => {
+    assert.equal(firstRun.scores.length, 29);
+    const allowed = ["caught", "decorrelated", "expect", "falseAlarm", "grounding", "kind", "schemaIssues", "semanticCaught", "servedModel", "verdict"];
+    for (const row of firstRun.scores) {
+      for (const key of Object.keys(row)) assert.ok(allowed.includes(key), `unexpected field ${key}`);
+      if (row.expect) assert.deepEqual(row.expect, { catch_in: "checked-or-verdict" });
+      assert.deepEqual(Object.keys(row.grounding).sort(), ["checked", "found"]);
+    }
+  });
+
+  it("the first measured run's block equals the run recorded in data/results.json", () => {
+    const recorded = JSON.parse(readFileSync(RESULTS_PATH, "utf8")).regression.runs.find((run) => run.run_id === 43354935479);
+    assert.ok(recorded, "data/results.json records run 43354935479");
+    const text = JSON.stringify(publicRunBlock(firstRun.scores, identity), null, 2);
+    assert.deepEqual(validateRegressionRun(JSON.parse(text)), recorded);
+  });
+
+  it("gives the counts the first-run note in evals/README.md states", () => {
+    const block = publicRunBlock(firstRun.scores, identity);
+    assert.equal(block.flawed.caught + block.wrong_figure.caught, 19);
+    assert.equal(block.flawed.of + block.wrong_figure.of, 19);
+    assert.deepEqual(block.loaded, { caught: 4, of: 4 });
+    assert.deepEqual(block.sound, { false_alarms: 2, of: 6 });
+    assert.deepEqual(block.schema_violations, { k: 0, of: 29 });
+    assert.deepEqual(block.different_company, { k: 29, of: 29 });
+    assert.deepEqual(block.quotes, { found: 84, of: 94 });
+    assert.deepEqual(block.semantic, { caught: 22, of: 23 });
+    assert.deepEqual(Object.fromEntries(block.by_company.map((row) => [row.company, row.cases])), { google: 8, openai: 14, deepseek: 3, minimax: 2, moonshotai: 2 });
+  });
+
+  it("holds only whole numbers, one date, one short hash and company ids from the fixed list", () => {
+    const block = publicRunBlock(MIXED_RUN, { date: "2026-11-16", runId: 7, commit: "abcdef0" });
+    const leaves = [];
+    const walk = (value, key) => {
+      if (Array.isArray(value)) value.forEach((v) => walk(v, key));
+      else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, k);
+      else leaves.push([key, value]);
+    };
+    walk(block, "");
+    for (const [key, value] of leaves) {
+      if (key === "date") assert.ok(isIsoDate(value));
+      else if (key === "commit") assert.ok(isCommitHash(value));
+      else if (key === "company") assert.ok(JUDGE_COMPANY_IDS.includes(value), String(value));
+      else assert.ok(Number.isSafeInteger(value) && value >= 0, `${key} is a whole number`);
+    }
+    assert.deepEqual(block.by_company, [
+      { company: "openai", cases: 2 },
+      { company: "google", cases: 1 },
+      { company: "moonshotai", cases: 1 },
+      { company: "other", cases: 2 },
+      { company: "anthropic", cases: 1 },
+    ]);
+    assert.equal(block.reached_judge, 7);
+    validateRegressionRun(JSON.parse(JSON.stringify(block)));
+  });
+
+  it("cannot make a valid block without a run number and a commit", () => {
+    assert.throws(() => validateRegressionRun(JSON.parse(JSON.stringify(publicRunBlock(MIXED_RUN, { date: "2026-11-16" })))), /run_id|commit/);
+    assert.throws(() => validateRegressionRun(JSON.parse(JSON.stringify(publicRunBlock(MIXED_RUN, { date: "2026-11-16", runId: 7 })))), /commit/);
+    assert.throws(() => validateRegressionRun(JSON.parse(JSON.stringify(publicRunBlock(MIXED_RUN)))), /date|run_id|commit/);
+  });
+});
+
+describe("actionsRunOf: the run number and commit a public block needs", () => {
+  const SHA = "303A77F0123456789abcdef0123456789abcdef0";
+
+  it("reads the run number as a whole number and cuts the commit to seven lowercase characters", () => {
+    assert.deepEqual(actionsRunOf({ GITHUB_RUN_ID: "43354935479", GITHUB_SHA: SHA }), { runId: 43354935479, commit: "303a77f" });
+    assert.deepEqual(actionsRunOf({ GITHUB_RUN_ID: " 12 ", GITHUB_SHA: "abcdef0" }), { runId: 12, commit: "abcdef0" });
+  });
+
+  it("is null when either is missing or is not what Actions sets", () => {
+    for (const env of [
+      {},
+      null,
+      { GITHUB_RUN_ID: "43354935479" },
+      { GITHUB_SHA: SHA },
+      { GITHUB_RUN_ID: "0", GITHUB_SHA: SHA },
+      { GITHUB_RUN_ID: "-3", GITHUB_SHA: SHA },
+      { GITHUB_RUN_ID: "12.5", GITHUB_SHA: SHA },
+      { GITHUB_RUN_ID: "99999999999999999999", GITHUB_SHA: SHA },
+      { GITHUB_RUN_ID: "local", GITHUB_SHA: SHA },
+      { GITHUB_RUN_ID: 12, GITHUB_SHA: SHA },
+      { GITHUB_RUN_ID: "12", GITHUB_SHA: "main" },
+      { GITHUB_RUN_ID: "12", GITHUB_SHA: "abc" },
+      { GITHUB_RUN_ID: "12", GITHUB_SHA: `${SHA}0` },
+    ]) {
+      assert.equal(actionsRunOf(env), null, JSON.stringify(env));
+    }
   });
 });
