@@ -123,8 +123,8 @@ export function decorrelationOf(servedModel, author) {
       decorrelated: false,
       reason: "author-family",
       note: isDefault
-        ? `served by \`${served}\` — the same model family the subject is assumed to be written by. The judge is from the author's own family, so this run is not an outside review`
-        : `served by \`${served}\` — the same family the caller declared wrote this subject (\`${declared}\`). The judge is from the author's own family, so this run is not an outside review`,
+        ? `served by \`${served}\`, the same model family the subject is assumed to be written by. The judge is from the author's own family, so this run is not an outside review`
+        : `served by \`${served}\`, the same family the caller declared wrote this subject (\`${declared}\`). The judge is from the author's own family, so this run is not an outside review`,
     };
   }
   return {

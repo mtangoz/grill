@@ -1069,6 +1069,20 @@ describe("the decorrelation guard", () => {
     }
     assert.match(readFileSync(join(root, "scripts/judge.mjs"), "utf8"), /so the judge is not from the subject's own family/);
   });
+
+  it("joins the same-family note with a comma, and uses no dash", () => {
+    const assumed = decorrelationOf("anthropic/claude-opus-5");
+    const declared = decorrelationOf("openai/gpt-5.6-sol", "openai");
+    assert.equal(
+      assumed.note,
+      "served by `anthropic/claude-opus-5`, the same model family the subject is assumed to be written by. The judge is from the author's own family, so this run is not an outside review",
+    );
+    assert.equal(
+      declared.note,
+      "served by `openai/gpt-5.6-sol`, the same family the caller declared wrote this subject (`openai`). The judge is from the author's own family, so this run is not an outside review",
+    );
+    for (const d of [assumed, declared]) assert.doesNotMatch(d.note, /[\u2013\u2014]/, d.note);
+  });
 });
 
 // ---------------------------------------------------------------------------
