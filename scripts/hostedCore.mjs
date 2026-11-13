@@ -12,7 +12,7 @@ export { SCOPE_GUARD };
 
 /** First use only. One line. The privacy page holds the rest. Same words as the local server. */
 export const ONCE_DISCLOSURE =
-  "This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/#privacy";
+  "This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/data-flow/";
 
 /**
  * The same line on a run that ruled nobody out, because Grill could not tell who wrote the

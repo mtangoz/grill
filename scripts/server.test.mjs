@@ -175,7 +175,7 @@ describe("the MCP handshake", () => {
     assert.deepEqual(Object.keys(grill.inputSchema.properties).sort(), ["author", "big", "quality_check", "question", "subject"]);
     assert.match(grill.inputSchema.properties.question.description, /Leave it empty/);
     assert.match(grill.description, /no code changes, no PRs, no product questions/);
-    assert.match(grill.description, /https:\/\/grillyour\.ai\/#privacy/);
+    assert.match(grill.description, /https:\/\/grillyour\.ai\/data-flow\//);
     assert.match(grill.description, /do not show a write-up full of blanks/i);
     assert.doesNotMatch(grill.description, /\[[a-z][^\]\n]{1,40}\]/);
     await c.close();

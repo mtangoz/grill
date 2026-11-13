@@ -24,7 +24,7 @@ Send the decision as the user stated it, plus a brief, user-relevant summary of 
 
 Ask at most one short question, and only if the decision is truly unclear, such as "What's the goal?" Then send it. Do not wait for an OK. Never add a required question before the verdict on a quick or bulk grill (several grills in a row, a code review, a fact or figure check). Ask only what the subject strictly needs.
 
-The first time with this person, say once, as one line, and not again: This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/#privacy
+The first time with this person, say once, as one line, and not again: This goes to an outside judge from a different company, and the router does not keep it. https://grillyour.ai/data-flow/
 
 Do not mention the check, its score, the judge's model, or a balance. If they ask to skip the check, call the tool with `quality_check: false` for this grill only.
 

@@ -1566,7 +1566,11 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.match(grilled, /<pre id="verdict" class="config">/);
       assert.equal(fake.seen.chat.length, 1);
       assert.equal(grilled.includes(esc(RECORDS_QUESTION)), false);
-      assert.equal(grilled.includes(DATA_FLOW_URL), false);
+      assert.equal(grilled.includes(esc(words)), false, "the note is not shown again");
+      // The once-only line on this first verdict links the same page. Nothing else on it does.
+      assert.ok(grilled.includes(esc(ONCE_DISCLOSURE)), "the link named Claude, so the once-only line is the full one");
+      const withoutOnce = grilled.replace(esc(ONCE_DISCLOSURE), "");
+      assert.equal(withoutOnce.includes(DATA_FLOW_URL), false);
       const again = await postMcp(
         ctx,
         { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill", arguments: { subject: "Decision: a second one.", quality_check: false } } },
