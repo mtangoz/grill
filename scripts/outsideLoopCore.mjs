@@ -314,8 +314,11 @@ function cohortNumbers(counters, cohort, asOf) {
  * Read day: 14 days after the cohort's last due day, or 2027-02-28, whichever is first.
  *   1. Fewer than 30 look-backs have had a full 14 days on the read day, or they come from
  *      fewer than 5 people: "not tested: the constraint is reach". Never a kill.
- *   2. Otherwise kill if fewer than 8 of the cohort were done within 14 days.
- *   3. Otherwise keep going if 15 or more were done within 14 days.
+ *   2. Otherwise kill if fewer than 8 of the cohort were done within 14 days: stop building on
+ *      the solo record (no Pro work, no calibration view, no new reminder channel). The team
+ *      pilot is the only record bet left.
+ *   3. Otherwise keep going if 15 or more were done within 14 days. The 7-day count is printed
+ *      beside it. Half within 7 days is the reminder plan's own target, not part of this rule.
  *   4. Otherwise change one thing about the reminder, read the next 30 once, then decide by
  *      rules 2 and 3. The next 30 are the first 30 that fall due after the read day.
  * Before the read day the rule shown is what a reading taken today would say. From the read day
@@ -454,10 +457,10 @@ function ruleLine(t) {
     return `Rule that applies today: 1. ${verdict} ${why.join(" ")} This is never a kill.`;
   }
   if (t.rule === 2) {
-    return `Rule that applies today: 2. Kill: fewer than ${KILL_BELOW} of the cohort were done within ${DONE_DAYS} days (${t.done14} of ${t.cohort.size}). Stop building on the solo record. The team pilot is the only record bet left.`;
+    return `Rule that applies today: 2. Kill: fewer than ${KILL_BELOW} of the cohort were done within ${DONE_DAYS} days (${t.done14} of ${t.cohort.size}). Stop building on the solo record (no Pro work, no calibration view, no new reminder channel). The team pilot is the only record bet left.`;
   }
   if (t.rule === 3) {
-    return `Rule that applies today: 3. Keep going: ${KEEP_FROM} or more were done within ${DONE_DAYS} days (${t.done14} of ${t.cohort.size}). Within ${DONE_SHORT_DAYS} days: ${t.done7} of ${t.cohort.size}.`;
+    return `Rule that applies today: 3. Keep going: ${KEEP_FROM} or more were done within ${DONE_DAYS} days (${t.done14} of ${t.cohort.size}). Within ${DONE_SHORT_DAYS} days: ${t.done7} of ${t.cohort.size}. Half within ${DONE_SHORT_DAYS} days is the reminder plan's own target (docs/PRD-lookback-reminders.md).`;
   }
   return `Rule that applies today: 4. Change one thing about the reminder, read the next ${COHORT_SIZE} once, then decide by rules 2 and 3 (${t.done14} of ${t.cohort.size} done within ${DONE_DAYS} days).`;
 }

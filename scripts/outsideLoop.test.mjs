@@ -612,10 +612,12 @@ describe("outside loop readout: what it prints", () => {
     assert.equal(lineOf(kill, "Read day:"), "Read day: 2026-12-24");
     assert.equal(
       lineOf(kill, "Rule that applies today:"),
-      "Rule that applies today: 2. Kill: fewer than 8 of the cohort were done within 14 days (7 of 30). Stop building on the solo record. The team pilot is the only record bet left.",
+      "Rule that applies today: 2. Kill: fewer than 8 of the cohort were done within 14 days (7 of 30). Stop building on the solo record (no Pro work, no calibration view, no new reminder channel). The team pilot is the only record bet left.",
     );
     assert.equal(lineOf(kill, "Status:"), "Status: the read day has come. This reading stands.");
-    assert.equal(lineOf(lines(16, 9, 5), "Rule that applies today:"), "Rule that applies today: 3. Keep going: 15 or more were done within 14 days (16 of 30). Within 7 days: 9 of 30.");
+    assert.equal(lineOf(lines(16, 9, 5), "Rule that applies today:"), "Rule that applies today: 3. Keep going: 15 or more were done within 14 days (16 of 30). Within 7 days: 9 of 30. Half within 7 days is the reminder plan's own target (docs/PRD-lookback-reminders.md).");
+    // The file the line names is there, and it is where the 7-day target comes from.
+    assert.match(readFileSync(join(ROOT, "docs/PRD-lookback-reminders.md"), "utf8"), /at least half of due records get a look-back within 7 days/);
     const change = lines(10, 4, 5);
     assert.equal(lineOf(change, "Rule that applies today:"), "Rule that applies today: 4. Change one thing about the reminder, read the next 30 once, then decide by rules 2 and 3 (10 of 30 done within 14 days).");
     assert.equal(lineOf(change, "Next 30, due after the read day:"), "Next 30, due after the read day: 0 of 30 so far");
