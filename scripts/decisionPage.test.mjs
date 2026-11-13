@@ -36,6 +36,7 @@ import {
   lookbackSaves,
   lookbackWhichText,
   rowsNamed,
+  setLookback,
   titledAnswers,
   waitingGrillLine,
 } from "./hostedCore.mjs";
@@ -594,6 +595,53 @@ describe("a look-back answered in chat, when more than one saved decision is in 
     }
     assert.match(lookbackSavedText({ reading: scored, saved: [a], remaining: [b] }), /\n\nStill to answer:\nMove office \(due 15 Jan\): You were 60% sure\. What happened\?$/);
     assert.equal(lookbackSavedText({ reading: scored, saved: [a] }).includes("Still to answer"), false);
+  });
+});
+
+describe("the first look-back time on a record", () => {
+  const T1 = Date.parse("2026-02-01T15:00:00Z");
+  const T2 = Date.parse("2026-02-03T09:30:00Z");
+  const iso = (ms) => new Date(ms).toISOString();
+
+  it("is set at the first answer and left alone by every later one", () => {
+    const row = { id: "a", lookback: null };
+    assert.equal(setLookback(row, "came_true: yes", T1), true, "the first time");
+    assert.deepEqual(row.lookback, { at: iso(T1), happened: "came_true: yes" });
+    assert.equal(row.lookbackFirstAt, iso(T1));
+    assert.equal(setLookback(row, "came_true: no", T2), false, "a later answer is not a first time");
+    assert.deepEqual(row.lookback, { at: iso(T2), happened: "came_true: no" }, "the edit keeps its own time");
+    assert.equal(row.lookbackFirstAt, iso(T1));
+  });
+
+  it("lets a note keep the time already there, and survives a cleared note", () => {
+    const row = { id: "a", lookback: null };
+    assert.equal(setLookback(row, "note: half done", T1, { keepAt: true }), true);
+    assert.equal(row.lookback.at, iso(T1));
+    assert.equal(setLookback(row, "note: nearly done", T2, { keepAt: true }), false);
+    assert.equal(row.lookback.at, iso(T1), "a note does not move the time of the tap it sits beside");
+    assert.equal(setLookback(row, "", T2, { keepAt: true }), false);
+    assert.equal(row.lookback, null);
+    assert.equal(hasLookback(row), false);
+    assert.equal(row.lookbackFirstAt, iso(T1));
+    assert.equal(setLookback(row, "came_true: yes", T2), false, "looked back once already, so this is not the first");
+    assert.equal(row.lookbackFirstAt, iso(T1));
+  });
+
+  it("gives a record looked back before this field existed the only time it has", () => {
+    const old = { id: "a", lookback: { at: iso(T1), happened: "came_true: yes" } };
+    assert.equal(setLookback(old, "came_true: no", T2), false, "it was already looked back");
+    assert.equal(old.lookbackFirstAt, iso(T1));
+    assert.equal(old.lookback.at, iso(T2));
+    // An old look-back with no time of its own: it still is not a first time now.
+    const bare = { id: "c", lookback: { happened: "it held" } };
+    assert.equal(setLookback(bare, "came_true: yes", T2), false);
+    assert.equal(bare.lookbackFirstAt, iso(T2), "the earliest time anyone can state");
+    assert.equal(setLookback(bare, "came_true: no", T2 + 60_000), false);
+    assert.equal(bare.lookbackFirstAt, iso(T2));
+    // A blank note was never a look-back, so the first answer after it is the first.
+    const blank = { id: "b", lookback: { at: iso(T1), happened: "   " } };
+    assert.equal(setLookback(blank, "came_true: yes", T2), true);
+    assert.equal(blank.lookbackFirstAt, iso(T2));
   });
 });
 

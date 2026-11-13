@@ -165,6 +165,7 @@ import {
   lookbackSavedText,
   lookbackSaves,
   lookbackWhichText,
+  setLookback,
   LOOKBACK_SAVED,
   PENDING_KEEP_DAYS,
   waitingGrillLine,
@@ -1887,7 +1888,7 @@ async function callLookBack(args, account, deps) {
   for (const save of plan.saves) {
     const row = save.row;
     const firstLook = !hasLookback(row);
-    row.lookback = { at: new Date(now).toISOString(), happened: save.happened };
+    setLookback(row, save.happened, now);
     await writeRecord(account, deps, row);
     if (firstLook) {
       await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
@@ -3215,6 +3216,7 @@ async function exportRecords(account, deps, kind) {
         challenge_kinds: row.challengeKinds || [],
         impact: row.impact === "changed" || row.impact === "kept" ? row.impact : "",
         lookback: row.lookback || null,
+        lookback_first_at: row.lookbackFirstAt || "",
         block: row.block,
       })),
       null,
@@ -3701,7 +3703,7 @@ export async function handleDecisions(request, deps) {
             const now = typeof deps.now === "number" ? deps.now : Date.now();
             const finished = hasLookback(row) && !earlyRead(row, now);
             const happened = composeOutcome(row.lookback?.happened, form.get("value") || "");
-            row.lookback = { at: new Date(now).toISOString(), happened };
+            setLookback(row, happened, now);
             await writeRecord(session.account, deps, row);
             if (!finished && !earlyRead(row, now)) {
               await countFunnel(deps, FUNNEL_KEYS.lookbacksDone);
@@ -3730,9 +3732,8 @@ export async function handleDecisions(request, deps) {
         const row = rows.find((item) => item.id === recordId);
         if (row) {
           const now = typeof deps.now === "number" ? deps.now : Date.now();
-          const happened = composeNote(row.lookback?.happened, form.get("note"));
-          if (happened) row.lookback = { at: row.lookback?.at || new Date(now).toISOString(), happened };
-          else row.lookback = null;
+          // A note keeps the time of the tap it sits beside. Clearing the note clears the look-back.
+          setLookback(row, composeNote(row.lookback?.happened, form.get("note")), now, { keepAt: true });
           await writeRecord(session.account, deps, row);
         }
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;

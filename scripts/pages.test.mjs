@@ -1059,6 +1059,107 @@ describe("a grill that is waiting for a choice", () => {
   });
 });
 
+describe("the first time a decision is looked back on", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const iso = (ms) => new Date(ms).toISOString();
+
+  it("is kept once, whatever a later chat answer, tap or note changes", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      await decide(ctx, fake, "Hire contractor", JAN);
+      const [fresh] = await exportedRows(ctx, FEB);
+      assert.equal(fresh.lookback, null);
+      assert.equal(fresh.lookback_first_at, "", "no look-back yet, so no first time");
+      const id = encodeURIComponent(fresh.id);
+
+      // The first answer, in chat.
+      const said = await chat(ctx, fake, "grill_look_back", { happened: "came_true: no\nhappened: The contractor left after a week." }, FEB);
+      assert.equal(said.isError, false, said.text);
+      let [row] = await exportedRows(ctx, FEB);
+      assert.equal(row.lookback.at, iso(FEB));
+      assert.equal(row.lookback_first_at, iso(FEB));
+
+      // A tap the next day replaces the outcome. Its own time moves. The first time does not.
+      await postForm(ctx, `action=outcome&id=${id}&value=held`, FEB + DAY);
+      [row] = await exportedRows(ctx, FEB + DAY);
+      assert.equal(row.lookback.at, iso(FEB + DAY));
+      assert.equal(row.lookback_first_at, iso(FEB));
+
+      // A note keeps the time of the tap it sits beside.
+      await postForm(ctx, `action=note&id=${id}&note=Two teams used it`, FEB + 2 * DAY);
+      [row] = await exportedRows(ctx, FEB + 2 * DAY);
+      assert.equal(row.lookback.at, iso(FEB + DAY));
+      assert.equal(row.lookback_first_at, iso(FEB));
+
+      // A second answer in chat, days later.
+      await chat(ctx, fake, "grill_look_back", { records: "Hire contractor", happened: "came_true: yes\nhappened: A new contractor finished the job." }, FEB + 3 * DAY);
+      [row] = await exportedRows(ctx, FEB + 3 * DAY);
+      assert.equal(row.lookback.at, iso(FEB + 3 * DAY));
+      assert.equal(row.lookback_first_at, iso(FEB), "the first completion time is never overwritten");
+      assert.match(row.lookback.happened, /new contractor finished/);
+
+      // The page still shows the day of the latest change, as it did before.
+      const detail = await getPage(ctx, `/decisions?id=${id}`, { now: FEB + 3 * DAY });
+      assert.match(detail.html, /Changed 4 Feb\./);
+      assert.equal(detail.html.includes("lookback_first_at"), false);
+      assert.equal(detail.html.includes(iso(FEB)), false, "the first time is not shown on the page");
+      // Each look-back was counted as done once: at the first one.
+      assert.equal(ctx.memory.command(["GET", FUNNEL_KEYS.lookbacksDone]), "1");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is set by a note alone and by an early tap, and outlives a cleared note", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      resetHostedCaches();
+      const ctx = world();
+      const early = Date.parse("2026-01-05T15:00:00Z");
+      await decide(ctx, fake, "Ship the beta", JAN);
+      const [fresh] = await exportedRows(ctx, early);
+      const id = encodeURIComponent(fresh.id);
+
+      // A note is a look-back with words, so it is the first one.
+      await postForm(ctx, `action=note&id=${id}&note=Half the team is on it`, early);
+      let [row] = await exportedRows(ctx, early);
+      assert.equal(row.lookback.happened, "note: Half the team is on it");
+      assert.equal(row.lookback_first_at, iso(early));
+
+      // Clearing the note clears the look-back. The first time stays.
+      await postForm(ctx, `action=note&id=${id}&note=`, early + DAY);
+      [row] = await exportedRows(ctx, early + DAY);
+      assert.equal(row.lookback, null);
+      assert.equal(row.lookback_first_at, iso(early));
+
+      // An early tap, before the look-back day, then a later one.
+      await postForm(ctx, `action=outcome&id=${id}&value=no`, early + 2 * DAY);
+      await postForm(ctx, `action=outcome&id=${id}&value=held`, FEB);
+      [row] = await exportedRows(ctx, FEB);
+      assert.equal(row.lookback.at, iso(FEB));
+      assert.equal(row.lookback_first_at, iso(early));
+
+      // A second decision, first answered by an early tap.
+      await decide(ctx, fake, "Move office", JAN);
+      const second = (await exportedRows(ctx, early)).find((item) => item.block.includes("title: Move office"));
+      await postForm(ctx, `action=outcome&id=${encodeURIComponent(second.id)}&value=mixed`, early);
+      const tapped = (await exportedRows(ctx, early)).find((item) => item.id === second.id);
+      assert.equal(tapped.lookback_first_at, iso(early));
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("is described in the data ledger with the record", () => {
+    const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
+    const row = ledger.split("\n").find((line) => line.startsWith("| Decision record ("));
+    assert.ok(row, "the ledger has a decision record row");
+    assert.match(row, /look-back answers, with the time of the first one and of the latest change\)/);
+  });
+});
+
 describe("the public pages name where saved grills are", () => {
   it("the FAQ tells the truth, and the shared nav links to Your grills", () => {
     const faq = readFileSync(join(ROOT, "site/faq.html"), "utf8");

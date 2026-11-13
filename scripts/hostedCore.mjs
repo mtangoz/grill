@@ -1264,6 +1264,25 @@ export function lookbackSaves(targets, happened) {
   return { saves, unmatched };
 }
 
+/**
+ * Write a look-back onto a saved record. `lookback.at` is the time of this edit, as it always
+ * was, or the time already there when `keepAt` is set (a note keeps the time of the tap).
+ * `lookbackFirstAt` is the time the record first got a look-back with words, from a chat
+ * answer, a tap or a note. It is set once and never moved: a later edit, a second tap and a
+ * cleared note all leave it alone. Returns true only on that first time.
+ */
+export function setLookback(row, happened, now = Date.now(), { keepAt = false } = {}) {
+  const when = new Date(now).toISOString();
+  const before = row.lookback || null;
+  // A record looked back before this field existed: the time it carries is the only one known.
+  if (!row.lookbackFirstAt && hasLookback(row)) row.lookbackFirstAt = before.at || when;
+  const words = String(happened || "");
+  row.lookback = words.trim() ? { at: keepAt && before?.at ? before.at : when, happened: words } : null;
+  if (row.lookbackFirstAt || !hasLookback(row)) return false;
+  row.lookbackFirstAt = when;
+  return true;
+}
+
 function lookbackLine(row) {
   return `${lookbackLabel(row)}: ${lookBackPrompt(parseRecords(row?.block || "")[0] || {})}`;
 }
