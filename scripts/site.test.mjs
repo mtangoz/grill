@@ -132,6 +132,19 @@ describe("site/page.html", () => {
     assert.ok(readFileSync(join(ROOT, "docs/DECISION-RECORD.md"), "utf8").includes("version: 1"));
   });
 
+  it("the README says saved decisions and look-back reminders are free today, and paid plans are off", () => {
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    const costs = readme.slice(readme.indexOf("## What it costs"), readme.indexOf("## Privacy"));
+    assert.ok(costs.length > 0 && costs.length < 1000, "the What it costs section sits right before Privacy");
+    assert.ok(
+      costs.includes("Saved decisions and look-back reminders are free today with [Grill in your chat](https://grillyour.ai/start/?ref=readme). Paid plans are off."),
+      "the README should say what is free today and that paid plans are off",
+    );
+    assert.match(costs, /Grill is free\. On your own key you pay the router\./);
+    assert.match(costs, /The free tool stays free and account-free\./);
+    assert.doesNotMatch(costs, /Coming later|Pro plan|Hear when|notify\?via=/);
+  });
+
   it("counts reflection use as a number of records and never the words", () => {
     assert.match(lookBack, /reflection_record_shown/);
     assert.match(lookBack, /reflection_record_copied/);
@@ -280,7 +293,7 @@ describe("the site build", () => {
     assert.match(html, /^<!doctype html>/);
     assert.match(head, /<title>Grill: grill your AI before you send it to your boss<\/title>/);
     assert.match(head, /<meta property="og:title" content="Grill: grill your AI before you send it to your boss">/);
-    assert.match(head, /<meta name="description" content="Grill your AI before you send it to your boss\. A model from another company finds the weak spots in your plan and one cheap way to test them\. Works with ChatGPT, Claude, Gemini and more\.">/);
+    assert.match(head, /<meta name="description" content="Grill your AI before you send it to your boss\. A different AI argues the case against your plan and names one cheap test\. Works with ChatGPT, Claude, Gemini and more\.">/);
     assert.match(head, /<link rel="canonical" href="https:\/\/grillyour\.ai\/">/);
     assert.match(head, /<meta name="color-scheme" content="light dark">/);
     assert.match(head, /<meta name="theme-color" content="#f7f4ef" media="\(prefers-color-scheme: light\)">/);
@@ -368,7 +381,7 @@ describe("the site build", () => {
       assert.match(llms, /^# Grill\n/);
       assert.match(
         llms,
-        /^> Grill your AI before you send it to your boss\. An outside judge, a model from a different company, gives the strongest case against a decision\.\n/m,
+        /^> Grill your AI before you send it to your boss\. An outside judge gives the strongest case against a decision\. When Grill can tell which AI wrote the plan, the judge is from a different company\.\n/m,
       );
       assert.match(llms, /https:\/\/grillyour\.ai\/mcp/);
       assert.match(llms, /Anyone can sign up and connect Grill to the AI they use at https:\/\/grillyour\.ai\/mcp\./);
@@ -376,6 +389,8 @@ describe("the site build", () => {
       assert.doesNotMatch(llms, /invite-only/);
       assert.doesNotMatch(llms, /Join the waitlist/);
       assert.match(llms, /\[GitHub\]\(https:\/\/github\.com\/mtangoz\/grill\): \S/);
+      // The GitHub line says what is in the repo. It makes no claim about the judge.
+      assert.match(llms, /^- \[GitHub\]\(https:\/\/github\.com\/mtangoz\/grill\): The code, the tests and the judge prompt\.$/m);
       const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
       for (const path of ["", "start/", "privacy/", "terms/", "look-back/", "contribute/", "demo/"]) {
         assert.ok(locs.includes(`https://grillyour.ai/${path}`), `sitemap lists /${path}`);
@@ -827,6 +842,7 @@ describe("the /start page", () => {
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     const chat = readme.slice(readme.indexOf("### Grill in chat"), readme.indexOf("###", readme.indexOf("### Grill in chat") + 4));
     assert.match(chat, /https:\/\/grillyour\.ai\/start\//);
+    assert.match(chat, /The steps are at \[grillyour\.ai\/start\]\(https:\/\/grillyour\.ai\/start\/\?ref=readme\)\./, "the README setup link carries the readme tag");
     assert.match(chat, /https:\/\/claude\.ai\/customize\/connectors\?modal=add-custom-connector/);
     assert.match(chat, /Customize → Connectors → Add custom connector/);
     assert.doesNotMatch(chat, /Settings → Connectors → Add custom connector/);
@@ -971,8 +987,11 @@ describe("the /demo page", () => {
     const cta = demo.indexOf('class="cta"');
     const foot = demo.indexOf('class="footer"');
     assert.ok(lastDetails < cta && cta < foot, "the call to action follows the examples");
-    assert.match(demo, /<a class="button" href="\/start\/">Connect Grill<\/a>/);
-    assert.match(demo, /<a href="\/start\/">Anyone can sign up<\/a>/);
+    // Both links under the examples carry the demo tag, so /start can count who came from here.
+    assert.match(demo, /<a class="button" href="\/start\/\?ref=demo">Connect Grill<\/a>/);
+    assert.match(demo, /<a href="\/start\/\?ref=demo">Anyone can sign up<\/a>/);
+    assert.equal((demo.match(/href="\/start\/\?ref=demo"/g) ?? []).length, 2);
+    assert.equal((demo.match(/href="\/start\/"/g) ?? []).length, 1, "only the shared nav links /start/ without a tag");
   });
 
   it("builds to /demo/ and lands in the sitemap and llms.txt", () => {
@@ -1023,7 +1042,8 @@ describe("the /check-your-ai page", () => {
   const H1 = "Check your AI's work before you send it to your boss.";
   const DESCRIPTION = "Plain checks for an AI draft before you send it to your boss: the assumption, the facts, and one cheap test.";
   const CANONICAL = "https://grillyour.ai/check-your-ai/";
-  const JUDGE_BLIND_SPOTS = "The judge never comes from the company behind your AI, so it won\u2019t share its blind spots.";
+  // The judge line is conditional: a different company only when Grill can tell which AI wrote the draft.
+  const JUDGE_LINE = "The judge did not write your draft. When Grill can tell which AI did, the judge comes from a different company. When it cannot, the verdict says so.";
   const nav = (html) => html.match(/<nav aria-label="Sections">[\s\S]*?<\/nav>/)?.[0];
   const footer = (html) => html.match(/<div class="footer">[\s\S]*?<\/div>/)?.[0];
 
@@ -1054,7 +1074,10 @@ describe("the /check-your-ai page", () => {
     assert.equal(footer(source), footer(about));
     assert.match(source, /href="\/demo\/"/);
     assert.match(source, /href="\/start\/"/);
-    assert.ok(source.includes(JUDGE_BLIND_SPOTS));
+    assert.ok(source.includes(JUDGE_LINE));
+    // The sentence before the judge line does not say different company on its own.
+    assert.ok(source.includes(`<p class="note">The assistant you drafted with is checking its own draft. A second AI is there to argue the other side. ${JUDGE_LINE}</p>`));
+    assert.doesNotMatch(source, /A second AI from a different company/);
     assert.match(source, /Say [“"]grill this[”"]/);
     assert.match(source, /made-up/);
     assert.match(source, /Nothing in that example is a real decision/);
@@ -1106,7 +1129,8 @@ describe("the /check-your-ai page", () => {
     const rest = built.replace(analyticsSnippet(process.env), "");
     assert.equal(rest.match(/<script\b/gi)?.length ?? 0, 0, "/check-your-ai has a script of its own");
     assert.ok(md.includes(H1));
-    assert.ok(md.includes(JUDGE_BLIND_SPOTS));
+    assert.ok(md.includes(JUDGE_LINE));
+    assert.ok(md.includes(`A second AI is there to argue the other side. ${JUDGE_LINE}`), "the Markdown twin carries the same paragraph");
     assert.ok(md.includes("https://grillyour.ai/demo/"));
     assert.ok(md.includes("https://grillyour.ai/start/"));
     assert.doesNotMatch(md, /<script/i);
@@ -1196,8 +1220,15 @@ describe("the about and contact pages", () => {
     });
     assert.match(text, /Hear the strongest case against your plan, then decide for yourself\./);
     assert.doesNotMatch(text, /Get a second opinion before you decide\./);
-    assert.match(text, /A model from another company gives a verdict and one cheap test\./);
-    assert.match(text, /An AI from a different company argues the other side\. You decide\. Later you can look back and see how your judgement did\./);
+    // "A model from another company" said different company with no condition. The next line carries it.
+    assert.match(text, /An outside judge gives a verdict and one cheap test\./);
+    assert.doesNotMatch(text, /A model from another company/);
+    assert.ok(
+      text.includes("The judge did not write your plan. When Grill can tell which AI did, the judge comes from a different company. When it cannot, the verdict says so."),
+      "about should say the judge is from a different company only when Grill can tell which AI wrote the plan",
+    );
+    // The line above carries the condition, so this one does not say different company on its own.
+    assert.match(text, /An outside AI argues the other side\. You decide\. Later you can look back and see how your judgement did\./);
     assert.doesNotMatch(text, /The verdict never becomes the decision\./);
     assert.ok(source.includes(CHAT_KEEPS_CHOSEN), "about source should say what Grill in chat keeps");
     assert.ok(text.includes(CHAT_KEEPS_CHOSEN), "about page should say what Grill in chat keeps");

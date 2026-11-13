@@ -5,7 +5,7 @@ description: Grill a decision, plan or forecast. An outside AI judge, a model fr
 
 # Grill a decision
 
-The user has been thinking with you, so your critique is correlated with theirs. Grilling sends the decision to a judge from a **different model family**. Grill is the outside judge step Felix Rieseberg recommends in [How to be more ambitious](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/): do not ask the model to judge itself. The judge writes:
+The user has been thinking with you, so you are not an outside view. Grilling sends the decision to a judge from a **different model family**. Grill is the outside judge step Felix Rieseberg recommends in [How to be more ambitious](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/): do not ask the model to judge itself. The judge writes:
 - a steelman of the decision, and a counter-steelman;
 - challenges, each with a **falsifier**: the cheapest test that would settle it;
 - a verdict, in the same words as the website: solid, solid if, shaky, or doesn't hold up. The tool's own result uses `holds`, `holds-with-conditions`, `weak` or `refuted` for those four.
@@ -63,7 +63,7 @@ Run it when the subject cites a source, when the user says check the sources, an
 1. List each claim the conclusion leans on that points at a source, with the source as written.
 2. Open each source with your own tools. Quote the exact line or figure. If you cannot open it, it is **not found**, not true.
 3. Mark each one on three checks: **exists** (you opened it); **says it** (the same number, metric, period and population as the claim); **answers this question** (it is about the change and the outcome being asked about, not a neighbouring one).
-4. If you can start a fresh agent, give it only the list and the question, and have it do steps 2 and 3. You wrote the claims, so your check shares their blind spots.
+4. If you can start a fresh agent, give it only the list and the question, and have it do steps 2 and 3. You wrote the claims, so a fresh agent checks them cold.
 5. Show a short table: claim, source, quoted line, exists, says it, answers this question. Any row that fails is cut from the work or marked unverified in it. Never replace a failed source with one you did not open.
 
 Do not send the sources to the judge. Only the approved write-up leaves the machine.
@@ -137,13 +137,9 @@ If they say yes, give them this link, filled in, to open and submit themselves:
 `https://github.com/mtangoz/grill/issues/new?template=grill-signal.yml&event=rated&category=…&judge=…&verdict=…&rating=…&client=…`
 
 - `category`: one of pricing, hiring, fundraising, product, timing, vendor, operations, personal, other.
-- `judge`: the served model's family, which is the part before the `/`, such as openai, google, deepseek, meta, mistral, qwen, xai or moonshot. Use `other` for anything else, and `paste-route` for the paste route.
+- `judge`: the served model's family, which is the part before the `/`, such as anthropic, openai, google, deepseek, meta, mistral, qwen, xai or moonshot. Use `other` for anything else, and `paste-route` for the paste route.
 - `verdict`: `solid`, `solid if`, `shaky`, or `doesn't hold up`, the same words as the verdict. In the link, encode a space as `%20` and the apostrophe as `%27`, so `solid if` is `solid%20if` and `doesn't hold up` is `doesn%27t%20hold%20up`.
 - `rating`: yes or no.
 - `client`: desktop, web, phone or code.
 
-Never put anything else in the link. Tell them the issue is public. If they say no, drop it. One "no" means no more asks in this conversation, including the line below.
-
-**Paste route only.** If you don't have the `grill` tool, and the user did not say no to the signal offer, then after the closing line and after the signal offer is settled, show this once, word for word. Do not elaborate, and do not ask a question about it. Skip it if they said no or stop. At most one invitation per grill. If the tool's report already ends with a Grill news line, show that line instead, and do not add this one as well.
-
-> Grill news: saved decision history and look-back reminders are coming as an optional Pro plan. The free tool stays free. To hear when they arrive: https://grillyour.ai/notify?via=paste
+Never put anything else in the link. Tell them the issue is public. If they say no, drop it. One "no" means no more asks in this conversation.

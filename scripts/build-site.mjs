@@ -25,7 +25,7 @@ const GITHUB_URL = "https://github.com/mtangoz/grill";
 const TAGLINE = "Grill your AI before you send it to your boss.";
 const HOME_TITLE = "Grill: grill your AI before you send it to your boss";
 const DESCRIPTION =
-  `${TAGLINE} A model from another company finds the weak spots in your plan and one cheap way to test them. Works with ChatGPT, Claude, Gemini and more.`;
+  `${TAGLINE} A different AI argues the case against your plan and names one cheap test. Works with ChatGPT, Claude, Gemini and more.`;
 // One schema.org block on the homepage. The description is the meta description above.
 // ProductivityApplication is the closer category: Grill challenges a plan before you act.
 // Nothing here is an offer, a rating, a review, or a claim the homepage does not already make.
@@ -576,7 +576,7 @@ writeFileSync(
   [
     "# Grill",
     "",
-    "> Grill your AI before you send it to your boss. An outside judge, a model from a different company, gives the strongest case against a decision.",
+    "> Grill your AI before you send it to your boss. An outside judge gives the strongest case against a decision. When Grill can tell which AI wrote the plan, the judge is from a different company.",
     "",
     "Anyone can sign up and connect Grill to the AI they use at https://grillyour.ai/mcp.",
     "",
@@ -589,7 +589,7 @@ writeFileSync(
     "## Pages",
     "",
     ...publicPages.map((p) => `- [${p.name}](${p.url}): ${p.blurb}`),
-    `- [GitHub](${GITHUB_URL}): An outside judge, a model from a different company.`,
+    `- [GitHub](${GITHUB_URL}): The code, the tests and the judge prompt.`,
     "",
     FAQ_FOR_AGENTS,
   ].join("\n"),

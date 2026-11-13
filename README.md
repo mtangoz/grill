@@ -6,7 +6,7 @@
 **No key needed:** Anyone can sign up and connect Grill to the AI they use at https://grillyour.ai/mcp.
 **See it first:** [four made-up decisions, grilled](https://grillyour.ai/demo/)
 
-Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, DeepSeek, Gemini, Grok or Muse. It sends the decision as you said it. An outside judge, a model from a different company, comes back with a short note: one verdict line, then one short line naming the question that would change the call when the judge named one, then the sharpest point and one cheap test when the judge named one. The verdict, the point and the test stay within about 50 words. The extra line is at most about 25 words, and it never comes before the verdict. Say more, options, or your call when you want the rest. After that closing line, a two-line run note names the models that answered and how long it took, then one sentence on privacy. Never drop the run note. Never put it before the verdict. A thin line gets a quick take and one question, not a refusal. A record is written only after you answer, and a percent is optional. Grill does not store it on the installed tool.
+Tell the assistant you think with, **"grill this"**: Claude, ChatGPT, Copilot, DeepSeek, Gemini, Grok or Muse. It sends the decision as you said it. An outside judge comes back with a short note: one verdict line, then one short line naming the question that would change the call when the judge named one, then the sharpest point and one cheap test when the judge named one. The verdict, the point and the test stay within about 50 words. The extra line is at most about 25 words, and it never comes before the verdict. Say more, options, or your call when you want the rest. After that closing line, a two-line run note names the models that answered and how long it took, then one sentence on privacy. Never drop the run note. Never put it before the verdict. A thin line gets a quick take and one question, not a refusal. A record is written only after you answer, and a percent is optional. Grill does not store it on the installed tool.
 
 > **Verdict: shaky.** The plan assumes customers stay at the new price, and nothing in it tests that.
 > **Falsifier:** show the new price to one in ten new signups for two weeks, and compare how many start paying.
@@ -28,7 +28,7 @@ When Grill is connected, most apps show a Grill tool call when it runs. If yours
 
 ### Grill in chat
 
-Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/start/). Use the same email each time, the email you signed up with, every time.
+Anyone can sign up. The steps are at [grillyour.ai/start](https://grillyour.ai/start/?ref=readme). Use the same email each time, the email you signed up with, every time.
 
 - **Claude.ai**, verified working. Works on the web, the desktop app and the phone app. The free plan allows only one custom connector. On a Team plan, an owner adds Grill, then each person signs in to Grill themselves. [Add Grill to Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Grill&connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp). Check the name says Grill and the URL says `https://grillyour.ai/mcp`, then Add and Connect, and sign in. Link didn't open? Customize → Connectors → Add custom connector and paste `https://grillyour.ai/mcp`. Asking Claude in a chat to connect it does not work.
 - **ChatGPT**. On chatgpt.com, and in the desktop app where that is supported, in the same account or workspace where you add it. The iPhone and Android apps can't run custom connectors. Plugins → + → Add custom MCP server. Name Grill, server URL `https://grillyour.ai/mcp`, choose OAuth. Tick I understand and want to continue, then Create, then Install, and sign in.
@@ -107,7 +107,7 @@ Claude Code's advisor (`/advisor`) has a stronger Claude look over the work. Tha
 
 Grill is free. On your own key you pay the router. Copy and paste uses the assistants you already have.
 
-Coming later: an optional Pro plan with saved decision history and look-back reminders. The free tool stays free and account-free. [Hear when it's ready](https://grillyour.ai/notify?via=site).
+Saved decisions and look-back reminders are free today with [Grill in your chat](https://grillyour.ai/start/?ref=readme). Paid plans are off. The free tool stays free and account-free.
 
 ## Privacy
 

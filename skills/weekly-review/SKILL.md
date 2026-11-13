@@ -74,7 +74,7 @@ For each NEW decision without one, ask: *"What do you expect to happen, by when,
 
 For each decision marked for a challenge, use the `grill` skill. It writes the subject, gets the user's OK, sends it to the outside judge, and relays the result.
 
-**Never present your own critique as the outside judge's.** You are the model the user has been thinking with, so your critique is correlated with theirs. If asked for your view, label it "same-model critique".
+**Never present your own critique as the outside judge's.** You are the model the user has been thinking with, so you are not an outside view. If asked for your view, label it "same-model critique".
 
 ## Step 5: Record
 

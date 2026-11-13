@@ -19,14 +19,14 @@ const QUESTIONS = [
 ];
 
 const ANSWERS = [
-  "A pre-mortem imagines the plan has already failed and asks why. A decision matrix scores options on criteria you pick. Grill sends the decision, in your words, to a model from a different company. You get a verdict, the sharpest challenge, one cheap test, and the one question whose answer would change the call. You still decide.",
-  "Asking the same assistant to critique its own draft uses the same company, and often the same model, that wrote it. Grill’s judge is from a different company, so it does not share that blind spot. A second pass in the same chat is a same-model check. It is not a grill.",
-  "A crux finder, such as Cruxes at cruxes.io, looks for the one question that would change a decision, and it can quote your own words. Grill does that too, in one short line after the verdict. Grill also gives a verdict from a different company and one cheap test. Cruxes is built for a team or an agent, with a decision owner, and it runs in Claude Code, Claude and Google Docs. Grill is one person and one decision, and the call stays yours. They overlap, and neither replaces the other.",
+  "A pre-mortem imagines the plan has already failed and asks why. A decision matrix scores options on criteria you pick. Grill sends the decision, in your words, to an outside judge. When Grill can tell which AI wrote the plan, the judge is from a different company. You get a verdict, the sharpest challenge, one cheap test, and the one question whose answer would change the call. You still decide.",
+  "Asking the same assistant to critique its own draft uses the same company, and often the same model, that wrote it. Grill’s judge is from a different company when Grill can tell which AI wrote it. A second pass in the same chat is a same-model check. It is not a grill.",
+  "A crux finder, such as Cruxes at cruxes.io, looks for the one question that would change a decision, and it can quote your own words. Grill does that too, in one short line after the verdict. Grill also gives a verdict from an outside judge and one cheap test. Cruxes is built for a team or an agent, with a decision owner, and it runs in Claude Code, Claude and Google Docs. Grill is one person and one decision, and the call stays yours. They overlap, and neither replaces the other.",
   "Live. Copy and paste into ChatGPT, Copilot, DeepSeek, Gemini, Grok or Muse. No install, no key. The Claude skill, Claude Desktop and Claude Code. Cursor, VS Code and npx. Anyone can sign up for Grill in chat. Claude.ai, ChatGPT and Grok Bot are verified working. In Claude, open Customize → Connectors → Add custom connector and paste https://grillyour.ai/mcp. Asking Claude in a chat to connect it does not work.",
   "Preview. Adding Grill as a connector inside Gemini or Muse is not verified. You can try it. Gemini: US only, a personal Google account, Keep Activity on. Muse: the steps are in the README.",
   "Planned. No further way in is listed here. The free tool stays free.",
   "If you say yes to keeping records, choices you make are saved at grillyour.ai/decisions (Your grills), with a 14-day look-back and an optional calendar link. You can also say \"look back\" in chat. It stays private, and off until you opt in.",
-  "No benchmarks are published. Examples on this site use invented numbers. They are not a benchmark.",
+  "No benchmarks are published. We have not yet measured a judge from a different company against the same model starting fresh. Examples on this site use invented numbers. They are not a benchmark.",
 ];
 
 function textOf(html) {
