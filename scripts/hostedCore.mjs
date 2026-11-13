@@ -737,6 +737,39 @@ export const FUNNEL_KEYS = Object.freeze({
   lookbacksDone: "grill:metric:funnel_lookbacks_done",
 });
 
+/**
+ * Gap between a /start load and a grill. Integers only. A retry counts again.
+ * Not a person, and not a list of them.
+ */
+export const MCP_CONNECT_KEY = "grill:metric:mcp_connect";
+export const MCP_SIGNED_IN_KEY = "grill:metric:mcp_signed_in";
+/** An initialize is a short JSON-RPC message. A larger body is not counted, and it is not read. */
+export const MCP_CONNECT_BODY_MAX = 8192;
+
+/**
+ * Streamable HTTP requires both types. A scanner that only asks for JSON,
+ * or that sends no Accept header, does not match.
+ */
+export function acceptsMcpStream(header) {
+  const types = String(header || "")
+    .toLowerCase()
+    .split(",")
+    .map((part) => part.split(";")[0].trim());
+  return types.includes("application/json") && types.includes("text/event-stream");
+}
+
+/** True when the body is one JSON-RPC initialize. The body is not kept. */
+export function isMcpInitialize(raw) {
+  if (typeof raw !== "string" || raw.length === 0 || Buffer.byteLength(raw) > MCP_CONNECT_BODY_MAX) return false;
+  let msg;
+  try {
+    msg = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  return Boolean(msg) && typeof msg === "object" && !Array.isArray(msg) && msg.method === "initialize";
+}
+
 /** Saved line in chat. Points at Your grills. No confidence nag, and nothing about what is left this month. */
 export function savedConfirmation(review) {
   const day = formatDay(review);

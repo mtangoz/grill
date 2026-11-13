@@ -387,6 +387,8 @@ const FAMILY_ROWS = {
   "grill:metric:outside": "Outside-use counters",
   "grill:metric:start_views": "`/start` source",
   "grill:metric:start_ref": "`/start` source",
+  "grill:metric:mcp_connect": "Connect attempt and signed-in connect",
+  "grill:metric:mcp_signed_in": "Connect attempt and signed-in connect",
   "grill:metric:paid_intent_pricing": "Paid-intent counts",
   "grill:metric:paid_intent_checkout": "Paid-intent counts",
   "grill:metric:paid_intent_notify": "Paid-intent counts",

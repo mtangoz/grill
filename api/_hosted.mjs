@@ -106,6 +106,11 @@ import {
   dueForLookBack,
   earlyRead,
   FUNNEL_KEYS,
+  MCP_CONNECT_BODY_MAX,
+  MCP_CONNECT_KEY,
+  MCP_SIGNED_IN_KEY,
+  acceptsMcpStream,
+  isMcpInitialize,
   hasLookback,
   dueReminderLine,
   newCalendarToken,
@@ -2565,6 +2570,50 @@ export async function handleFeedback(request, deps) {
   return new Response(null, { status: 204, headers });
 }
 
+/**
+ * A chat app's first POST, before sign-in. The body is read only when the
+ * Accept header is already the MCP pair, and only up to a short cap. The
+ * counter is one INCR. A failure here still returns the same 401.
+ */
+async function mcpConnectBody(request) {
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MCP_CONNECT_BODY_MAX) return "";
+  const body = request.body;
+  if (!body) return "";
+  const reader = body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MCP_CONNECT_BODY_MAX) return "";
+      chunks.push(Buffer.from(value));
+    }
+  } catch {
+    return "";
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // The bytes already copied are the whole prefix.
+    }
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function noteMcpConnect(request, deps) {
+  try {
+    if (!acceptsMcpStream(request.headers.get("accept"))) return;
+    const raw = await mcpConnectBody(request);
+    if (!isMcpInitialize(raw)) return;
+    await countFunnel(deps, MCP_CONNECT_KEY);
+  } catch {
+    // A missed counter is not a blocked connect. The 401 is unchanged.
+  }
+}
+
 export async function handleMcp(request, deps) {
   const id = requestId();
   const userAgent = String(request.headers.get("user-agent") || "").replace(/[\r\n]+/g, " ").slice(0, 300);
@@ -2581,7 +2630,10 @@ export async function handleMcp(request, deps) {
     }
     if (request.method !== "POST") return unauthorized(origin);
     const who = await identity(request, deps, { audience: true });
-    if (who.error) return who.error;
+    if (who.error) {
+      await noteMcpConnect(request, deps);
+      return who.error;
+    }
     const raw = await request.text();
     if (raw.length > 1_500_000) {
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid request" } }), {
@@ -2609,6 +2661,7 @@ export async function handleMcp(request, deps) {
     if (rpcId === undefined || rpcId === null) return new Response(null, { status: 202 });
     if (msg.method === "initialize") {
       rememberClientCompany(who.payload, msg.params, userAgent);
+      await countFunnel(deps, MCP_SIGNED_IN_KEY);
       return rpcResponse(
         rpcId,
         {

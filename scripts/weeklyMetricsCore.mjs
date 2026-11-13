@@ -2,6 +2,7 @@
  * Weekly counts that are not users. Paid-intent is views and Notify me clicks while paid
  * plans are off. Free-to-paid is accounts that reached a paid checkout, once each.
  * Waitlist is sign-ups. Founding members are how many of the 100 numbers are assigned. Start views and tagged /start?ref= counts are top-of-funnel, not users.
+ * Connect attempts and signed-in connects are MCP initialize calls between /start and a grill. They are not users.
  * The keys are the same strings the writers use. This file does not
  * import those writers, so the report can ship on its own.
  */
@@ -27,6 +28,9 @@ export const IMPACT_EMAIL_KEYS = Object.freeze({
   unsubscribes: "grill:metric:impact_email_unsubscribes",
 });
 export const START_VIEWS_KEY = "grill:metric:start_views";
+/** Same strings as hostedCore. An initialize with no sign-in, then one with a sign-in. */
+export const MCP_CONNECT_KEY = "grill:metric:mcp_connect";
+export const MCP_SIGNED_IN_KEY = "grill:metric:mcp_signed_in";
 /** Fixed channel labels for /start?ref=. No SCAN. Unknown tags stay unread. */
 export const START_REF_LABELS = Object.freeze(["home", "askgrill", "hn", "smithery", "demo", "x", "readme", "notify", "data-flow", "how-we-test"]);
 /**
@@ -72,6 +76,8 @@ export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch, 
     founding: await n(FOUNDING_COUNT_KEY),
     startViews: await n(START_VIEWS_KEY),
     startRefs,
+    connectAttempts: await n(MCP_CONNECT_KEY),
+    signedInConnects: await n(MCP_SIGNED_IN_KEY),
     grills: await n(FUNNEL_KEYS.grills),
     choices: await n(FUNNEL_KEYS.choices),
     lookbacksSet: await n(FUNNEL_KEYS.lookbacksSet),
@@ -110,6 +116,8 @@ export function weeklyMetricLines(report) {
     `founding members: ${foundingShown(report)}/100`,
     `start views: ${report.startViews ?? 0}`,
     startRefLine(report.startRefs),
+    `connect attempts: ${report.connectAttempts ?? 0}`,
+    `signed-in connects: ${report.signedInConnects ?? 0}`,
     `grills: ${report.grills ?? 0}`,
     `choices logged: ${report.choices ?? 0}`,
     `look-backs set: ${report.lookbacksSet ?? 0}`,
