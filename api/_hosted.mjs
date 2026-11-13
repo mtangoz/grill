@@ -1561,34 +1561,41 @@ function tokenClientId(payload) {
   return typeof payload?.client_id === "string" ? payload.client_id : typeof payload?.azp === "string" ? payload.azp : "";
 }
 
-/** Which client a handshake belongs to: the token's client id and the User-Agent. */
+/**
+ * Which client a handshake belongs to: the token's client id and the User-Agent. Empty when
+ * the request has neither. Two clients like that under one sign-in cannot be told apart, so
+ * nothing is kept for them and nothing kept is read for them.
+ */
 function clientHintKey(payload, userAgent) {
-  return JSON.stringify([tokenClientId(payload), String(userAgent || "")]);
+  const clientId = tokenClientId(payload);
+  const agent = String(userAgent || "");
+  return clientId || agent ? JSON.stringify([clientId, agent]) : "";
 }
 
 function clientFromToken(payload, params, deps) {
   const sub = typeof payload?.sub === "string" ? payload.sub : "";
   const userAgent = deps?.userAgent || "";
+  const key = clientHintKey(payload, userAgent);
   return sourceAppFromClient({
     redirectUri: typeof payload.redirect_uri === "string" ? payload.redirect_uri : "",
     clientId: tokenClientId(payload),
     clientInfo: clientInfoOf(params),
     userAgent,
-    remembered: sub ? clientHintBySub.get(sub)?.get(clientHintKey(payload, userAgent)) : null,
+    remembered: sub && key ? clientHintBySub.get(sub)?.get(key) : null,
   });
 }
 
 /** Keep the initialize handshake's company for this same client's later tool calls in this process. */
 function rememberClientCompany(payload, params, userAgent) {
   const sub = typeof payload?.sub === "string" ? payload.sub : "";
-  if (!sub) return;
+  const key = clientHintKey(payload, userAgent);
+  if (!sub || !key) return;
   const hint = sourceAppFromClient({
     redirectUri: typeof payload?.redirect_uri === "string" ? payload.redirect_uri : "",
     clientId: tokenClientId(payload),
     clientInfo: clientInfoOf(params),
     userAgent,
   });
-  const key = clientHintKey(payload, userAgent);
   const mine = clientHintBySub.get(sub) || new Map();
   mine.delete(key);
   if (hint.company) {

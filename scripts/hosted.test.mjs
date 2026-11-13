@@ -910,13 +910,39 @@ describe("hosted Grill", { concurrency: false }, () => {
             method: "initialize",
             params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "Antigravity", version: "1" } },
           },
-          { token: antigravity },
+          { token: antigravity, userAgent: "node" },
         );
         assert.equal(init.json.result.serverInfo.name, "grill");
-        const afterInit = await postMcp(ctx, grill(2), { token: antigravity, deps });
+        // The client is known again on its later calls by its User-Agent (or by a client id).
+        const afterInit = await postMcp(ctx, grill(2), { token: antigravity, userAgent: "node", deps });
         assert.equal(afterInit.json.result.isError, false, textOf(afterInit.json));
         assert.equal(fake.seen.chat.at(-1).body.model, "openrouter/auto");
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"]);
+
+        // A client that sends no User-Agent and carries no client id cannot be known again, so
+        // its handshake is not kept. Another client like it would otherwise get its company.
+        const bare = signJwt(claims({ sub: "user_bare" }));
+        await postMcp(
+          ctx,
+          {
+            jsonrpc: "2.0",
+            id: 8,
+            method: "initialize",
+            params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "Antigravity", version: "1" } },
+          },
+          { token: bare },
+        );
+        const bareCall = await postMcp(ctx, grill(9), { token: bare, deps });
+        assert.equal(bareCall.json.result.isError, false, textOf(bareCall.json));
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
+        assert.ok(textOf(bareCall.json).includes(INDEPENDENCE_NOT_VERIFIED), textOf(bareCall.json));
+        // The hosted notes say the same.
+        assert.ok(
+          readFileSync(join(ROOT, "docs/HOSTED.md"), "utf8").includes(
+            "A client that sends no User-Agent and has no OAuth client id is not kept at all, because Grill could not tell it from another client of the same person.",
+          ),
+          "docs/HOSTED.md",
+        );
 
         const discovery = signJwt(claims({ sub: "user_discovery" }));
         const viaAgent = await postMcp(ctx, grill(3), { token: discovery, userAgent: "Google-Discovery-Engine/1.0", deps });
@@ -1182,6 +1208,23 @@ describe("hosted Grill", { concurrency: false }, () => {
           "",
           { handshake: "gemini-cli", handshakeClaims: { client_id: "client_one" }, handshakeAgent: "node", userAgent: "node" },
         ],
+        // Two clients that both send no User-Agent and carry no client id cannot be told apart.
+        // Nothing is kept for them, so one is never given the company the other named.
+        ["no User-Agent and no client id, after a client like that named itself", NONE, "", undefined, [], "none", named("OpenAI"), "", { handshake: "gemini-cli" }],
+        ["no User-Agent and no client id, Cursor by name after a client like that named itself", NONE, "Cursor", undefined, [], "none", plain, "", { handshake: "gemini-cli" }],
+        // A client id alone is enough to know the client again.
+        ["no User-Agent, the same client id as the handshake", { client_id: "client_one" }, "", undefined, ["google/*"], "google", "", "", { handshake: "gemini-cli" }],
+        [
+          "no User-Agent, a client id the handshake did not have",
+          { client_id: "client_two" },
+          "",
+          undefined,
+          [],
+          "none",
+          named("OpenAI"),
+          "",
+          { handshake: "gemini-cli", handshakeClaims: {} },
+        ],
       ];
       try {
         for (const [label, claim, clientName, author, excluded, auditCompany, line, served = "", earlier = null] of rows) {
@@ -1336,12 +1379,12 @@ describe("hosted Grill", { concurrency: false }, () => {
         await postMcp(
           ctx,
           { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "gemini-cli", version: "1" } } },
-          { token },
+          { token, userAgent: "node" },
         );
         await postMcp(
           ctx,
           { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "grill", arguments: { subject: decision, keep_records: false, quality_check: false } } },
-          { token, deps },
+          { token, deps, userAgent: "node" },
         );
         assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["google/*"], "the connector remembers the handshake");
         const viaPage = await page(ctx, "/judge", { q: decision });
