@@ -116,6 +116,32 @@ On `/contribute`, shipped changes people asked for are listed from `data/contrib
 
 Enforced by: [scripts/contributorsCore.mjs](../scripts/contributorsCore.mjs), test "never renders a name when consent is not exactly true" in [scripts/contributors.test.mjs](../scripts/contributors.test.mjs).
 
+## A public page
+
+A public page is one file in `site/` and one `writePage` call in the build script. It opens with its `<title>`, and the title has the word Grill in it. It has one `<h1>`. It borrows the home page's styles, and has no `<style>` and no `<script>` of its own. Its address is one segment with no dot, such as `/how-we-test/`, so the routes that already exist serve it and its Markdown twin. Registering it puts it in the sitemap and in `llms.txt`. The steps are in [CONTRIBUTING.md](../CONTRIBUTING.md), under "Add a page".
+
+Enforced by: [scripts/build-site.mjs](../scripts/build-site.mjs) (`writePage`), test "names Grill in the title of every sitemap page" in [scripts/site.test.mjs](../scripts/site.test.mjs), test "publishes one SoftwareApplication JSON-LD block and no other script" in [scripts/site.test.mjs](../scripts/site.test.mjs), test "writes a markdown twin for every sitemap page, from that page's own words" in [scripts/site.test.mjs](../scripts/site.test.mjs) and test "negotiates markdown for every sitemap page and adds Vary: Accept to the HTML" in [scripts/site.test.mjs](../scripts/site.test.mjs).
+
+No page has an em dash or an en dash. Every page keeps the footer span that says Made at Hold. On a deploy the build writes the live commit into that span, and the build stops if a page has lost it.
+
+Enforced by: test "no page source has an em dash or an en dash, and every one keeps the Hold footer span" in [scripts/site.test.mjs](../scripts/site.test.mjs), test "names the live commit in every public page footer when the deploy provides one, and nothing otherwise" in [scripts/site.test.mjs](../scripts/site.test.mjs) and test "when any page has lost the footer span the live commit is written into" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs).
+
+A number on a page comes from a committed file and is written in when the site is built. It is not typed into the page. `/how-we-test/` shows [data/results.json](../data/results.json) through one marker, and the build stops if the marker or the file is wrong. Counts go in a list, not a table: a list reads well on a phone and in the Markdown twin. A count is written "2 of 6". A rate is shown only when 10 cases or more are behind it.
+
+Enforced by: [scripts/resultsCore.mjs](../scripts/resultsCore.mjs) (`renderResults`), test "is a script-free prose page in the shared chrome, with one marker for the results" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs), test "when the results marker is missing, or is there twice" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs), test "when the results file breaks a rule of its shape, and it names where" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs) and test "shows a rate only when 10 cases or more are behind it, and refuses one under that" in [scripts/resultsCore.test.mjs](../scripts/resultsCore.test.mjs).
+
+A page about a measurement opens with what has not been measured. A count that looks bad sits in the same list as one that looks good, in the same markup. The page ends with one call to action: a link to `/start/` that carries the page's own name, such as `/start/?ref=how-we-test`.
+
+Enforced by: test "opens with what has not been measured yet, and the description, the blurb and llms.txt lead with it" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs), test "gives the false alarms and the quotes not found the same weight as the catches" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs) and test "ends with exactly one call to action, tagged for this page" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs).
+
+A sentence that says the judge is from a different company keeps its condition: when Grill can tell which company wrote the plan. A page does not carry a claim about how good the judge is that has not been measured.
+
+Enforced by: test "states the rule in its conditional shape, and no sentence says different company without the condition" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs) and test "uses none of the words Grill does not say, promises no date, and shows no rate sign anywhere" in [scripts/howWeTest.test.mjs](../scripts/howWeTest.test.mjs).
+
+A new page is looked at 390 px wide, in light and in dark, before it ships.
+
+Enforced by: prompt text + review.
+
 ## No script
 
 The decisions page, the account page, the judge page and the dead-end pages ship no `<script>`. The shared response headers are `WELCOME_HEADERS` in [api/_pro.mjs](../api/_pro.mjs): a strict content security policy, no third-party script, no analytics.
