@@ -3972,6 +3972,8 @@ describe("chat look-back when more than one decision is due", { concurrency: fal
     }
   });
 
+  // The name is kept because other files cite it. The one-decision reply is what it always was,
+  // except that it no longer says nothing is stored when the answer was saved.
   it("takes the decision's title in records, and then gives the reply one due decision has always had", async () => {
     const fake = await startFakeOpenRouter();
     try {
@@ -3984,7 +3986,13 @@ describe("chat look-back when more than one decision is due", { concurrency: fal
       // Named by the label the list showed. A plain sentence is enough: one decision is in view.
       const happened = "The move took four weekends, not two.";
       const named = await look(ctx, token, { records: "Move office (due 15 Jan)", happened });
-      assert.equal(named, `${lookBack({ records: blocks["Move office"], happened })}\n\nSaved with your decision record.`);
+      // The reading is the one-decision reading. Its words about storing nothing are left out,
+      // because this answer was saved.
+      assert.equal(
+        named,
+        ["## Look back", "", "Those notes did not say whether each call came true, so nothing was scored.", "", "You were 60% sure. What happened?", "", "Saved with your decision record."].join("\n"),
+      );
+      assert.equal(named, `${lookBack({ records: blocks["Move office"], happened }).replace("Nothing is stored. Those notes", "Those notes")}\n\nSaved with your decision record.`);
       let rows = await exported(ctx);
       assert.equal(rowFor(rows, "Move office").lookback.happened, happened);
       assert.equal(rowFor(rows, "Hire contractor").lookback, null);
@@ -3996,8 +4004,14 @@ describe("chat look-back when more than one decision is due", { concurrency: fal
       assert.equal(asked, "You were 60% sure. What happened?");
       const answer = "came_true: yes\nhappened: The contractor shipped.";
       const answered = await look(ctx, token, { happened: answer });
-      assert.equal(answered, `${lookBack({ records: blocks["Hire contractor"], happened: answer })}\n\nSaved with your decision record.`);
-      assert.match(answered, /^## Look back\n\nNothing is stored\. This reading stays in the chat\.\n\n\*\*Hire contractor\.\*\*/, "the one-decision reply is unchanged, sentence for sentence");
+      const pasteReading = lookBack({ records: blocks["Hire contractor"], happened: answer });
+      assert.match(pasteReading, /^## Look back\n\nNothing is stored\. This reading stays in the chat\.\n\n\*\*Hire contractor\.\*\*/);
+      assert.equal(
+        answered,
+        `${pasteReading.replace("Nothing is stored. This reading stays in the chat.\n\n", "")}\n\nSaved with your decision record.`,
+        "the one-decision reply is the paste reading, sentence for sentence, without the words about storing nothing",
+      );
+      assert.match(answered, /^## Look back\n\n\*\*Hire contractor\.\*\*/);
       rows = await exported(ctx);
       assert.equal(rowFor(rows, "Hire contractor").lookback.happened, "came_true: yes happened: The contractor shipped.");
       assert.equal(done(ctx), "2");
@@ -4005,6 +4019,72 @@ describe("chat look-back when more than one decision is due", { concurrency: fal
       // A name that fits no saved decision changes nothing.
       const missed = await look(ctx, token, { records: "Open a second shop", happened: "came_true: yes" });
       assert.equal(missed, "No saved decision matched that name.");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("does not say nothing is stored when the answer was saved on the one decision in view, and still says it when nothing was saved", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const STORES_NOTHING = "Nothing is stored. This reading stays in the chat.\n\n";
+      const SAVED = "Saved with your decision record.";
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      await decide(ctx, fake, token, "Hire contractor", JAN, { confidence: "60%" });
+      await decide(ctx, fake, token, "Move office", JAN, { confidence: "60%" });
+      const blocks = Object.fromEntries((await exported(ctx)).map((row) => [row.block.match(/^title: (.*)$/m)[1], row.block]));
+
+      // One decision named, and a note that cannot be scored. The note is saved, and the reply says only that.
+      const note = "Still waiting on the second invoice.";
+      const unscored = await look(ctx, token, { records: "Move office (due 15 Jan)", happened: note });
+      assert.equal(
+        unscored,
+        ["## Look back", "", "Those notes did not say whether each call came true, so nothing was scored.", "", "You were 60% sure. What happened?", "", SAVED].join("\n"),
+      );
+      assert.equal(rowFor(await exported(ctx), "Move office").lookback.happened, note);
+
+      // One decision left due, and an answer that can be scored.
+      const answer = "came_true: yes\nhappened: The contractor shipped.";
+      const paste = lookBack({ records: blocks["Hire contractor"], happened: answer });
+      assert.ok(paste.includes(STORES_NOTHING), "the paste route stores nothing, and its reading says so");
+      const scored = await look(ctx, token, { happened: answer });
+      assert.equal(scored, `${paste.replace(STORES_NOTHING, "")}\n\n${SAVED}`);
+      assert.equal(rowFor(await exported(ctx), "Hire contractor").lookback.happened, "came_true: yes happened: The contractor shipped.");
+
+      // A pasted record that is one of this account's saved decisions: the answer is saved on it.
+      const second = "came_true: no\nhappened: The contractor left in March.";
+      const pastedSaved = await look(ctx, token, { records: blocks["Hire contractor"], happened: second });
+      assert.equal(pastedSaved, `${lookBack({ records: blocks["Hire contractor"], happened: second }).replace(STORES_NOTHING, "")}\n\n${SAVED}`);
+      assert.equal(rowFor(await exported(ctx), "Hire contractor").lookback.happened, "came_true: no happened: The contractor left in March.");
+
+      // Every reply that says an answer was saved says nothing about storing nothing.
+      for (const reply of [unscored, scored, pastedSaved]) {
+        assert.ok(reply.endsWith(`\n\n${SAVED}`), reply);
+        assert.doesNotMatch(reply, /Nothing is stored|stays in the chat|stores nothing/i, reply);
+      }
+
+      // A pasted record this account never saved has nowhere to be saved. The reading is the
+      // paste route's own, and what it says about storing nothing is true.
+      const elsewhere = world();
+      await decide(elsewhere, fake, token, "Open a second shop", JAN, { confidence: "60%" });
+      const foreign = (await exported(elsewhere))[0].block;
+      const before = JSON.stringify(await exported(ctx));
+      const notSaved = await look(ctx, token, { records: foreign, happened: "came_true: yes" });
+      assert.equal(notSaved, lookBack({ records: foreign, happened: "came_true: yes" }));
+      assert.ok(notSaved.includes(STORES_NOTHING), notSaved);
+      assert.equal(notSaved.includes(SAVED), false);
+      assert.equal(JSON.stringify(await exported(ctx)), before, "no record changed");
+
+      // An account that keeps no records: the same.
+      const off = world();
+      const first = await postMcp(off, call(1, "grill", { subject: "Decision: wait a week.", keep_records: false, quality_check: false }), { token, deps: { ...judgeDeps(fake), waitMs: 20_000, now: JAN } });
+      assert.equal(first.json.result.isError, false, textOf(first.json));
+      const offReply = await look(off, token, { records: foreign, happened: "came_true: yes" });
+      assert.equal(offReply, lookBack({ records: foreign, happened: "came_true: yes" }));
+      assert.ok(offReply.includes(STORES_NOTHING), offReply);
+      assert.equal(offReply.includes(SAVED), false);
+      assert.deepEqual(await exported(off), []);
     } finally {
       await fake.close();
     }

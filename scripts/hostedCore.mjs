@@ -1299,7 +1299,7 @@ function lookbackLines(rows) {
 
 export const LOOKBACK_ASK_WHICH = "Say which one, and what happened.";
 export const LOOKBACK_NOT_NAMED = "Nothing was saved. That answer did not name one of these decisions. Which one is it about?";
-/** What the one-decision reply has always ended with. */
+/** What the one-decision reply ends with when the answer was saved. */
 export const LOOKBACK_SAVED = "Saved with your decision record.";
 
 /** Several saved decisions are in view and nothing was said yet: one line each, by name. */
@@ -1322,6 +1322,16 @@ function readingForSaved(reading, pasted) {
   const text = String(reading || "").replace(PASTE_STORES_NOTHING, "");
   if (text.includes(PASTE_NOT_SCORED)) return pasted ? text.replace(PASTE_NOT_SCORED, NOT_SCORED).trim() : `## Look back\n\n${NOT_SCORED}`;
   return (pasted ? text : text.split("\nStill to answer:")[0]).trim();
+}
+
+/**
+ * The reply after an answer was saved on the one saved decision in view. It is the paste
+ * route's reading, sentence for sentence, without that route's words about storing nothing.
+ * The answer was stored, so the reply must not say otherwise. Nothing else is changed.
+ */
+export function lookbackSavedOneText(reading) {
+  const text = String(reading || "").replace(PASTE_STORES_NOTHING, "").replace(PASTE_NOT_SCORED, NOT_SCORED);
+  return `${text}\n\n${LOOKBACK_SAVED}`;
 }
 
 /**

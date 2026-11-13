@@ -162,11 +162,11 @@ import {
   recordsForLookBack,
   lookBackTargets,
   lookbackAskText,
+  lookbackSavedOneText,
   lookbackSavedText,
   lookbackSaves,
   lookbackWhichText,
   setLookback,
-  LOOKBACK_SAVED,
   PENDING_KEEP_DAYS,
   waitingGrillLine,
   WAITING_GRILL_HOW,
@@ -2119,9 +2119,10 @@ async function callLookBack(args, account, deps) {
   }
   if (!several || pasted) {
     const text = lookBack({ records: recordText, happened });
+    // Nothing was saved: the paste route's reading as it is, and it says nothing is stored.
     if (!savedRows.length) return toolText(text);
-    // One decision: the reply it has always had.
-    if (!several) return toolText(`${text}\n\n${LOOKBACK_SAVED}`);
+    // One decision, and its answer was saved: the same reading without those words.
+    if (!several) return toolText(lookbackSavedOneText(text));
     return toolText(lookbackSavedText({ reading: text, saved: savedRows, pasted: true }));
   }
   // Read back only the decisions the answer named, each against its own lines.
