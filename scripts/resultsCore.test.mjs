@@ -1,7 +1,7 @@
 import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -79,6 +79,16 @@ const firstRun = () => ({
 });
 
 const firstHoldout = () => ({ id: "v1", status: "run", date: "2026-11-09", decided: 15, candidate_wins: 9, rule_on: false });
+
+/** The note committed beside the cases when a holdout has been measured. A holdout is measured once. */
+const spentNotePath = (id) => `evals/verdict-quality/holdout-${id}-spent.txt`;
+
+/** What a spent note says was measured: the day, the decided pairs, and how many the candidate won. */
+function spentNote(text) {
+  const said = /^Measured once on (\d{4}-\d{2}-\d{2}): the candidate won (\d+) and lost (\d+)\b/m.exec(text);
+  if (!said) return null;
+  return { date: said[1], decided: Number(said[2]) + Number(said[3]), candidate_wins: Number(said[2]) };
+}
 
 /** A valid file, built here so the refusal tests do not move when the committed file grows. */
 const seed = () => ({
@@ -214,6 +224,63 @@ describe("data/results.json", () => {
     );
     for (const day of ["2026-11-02", "2026-11-09"]) assert.ok(file.regression.not_measured.includes(day), day);
     for (const day of ["2026-10-19", "2026-10-26"]) assert.ok(file.regression.skipped_green.includes(day), day);
+  });
+
+  // Three parts of the file have no committed count a test could read them from, the way `users`
+  // is read from docs/STRATEGY.md. Each is held here at what is true today. Each comment says
+  // what a pull request that changes the part commits with it. Without this, a changed count
+  // in any of the three reached /how-we-test/ with every test passing.
+  it("keeps the signals and account look-backs at what is true today, and each holdout as its spent note has it, not run when it has none", () => {
+    const file = committed();
+
+    // Signals. A signal is a public GitHub issue filed through the signal form. The two counts
+    // are the ones the monthly learning report (`node scripts/signals.mjs`) gives in its line
+    // "<n> signals (<n> rated, <n> resolved)." The report for 2026-11 reads 0, 0 and 0. No file
+    // in the repository holds the count, so it is held here. A pull request that changes it
+    // changes this line with it and says which report the counts were read from. A resolved
+    // signal is also an evidenced look-back, so the count in docs/STRATEGY.md moves in the same
+    // pull request, or the last check here fails.
+    assert.deepEqual(file.signals, { rated: 0, resolved: 0 });
+    assert.ok(
+      read("docs/PRINCIPLES.md").includes("The count is public signal issues with `Event: resolved`, plus outreach replies that confirm a look-back."),
+      "docs/PRINCIPLES.md still counts a resolved signal as an evidenced look-back",
+    );
+    assert.ok(file.signals.resolved <= file.users.evidenced_lookbacks, "resolved signals cannot outnumber evidenced look-backs: each one is an evidenced look-back");
+
+    // Holdouts. A holdout is measured once, and the pull request that measures it commits a note
+    // beside the cases: evals/verdict-quality/holdout-<id>-spent.txt, with the line "Measured
+    // once on <day>: the candidate won <n> and lost <m>". With no note the holdout reads "not
+    // run" here. With a note, the day and the counts here are the note's. The note does not say
+    // whether the rule was turned on, so `rule_on` for a new run is checked by the reviewer.
+    for (const id of HOLDOUT_IDS) {
+      const holdout = file.holdouts.find((row) => row.id === id);
+      if (!existsSync(join(ROOT, spentNotePath(id)))) {
+        assert.deepEqual(holdout, { id, status: "not-run" }, `holdout ${id} has no ${spentNotePath(id)}, so it has not been run`);
+        continue;
+      }
+      const said = spentNote(read(spentNotePath(id)));
+      assert.ok(said, `${spentNotePath(id)} says "Measured once on <day>: the candidate won <n> and lost <m>"`);
+      assert.ok(holdout, `holdout ${id} has a spent note, so the file lists it`);
+      assert.deepEqual(holdout, { id, status: "run", ...said, rule_on: holdout.rule_on });
+    }
+    // The first holdout's note is read, so the branch above for a measured holdout is the one it took.
+    assert.deepEqual(spentNote(read(spentNotePath("v1"))), { date: "2026-11-09", decided: 15, candidate_wins: 9 });
+    // The reading of a note: a second note in the same form is read, and one in another form is not.
+    assert.deepEqual(spentNote("Holdout v2 is spent.\nMeasured once on 2026-12-01: the candidate won 16 and lost 7.\n"), {
+      date: "2026-12-01",
+      decided: 23,
+      candidate_wins: 16,
+    });
+    assert.equal(spentNote("Holdout v2 is spent. The candidate won most pairs.\n"), null);
+
+    // Look-backs saved on Grill accounts. No reading of that count is committed anywhere in the
+    // repository, so the file says "not-counted" and the page says "Not counted yet". A pull
+    // request that publishes a count commits the reading it was taken from, with its day, in
+    // docs/STRATEGY.md, the way the real-user count is written there. It puts in place of this
+    // line a check that the file and that reading agree, like the check on `users` below.
+    // On its own, the file already refuses a count taken from fewer than 10 look-backs.
+    assert.deepEqual(file.account_lookbacks, { status: "not-counted" });
+    assert.equal(MIN_ACCOUNT_DENOMINATOR, 10);
   });
 
   it("lists every weekly run from before the first measured run, so no week reads as one that measured", () => {
