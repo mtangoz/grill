@@ -128,6 +128,16 @@ with `JUDGE_FIXTURE`. Only a weekly or manual run of `main` belongs in `data/res
 summary carries the same counts: the number of cases that reached a judge, a count beside each
 gated rate, and the cases by judge company.
 
+**To publish a run's counts,** download `latest.public.json` from the run's `eval-results`
+artifact and run `node scripts/results.mjs merge-run <path to that file>`. The run prints the same
+command when it writes the file. The command checks the block, adds the run to `data/results.json`
+and checks the whole file before it writes. It refuses a run that is already there. It also refuses
+a run whose commit cannot be reached from the commit you have checked out, which keeps a pull
+request's run out. The file keeps the first measured run and the 11 latest after it.
+`node scripts/results.mjs check` checks the file and changes nothing.
+
+The page that shows these counts is [grillyour.ai/how-we-test](https://grillyour.ai/how-we-test/).
+
 **The eval always runs the product path.** Each case goes to the judge the way a person's grill
 does: through OpenRouter's Auto Router, with today's instructions. `scripts/eval.mjs` removes
 `JUDGE_MODEL` (a pinned judge) and `GRILL_JUDGE_COMMIT` (the candidate rule) from the judge's

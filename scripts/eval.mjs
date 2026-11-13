@@ -321,6 +321,7 @@ if (heldOut) {
     validateRegressionRun(JSON.parse(text));
     writeFileSync(publicPath, text, "utf8");
     console.error(`[eval] public block written to ${publicPath}`);
+    console.error(`[eval] to publish these counts: node scripts/results.mjs merge-run ${publicPath}`);
   } catch (e) {
     console.error(`[eval] no public block: ${e?.message ?? e}`);
   }

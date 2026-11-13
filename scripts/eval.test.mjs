@@ -475,6 +475,11 @@ describe("the public block: one run as counts only", () => {
       assert.ok(!text.includes(leak), `the public block holds no ${leak}`);
     }
     assert.match(stderr, /\[eval\] public block written to /);
+    // One line names the command that adds these counts to data/results.json, with the file to give it.
+    assert.deepEqual(
+      stderr.split("\n").filter((line) => line.includes("results.mjs")),
+      [`[eval] to publish these counts: node scripts/results.mjs merge-run ${join(outDir, "latest.public.json")}`],
+    );
     assert.equal(readFileSync(output, "utf8"), "reached_judge=2\n");
 
     // The same counts are in the summary a person reads.
@@ -492,6 +497,7 @@ describe("the public block: one run as counts only", () => {
 
     assert.ok(existsSync(outPath), "the results file is still written");
     assert.ok(!existsSync(join(outDir, "latest.public.json")));
+    assert.ok(!stderr.includes("merge-run"), "with no block written, no command to publish one is named");
     const said = stderr.split("\n").filter((line) => line.startsWith("[eval] no public block: "));
     assert.equal(said.length, 1);
     assert.match(said[0], /replayed JUDGE_FIXTURE/);
@@ -523,6 +529,7 @@ describe("the public block: one run as counts only", () => {
 
     assert.ok(existsSync(outPath));
     assert.ok(!existsSync(join(outDir, "results.public.json")));
+    assert.ok(!stderr.includes("merge-run"), "with no block written, no command to publish one is named");
     assert.equal(stderr.split("\n").filter((line) => line.startsWith("[eval] no public block: ")).length, 1);
     // Counts by company carry no case, so a held-out summary shows them too.
     assert.match(stdout, /^Reached a judge: 1 of 1 cases\.$/m);
