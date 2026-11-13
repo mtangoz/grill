@@ -655,7 +655,10 @@ async function outsideLookbackDate(account, deps, row, review, rows) {
     if (!(await outsideGate(account, deps))) return nothing;
     const now = nowOf(deps);
     const left = row.lookbackDueDay || "";
-    const change = lookbackDateChange(deps.env, account, { counted: left, review, done: Boolean(row.lookbackFirstAt), now });
+    // A record answered before the first-answer time was kept has a look-back and no such time.
+    // It is done all the same: its next answer is a second one, and would never be counted.
+    const done = Boolean(row.lookbackFirstAt) || hasLookback(row);
+    const change = lookbackDateChange(deps.env, account, { counted: left, review, done, now });
     if (change.counted === left) return nothing;
     if (change.counted) row.lookbackDueDay = change.counted;
     else delete row.lookbackDueDay;

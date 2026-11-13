@@ -36,6 +36,7 @@ import {
   decisionHabits,
   decryptString,
   encryptString,
+  keyFromEnv,
   linkChains,
   savedConfirmation,
   ONCE_DISCLOSURE,
@@ -4231,6 +4232,55 @@ describe("outside counters, written when the event happens", { concurrency: fals
       assert.deepEqual(hash(ctx, OUTSIDE_KEYS.cameBack), { "2025-12-20": "1" }, "this grill is their come-back");
       assert.deepEqual(marksOf(ctx), { first: "2025-12-20T09:12:00.000Z", back: "1" });
       assert.equal(ctx.memory.command(["GET", OUTSIDE_LIVE_KEY]), "2026-01-01");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("counts a look-back that was answered before its first-answer time was kept as done, once its date is moved", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const DAY = 24 * HOUR;
+      // Before counting began: a decision, and its look-back answer on 21 January.
+      await grill(ctx, fake, token, "Hire contractor", JAN);
+      await decided(ctx, fake, token, "Hire contractor", JAN);
+      const said = await postMcp(ctx, call(3, "grill_look_back", { happened: "came_true: yes\nhappened: It worked." }), { token, deps: { now: JAN + 20 * DAY } });
+      assert.match(textOf(said.json), /Saved with your decision record\./);
+      // The code of that time kept no first-answer time. Put the stored record back to that shape:
+      // a look-back, and no `lookbackFirstAt`.
+      const [made] = await exported(ctx);
+      const id = personOf(ctx);
+      const dataKey = Buffer.from(decryptString(ctx.memory.command(["GET", `grill:hosted:rkey:${id}`]), keyFromEnv(ctx.env, "GRILL_RECORD_KEY")), "base64");
+      const recordKey = `grill:hosted:record:${id}:${made.id}`;
+      const stored = JSON.parse(decryptString(ctx.memory.command(["GET", recordKey]), dataKey));
+      assert.equal(stored.lookbackFirstAt, new Date(JAN + 20 * DAY).toISOString());
+      delete stored.lookbackFirstAt;
+      ctx.memory.command(["SET", recordKey, encryptString(JSON.stringify(stored), dataKey)]);
+      const [old] = await exported(ctx);
+      assert.deepEqual({ answered: Boolean(old.lookback), first: old.lookback_first_at, counted: old.lookback_counted_day }, { answered: true, first: "", counted: "" });
+      for (const key of Object.values(OUTSIDE_KEYS)) assert.deepEqual(hash(ctx, key), {}, key);
+
+      // The list is set. On 1 February the person moves that look-back to 20 February.
+      ctx.env.GRILL_INTERNAL_EMAILS = LIST;
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=review&id=${old.id}&value=set&review=2026-02-20`, FEB)).status, 303);
+      const moved = { due: { "2026-02-20": "1" }, people: { "2026-02-20": "1" }, done7: { "2026-02-20": "1" }, done14: { "2026-02-20": "1" } };
+      const lookbacks = () => ({
+        due: hash(ctx, OUTSIDE_KEYS.lookbacksDue),
+        people: hash(ctx, OUTSIDE_KEYS.lookbackPeople),
+        done7: hash(ctx, OUTSIDE_KEYS.lookbacksDone7d),
+        done14: hash(ctx, OUTSIDE_KEYS.lookbacksDone14d),
+      });
+      assert.deepEqual(lookbacks(), moved, "it is counted as due on the new day, and as done: it already has its answer");
+      assert.equal((await exported(ctx))[0].lookback_counted_day, "2026-02-20");
+
+      // A new answer the next day is a second answer. It adds nothing, and the first time is the old answer's.
+      assert.equal((await form(ctx, handleDecisions, "/decisions", `action=outcome&id=${old.id}&value=held`, FEB + DAY)).status, 303);
+      assert.deepEqual(lookbacks(), moved, "done once, not twice");
+      const [after] = await exported(ctx, FEB + DAY);
+      assert.equal(after.lookback_first_at, new Date(JAN + 20 * DAY).toISOString());
+      assert.equal(after.lookback.at, new Date(FEB + DAY).toISOString());
     } finally {
       await fake.close();
     }
