@@ -68,13 +68,13 @@ To say no to one row, revert the commit named in it, or reword that sentence alo
 | Idea | Impact | Trigger | Status |
 |---|---|---|---|
 | Record the real-user count | High, enables every other trigger | Now | Done |
-| Close the unknown-client judge gap | High, trust | Now | Labelled on this branch, not enforced |
+| Close the unknown-client judge gap | High, trust | Now | Disclosure shipped; enforcement open |
 | Publish the hosted address on the MCP Registry | Medium, usage | Now | Trigger met |
 | ChatGPT and Claude connector directory listings | High, usage | Now, with the owner's approval | Trigger met, blocked |
 | Hand-run partnerships | Medium, usage | Now | Trigger met |
 | Settle the Gemini "testing now" line | Low, trust | Now | Done |
 | Verify Meta AI (Muse) in chat | Medium, usage | Now | Trigger met |
-| Remove the dead Smithery mentions | Low, hygiene | Now | Half done |
+| Remove the dead Smithery mentions | Low, hygiene | Now | Done |
 | Pre-mortem reply angle | Low, usage | Now, content only | Trigger met |
 | Public launch (Show HN, Product Hunt) | High, usage, one-off | Real-user count recorded and activation measured | Not met |
 | Plan for after the founding 100 | Medium, revenue | Founding count reaches 80 of 100 | Not met |
@@ -224,19 +224,19 @@ Trigger met: the consider-when is now (2026-11-04).
 
 Impact: low, hygiene.
 
-Smithery shut down its MCP proxy on 2026-10-31. The Grill listing at `https://smithery.ai/servers/hold-systems/grill` returned 404 on 2026-11-04. README.md still names Smithery. The weekly snapshot script outside this repo (`grill-growth/snapshot.py`) still polls `registry.smithery.ai`, so that install count is dead. `smithery.yaml` in this repo is the local bundle, not the dead directory listing.
-
-Status 2026-11-08: the README's Smithery line is gone, and the research note says Smithery closed. The ops snapshot still polls Smithery. Removing that poll is the half still to do.
+Smithery shut down its MCP proxy on 2026-10-31. The Grill listing at `https://smithery.ai/servers/hold-systems/grill` returned 404 on 2026-11-04. `smithery.yaml` in this repo is the local bundle, not the dead directory listing.
 
 Consider when: now. Housekeeping. No real-user count, feedback theme, or cost gate.
 
 Trigger met: the consider-when is now (2026-11-04).
 
+Status 2026-11-13: the README Smithery line is gone. The ops snapshot poll is removed. `grill-growth/snapshot.py` no longer polls `registry.smithery.ai`. It returns "closed 2026-10-31, not polled". This item is complete.
+
+Done: 2026-11-13.
+
 ## Settle the Gemini "testing now" line
 
 Impact: low, trust. Copy that says "testing now" for weeks reads as stale.
-
-`site/page.html`, `site/faq.html` and `site/start.html` still say Gemini should work and is still being tested (US only, a personal Google account, Keep Activity on). One Gemini web custom-app connect test would let the copy say it works, or the line should come out. Copy edits are separate work.
 
 Consider when: now, so existing copy stays honest, or when the first user asks about Gemini (feedback).
 
@@ -302,7 +302,7 @@ Done: recorded 2026-11-09 in STRATEGY.md. Monthly refresh.
 
 ## Close the unknown-client judge gap
 
-On the hosted connector, an unrecognised client with no author named excludes nobody. It does not exclude Anthropic. The judge can then be the same company as the assistant, and the verdict used to say nothing about that. Say so on the verdict: one line after the privacy note, naming the judge's company, and saying to grill again and name the assistant if that company is the same. A recognised client gets no line. Cursor is recognised and still excludes nobody, on purpose, because it runs several companies' models, so it gets no line either. The installed MCP server still excludes Anthropic when it does not recognise the client and no company is named. This touches what the verdict says about the judge, so it needs its own pull request and review (STRATEGY rec 3).
+On the hosted connector, an unrecognised client with no author named excludes nobody. It does not exclude Anthropic. The judge can then be the same company as the assistant, and the verdict used to say nothing about that. Say so on the verdict: one line after the privacy note, naming the judge's company, and saying to grill again and name the assistant if that company is the same. A recognised client gets no line. Cursor is recognised and still excludes nobody, on purpose, because it runs several companies' models, so it gets no line either. The installed MCP server still excludes Anthropic when it does not recognise the client and no company is named. This touches what the verdict says about the judge (STRATEGY rec 3).
 
 Impact: high, trust. A judge from a different company is the trust rule (STRATEGY principle 1).
 
@@ -310,13 +310,13 @@ Consider when: now, before any launch that brings people from non-Claude MCP app
 
 Trigger met: the consider-when is now (2026-11-08).
 
-Draft PR open: 2026-11-10. The hosted reply adds the line. Who is excluded is unchanged.
+On main: PR #193, merged 2026-11-10. The hosted reply adds the line. Who is excluded is unchanged.
 
-Status 2026-11-13, on this branch: every route where Grill cannot tell which company wrote the plan is labelled. Hosted unknown clients, Cursor, a judge from a company Grill has no name for, the installed tool's guess, a /judge link with no usable `from`, and a misnamed author all end the verdict with a line that starts "Independence not verified:". None of them is enforced. The paragraph above describes the code before this branch. Still open, under Waiting on the owner: asking the assistant for its company (item 14), a valid different author replacing the chat's company (item 10), and Grill CI on an unknown author (item 15).
+Status 2026-11-13, on main: every route where Grill cannot tell which company wrote the plan is labelled. Hosted unknown clients, Cursor, a judge from a company Grill has no name for, the installed tool's guess, a /judge link with no usable `from`, and a misnamed author all end the verdict with a line that starts "Independence not verified:". That labelling is on main. None of them is enforced. The paragraph above is the earlier description. Who is excluded is unchanged. Still open, under Waiting on the owner: asking the assistant for its company (item 14), a valid different author replacing the chat's company (item 10), and Grill CI on an unknown author (item 15).
 
 ## Verify Meta AI (Muse) in chat
 
-The README has Muse connector steps with a public client ID. The site and HOSTED.md still say Meta AI is coming soon. One test connect would let the site say it works, or the README steps should come out.
+The README has Muse connector steps with a public client ID. Copy-and-paste honesty was fixed in #201. README, HOSTED.md and the FAQ say Muse works today by copy and paste. Adding Grill as a connector inside Muse is not verified, so that check is still open.
 
 Impact: medium, usage. A large audience that cannot run an MCP app on a computer.
 
