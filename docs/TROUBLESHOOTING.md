@@ -2,7 +2,7 @@
 
 | You see | It means |
 |---|---|
-| "Grill isn't set up yet" | Your key is missing. Claude Desktop: **Settings → Extensions → Grill**. Grill reads `GRILL_API_KEY` first. `OPENROUTER_API_KEY` works when that is unset. |
+| "Grill isn't set up yet" | Your key is missing. Create one at [openrouter.ai/keys](https://openrouter.ai/keys). Claude Desktop: **Settings → Extensions → Grill**. Or save it once with `npx -y grillyour --set-key`. Grill reads `GRILL_API_KEY` first. `OPENROUTER_API_KEY` works when that is unset. |
 | "no model router key" from `node scripts/judge.mjs` | Same: no key in `GRILL_API_KEY`, `OPENROUTER_API_KEY` or the key file. Save one once with `npx -y grillyour --set-key` (paste it, press Enter, then Ctrl-D). `--key-status` says where the key comes from, without printing it. |
 | A key that used to work is gone (for example from a project's `.env`) | A key can't be read back: OpenRouter shows it once, and CI secrets are write-only. Make a new one at [openrouter.ai/keys](https://openrouter.ai/keys) and save it with `npx -y grillyour --set-key`. The key file is outside every project, so rewriting a project's `.env` can't lose it again. |
 | "Still grilling (job …)" | Normal. Claude collects the report itself; it takes 1–3 minutes |
