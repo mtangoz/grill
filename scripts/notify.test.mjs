@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 import { USAGE_EVENTS } from "../api/_account.mjs";
 import {
   CONFIRM_SUBJECT,
+  LAUNCH_SUBJECT,
   POSTAL_PLACEHOLDER,
+  START_URL,
   handleNotify,
   handleNotifyConfirm,
   launchEmailText,
@@ -285,6 +287,28 @@ describe("confirming", () => {
 });
 
 describe("the launch email", () => {
+  const WORKS_TODAY_LINE = `Saved history and look-back reminders work today, free, with Grill in your chat: ${START_URL}`;
+
+  it("does not sell saved history or look-back reminders as what Pro adds", () => {
+    assert.equal(LAUNCH_SUBJECT, "Grill Pro is ready as a paid plan");
+    assert.doesNotMatch(LAUNCH_SUBJECT, /saved history|look-back/i);
+    assert.doesNotMatch(LAUNCH_SUBJECT, /[\u2013\u2014]/);
+
+    const text = launchEmailText({});
+    assert.ok(text.includes(WORKS_TODAY_LINE), text);
+    const rest = text.replace(WORKS_TODAY_LINE, "");
+    assert.doesNotMatch(rest, /saved history|look-back/i, rest);
+    assert.doesNotMatch(text, /What Pro adds/);
+    assert.doesNotMatch(text, /[\u2013\u2014]/);
+    assert.match(text, /The free tool stays free and account-free/);
+    assert.match(text, /Pro is opt-in/);
+    assert.match(text, /https:\/\/github\.com\/mtangoz\/grill\/blob\/main\/docs\/PRIVACY\.md#the-pro-launch-list/);
+    assert.match(text, /Try it: https:\/\/grillyour\.ai\/pro/);
+    assert.match(text, /This is the only email this list gets/);
+    assert.match(text, /Grill, made by Hold/);
+    assert.match(text, /support@grillyour\.ai/);
+  });
+
   it("keeps the postal line as the env var placeholder and is not sent", () => {
     const text = launchEmailText({});
     assert.match(text, new RegExp(POSTAL_PLACEHOLDER));
