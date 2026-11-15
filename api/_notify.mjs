@@ -9,8 +9,9 @@
  * The launch email itself is a template in this file. Nothing here sends it.
  *
  * Saved history and look-back reminders, which this list was first opened for, now work
- * with Grill in your chat, free. The form, the confirmation email and the on-the-list page
- * say so and link to /start. The list itself is still only for news of a paid plan.
+ * with Grill in your chat, free. The form, the confirmation email, the on-the-list page
+ * and the launch email template say so and link to /start. The list itself is still
+ * only for news of a paid plan.
  */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { normalizeEmail, redisCommand } from "./_account.mjs";
@@ -23,7 +24,7 @@ export const MAX_SUBMIT_MS = 2 * 60 * 60 * 1000;
 export const COOLDOWN_SECONDS = 86_400;
 export const DAILY_TTL_SECONDS = 172_800;
 export const POSTAL_PLACEHOLDER = "NOTIFY_POSTAL_ADDRESS";
-export const LAUNCH_SUBJECT = "Grill Pro is ready: saved history and look-back reminders";
+export const LAUNCH_SUBJECT = "Grill Pro is ready as a paid plan";
 export const CONFIRM_SUBJECT = "Confirm: tell me when Grill Pro is ready";
 const PRIVACY_URL = "https://github.com/mtangoz/grill/blob/main/docs/PRIVACY.md#the-pro-launch-list";
 const VIAS = ["tool", "paste", "site"];
@@ -159,20 +160,18 @@ Grill, made by Hold. Questions: support@grillyour.ai
  * The launch email, for a later Resend broadcast. This function only fills in the text.
  * It does not send. The postal line stays the env var name until NOTIFY_POSTAL_ADDRESS is set.
  *
- * Written before saved history and look-back reminders shipped free in chat. It still lists
- * them as what Pro adds, so it must be rewritten before anyone sends it.
+ * Saved history and look-back reminders already work free in chat. This text says that
+ * and links to /start. It does not list them as what Pro adds. Pro is named only as a paid plan.
  */
 export function launchEmailText(env = {}) {
   const postal = trimmed(env, "NOTIFY_POSTAL_ADDRESS") || POSTAL_PLACEHOLDER;
-  return `You asked us to tell you when Grill Pro was ready. It is.
+  return `You asked us to tell you when Grill Pro was ready. It is ready as a paid plan.
 
-What Pro adds:
-- Saved decision history across the assistants you use: Claude, Claude Code, ChatGPT, Gemini, Grok.
-- A reminder when a look-back is due, and a monthly look-back report.
+${WORKS_TODAY}: ${START_URL}
 
 What doesn't change:
 - The free tool stays free and account-free. Bring your own key, no sign-in, nothing stored.
-- Pro is opt-in. Saving history means Grill stores your decision records on your account, and you can delete them anytime. What's kept and where: ${PRIVACY_URL}
+- Pro is opt-in. What's kept and where: ${PRIVACY_URL}
 
 Try it: https://grillyour.ai/pro
 
