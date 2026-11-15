@@ -48,7 +48,21 @@ env = { GRILL_AUTHOR = "openai" }
 { "mcpServers": { "grill": { "command": "npx", "args": ["-y", "grillyour"], "env": { "GRILL_AUTHOR": "google" } } } }
 ```
 
-**Windsurf, Zed, or anything else**: add a stdio server named `grill` with command `npx` and args `-y grillyour`. Add `GRILL_AUTHOR` when the app runs only one company's models.
+**Windsurf**: add a server named `grill` under `mcpServers`:
+
+```json
+{ "mcpServers": { "grill": { "command": "npx", "args": ["-y", "grillyour"] } } }
+```
+
+**Zed**: add a server named `grill` under `context_servers`:
+
+```json
+{ "context_servers": { "grill": { "command": "npx", "args": ["-y", "grillyour"] } } }
+```
+
+Check [Windsurf's MCP docs](https://docs.devin.ai/windsurf/plugins/cascade/mcp) and [Zed's MCP docs](https://zed.dev/docs/ai/mcp) for the filename, because this repo has not verified a path for either app.
+
+**Anything else**: add a stdio server named `grill` with command `npx` and args `-y grillyour`. Add `GRILL_AUTHOR` when the app runs only one company's models.
 
 **A project shared by a team**: commit the config to the repository, for example `.cursor/mcp.json`, `.vscode/mcp.json` or `.mcp.json`. It holds no key. Each person runs `--set-key` once on their own machine.
 
