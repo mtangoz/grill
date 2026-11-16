@@ -1,6 +1,6 @@
 # Proposed wording on this branch
 
-Every promise-level, legal or positioning sentence that this branch (`claude/sleepy-curie-ze1wxi`, from commit 311ea3f) changed. None of it has the owner's yes yet. It needs that yes before the branch merges. [ROADMAP.md](ROADMAP.md) lists the groups under "Proposed on this branch, needs the owner's yes before merge".
+Every promise-level, legal or positioning sentence that this branch (`claude/sleepy-curie-ze1wxi`, from commit 311ea3f) changed. The owner merged this wording in [PR #204](https://github.com/mtangoz/grill/pull/204) on 2026-11-13. The rows below stay as the history of what changed. [ROADMAP.md](ROADMAP.md) lists the groups under "Proposed wording, merged by the owner on 2026-11-13".
 
 How this list was built: every commit since 311ea3f whose subject starts "Proposed", plus the commits that changed positioning without that label (1875dff, 25e53d7, 33f0fc5, 18849ae, 191f11d, e47d5f4, 95955cc, 29aa6fe, 03ca08d, 4f581c9, 6cd88cb, fc542cb, d270fe8, aa8a08a, ba396f5, 4740d34, the directory kit 3a799ec, and the two new pages 06fc5b1 and 8061a1b). Old text is as it stood at 311ea3f. New text is as it stands now, so a sentence changed twice has one row. Long sentences are cut to the part that changed, with "..." for the rest. Where the old text had a dash, it is shown as [dash]. "(none)" means the sentence is new.
 

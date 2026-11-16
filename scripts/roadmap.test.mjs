@@ -95,16 +95,27 @@ describe("later ideas and competitor notes", () => {
     const items = owner.split("### ")[0].match(/^\d+\. \*\*/gm) || [];
     assert.ok(items.length >= 25, "the 25 parked items, in order, and the later additions");
     assert.match(owner, /^6\. \*\*Set `GRILL_INTERNAL_EMAILS` in production BEFORE this branch deploys\.\*\*/m);
-    const proposed = preamble.split("### Proposed on this branch, needs the owner's yes before merge")[1];
-    assert.ok(proposed, "a ### Proposed on this branch heading above the first ## section");
+    assert.match(owner, /Status: ChatGPT listing filed, in review\./);
+    assert.match(owner, /Status: set in Production on 2026-11-13\./);
+    const proposed = preamble.split("### Proposed wording, merged by the owner on 2026-11-13")[1];
+    assert.ok(proposed, "a ### Proposed wording heading above the first ## section");
     const wording = readFileSync(join(ROOT, "docs/PROPOSED-WORDING.md"), "utf8");
     const rows = wording.split("\n").filter((line) => line.startsWith("| ") && !line.startsWith("| File |"));
     const stated = proposed.match(/changed (\d+) promise-level, legal or positioning sentences/);
     assert.ok(stated, "the proposed section states how many rows the full list has");
     assert.equal(Number(stated[1]), rows.length);
     assert.ok(proposed.includes("[PROPOSED-WORDING.md](PROPOSED-WORDING.md)"));
+    const merged =
+      "The owner merged this wording in [PR #204](https://github.com/mtangoz/grill/pull/204) on 2026-11-13.";
+    assert.ok(proposed.includes(merged), "the roadmap says the owner merged the wording");
+    assert.ok(wording.includes(merged), "PROPOSED-WORDING says the owner merged the wording");
+    assert.match(
+      owner,
+      /Status: the `learn\.yml` and `eval\.yml` changes are on main\. They landed with \[PR #204\]\(https:\/\/github\.com\/mtangoz\/grill\/pull\/204\) on 2026-11-13\./,
+    );
     for (const text of [proposed, wording]) {
       assert.doesNotMatch(text, /Tony approved|owner decided/i);
+      assert.doesNotMatch(text, /None has the owner's yes|None of it has the owner's yes|needs the owner's yes/i);
       assert.doesNotMatch(text, /[\u2013\u2014]/);
     }
   });
