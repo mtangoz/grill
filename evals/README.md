@@ -1,10 +1,10 @@
 # Evals
 
-A self-improvement measurement loop for the judge, built on synthetic material only: 29 fictional
+A self-improvement measurement loop for the judge, built on synthetic material only: 35 fictional
 founder/operator decisions under `cases/`, never a real user's decision. `node scripts/eval.mjs`
 runs each one through the real judge CLI and scores the result against `thresholds.json`.
 
-**These thresholds are sanity floors, not precise scores.** Twenty-nine cases is not a statistically
+**These thresholds are sanity floors, not precise scores.** Thirty-five cases is not a statistically
 powered benchmark, and the judge is a stochastic third-party model reached through OpenRouter's
 Auto Router, so the same case can score differently run to run. The numbers are loose on purpose:
 `catchRate`/`loadedCatchRate` only require catching 11 of 15 / 3 of 4 of the cases that
@@ -39,6 +39,16 @@ lines are cheap to undo. The unsupported claim that one beats the other can stil
 guardrail and then chooses a plan that crosses it. `sound-goal-tradeoff-support-hours` names a
 slower reply time and accepts it in order to reach a goal, so a judge that treats that accepted
 trade-off as a defect shows up as a false alarm.
+
+**Six more sound cases widen the false-alarm count.** The rate is a share of the sound cases, and
+six of them made one flipped verdict a swing of 1 of 6. `sound-counted-reorder-bike-shop` counts
+the shelf before it copies last year's order. `sound-refundable-deposit-trial` tries a refundable
+deposit for one quarter and names the stop. `sound-keep-weekday-lot` keeps the lunch stop measured
+over 40 days instead of a contract that would ban it. `sound-laundry-stay-month-to-month` keeps a
+month-to-month pilot rather than a three-year exit fee. `sound-compost-keep-stop-rule` keeps a
+voted trial and its stop rule rather than a permanent route. `sound-restore-drill-before-delete`
+restores an archive before deleting it to save a small storage bill. Each one names the case
+against and a way back.
 
 **Four cases cover a must-have stated earlier in the chat.** The person names a hard limit in an
 earlier turn. The later plan does a thing that limit rules out, and does not say it is dropping
@@ -113,10 +123,10 @@ so the default applies and the judge must come from outside Claude's company. It
 of whether the judge's errors differ from the writer's. 10 of the 94 quoted targets were not found
 in the write-up they were quoted from.
 
-**The false-alarm gate will flap.** With 6 sound cases, the 0.34 ceiling allows 2 false alarms, and
-the first measured run had exactly 2. If one in three is the real rate, the gate goes red by chance
-about one week in three. So a red false-alarm row on its own means "go look at which cases failed".
-It is not proof the judge got worse.
+**The false-alarm gate will flap.** With 12 sound cases, the 0.34 ceiling allows 4 false alarms, and
+the first measured run had exactly 2. One flipped verdict moves the rate by 1 of 12. If one in three
+is the real rate, the gate goes red by chance about one week in three. So a red false-alarm row on
+its own means "go look at which cases failed". It is not proof the judge got worse.
 
 **Each measured run in GitHub Actions also writes its counts.** Beside the results file
 (`evals/results/latest.json`, which is not committed) the run writes `latest.public.json`: whole

@@ -1,0 +1,11 @@
+{
+  "id": "sound-laundry-stay-month-to-month",
+  "kind": "sound",
+  "subject": "Cedar Court, a 48-apartment building, is deciding whether to sign a three-year laundry-card contract or keep the month-to-month card pilot it already runs beside the coin machines. The team recommends staying month to month. For 30 days, four machines took cards and four stayed on coins. Card machines were out of service for 6 hours. Coin machines were out for 29 hours, and the maintenance log attributes 22 of those hours to jammed coin slots. Residents filed 4 complaints about the card machines and 17 about the coin machines. The three-year offer is $200 a month and charges $2,400 to leave early. The pilot is $90 a month and ends on 30 days' notice, with no exit fee. Two years of the pilot price is $2,160, so the exit fee is more than that. The plan: keep the pilot, read the outage log and the complaint log on the first Monday of each month, and consider a longer contract only after three straight months in which the card machines are out of service for fewer hours than the coin machines. Prediction, offered at 65% confidence: one month is not enough to sign away three years, and the pilot already puts the machines with the shorter outage log in the building. The strongest case against: the vendor may raise the month-to-month price, and residents who prefer cards will be unhappy if the pilot ever ends. The team accepts the price risk. Ending the pilot is a separate decision, and this one only refuses the exit fee.",
+  "question": "Should Cedar Court stay on its month-to-month laundry pilot instead of a three-year contract?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "Refuses a three-year exit fee on one month of logs, and keeps the pilot that already has the shorter outage hours."
+}

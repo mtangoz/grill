@@ -1,0 +1,11 @@
+{
+  "id": "sound-compost-keep-stop-rule",
+  "kind": "sound",
+  "subject": "Milltown Public Works is deciding whether to write a second weekly compost pickup into the permanent north-district route this month, or to keep it as the voted trial, with the stop rule, for the weeks already budgeted. The team recommends keeping the trial. The council voted $6,400 for the second pickup before the truck rolled. That sum is 32 weeks at the stated $200 a week for one extra shift, and eight of those weeks have run. Making the route permanent this month would keep the extra shift after that $6,400 is spent, and the council has not voted any further money. In the eight weeks so far the north district set out 11.2 tons, against 6.4 tons in the prior eight weeks with one pickup. Rejected loads were 3 of 410 set-outs. The council's stop rule, written before the trial, is to end the second pickup if rejected loads exceed 2% for three weeks running. Two percent of 410 set-outs is 8.2, and 3 rejected loads is under that line. The plan: run the second pickup for the remaining budgeted weeks, apply the stop rule as written, keep the original weekly pickup either way, and bring the permanent-route question back when the 32 weeks are done. Prediction, offered at 60% confidence: eight weeks inside the band is not a reason to spend past the voted sum. The strongest case against: residents who now use the second pickup will be angry if the stop rule trips. The team accepts that anger. It is the cost of a rule set before the route started, and the first pickup of the week does not depend on it.",
+  "question": "Should Milltown keep the compost trial and its stop rule instead of making the second pickup permanent now?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "Keeps a stop rule and a voted budget instead of writing the route in as permanent, which would spend money the council has not voted."
+}

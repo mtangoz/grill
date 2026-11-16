@@ -1,0 +1,11 @@
+{
+  "id": "sound-counted-reorder-bike-shop",
+  "kind": "sound",
+  "subject": "Spoke and Bell, a six-person bike shop, is deciding whether to reorder spring helmets by copying last year's order quantities, or to count the stockroom and order only the gap against last year's unit sales. The team recommends the count. Last spring the shop copied the prior order, bought 80 adult helmets, and sold 40. The other 40 were still on the shelf in September. The bookkeeper priced them at $32 each, which is $1,280. A count of the helmet shelf takes the two owners one Sunday and spends no cash. The plan: count each size, have a second person call the number back, and order only the difference between last year's unit sales of that size and what is already on the shelf. A size that already covers last year's sales gets a zero on the order. The supplier's cutoff is four days after the Sunday count, so a box found on Monday can still be added. Prediction, offered at 70% confidence: the shop will not buy another 80 helmets on top of stock it has not sold. The strongest case against: this spring could sell more than last spring, and a count against last year's sales would then leave a size short. A size that sells out can be reordered from the same supplier on its usual two-week lead, which the shop already does in season. The count does not stop that reorder. It stops a second copy of an order that left 40 unsold.",
+  "question": "Should Spoke and Bell count the stockroom before reordering, instead of copying last year's quantities?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "Counts what is on the shelf before copying last year's order, orders only the gap against sales already made, and can still reorder a size that sells out in season."
+}

@@ -1,0 +1,11 @@
+{
+  "id": "sound-restore-drill-before-delete",
+  "kind": "sound",
+  "subject": "Hearth Software, a nine-person company, is deciding whether to run its quarterly restore drill before it deletes last year's archive copy, or to delete the copy now and save the storage bill. The team recommends the drill first. The archive is 400 GB at $0.02 per GB a month, which is $8 a month, and $96 over a year. The drill is one afternoon for one engineer. It follows the written restore steps onto a spare machine and does not touch the live service. Last year's drill found a missing key, and that finding is why the written steps now exist. The plan: run the drill this month, have a second person log into the restored copy and open the invoice export, the customer list and the contract folder, and delete the archive only after that login works. If the login fails, the copy stays and the steps are fixed before any deletion. Prediction, offered at 70% confidence: the drill will restore the archive, because the steps were rewritten after the missing key. If it does not, the copy is still there. The strongest case against: one afternoon of wages costs more than a year of the $96 storage, so deleting now is the cheaper line on the bill. The team states that comparison and does not dispute it. The team is not claiming the drill is the cheaper line. It is claiming that an archive which has not been restored this year should not be deleted to save $96.",
+  "question": "Should Hearth Software restore its archive before deleting the copy to save storage?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "Deletes an archive only after a restore has been shown. The storage saving is named, and it is not the reason to skip the drill."
+}

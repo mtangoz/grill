@@ -33,7 +33,7 @@ Response: [/data-flow/](https://grillyour.ai/data-flow/) answers the question, r
 - **Retention features:** look-back reminders, "Your habits", and "Where your calls changed" are built for in-chat Grill.
 - **Money:** nothing is for sale. See [Money](#money).
 - **Independence:** enforced in code where Grill knows the author's company: a recognised app, `GRILL_AUTHOR`, or a company the assistant names. Everywhere else the verdict says independence was not verified. The paste route only warns.
-- **Measured about the judge:** one weekly regression run, on 29 cases that were used to write the judge's instructions, so a full catch score says nothing about how good the judge is. Not measured yet: whether an outside judge catches more than the same model starting fresh. The counts are on [/how-we-test/](https://grillyour.ai/how-we-test/).
+- **Measured about the judge:** one weekly regression run, on 35 made-up cases. The 29 cases in the first measured run were used to write the judge's instructions, so a full score on those says nothing about how good the judge is. Not measured yet: whether an outside judge catches more than the same model starting fresh. The counts are on [/how-we-test/](https://grillyour.ai/how-we-test/).
 
 ## Guiding principles
 

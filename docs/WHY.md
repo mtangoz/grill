@@ -6,7 +6,7 @@ When Grill can tell which company's model wrote the plan, the judge is from a di
 
 That is a rule about who checks. It is not a claim about accuracy.
 
-- **Measured:** a weekly regression check on 29 made-up cases. It counts how often the judge catches a planted flaw and how often it raises a false alarm on a sound plan. It also checks that the judge came from a different company than the declared author. That is a routing check. It does not measure whether the judge's errors differ from the writer's. The 29 cases were used to write the judge's instructions, so a full score says nothing about how good the judge is. The detail is in [evals/README.md](../evals/README.md).
+- **Measured:** a weekly regression check on 35 made-up cases. It counts how often the judge catches a planted flaw and how often it raises a false alarm on a sound plan. It also checks that the judge came from a different company than the declared author. That is a routing check. It does not measure whether the judge's errors differ from the writer's. The 29 cases in the first measured run were used to write the judge's instructions, so a full score on those says nothing about how good the judge is. The detail is in [evals/README.md](../evals/README.md).
 - **Not measured yet:** whether an outside judge catches more than your own assistant starting fresh. Until it is, Grill does not claim it.
 
 Grill is the outside judge step Felix Rieseberg recommends in [How to be more ambitious](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/): do not ask the model to judge itself.
