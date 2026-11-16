@@ -95,8 +95,8 @@ describe("later ideas and competitor notes", () => {
     const items = owner.split("### ")[0].match(/^\d+\. \*\*/gm) || [];
     assert.ok(items.length >= 25, "the 25 parked items, in order, and the later additions");
     assert.match(owner, /^6\. \*\*Set `GRILL_INTERNAL_EMAILS` in production BEFORE this branch deploys\.\*\*/m);
-    assert.match(owner, /Status: ChatGPT listing filed, in review\./);
-    assert.match(owner, /Status: set in Production on 2026-11-13\./);
+    assert.doesNotMatch(owner, /Status: ChatGPT listing filed, in review\./);
+    assert.doesNotMatch(owner, /Status: set in Production on 2026-11-13\./);
     const proposed = preamble.split("### Proposed wording, merged by the owner on 2026-11-13")[1];
     assert.ok(proposed, "a ### Proposed wording heading above the first ## section");
     const wording = readFileSync(join(ROOT, "docs/PROPOSED-WORDING.md"), "utf8");
