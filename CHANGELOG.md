@@ -56,6 +56,7 @@ Released 16 November 2026. npm (`npx -y grillyour`), the `.mcpb` bundle and the 
 - The copy-and-paste prompt sends the decision plus a brief summary of the essential context, not whatever is in the chat.
 - The Docker image starts again. It was missing one file, and that is the image Glama builds.
 - Claude Desktop Cowork, which names itself local-agent-mode followed by an extension id, is recognised as Claude, so Anthropic is ruled out. A handshake that puts the client name only in the newer namespaced field is read the same way.
+- The registry description says the judge is from a different company when Grill can tell which wrote the decision.
 
 ### At merge: GitHub and maintainer tooling
 

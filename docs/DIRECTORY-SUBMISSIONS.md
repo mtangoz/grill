@@ -109,7 +109,7 @@ Either way, the reviewer's address goes on `GRILL_INTERNAL_EMAILS` before they s
 ## MCP Registry
 
 1. Check `server.json`: version, the `.mcpb` link and its `fileSha256` against the release asset, and the remote `https://grillyour.ai/mcp`.
-2. Its description, "A second opinion on your decisions, from a different AI company.", names a company with no condition. Change it to the conditional form in the same release, before you publish.
+2. Its description, "A second opinion on your decisions, from a different company when Grill can tell which wrote it.", is the conditional form. Publish it with the 0.2.0 package.
 3. Publish as `mtangoz` with `mcp-publisher publish`, after release 0.2.0 if that release changes the package.
 
 ## Before filing
