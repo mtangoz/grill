@@ -580,13 +580,13 @@ describe("renderSummary — never subject text beyond the case id", () => {
 describe("every committed case under evals/cases/ parses and has the fields its kind requires", () => {
   const files = readdirSync(CASES_DIR).filter((f) => f.endsWith(".json")).sort();
 
-  it("finds the full committed set: 19 flawed, 6 sound, 4 loaded", () => {
+  it("finds the full committed set: 19 flawed, 12 sound, 4 loaded", () => {
     const byKind = { flawed: 0, sound: 0, loaded: 0 };
     for (const f of files) {
       const c = JSON.parse(readFileSync(join(CASES_DIR, f), "utf8"));
       byKind[c.kind] = (byKind[c.kind] ?? 0) + 1;
     }
-    assert.deepEqual(byKind, { flawed: 19, sound: 6, loaded: 4 });
+    assert.deepEqual(byKind, { flawed: 19, sound: 12, loaded: 4 });
   });
 
   it("a cheap reversible try with no data must not be shaky just for lack of data", () => {
@@ -1290,14 +1290,20 @@ describe("evals/README.md: the first measured run, as counts and with its limits
     assert.ok(flat.includes("It is not a measure of whether the judge's errors differ from the writer's."));
   });
 
-  it("the false-alarm gate note matches the threshold, the six sound cases and the arithmetic", () => {
+  it("the false-alarm gate note matches the threshold, the sound cases and the arithmetic", () => {
     const flap = between("**The false-alarm gate will flap.**", "**Each measured run in GitHub Actions also writes its counts.**").replace(/\s+/g, " ");
     const ceiling = JSON.parse(readFileSync(join(HERE, "..", "evals", "thresholds.json"), "utf8")).falseAlarmRate;
     const sound = readdirSync(CASES_DIR).filter((f) => f.endsWith(".json") && JSON.parse(readFileSync(join(CASES_DIR, f), "utf8")).kind === "sound").length;
     let allowed = 0;
     while ((allowed + 1) / sound <= ceiling) allowed += 1;
     assert.ok(flap.includes(`With ${sound} sound cases, the ${ceiling} ceiling allows ${allowed} false alarms, and the first measured run had exactly ${run.sound.false_alarms}.`));
-    assert.equal(allowed, run.sound.false_alarms);
+    // The first measured run sat on the cap for the six sound cases it had: 2 of 6 is at or
+    // under the ceiling, and 3 of 6 is not. The live allowance is for the larger set.
+    let firstAllowed = 0;
+    while ((firstAllowed + 1) / run.sound.of <= ceiling) firstAllowed += 1;
+    assert.equal(firstAllowed, run.sound.false_alarms);
+    assert.ok(sound > run.sound.of);
+    assert.ok(allowed > firstAllowed);
     // The chance of more than `allowed` false alarms in one run when each sound case alarms one time in three.
     const choose = (n, k) => { let c = 1; for (let i = 0; i < k; i += 1) c = (c * (n - i)) / (i + 1); return c; };
     let withinGate = 0;

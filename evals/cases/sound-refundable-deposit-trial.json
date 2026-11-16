@@ -1,0 +1,11 @@
+{
+  "id": "sound-refundable-deposit-trial",
+  "kind": "sound",
+  "subject": "Bramble Hardware is deciding whether to try a refundable 20% deposit on special orders for one quarter, or to leave the counter unchanged for another year. The team recommends the one-quarter try. In the twelve months ending August 2026 the shop wrote 186 special orders, and 31 of them were never collected. The bookkeeper summed the wholesale cost on those 31 invoices at $4,860, and the supplier does not take the goods back. The plan: ask for 20% when the order is written, apply it to the balance when the customer collects, and refund it in full if the shop misses the week it promised. Both rules go on a card at the counter. The try lasts one quarter and then stops unless they choose to keep it. They will drop it if the special-order count falls by more than 25% against the same quarter last year. They will keep it only if uncollected orders fall and the count does not fall by more than that 25%. Prediction, offered at 55% confidence: the quarter will show whether a deposit changes pickup, and it may show nothing clear. They are not claiming the deposit will recover the $4,860. They are claiming that one posted quarter is a better next step than another unchanged year. The strongest case against: a contractor who has always collected may leave for a shop that asks for nothing up front, and one quarter can mix a real loss of orders with a quiet season. Four contractors with a clean pickup record already buy on account and will not be asked for a deposit. The same-quarter comparison is the check they wrote down before the try starts.",
+  "question": "Should Bramble Hardware try a refundable deposit on special orders for one quarter, or leave the counter unchanged?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "A one-quarter, refundable try with a stop rule written down first. It does not claim the deposit will recover last year's uncollected goods."
+}

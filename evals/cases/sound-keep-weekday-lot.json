@@ -1,0 +1,11 @@
+{
+  "id": "sound-keep-weekday-lot",
+  "kind": "sound",
+  "subject": "North Lot Eats, a two-person food truck, is deciding whether to sign a weekend festival contract that bars its weekday lunch stop, or to keep the weekday stop and take festival days one at a time. The team recommends keeping the weekday stop. Over eight weeks the truck worked 40 weekdays at an office lot. Takings after the $40 lot fee averaged $640 a day. On four Saturdays in the same eight weeks it also worked a festival. Those four days came in at $420, $480, $540 and $600 after the $180 pitch fee, which sum to $2,040, an average of $510. The contract on offer is every Saturday and Sunday for 16 weeks, and it bars any weekday lunch stop. Using those averages, a week under the contract would trade five lot days, $3,200 after fees, for two festival days, $1,020 after fees. Matching the five lot days would take two festival days of $1,600 each. The best of the four observed days was $600. The plan: decline the contract, keep the week-to-week lot agreement, and keep taking single festival Saturdays when a pitch is free. Prediction, offered at 70% confidence: the lot stays the higher-taking day through the next quarter. They will leave the lot if four straight weeks come in under $400 after the fee. The strongest case against: a wet quarter could empty the office lot, and the festival contract would lock a pitch the truck might not get one Saturday at a time. The team accepts the weather risk. The lot agreement ends any week, so a bad month is not a 16-week commitment, and single festival Saturdays stay available without the ban on weekdays.",
+  "question": "Should North Lot Eats keep its weekday lot instead of a festival contract that bars that stop?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "Keeps the stop measured over 40 days and declines a contract that would ban it, when the best observed festival day is $600 against $1,600 needed to match the lot week."
+}

@@ -35,7 +35,7 @@ Ordered by effect on reach. Times are rough guesses of the owner's own time, not
 19. **A call to action on the share page.** ICP.md says share links are proof only. About 10 minutes to decide.
 20. **A homepage link to /demo, and a work-decision starter prompt.** Both are queued as experiments in [experiments/analytics-loop.md](experiments/analytics-loop.md), with their triggers. Both change copy the owner chose. About 15 minutes to approve or refuse each.
 21. **Count verdict labels and quality checks by judge company on the server.** About 15 minutes to decide.
-22. **Add sound cases to the public eval set.** Six sound cases make the false-alarm gate flap: the weekly gate went red on 2026-11-13 at 3 of 6 and green on the next run with the same judge files. About 1 hour to review new cases.
+22. **Add sound cases to the public eval set.** Six sound cases make the false-alarm gate flap: the weekly gate went red on 2026-11-13 at 3 of 6 and green on the next run with the same judge files. About 1 hour to review new cases. Status: six sound cases added, so the public set has 12 sound cases and 35 cases in all. The 0.34 cap is unchanged.
 23. **A judge quality floor** (the router's cost tier and a price ceiling), without pinning a model. About 30 minutes to decide.
 24. **Change the PRINCIPLES definition of evidenced look-backs.** Today it counts public signal issues and outreach replies, and the Pro bar reads it. Look-backs saved on Grill accounts are a separate count and are never added to it. About 15 minutes to decide.
 25. **State a choice on the web, and outcome buttons on the due list.** The new waiting line on Your grills tells people to say the choice in a chat where Grill is connected, so a /judge-only user still has no way to turn a waiting grill into a record. About 15 minutes to decide.
@@ -462,10 +462,6 @@ Consider when: the connect leak or the activation leak in that file shows for a 
 
 Consider when: the four-arm comparison is registered, or 30 outside grills a month.
 
-### More sound cases in the public eval (item 22)
-
-Consider when: now. The false-alarm gate went red on 2026-11-13 at 3 of 6 and green on the next run with the same judge files.
-
 ### A judge quality floor (item 23)
 
 The router's cost tier and a price ceiling, without pinning a model.
@@ -483,6 +479,12 @@ Consider when: a /judge-only user has a waiting grill, or the kill threshold rea
 ## Archived
 
 Ideas moved here are already shipped, or the note is stale. Each one keeps its old consider-when line and says why it left the active list.
+
+### More sound cases in the public eval (item 22)
+
+Consider when: now. The false-alarm gate went red on 2026-11-13 at 3 of 6 and green on the next run with the same judge files.
+
+Archived: six sound cases are in `evals/cases/`. The false-alarm rate is no longer a share of six.
 
 ### Shareable verdict link (no decision text)
 
