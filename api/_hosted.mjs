@@ -222,7 +222,7 @@ const OWNER_CACHE_SECONDS = 10 * 60;
 const GOOGLE_CALENDAR_SUBSCRIBE = "https://calendar.google.com/calendar/r";
 // The public verdict page links here. The server does not fetch it.
 const SHARE_HOME = "https://grillyour.ai/";
-const VERSION = "0.1.1";
+const VERSION = "0.2.0";
 const jwksCache = new Map();
 const userCache = new Map();
 const creditCache = new Map();

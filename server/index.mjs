@@ -104,7 +104,7 @@ import { scheduleUsagePing, sendGrillFeedback } from "../scripts/usageStats.mjs"
 /** Not an account. The installed tool has none. Hashed before it is stored. */
 const LOCAL_FEEDBACK_ID = `local:${randomUUID()}`;
 
-const VERSION = "0.1.1";
+const VERSION = "0.2.0";
 const JUDGE = fileURLToPath(new URL("../scripts/judge.mjs", import.meta.url));
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SETUP_URL = "https://github.com/mtangoz/grill#set-up";

@@ -3,7 +3,7 @@
   "name": "grill",
   "display_name": "Grill",
   "icon": "icon.png",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "license": "MIT",
   "description": "Grill your decisions: an outside AI judge argues the strongest case against a decision or forecast. It is from a different company than Claude when Grill can tell that Claude wrote it.",
   "long_description": "Say **\"grill this\"** in any chat. Claude sends the decision as you said it, with at most a few sentences of context, to an outside judge reached through a model router with your own key. The judge is from a different company than the one that wrote the plan, when Grill can tell which that is. When it cannot, the verdict says so.\n\nThe judge writes the strongest case for and against, names the cheapest test that would settle each challenge, and gives a verdict: holds, holds with conditions, weak, or refuted.\n\nEvery judge request asks for zero-data-retention endpoints only. The quality check request does not. A grill takes 1 to 3 minutes.",
