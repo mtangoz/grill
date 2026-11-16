@@ -1,0 +1,11 @@
+{
+  "id": "sound-two-person-close-count",
+  "kind": "sound",
+  "subject": "Fieldnote Market, a four-person grocery, is deciding whether the closer should keep counting the till alone, or a second person should count the same drawer before the deposit. The team recommends the second count. Over the last quarter the deposit and the register tape differed on 11 nights. The bookkeeper summed those gaps at $640 short. No single night was more than $90. The shop finds the gap the next morning, after the drawer is already at the bank. A second count takes about ten minutes at close. It changes no prices and no hours. The plan: the closer counts, a second person counts the same drawer without hearing the first total, and they deposit only when the two totals match. If the totals differ, they count once more together and write the gap in the close book before anyone leaves. They can return to a single count the next week by dropping the second step. Prediction, offered at 60% confidence: some mismatches will still happen, and a mismatch found at close can be checked the same night, which a mismatch found the next morning cannot. They are not claiming the $640 will be recovered, and they are not claiming the second count will prove where a gap came from. The strongest case against: ten minutes at the end of a long day is a real cost, and on some nights the second person is the owner coming back to the shop. The team accepts that cost. The owner already reconciles the tape the next morning, and this moves that look to the close, when the drawer is still in the shop.",
+  "question": "Should Fieldnote Market have a second person count the till before the deposit, or keep a single count?",
+  "expect": {
+    "verdict_in": ["holds", "holds-with-conditions"],
+    "max_severity": "moderate"
+  },
+  "why": "A second count of the same drawer, before the deposit, on a shop that already logged 11 mismatched nights. The try is ten minutes and can be dropped the next week, and it does not claim the money will be recovered."
+}

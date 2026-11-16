@@ -45,8 +45,8 @@ six of them made one flipped verdict a swing of 1 of 6. `sound-counted-reorder-b
 the shelf before it copies last year's order. `sound-refundable-deposit-trial` tries a refundable
 deposit for one quarter and names the stop. `sound-keep-weekday-lot` keeps the lunch stop measured
 over 40 days instead of a contract that would ban it. `sound-laundry-stay-month-to-month` keeps a
-month-to-month pilot rather than a three-year exit fee. `sound-compost-keep-stop-rule` keeps a
-voted trial and its stop rule rather than a permanent route. `sound-restore-drill-before-delete`
+month-to-month pilot rather than a three-year exit fee. `sound-two-person-close-count` counts
+the till twice before the deposit, on a shop that already logged mismatched nights. `sound-restore-drill-before-delete`
 restores an archive before deleting it to save a small storage bill. Each one names the case
 against and a way back.
 
