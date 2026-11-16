@@ -6,7 +6,11 @@ A change may add one optional line when someone has agreed to be named. Leave th
 
 ## Unreleased
 
-Which channel each change reaches. **At merge and deploy:** Grill in your chat and the website change when the branch is deployed, and the plugin installed from git and the Docker image change at merge. **At the next release:** npm (`npx -y grillyour`), the `.mcpb` bundle and the skill zip still ship 0.1.1 until a new release is cut. No version number changes here.
+Which channel each change reaches. **At merge and deploy:** Grill in your chat and the website change when the branch is deployed, and the plugin installed from git and the Docker image change at merge. **At the next release:** npm (`npx -y grillyour`), the `.mcpb` bundle and the skill zip still ship 0.2.0 until a new release is cut. No version number changes here.
+
+## 0.2.0
+
+Released 16 November 2026. npm (`npx -y grillyour`), the `.mcpb` bundle and the skill zip ship this version when the release workflow runs. `server.json` still names the published 0.1.1 bundle and its checksum until that file exists. Publishing to the MCP Registry is not part of this change.
 
 **Before this deploys:** `GRILL_INTERNAL_EMAILS` must be set in production, listing the maintainer, test, reviewer and agent addresses. While it is unset, no outside counter is written and `node scripts/outside-loop.mjs` prints "not counted: internal list not set".
 
