@@ -836,7 +836,10 @@ async function handle(msg) {
   const isRequest = id !== undefined && id !== null;
   switch (method) {
     case "initialize": {
-      const hint = clientCompanyHint({ clientInfo: params?.clientInfo || params?._meta?.clientInfo || null });
+      const hint = clientCompanyHint({
+        clientInfo:
+          params?.clientInfo || params?._meta?.clientInfo || params?._meta?.["io.modelcontextprotocol/clientInfo"] || null,
+      });
       sessionCompany = hint?.company || "";
       // Nothing names the author yet, so do not tell the assistant the judge is from a different company.
       const judgeIs = sessionAuthor().guessed ? "an outside judge" : "an outside judge from a different company";

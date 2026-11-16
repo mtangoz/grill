@@ -1094,6 +1094,62 @@ describe("hosted Grill", { concurrency: false }, () => {
       }
     });
 
+    it("reads a namespaced clientInfo, and does not let it override an OAuth client or a plain clientInfo", async () => {
+      const usable = JSON.parse(readFileSync(join(ROOT, "scripts/fixtures/usable-response.json"), "utf8"));
+      const fake = await startFakeOpenRouter({
+        chat: (body) => {
+          const excluded = body?.plugins?.[0]?.excluded_models || [];
+          const model = excluded.some((item) => String(item).startsWith("google")) ? "deepseek/deepseek-chat" : "openai/gpt-5.6-sol";
+          return { text: JSON.stringify({ ...usable, model }) };
+        },
+      });
+      const namespaced = (name) => ({ "io.modelcontextprotocol/clientInfo": { name, version: "1.0.0" } });
+      const grill = (id, meta, tokenExtra = {}) =>
+        postMcp(
+          ctx,
+          {
+            jsonrpc: "2.0",
+            id,
+            method: "tools/call",
+            params: {
+              name: "grill",
+              arguments: { subject: "Decision: ship the plan.", keep_records: false, quality_check: false },
+              _meta: meta,
+            },
+          },
+          { token: signJwt(claims({ sub: `user_ns_${id}`, ...tokenExtra })), deps },
+        );
+      const ctx = world();
+      const deps = { ...judgeDeps(fake), waitMs: 20_000 };
+      try {
+        const cowork = await grill(1, namespaced("local-agent-mode-ant.dir.gh.mtangoz.grill"));
+        const coworkText = textOf(cowork.json);
+        assert.equal(cowork.json.result.isError, false, coworkText);
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
+        assert.equal(coworkText.includes("Independence not verified"), false, coworkText);
+
+        const claudeCode = await grill(2, namespaced("claude-code"));
+        const claudeCodeText = textOf(claudeCode.json);
+        assert.equal(claudeCode.json.result.isError, false, claudeCodeText);
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
+        assert.equal(claudeCodeText.includes("Independence not verified"), false, claudeCodeText);
+
+        const oauthWins = await grill(3, namespaced("ChatGPT"), { redirect_uri: CLAUDE_WEB_REDIRECT });
+        const oauthText = textOf(oauthWins.json);
+        assert.equal(oauthWins.json.result.isError, false, oauthText);
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, ["anthropic/*", "*/claude-*"]);
+        assert.equal(oauthText.includes("Independence not verified"), false, oauthText);
+
+        const plainWins = await grill(4, { clientInfo: { name: "Cursor" }, ...namespaced("claude-code") });
+        const plainText = textOf(plainWins.json);
+        assert.equal(plainWins.json.result.isError, false, plainText);
+        assert.deepEqual(fake.seen.chat.at(-1).body.plugins[0].excluded_models, []);
+        assert.ok(plainText.includes("Independence not verified"), plainText);
+      } finally {
+        await fake.close();
+      }
+    });
+
     it("remembers at most eight clients for one person, and forgets a client that connects again without a name it knows", async () => {
       const fake = await startFakeOpenRouter();
       try {
@@ -2749,6 +2805,11 @@ describe("hosted mappings and ledger pins", () => {
       [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "gemini-cli" } }, "google", "gemini"],
       [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Antigravity" } }, "google", "gemini"],
       [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Google-Discovery-Engine" } }, "google", "gemini"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "local-agent-mode-ant.dir.gh.mtangoz.grill" } }, "anthropic", "claude"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "local-agent-mode-" } }, "anthropic", "claude"],
+      [{ redirectUri: CLAUDE_WEB_REDIRECT, clientInfo: { name: "local-agent-mode-ant.dir.gh.mtangoz.grill" } }, "anthropic", "claude"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "not-local-agent-mode-ant" } }, "", "unknown"],
+      [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "local-agent-model" } }, "", "unknown"],
       [{ redirectUri: "https://unknown.example/cb", userAgent: "Google-Discovery-Engine/1.0" }, "google", "gemini"],
       [{ redirectUri: "https://unknown.example/cb", clientInfo: { name: "Cursor" }, userAgent: "Google-Discovery-Engine/1.0" }, "", "cursor"],
       [{ redirectUri: "https://unknown.example/cb", userAgent: "Cursor/1.2" }, "", "cursor"],

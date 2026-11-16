@@ -28,6 +28,7 @@ Which channel each change reaches. **At merge and deploy:** Grill in your chat a
 - A shared link to grillyour.ai/start shows a preview card. /start sets no cookie while sign-up is open. Crawlers, link-preview fetches, requests that are not GET, and seven more automated clients are no longer counted as start views.
 - Grill in chat counts outside use as whole numbers once the operator's internal list is set: first grills by day and app, come-backs, records answers, choices, and look-backs by the day they fall due. No title, text, verdict or account ID. What is counted is in docs/DATA-LEDGER.md.
 - /notify, its confirmation email and the on-the-list page say saved history and look-back reminders work today, free, with Grill in your chat, and link to /start.
+- Grill in chat reads the client name when a handshake puts it only in the newer namespaced field. An app Grill already knows from sign-in still wins.
 
 ### At merge and deploy: the website
 
@@ -50,6 +51,7 @@ Which channel each change reaches. **At merge and deploy:** Grill in your chat a
 - The Claude skill uses the conditional company line, no longer shows a Pro news line on the paste route, and lists anthropic as a judge family for the signal link.
 - The copy-and-paste prompt sends the decision plus a brief summary of the essential context, not whatever is in the chat.
 - The Docker image starts again. It was missing one file, and that is the image Glama builds.
+- Claude Desktop Cowork, which names itself local-agent-mode followed by an extension id, is recognised as Claude, so Anthropic is ruled out. A handshake that puts the client name only in the newer namespaced field is read the same way.
 
 ### At merge: GitHub and maintainer tooling
 
