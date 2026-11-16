@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.mtangoz/grill",
   "title": "Grill",
-  "description": "A second opinion on your decisions, from a different AI company.",
-  "version": "0.1.1",
+  "description": "A second opinion on your decisions, from a different company when Grill can tell which wrote it.",
+  "version": "0.2.0",
   "websiteUrl": "https://grillyour.ai",
   "icons": [
     {

@@ -351,7 +351,7 @@ describe("the registry listing", () => {
   it("server.json names io.github.mtangoz/grill and lists GRILL_API_KEY, mentioning the other accepted name", () => {
     assert.equal(server.$schema, "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json");
     assert.equal(server.name, "io.github.mtangoz/grill");
-    assert.equal(server.version, "0.1.1");
+    assert.equal(server.version, "0.2.0");
     assert.ok(server.description.length >= 1 && server.description.length <= 100);
     assert.equal(server.repository.url, "https://github.com/mtangoz/grill");
     assert.equal(server.repository.source, "github");

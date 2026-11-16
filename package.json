@@ -1,6 +1,6 @@
 {
   "name": "grillyour",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "license": "MIT",
   "type": "module",
   "description": "Grill: an outside AI judge for your decisions, from a different company than the assistant you think with. An MCP server for any app: npx -y grillyour.",

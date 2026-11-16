@@ -6,7 +6,7 @@ A change may add one optional line when someone has agreed to be named. Leave th
 
 ## Unreleased
 
-Which channel each change reaches. **At merge and deploy:** Grill in your chat and the website change when the branch is deployed, and the plugin installed from git and the Docker image change at merge. **At the next release:** npm (`npx -y grillyour`), the `.mcpb` bundle and the skill zip still ship 0.1.1 until a new release is cut. No version number changes here.
+Which channel each change reaches. **At merge and deploy:** Grill in your chat and the website change when the branch is deployed, and the plugin installed from git and the Docker image change at merge. **At the next release:** npm (`npx -y grillyour`), the `.mcpb` bundle and the skill zip. Those ship 0.2.0, cut on 2026-11-16. No version number changes here.
 
 **Before this deploys:** `GRILL_INTERNAL_EMAILS` must be set in production, listing the maintainer, test, reviewer and agent addresses. While it is unset, no outside counter is written and `node scripts/outside-loop.mjs` prints "not counted: internal list not set".
 
@@ -38,20 +38,6 @@ Which channel each change reaches. **At merge and deploy:** Grill in your chat a
 - The about page, the check-your-ai guide, the FAQ, the contribute page, llms.txt and WHY.md say the judge is from a different company when Grill can tell which AI wrote the plan, and no longer say it does not share your AI's blind spots. The home page description no longer promises to find the weak spots.
 - The privacy page and the terms say what Grill in chat keeps: the 15-minute encrypted copy of every grill, records on or off; the account row with your email; the counts; drafts; and the Monday email, including that a job opens kept records to write it. "If you say no, nothing is kept" is gone. The quality check request is no longer described as zero-retention.
 - The README says saved decisions and look-back reminders are free today with Grill in your chat, and that paid plans are off. Its setup link and both /demo links carry a source tag.
-
-### At merge: the plugin from git and the Docker image (at the next release: npm, .mcpb and the skill zip)
-
-- Author names are mapped to the router's own prefixes: `xai` and `grok` to `x-ai`, `claude` to `anthropic`, `gemini` to `google`, `chatgpt`, `gpt` and `codex` to `openai`, `meta`, `muse` and `llama` to `meta-llama`. `GRILL_AUTHOR=xai` used to exclude nobody and now excludes `x-ai`.
-- `none`, or an author outside the 16 router vendor names, is ignored on the call and in `GRILL_AUTHOR`. It no longer turns the exclusion off. A real vendor that is not on the list is no longer excluded.
-- When the author is a guess (no recognised app, no `GRILL_AUTHOR`, no company on the call), every verdict adds a line that starts "Independence not verified:" and says Anthropic was the only company ruled out. In those sessions the grill description and the once-only line no longer say "from a different company".
-- A pinned Anthropic judge with `GRILL_AUTHOR=none` is refused as a same-company pin.
-- The reaction reply says what was sent to Grill and that it is kept 180 days. The no-key reply no longer mentions Grill Pro.
-- The same-company refusal says the judge was from the author's own family, so the run is not an outside review.
-- The plugin's description, and the Desktop extension's description and settings (in the `.mcpb`, so at the release), say the judge is from a different company when Grill can tell, describe the quality check without calling it zero-retention, and drop the Grill Pro key line.
-- The Claude skill uses the conditional company line, no longer shows a Pro news line on the paste route, and lists anthropic as a judge family for the signal link.
-- The copy-and-paste prompt sends the decision plus a brief summary of the essential context, not whatever is in the chat.
-- The Docker image starts again. It was missing one file, and that is the image Glama builds.
-- Claude Desktop Cowork, which names itself local-agent-mode followed by an extension id, is recognised as Claude, so Anthropic is ruled out. A handshake that puts the client name only in the newer namespaced field is read the same way.
 
 ### At merge: GitHub and maintainer tooling
 
@@ -153,6 +139,21 @@ Which channel each change reaches. **At merge and deploy:** Grill in your chat a
 - The website replaces the "Get a starter key" button with a form to hear when Pro is ready, while accounts aren't live. Joining is double opt-in, confirmed with a button press. The confirmation link is encrypted, so the email address is not in the URL. The list is deleted 60 days after the launch email. Sign-ups are Pro interest and are not counted as users. If Resend or Upstash isn't configured, the page says sign-ups aren't open yet.
 - A grill can carry an optional goal and guardrails, in the user's words. The judge checks a stated goal or guardrail and does not invent one. A trade-off the user names and accepts is not a defect. The decision record stays version 1 and adds `goal`, `guardrails` and `source_app` only when they have a value. The Grill tool does not fill in `source_app`. Look-back asks whether the goal was reached and whether the guardrails held.
 - The default judge is only OpenRouter's Auto Router (`openrouter/auto`). It excludes the author's company and does not pin a fallback model. A transient failure retries that same router, with backoff and a fixed limit. If the model that answers is still the excluded company, the run errors and does not return that verdict. `JUDGE_MODEL` still overrides the chain.
+
+## 0.2.0 (2026-11-16)
+
+- Author names are mapped to the router's own prefixes: `xai` and `grok` to `x-ai`, `claude` to `anthropic`, `gemini` to `google`, `chatgpt`, `gpt` and `codex` to `openai`, `meta`, `muse` and `llama` to `meta-llama`. `GRILL_AUTHOR=xai` used to exclude nobody and now excludes `x-ai`.
+- `none`, or an author outside the 16 router vendor names, is ignored on the call and in `GRILL_AUTHOR`. It no longer turns the exclusion off. A real vendor that is not on the list is no longer excluded.
+- When the author is a guess (no recognised app, no `GRILL_AUTHOR`, no company on the call), every verdict adds a line that starts "Independence not verified:" and says Anthropic was the only company ruled out. In those sessions the grill description and the once-only line no longer say "from a different company".
+- A pinned Anthropic judge with `GRILL_AUTHOR=none` is refused as a same-company pin.
+- The reaction reply says what was sent to Grill and that it is kept 180 days. The no-key reply no longer mentions Grill Pro.
+- The same-company refusal says the judge was from the author's own family, so the run is not an outside review.
+- The plugin's description, and the Desktop extension's description and settings, say the judge is from a different company when Grill can tell, describe the quality check without calling it zero-retention, and drop the Grill Pro key line.
+- The Claude skill uses the conditional company line, no longer shows a Pro news line on the paste route, and lists anthropic as a judge family for the signal link.
+- The copy-and-paste prompt sends the decision plus a brief summary of the essential context, not whatever is in the chat.
+- The Docker image starts again. It was missing one file, and that is the image Glama builds.
+- Claude Desktop Cowork, which names itself local-agent-mode followed by an extension id, is recognised as Claude, so Anthropic is ruled out. A handshake that puts the client name only in the newer namespaced field is read the same way.
+- The registry description says the judge is from a different company when Grill can tell which wrote the decision.
 
 ## 0.1.1
 
