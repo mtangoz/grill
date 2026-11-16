@@ -23,6 +23,7 @@ import {
   budgetText,
   challengeScore,
   checkGrounding,
+  clientCompanyHint,
   findCitedSources,
   sourcesLine,
   CHALLENGE_KINDS,
@@ -2053,6 +2054,28 @@ describe("renderRunDisclosure — the run note after every brief", () => {
     assert.ok(shown.indexOf("Say 'more', 'options', or your call.") < shown.indexOf("Models:"), shown);
     assert.ok(shown.endsWith(note), shown);
     assert.equal(shown.indexOf("The question that would change this:"), -1);
+  });
+});
+
+describe("clientCompanyHint", () => {
+  it("recognises Claude Cowork, and does not match Cursor or an unknown name", () => {
+    assert.deepEqual(
+      clientCompanyHint({ clientInfo: { name: "local-agent-mode-ant.dir.gh.mtangoz.grill" } }),
+      { company: "anthropic", sourceApp: "claude" },
+    );
+    assert.deepEqual(clientCompanyHint({ clientInfo: { name: "local-agent-mode-" } }), {
+      company: "anthropic",
+      sourceApp: "claude",
+    });
+    assert.equal(clientCompanyHint({ clientInfo: { name: "Cursor" } }), null);
+    assert.equal(clientCompanyHint({ clientInfo: { name: "unknown" } }), null);
+    assert.equal(clientCompanyHint({ clientInfo: { name: "not-local-agent-mode-ant" } }), null);
+    assert.equal(clientCompanyHint({ clientInfo: { name: "local-agent-model" } }), null);
+    assert.deepEqual(clientCompanyHint({ clientInfo: { name: "claude-ai" } }), { company: "anthropic", sourceApp: "claude" });
+    assert.deepEqual(clientCompanyHint({ clientInfo: { name: "claude-code" } }), {
+      company: "anthropic",
+      sourceApp: "claude-code",
+    });
   });
 });
 

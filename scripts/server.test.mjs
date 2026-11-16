@@ -934,6 +934,74 @@ describe("MCP initialize: the company behind the client", () => {
     }
   });
 
+  it("recognises Claude Cowork, and reads a namespaced clientInfo without letting it override a plain name", async () => {
+    const firstUse = (description) => {
+      const start = description.indexOf("The first time you use Grill");
+      const end = description.indexOf(" quality check", start);
+      return description.slice(start, end === -1 ? undefined : end);
+    };
+    const known = async (params, label) => {
+      const client = connect({});
+      try {
+        const init = await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, ...params });
+        assert.equal(
+          init.result.instructions.startsWith("Grill sends the decision as the user stated it to an outside judge from a different company. "),
+          true,
+          label,
+        );
+        const description = (await client.request("tools/list", {})).result.tools.find((tool) => tool.name === "grill").description;
+        assert.ok(description.startsWith(GRILL_OPENING), label);
+        assert.ok(description.includes(`say once, as one line, and not again: ${ONCE_DISCLOSURE}`), label);
+        assert.equal(description.includes(ONCE_DISCLOSURE_UNVERIFIED), false, label);
+        assert.equal(firstUse(description).includes("Independence not verified:"), false, `${label}: ${firstUse(description)}`);
+      } finally {
+        await client.close();
+      }
+    };
+    await known({ clientInfo: { name: "local-agent-mode-ant.dir.gh.mtangoz.grill", version: "1.0.0" } }, "cowork");
+    await known({ clientInfo: { name: "local-agent-mode-", version: "1.0.0" } }, "bare cowork name");
+    await known(
+      { _meta: { "io.modelcontextprotocol/clientInfo": { name: "claude-code", version: "2.1.325" } } },
+      "namespaced clientInfo",
+    );
+
+    const guessed = async (params, label) => {
+      const client = connect({});
+      try {
+        const init = await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, ...params });
+        assert.equal(
+          init.result.instructions.startsWith("Grill sends the decision as the user stated it to an outside judge. "),
+          true,
+          label,
+        );
+        const description = (await client.request("tools/list", {})).result.tools.find((tool) => tool.name === "grill").description;
+        assert.ok(description.startsWith(GRILL_OPENING_GUESSED), label);
+        assert.ok(description.includes(ONCE_DISCLOSURE_UNVERIFIED), label);
+        assert.equal(description.includes(`say once, as one line, and not again: ${ONCE_DISCLOSURE}`), false, label);
+      } finally {
+        await client.close();
+      }
+    };
+    await guessed({ clientInfo: { name: "Cursor", version: "0" } }, "Cursor");
+    await guessed({ clientInfo: { name: "unknown", version: "0" } }, "unknown");
+    await guessed(
+      {
+        clientInfo: { name: "Cursor", version: "0" },
+        _meta: { "io.modelcontextprotocol/clientInfo": { name: "local-agent-mode-ant.dir.gh.mtangoz.grill" } },
+      },
+      "plain clientInfo wins over the namespaced key",
+    );
+    await guessed(
+      {
+        _meta: {
+          clientInfo: { name: "Cursor", version: "0" },
+          "io.modelcontextprotocol/clientInfo": { name: "claude-code" },
+        },
+      },
+      "the older _meta.clientInfo wins over the namespaced key",
+    );
+  });
+
   it("keeps the guess line when the verdict is collected later with grill_result", { timeout: 10_000 }, async () => {
     const guessed = await initialized(
       { GRILL_API_KEY: KEY, JUDGE_FIXTURE: USABLE, GRILL_CHECK: "false", GRILL_NEWS: "off", GRILL_WAIT_MS: "1000", GRILL_CLOCK_MS: "0", GRILL_CLOCK_STEP_MS: "10000" },

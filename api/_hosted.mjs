@@ -1559,7 +1559,7 @@ function schedule(promise, deps, id) {
 }
 
 function clientInfoOf(params) {
-  return params?._meta?.clientInfo || params?.clientInfo || null;
+  return params?._meta?.clientInfo || params?.clientInfo || params?._meta?.["io.modelcontextprotocol/clientInfo"] || null;
 }
 
 function tokenClientId(payload) {

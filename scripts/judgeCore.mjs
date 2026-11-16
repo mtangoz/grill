@@ -189,6 +189,8 @@ export function autoRouterPlugin(primaryModel, author) {
  * client excludes `google/*` rather than pinning a different vendor.
  */
 const CLIENT_COMPANY_HINTS = Object.freeze([
+  // Claude Desktop Cowork sends local-agent-mode-<extension id>, not claude-ai.
+  [/^local-agent-mode\b/i, "anthropic", "claude"],
   [/\bclaude[- ]code\b/i, "anthropic", "claude-code"],
   [/\bclaude\b/i, "anthropic", "claude"],
   [/\b(?:chatgpt|openai)\b/i, "openai", "chatgpt"],
