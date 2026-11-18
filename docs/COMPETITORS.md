@@ -4,7 +4,7 @@ Updated weekly. This is a register of names from the latest public scan, not a r
 
 The daily growth work reviews docs/ROADMAP.md before it asks what to build. A weekly scan updates docs/ROADMAP.md and docs/COMPETITORS.md together. New ideas get a consider-when line in the roadmap. A scan adds a date and what changed here.
 
-Each entry has the name, a link, what they do, the threat or opportunity, what Grill could learn, the date seen, and the last updated date. Links are only the ones the scan recorded. Last scan: 2026-11-11.
+Each entry has the name, a link, what they do, the threat or opportunity, what Grill could learn, the date seen, and the last updated date. Links are only the ones the scan recorded. Last scan: 2026-11-18.
 
 ## Cruxes
 
@@ -13,7 +13,8 @@ Each entry has the name, a link, what they do, the threat or opportunity, what G
 - Price, seen 2026-11-11: 15 free, then $29 a month. Unchanged. The 15 free Cruxes are in total, not monthly. $29 a month covers 100 Cruxes, then $0.10 for each extra. The site says early access, and rank is not a probability. A research write-up updated 2026-11-01 covers Cruxes Read, which reads an open model's activations. It is research only, needs open weights, and cannot run on closed models. The research page, updated 1 Nov, adds "Shuffle and re-ask". Asking a cheap choice model three times in shuffled order kept more right answers, 64% to 83%. Plain reshuffling got most of that. Accuracy stayed near 50%.
 - Threat or opportunity: threat. Threat level: medium. Unchanged since the last note. They are close on the question, and they keep moving toward research and teams, not the solo in-chat decider.
 - What we learned: the one question is worth showing, after the verdict, in the person's own words, and it has to stay short. A shared session needs a named decision owner. Their FAQ answers how this differs from a pre-mortem or a decision matrix, and says it does not make the decision. Labelling what is shipped, what is preview and what is planned, in plain language, builds trust. Fifteen free checks, then $29 a month, is evidence that some people pay for this job. Grill's own price is a separate decision, and Pro is not live. Publishing failures openly ("7 of 136 met their rule") is a trust move. Grill's own eval results, where a judge rule failed its holdouts, could be summarised in plain words the same way. Counts only.
-- Date seen: 2026-11-11. Last updated: 2026-11-11.
+- 2026-11-18: homepage, FAQ and price re-checked. No change: 15 free Cruxes in total, then $29 a month for 100. Shared sessions still in preview, and the Claude Code harness is still the one that ships.
+- Date seen: 2026-11-11. Last updated: 2026-11-18.
 
 ## Crux (uncrux.io)
 
@@ -60,8 +61,8 @@ Each entry has the name, a link, what they do, the threat or opportunity, what G
 - Link: [install for Claude](https://reasoning.services/install/claude-ai/) · tracker: [agentdiscoverability.com](https://agentdiscoverability.com/track/claude/devils-advocate)
 - What they do: a paid-only remote MCP (OAuth via DCR) with 8 tools: premortem, attack trees, challenge assumptions, 6 adversarial perspectives, and argument-structure analysis. It is one of about 10 reasoning connectors sold together. A third-party tracker shows it as a Community connector in Claude's directory since 2026-08-13, in "AI Strategy & Business Advisory Assistants", next to 45 or more others.
 - Threat or opportunity: threat, low. There is no cross-company judge and no free tier. It is the closest category neighbour inside the Claude directory.
-- What Grill could learn: the same tracker says Community connectors cannot currently be organically discovered in Claude, and only Verified ones can be suggested for a prompt. That is a third-party claim. It matches Anthropic's docs: Community is the default, and Verified is assigned automatically. Expect a Community listing to help with browse, search and credibility, not with automatic suggestions.
-- Date seen: 2026-11-04. Last updated: 2026-11-04.
+- What Grill could learn: the same tracker says Community connectors cannot currently be organically discovered in Claude, and only Verified ones can be suggested for a prompt. That is a third-party claim. It matches Anthropic's docs: Community is the default, and Verified is assigned automatically. Expect a Community listing to help with browse, search and credibility, not with automatic suggestions. Superseded 2026-11-18: Anthropic's own directory docs now say every listing, Community included, is eligible for in-chat suggestions. See Claude Connectors Directory.
+- Date seen: 2026-11-04. Last updated: 2026-11-18.
 
 ## Deliberation
 
@@ -117,6 +118,22 @@ Each entry has the name, a link, what they do, the threat or opportunity, what G
 - What Grill could learn: the "different vendor reviews it" idea keeps spreading among developers. Same content opening as Deliberation.
 - Date seen: 2026-11-11. Last updated: 2026-11-11.
 
+## AI Advisor Lab
+
+- Link: [aiadvisorlab.ai/mcp](https://aiadvisorlab.ai/mcp.html)
+- What they do: a paid MCP server that sends an agent's question or finished work to a panel of domain "advisors". The headline is "Give your agent a second opinion it didn't write itself". The advisors run as separate calls, answer each other, and return one summary. Claims are tagged Verified, Estimate, Assumption or Flagged. There is a contrarian pass at three strengths. A consult runs in the background and takes 10 to 35 minutes, by their estimate. It needs a paid plan, MFA and the customer's own Anthropic key. They list 18 agent platforms, including claude.ai, Claude Code and Cursor. ChatGPT is listed as not supported yet. They say they keep an audit record of each tool call for at least 7 years, with a fingerprint of the request, not its content.
+- Threat or opportunity: threat, low to medium. Same "it didn't write itself" story, aimed at teams and coding agents. The panel runs on the customer's Anthropic key, so a Claude user's review comes from the same company. It is slow, paid and needs set-up, where Grill is fast and free in the chat.
+- What Grill could learn: their page argues that one model playing several reviewers shares one set of blind spots. Grill's line is the same idea, with the company condition stated. Tagging each claim as checked or guessed is a clear trust pattern (competitor-only, needs user signal; no roadmap entry).
+- Date seen: 2026-11-18. Last updated: 2026-11-18.
+
+## Open-source council and devil's-advocate tools, seen November
+
+- Link: [FoFo Council of Personas](https://github.com/Sweet-Papa-Technologies/FoFo-Council-Of-Personas) · [Ethics Vibe Check](https://github.com/r-huijts/ethics-check-mcp) · [devils-advocate](https://github.com/keitashimoda24-maker/devils-advocate)
+- What they do: FoFo runs a council of personas on Gemini, with peer ranking, a devil's-advocate pass and a chairman summary, as a web app and an MCP tool. Ethics Vibe Check is an npm MCP that has a second model check a chat for sycophancy and drift, on request ("Play devil's advocate"), with your own key. devils-advocate is a Claude Code agent that returns fatal points only, each with a fix, and an agree, conditional or object verdict. All are bring-your-own-key developer tools with few or no stars.
+- Threat or opportunity: threat, low. None is in a chat app's directory, and none keeps a record or asks for a look-back.
+- What Grill could learn: "fatal points only, each with a fix" and "on request, not ambient" match how Grill already answers. Nothing to build.
+- Date seen: 2026-11-18. Last updated: 2026-11-18.
+
 ## TruthAgent
 
 - Link: [truth.agnthub.ai](https://truth.agnthub.ai) · post, 2026-10-23: [x.com/TruthAgentAI](https://x.com/TruthAgentAI/status/2113681632528117918)
@@ -155,7 +172,9 @@ Each entry has the name, a link, what they do, the threat or opportunity, what G
 - What they do: Anthropic's directory of connectors. The submission page was edited 2026-10-23 (two edits) and 2026-09-25. Submissions are scanned automatically and listed as a Community connector by default. Some also get a human review. Verified is assigned automatically to highly useful listings, with no application. Local MCPB bundles are no longer accepted. Put them in a plugin instead. Every tool needs a title and a readOnlyHint or destructiveHint. Any paid Claude plan can submit. The submission portal accepts a single remote MCP connector or a plugin bundle. It auto-validates and safety-scans on submit, shows review status, and the owner chooses when to publish. Customize is now Plugins: one page for plugins, skills and connectors, with Verified and Community labels. It reached general availability on 2026-11-09 for Free, Pro, Max, Ultra and Team. Enterprise is 2026-11-30. Claude Marketplace, opened 2026-09-23, lists 2,000+ connectors and plugins.
 - Threat or opportunity: opportunity, medium. Unchanged. A pending submission should list as Community without waiting in a human queue. Community may not be suggested automatically in chats (see Reasoning Services). The listing mainly helps people who search or browse.
 - What Grill could learn: check the portal status of Grill's submission. The listing's first line should say "different AI company judge", because browse and search is the channel. Grill's `.mcpb` can no longer go to the Claude directory. Only the hosted connector or a plugin can.
-- Date seen: 2026-11-11. Last updated: 2026-11-11.
+- 2026-11-18: Anthropic's [directory docs](https://claude.com/docs/connectors/directory) and [directory vs custom](https://claude.com/docs/connectors/building/directory-vs-custom) say every directory listing, Community included, is eligible for Suggested Connectors: Claude recommends it in a chat when it fits the task, with no opt-in. Custom connectors are never suggested. Ranking is by usage. One catalogue serves claude.ai, Desktop, mobile, Claude Code and Cowork. A published listing gets a fixed URL, `claude.ai/directory/connectors/<slug>`, and a dashboard at `claude.ai/directory/manage` with usage and health. Listing edits go through review. A third-party tracker ([agentready.co](https://agentready.co/new/claude/2026-11-15)) counted 178 new Claude connectors on 2026-11-05 and 150 on 2026-11-15. ngrok's 2026-11-17 [changelog](https://ngrok.com/changelog/mcp-claude-directory) confirms a Community listing is suggestion-eligible. Grill is not filed (checked 2026-11-16).
+- Threat or opportunity, 2026-11-18: opportunity, now high. In-chat suggestion is how the ICP would find Grill without a URL. Filing needs a paid Claude plan, which is the owner's.
+- Date seen: 2026-11-11. Last updated: 2026-11-18.
 
 ## ChatGPT and Codex plugin directory
 
@@ -163,15 +182,16 @@ Each entry has the name, a link, what they do, the threat or opportunity, what G
 - What they do: OpenAI's plugin directory. The official submission page, checked 2026-11-11, is still a plugin ZIP upload. Review info now lives in plugin.json, under extensions.com.openai.review. The old submission form is gone. Test cases, a demo URL and release notes can live in the manifest. Automated checks run on upload. Review still needs exactly 5 positive and 3 negative test cases, a demo video URL, a reviewer login with no MFA, email codes or magic links, the four listing URLs (website, support, privacy, terms), a verified individual or business identity, and domain verification at `/.well-known/openai-apps-challenge`. OAuth supports a registered client, DCR or CIMD. MCP server changes go live without resubmitting. OpenAI also rescans the MCP server daily. Release notes from 2026-10-27 add interactive plugin panels. Release notes from 2026-11-10 say an MCP event can start a ChatGPT automation, in Work chats, on the web and on desktop. Custom MCP servers can be added from Plugins without Developer Mode, with a risk acknowledgement. Full write MCP is in beta for Business, Enterprise and Edu. The directory lists about 4,000 plugins, and the queues have lengthened. A DevDay plugins talk, reported secondhand by Codex Insider on 2026-11-11, says ChatGPT can suggest plugins mid-conversation from conversion, active usage and retention, and that a plugin can have a sidebar home or a side panel. Those ranking signals are not on OpenAI's docs page.
 - Threat or opportunity: opportunity, now high. Mid-chat suggestion ranked on retention is the discovery path the ICP would actually see. The queue is getting longer, so submitting earlier matters.
 - What Grill could learn: put the 8 test cases and the demo URL into plugin.json. The remaining human blockers are OpenAI identity verification and the reviewer account's OAuth seeding. Seeding needs a real browser, and Tony's OK on a new OAuth client. The mid-chat ranking claim is a secondhand report of a talk.
-- Date seen: 2026-11-11. Last updated: 2026-11-11.
+- 2026-11-18: Grill was filed on 2026-11-11 (version 1.0.1) and is in review, with OpenAI's estimate of about 2026-11-22. OpenAI's help page [Plugins in ChatGPT](https://help.openai.com/en/articles/20001256-plugins-in-chatgpt) now describes an OpenAI Verified badge, Popular and New & Noteworthy categories, and plugins suggested during a conversation. A [DevDay write-up](https://www.sean-weldon.com/blog/2026-11-14-build-whats-next-on-the-chatgpt-platform-with-plugins-devday-2026) dated 2026-11-14 repeats the 4,000-plugin count and the ranking by conversion, usage and retention. The ranking signals are still secondhand.
+- Date seen: 2026-11-11. Last updated: 2026-11-18.
 
 ## Official MCP Registry
 
 - Link: [releases](https://github.com/modelcontextprotocol/registry/releases) · [1.8.7 note](https://7it.co.il/7maps/news/2026-10-31-mcp-registry-1-8-7-prepared-listing-reads/) · live search: [registry search for grill](https://registry.modelcontextprotocol.io/v0/servers?search=grill)
-- What they do: the official MCP registry. October releases added server-name search indexing (1.8.3), a minimum of 3 characters for searches (1.8.6), and prepared listing reads, off by default (1.8.7, 2026-10-30). No rule changes for publishers. Checked live on 2026-11-04: `io.github.mtangoz/grill` is active but still v0.1.0, with only the stdio `.mcpb` package and no `remotes` entry for `https://grillyour.ai/mcp`. Its description says "A second opinion from an unrelated AI model…". Downstream directories (PulseMCP, mcp.so and others) read this, so they only see the bring-your-own-key local version.
+- What they do: the official MCP registry. October releases added server-name search indexing (1.8.3), a minimum of 3 characters for searches (1.8.6), and prepared listing reads, off by default (1.8.7, 2026-10-30). No rule changes for publishers. Checked live on 2026-11-04: `io.github.mtangoz/grill` is active but still v0.1.0, with only the stdio `.mcpb` package and no `remotes` entry for `https://grillyour.ai/mcp`. Its description says "A second opinion from an unrelated AI model…". Downstream directories (PulseMCP, mcp.so and others) read this, so they only see the bring-your-own-key local version. Re-checked 2026-11-18: the live entry is still v0.1.0. Main now has `server.json` 0.2.0 with the remote and the conditional description, but 0.2.0 is not released or published yet.
 - Threat or opportunity: opportunity, low to medium. A small `server.json` update adding a streamable-http remote for `https://grillyour.ai/mcp`, and a version bump, would show the free hosted path downstream. The scan says that needs a repo change and `mcp-publisher publish` as mtangoz, as a normal growth task.
-- What Grill could learn: directories that copy the official registry only see the local package until that entry changes. PulseMCP says it will ingest from the registry when submissions reopen.
-- Date seen: 2026-11-04. Last updated: 2026-11-04.
+- What Grill could learn: directories that copy the official registry only see the local package until that entry changes. PulseMCP says it will ingest from the registry when submissions reopen. Anthropic's docs say the registry does not surface a server in Claude; only the Claude directory does.
+- Date seen: 2026-11-04. Last updated: 2026-11-18.
 
 ## Smithery
 
@@ -209,7 +229,8 @@ Each entry has the name, a link, what they do, the threat or opportunity, what G
 - What they do: Gemini on the web supports custom apps by MCP URL: Settings, Connected Apps, Add a custom app. DCR is supported, with manual credentials under Advanced. Requirements: US, 18 or older, a personal account, English, Keep Activity on. Once connected, the app works on mobile too, and you can type `@` to target it. On 2026-10-28 Google launched a Connected Apps Platform preview (Google Connected Console). It is one place to register, test and submit MCP apps for Gemini and Google Search, opening to developers in phases. Platform docs updated 2026-10-28 and 2026-10-30 describe the path: register, domain verification, Gemini Developer Mode testing, then review. You choose Search, the Gemini app, or both. Access still opens in phases, through a preview sign-up. A listing needs one global Streamable HTTP endpoint. `grillyour.ai/mcp` fits.
 - Threat or opportunity: opportunity, medium, later. Unchanged. The roadmap trigger is unchanged. Copy and paste into Gemini works today. Adding Grill as a connector inside Gemini is not verified. A listed Gemini or Search app would be a third directory. The platform is a preview with a waitlist.
 - What Grill could learn: the "testing now" line is already settled. Joining the platform preview is a sign-up under a Hold Systems address, so it is Tony's call.
-- Date seen: 2026-11-11. Last updated: 2026-11-11.
+- 2026-11-18: the help page's requirements are unchanged (US, 18 or older, personal account, English, History on). Nothing new to act on.
+- Date seen: 2026-11-11. Last updated: 2026-11-18.
 
 ## Perplexity custom connectors
 

@@ -14,12 +14,12 @@ The 2026-11-13 strategy puts reach first: at today's reach the kill threshold in
 
 Ordered by effect on reach. Times are rough guesses of the owner's own time, not elapsed time. Nothing here is built by an agent.
 
-1. **File the Claude directory listing.** The kit is in [DIRECTORY-SUBMISSIONS.md](DIRECTORY-SUBMISSIONS.md): submit the hosted connector, not the plugin. Needs a paid Claude plan and a reviewer sign-in (item 17). About 1 hour.
-2. **File the ChatGPT listing.** Same kit, plus OpenAI identity verification, a demo video and the reviewer account. About 3 hours, plus OpenAI's wait.
-3. **Cut release 0.2.0 and republish the MCP Registry entry.** Installed users still run 0.1.1 from 2026-09-29, so none of the installed-tool changes in CHANGELOG.md reach npm, the `.mcpb` or the skill zip until then. Do item 27 first, and update the `server.json` description in the conditional form at the same time (item 29). About 1 hour. Status 2026-11-16: 0.2.0 cut, registry publish waits for the owner.
-4. **Tell the launch list that saved history and look-back reminders are live and free.** An agent drafts two sentences; the owner sends. Status: launch email template rewritten 2026-11-15; the owner still sends. About 30 minutes.
+1. **File the Claude directory listing.** The kit is in [DIRECTORY-SUBMISSIONS.md](DIRECTORY-SUBMISSIONS.md): submit the hosted connector, not the plugin. Needs a paid Claude plan and a reviewer sign-in (item 17). About 1 hour. Status 2026-11-18: not filed (checked 2026-11-16). Anthropic's directory docs now say every listing, Community included, can be suggested inside a chat when it fits the task, and custom connectors never are. That makes this the first reach item.
+2. **File the ChatGPT listing.** Same kit, plus OpenAI identity verification, a demo video and the reviewer account. About 3 hours, plus OpenAI's wait. Status: filed by the owner on 2026-11-11 as version 1.0.1. In review, with OpenAI's estimate of about 2026-11-22. Done for the owner unless the reviewer asks for something.
+3. **Cut release 0.2.0 and republish the MCP Registry entry.** Installed users still run 0.1.1 from 2026-09-29, so none of the installed-tool changes in CHANGELOG.md reach npm, the `.mcpb` or the skill zip until then. Do item 27 first, and update the `server.json` description in the conditional form at the same time (item 29). About 1 hour. Status 2026-11-16: 0.2.0 cut, registry publish waits for the owner. Status 2026-11-18: no v0.2.0 tag or GitHub release yet, so npm and the `.mcpb` still ship 0.1.1. The live registry entry is still v0.1.0. The owner runs the release workflow (or pushes tag v0.2.0), then publishes the registry entry.
+4. **Tell the launch list that saved history and look-back reminders are live and free.** An agent drafts two sentences; the owner sends. Status: launch email template rewritten 2026-11-15. On 2026-11-16 the list had no confirmed outside sign-ups, so there is nobody to send it to yet. Comes back when the list has outside names. About 30 minutes.
 5. **Talk to the one real user, and recruit one team pilot** (STRATEGY recommendations 2 and 6). About 2 hours over a few weeks.
-6. **Set `GRILL_INTERNAL_EMAILS` in production BEFORE this branch deploys.** Comma-separated. Include maintainer, test, reviewer and agent addresses (an agent is matched by its own email and by its person's email). An entry needs an @: a value such as `on` counts nobody. Unset, no outside counter is written and the readout prints "not counted: internal list not set". After setting it, run one grill from any account so `node scripts/outside-loop.mjs` shows `Counting since: <day>`. If it is set late, look-back dates set earlier are never counted. Add a reviewer's address before they sign in. Keep it set afterwards. If it is unset later, counting stops from then on and that stretch is never counted. `node scripts/outside-loop.mjs` shows the last day the server counted. About 10 minutes.
+6. **Set `GRILL_INTERNAL_EMAILS` in production BEFORE this branch deploys.** Comma-separated. Include maintainer, test, reviewer and agent addresses (an agent is matched by its own email and by its person's email). An entry needs an @: a value such as `on` counts nobody. Unset, no outside counter is written and the readout prints "not counted: internal list not set". After setting it, run one grill from any account so `node scripts/outside-loop.mjs` shows `Counting since: <day>`. If it is set late, look-back dates set earlier are never counted. Add a reviewer's address before they sign in. Keep it set afterwards. If it is unset later, counting stops from then on and that stretch is never counted. `node scripts/outside-loop.mjs` shows the last day the server counted. About 10 minutes. Status: set in production on 2026-11-13. Counting since 2026-11-14. Done; keep it set and add any new reviewer or agent address before it signs in.
 7. **The four-arm comparison:** read a sample of the seeds, add or commission non-Anthropic seeds, register the protocol, and fund the run (about $25 to $45). The owner's steps are the nine under "What the owner does" in [evals/four-arm/README.md](../evals/four-arm/README.md). Register and fund only after the seed set is fixed. Two drafting rounds showed blind readers find every planted flaw, so the set is too easy as drafted. The drafts are not committed. About 4 hours, plus the run cost.
 8. **The founding-spot line on /start under open sign-up.** "First 100 users get Grill free for life" still shows while open sign-up does not take a spot. Honour it or reword it; more traffic now goes to /start. About 15 minutes to decide.
 9. **The Monday email: opt-in or opt-out, and what follows 2027-01-25.** The paragraph under the records question says Grill may email on a Monday while the test runs; it is not true for held-out accounts, and it stops being true after 2027-01-25. About 30 minutes.
@@ -35,7 +35,7 @@ Ordered by effect on reach. Times are rough guesses of the owner's own time, not
 19. **A call to action on the share page.** ICP.md says share links are proof only. About 10 minutes to decide.
 20. **A homepage link to /demo, and a work-decision starter prompt.** Both are queued as experiments in [experiments/analytics-loop.md](experiments/analytics-loop.md), with their triggers. Both change copy the owner chose. About 15 minutes to approve or refuse each.
 21. **Count verdict labels and quality checks by judge company on the server.** About 15 minutes to decide.
-22. **Add sound cases to the public eval set.** Six sound cases make the false-alarm gate flap: the weekly gate went red on 2026-11-13 at 3 of 6 and green on the next run with the same judge files. About 1 hour to review new cases. Status: six sound cases added, so the public set has 12 sound cases and 35 cases in all. The 0.34 cap is unchanged.
+22. **Add sound cases to the public eval set.** Six sound cases make the false-alarm gate flap: the weekly gate went red on 2026-11-13 at 3 of 6 and green on the next run with the same judge files. About 1 hour to review new cases. Status: six sound cases added, so the public set has 12 sound cases and 35 cases in all. The 0.34 cap is unchanged. Done (archived below).
 23. **A judge quality floor** (the router's cost tier and a price ceiling), without pinning a model. About 30 minutes to decide.
 24. **Change the PRINCIPLES definition of evidenced look-backs.** Today it counts public signal issues and outreach replies, and the Pro bar reads it. Look-backs saved on Grill accounts are a separate count and are never added to it. About 15 minutes to decide.
 25. **State a choice on the web, and outcome buttons on the due list.** The new waiting line on Your grills tells people to say the choice in a chat where Grill is connected, so a /judge-only user still has no way to turn a waiting grill into a record. About 15 minutes to decide.
@@ -46,7 +46,7 @@ Ordered by effect on reach. Times are rough guesses of the owner's own time, not
 30. **Short unconditional "different AI" lines.** The home page description and JSON-LD say "A different AI argues the case against your plan", and the home lede says "from a different AI", with no condition. On a run where nobody is excluded the judge can be the same company's model. Tighten or keep. About 10 minutes.
 31. **Two counter choices.** Split the email arms in the outside counters, or leave them unread. Whether a look-back deleted before its day should stay in the count (today it does). About 15 minutes.
 32. **GitHub upkeep.** Close issues #22 and #123, the two empty monthly learning reports (the workflow now keeps one rolling issue and never touches them). Add a `Written-by-model: <vendor>/<model>` line to the prompts of the automations that open pull requests through the API. Merge the `learn.yml` and `eval.yml` changes by hand: workflow files never merge themselves. About 20 minutes. Status: the `learn.yml` and `eval.yml` changes are on main. They landed with [PR #204](https://github.com/mtangoz/grill/pull/204) on 2026-11-13. Issues #22 and #123 are still open. The Written-by-model line in those automation prompts is still open.
-33. **Sentences that still say "different company" with no condition, in files no package on this branch owned.** The installed judge setting ("it must be from a different company than the assistant that wrote the subject. A same-company pin is refused."), which in a guessed session refuses only an Anthropic pin; `HOSTED_INSTRUCTIONS` ("Exclude only the company that wrote the write-up."); the `judge_model` text in `smithery.yaml` (pinned by scripts/packaging.test.mjs); and docs/ICP.md lines 5 and 15. Give each the condition, or keep it. About 20 minutes.
+33. **Sentences that still say "different company" with no condition, in files no package on this branch owned.** The installed judge setting ("it must be from a different company than the assistant that wrote the subject. A same-company pin is refused."), which in a guessed session refuses only an Anthropic pin; `HOSTED_INSTRUCTIONS` ("Exclude only the company that wrote the write-up."); the `judge_model` text in `smithery.yaml` (pinned by scripts/packaging.test.mjs); and docs/ICP.md lines 5 and 15. Give each the condition, or keep it. About 20 minutes. Status 2026-11-18: the `judge_model` text in `smithery.yaml`, the npm description and the grill tool description now carry the condition (PR #214). The installed judge setting, `HOSTED_INSTRUCTIONS` and docs/ICP.md lines 5 and 15 are still open.
 
 ### Proposed wording, merged by the owner on 2026-11-13
 
@@ -69,8 +69,8 @@ To say no to one row, revert the commit named in it, or reword that sentence alo
 |---|---|---|---|
 | Record the real-user count | High, enables every other trigger | Now | Done |
 | Close the unknown-client judge gap | High, trust | Now | Disclosure shipped; enforcement open |
-| Publish the hosted address on the MCP Registry | Medium, usage | Now | Trigger met |
-| ChatGPT and Claude connector directory listings | High, usage | Now, with the owner's approval | Trigger met, blocked |
+| Publish the hosted address on the MCP Registry | Medium, usage | Now | Trigger met; `server.json` 0.2.0 on main, publish waits for the owner |
+| ChatGPT and Claude connector directory listings | High, usage | Now, with the owner's approval | ChatGPT filed 2026-11-11, in review; Claude not filed |
 | Hand-run partnerships | Medium, usage | Now | Trigger met |
 | Settle the Gemini "testing now" line | Low, trust | Now | Done |
 | Verify Meta AI (Muse) in chat | Medium, usage | Now | Trigger met |
@@ -97,6 +97,7 @@ To say no to one row, revert the commit named in it, or reword that sentence alo
 | Privacy work for work use (work mode, Spaces, org view) | High, revenue later | The triggers in the privacy PRD | Not met |
 | Look-back reminders through ChatGPT MCP events | Medium, retention | ChatGPT listing live and 5 real users with a look-back date, or a user asks | Not met |
 | Publish our eval results in plain words | Low, trust | 10 real users, or a user or reviewer asks | Done |
+| Listing text written for in-chat suggestions | Medium, usage | Claude listing live, and the directory dashboard shows how people find it | Not met |
 | Parked from the 2026-11-13 strategy | Mixed, see the section | The owner's call on each | Waiting on the owner |
 
 ### Triggers that bring several ideas forward at once
@@ -114,7 +115,7 @@ To say no to one row, revert the commit named in it, or reword that sentence alo
 
 The cost line: the hosted service cap is `GRILL_MONTHLY_CAP_USD`, default $20 in the code ([HOSTED.md](HOSTED.md)). Earlier notes here said "about $40 a month", with no source. Use the production value of that cap. The owner sets it.
 
-Last scan: 2026-11-11. Names and links are in [COMPETITORS.md](COMPETITORS.md). An idea taken only from a competitor or a channel post, with no user signal, is labelled (competitor-only, needs user signal). A line that says "Trigger met" means the consider-when is already true. It is still not a promise to build.
+Last scan: 2026-11-18. Names and links are in [COMPETITORS.md](COMPETITORS.md). An idea taken only from a competitor or a channel post, with no user signal, is labelled (competitor-only, needs user signal). A line that says "Trigger met" means the consider-when is already true. It is still not a promise to build.
 
 ## Google Docs add-on
 
@@ -172,6 +173,8 @@ Consider when: now. Do not submit until Tony approves. Blockers: a reviewer demo
 
 Trigger met: the consider-when is now (2026-11-04). Submitting still waits on Tony's approval and the blockers above.
 
+2026-11-18 scan: the ChatGPT plugin was filed on 2026-11-11 and is in review. The Claude listing is not filed. Anthropic's own docs now say every directory listing, Community included, is eligible for Suggested Connectors, Claude's in-chat recommendations, with no opt-in. Custom connectors are never suggested, and ranking is by usage. This replaces the 2026-11-04 note that a Community listing may not be suggested. Anthropic added about 150 to 178 connectors on single days this month, per a third-party tracker, so an early listing has a better chance of collecting usage. The Claude listing still needs a paid Claude plan, which is the owner's.
+
 ## Hand-run partnerships (no commission software)
 
 Impact: medium, usage. One newsletter or pre-install can reach more of the ICP than a month of posts.
@@ -217,6 +220,8 @@ Impact: medium, usage. Downstream directories copy the registry, so one publish 
 The live registry entry, checked 2026-11-04, is still `io.github.mtangoz/grill` at v0.1.0, with only the stdio `.mcpb` package and no `remotes` entry for `https://grillyour.ai/mcp`. Downstream directories read that entry, so they only see the local bring-your-own-key package. This repo's `server.json` already lists that remote and is at 0.1.1. Publishing it (`mcp-publisher publish`, as mtangoz) is separate work. This note does not change `server.json`. PulseMCP submissions are still paused (page last updated 2026-09-03). They say they will ingest the official registry when they reopen. mcp.so was not re-checked.
 
 Consider when: now. Channel hygiene. It does not wait on a real-user count, on feedback, or on cost. It is cheap, and it fixes stale data.
+
+2026-11-18: `server.json` on main is 0.2.0, with the remote and the conditional description. The live entry is still v0.1.0. Publishing waits for the 0.2.0 release, which is the owner's (item 3).
 
 Trigger met: the consider-when is now (2026-11-04).
 
@@ -403,6 +408,16 @@ Cruxes lists every study, failures included. Grill could publish counts-only sum
 Consider when: 10 real users, or a user or reviewer asks how Grill knows its verdicts are any good. (competitor-only, needs user signal)
 
 Done: 2026-11-13. /how-we-test/ shows counts from data/results.json: one run of the weekly regression check, holdout v1, the four-arm comparison as a draft that has not run, real users and the two look-back counts. The 2026-11-13 strategy makes publication unconditional. A measured weekly run is added with `node scripts/results.mjs merge-run <public block>` (LEARNING.md).
+
+## Listing text written for in-chat suggestions (channel-only, needs user signal)
+
+Impact: medium, usage. Claude and ChatGPT both recommend listed connectors inside a chat when they fit the task. The first line and tool titles decide whether "should I do this?" prompts match Grill.
+
+Claude's docs say every directory listing can be suggested in a chat, and ranking is by usage. ChatGPT reportedly ranks mid-chat suggestions on conversion, usage and retention (secondhand). This idea came from the channels, not from a user. Edits to a published Claude listing go through review, so change the text only with evidence of how people find it.
+
+Consider when: the Claude listing is live, and its dashboard shows how people reach it. Or a user says they found Grill through a suggestion.
+
+Status: not met.
 
 ## Parked from the 2026-11-13 strategy
 
