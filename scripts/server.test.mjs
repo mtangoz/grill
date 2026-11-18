@@ -159,7 +159,7 @@ describe("the MCP handshake", () => {
     }
     const grill = res.result.tools[0];
     assert.deepEqual(grill.inputSchema.required, ["subject"]);
-    assert.match(grill.description, /different company than the assistant that wrote it \(Claude, unless set otherwise\)/);
+    assert.match(grill.description, /different company when Grill can tell which wrote it \(Claude, unless set otherwise\)/);
     await c.close();
   });
 
@@ -901,7 +901,7 @@ describe("MCP initialize: the company behind the client", () => {
           assert.equal(description.includes(ONCE_DISCLOSURE), sessionKnows, label);
           assert.equal(description.includes(ONCE_DISCLOSURE_UNVERIFIED), !sessionKnows, label);
           // The opening sentence follows the same rule: no company claim on a guess.
-          assert.equal(description.includes("a model from a different company than the assistant that wrote it"), sessionKnows, label);
+          assert.equal(description.includes("a model from a different company when Grill can tell which wrote it"), sessionKnows, label);
           assert.equal(description.startsWith(`${GRILL_OPENING} The judge is picked by openrouter/auto.`), sessionKnows, label);
           assert.equal(description.startsWith(`${GRILL_OPENING_GUESSED} The judge is picked by openrouter/auto.`), !sessionKnows, label);
           assert.equal(instructions.startsWith("Grill sends the decision as the user stated it to an outside judge from a different company. "), sessionKnows, label);
@@ -1110,7 +1110,7 @@ describe("naming the author", () => {
     // A directory scan, and any app the server does not recognise, reads the guessed form.
     assert.equal(
       GRILL_OPENING,
-      "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).",
+      "Send a decision, plan or forecast to an outside AI judge: a model from a different company when Grill can tell which wrote it (Claude, unless set otherwise).",
     );
     assert.equal(
       GRILL_OPENING_GUESSED,

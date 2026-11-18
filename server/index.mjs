@@ -362,7 +362,7 @@ const SETUP_TEXT = [
 // claim, because Grill only assumed Claude wrote it.
 /** The first sentence of the grill tool when the session knows who wrote the subject. */
 export const GRILL_OPENING =
-  "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).";
+  "Send a decision, plan or forecast to an outside AI judge: a model from a different company when Grill can tell which wrote it (Claude, unless set otherwise).";
 
 /** The first sentence when the author is a guess. It says what is ruled out, and how to change that. */
 export const GRILL_OPENING_GUESSED =

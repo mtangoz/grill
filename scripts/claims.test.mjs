@@ -12,6 +12,8 @@
 // It also holds the wording rules for every public file, the hosted tool strings and the
 // judge's notes: the phrases Grill does not write. And it reads every store key the code
 // writes, by family, and fails when docs/DATA-LEDGER.md has no row for one.
+// It reads the strings directories copy verbatim: the npm description, the grill tool
+// description, smithery.yaml, server.json, and the manifest description and long description.
 // It does not read docs/STRATEGY.md yet.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -202,6 +204,73 @@ describe("claims Grill does not make before they are measured", () => {
     ]);
     assert.ok(readme.includes("The judge is from a different company than the one that wrote the plan, when Grill can tell which that is. When it cannot, the verdict says so."));
     assert.deepEqual(unconditionalIn(readme), []);
+  });
+
+  it("npm, the grill tool, Smithery, the registry and the manifest keep the condition on different company", async () => {
+    // The three sentences these listings used to ship are caught. The conditional sentence is not.
+    assert.deepEqual(
+      unconditionalIn(
+        "Grill: an outside AI judge for your decisions, from a different company than the assistant you think with. An MCP server for any app: npx -y grillyour.",
+      ),
+      ["Grill: an outside AI judge for your decisions, from a different company than the assistant you think with."],
+    );
+    assert.deepEqual(
+      unconditionalIn(
+        "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).",
+      ),
+      [
+        "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).",
+      ],
+    );
+    assert.deepEqual(
+      unconditionalIn("Leave it blank for Grill's default, which picks a judge automatically from a different company than your assistant."),
+      ["Leave it blank for Grill's default, which picks a judge automatically from a different company than your assistant."],
+    );
+    assert.deepEqual(unconditionalIn("A second opinion on your decisions, from a different company when Grill can tell which wrote it."), []);
+
+    const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+    const registry = JSON.parse(readFileSync(join(ROOT, "server.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync(join(ROOT, "manifest.json"), "utf8"));
+    const smithery = readFileSync(join(ROOT, "smithery.yaml"), "utf8");
+    const { buildGrillTools } = await import("../server/index.mjs");
+    const known = buildGrillTools({ checkOn: true }).find((tool) => tool.name === "grill").description;
+    const guessed = buildGrillTools({ checkOn: true, authorGuessed: true }).find((tool) => tool.name === "grill").description;
+    assert.match(pkg.description, /npx -y grillyour/);
+    for (const [name, text] of [
+      ["package.json description", pkg.description],
+      ["grill tool description", known],
+      ["smithery.yaml", smithery],
+      ["server.json description", registry.description],
+      ["manifest.json description", manifest.description],
+      ["manifest.json long_description", manifest.long_description],
+    ]) {
+      assert.match(text, /different company/, `${name} still says when the judge is from a different company`);
+      assert.match(text, /when Grill can tell/, `${name} keeps the condition`);
+    }
+    // The once-only line is privacy wording, and the server uses another sentence when the author
+    // is a guess. The pin sentence is the refusal rule (a same-company pin is refused). The
+    // manifest's judge setting says that same rule and is not read here.
+    const leftAlone = (sentence) => {
+      const flat = flatten(sentence);
+      return flat.includes("the router does not keep it") || flat.includes("it must be from a different company");
+    };
+    const surfaces = [
+      ["package.json description", pkg.description],
+      ["grill tool description", known],
+      ["grill tool description when the author is a guess", guessed],
+      ["smithery.yaml", smithery],
+      ["server.json description", registry.description],
+      ["manifest.json description", manifest.description],
+      ["manifest.json long_description", manifest.long_description],
+    ];
+    const hits = [];
+    for (const [name, text] of surfaces) {
+      for (const sentence of unconditionalIn(text)) {
+        if (name.startsWith("grill tool description") && leftAlone(sentence)) continue;
+        hits.push(`${name}: ${sentence}`);
+      }
+    }
+    assert.deepEqual(hits, []);
   });
 });
 
