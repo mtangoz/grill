@@ -247,13 +247,23 @@ describe("claims Grill does not make before they are measured", () => {
       assert.match(text, /different company/, `${name} still says when the judge is from a different company`);
       assert.match(text, /when Grill can tell/, `${name} keeps the condition`);
     }
-    // The once-only line is privacy wording, and the server uses another sentence when the author
-    // is a guess. The pin sentence is the refusal rule (a same-company pin is refused). The
-    // manifest's judge setting says that same rule and is not read here.
-    const leftAlone = (sentence) => {
-      const flat = flatten(sentence);
-      return flat.includes("the router does not keep it") || flat.includes("it must be from a different company");
-    };
+    // Two sentences in the tool description are left as written. The once-only line is privacy
+    // wording, and the server uses another sentence when the author is a guess. The pin sentence
+    // is the refusal rule. The manifest's judge setting says that same rule and is not read here.
+    // The match is the whole sentence. A sentence that only borrows one of these phrases is caught.
+    const onceLine =
+      "The first time you use Grill with this person, say once, as one line, and not again: This goes to an outside judge from a different company, and the router does not keep it.";
+    const pinLine =
+      "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject.";
+    const approved = new Set([flatten(onceLine), flatten(pinLine)]);
+    const kept = (sentence) => approved.has(flatten(sentence));
+    const borrowed =
+      "This goes to an outside judge from a different company, and the router does not keep it, so the judge is always from a different company.";
+    assert.deepEqual(unconditionalIn(borrowed).filter((sentence) => !kept(sentence)), [borrowed]);
+    assert.deepEqual(
+      unconditionalIn(`${pinLine} The judge is always from a different company.`).filter((sentence) => !kept(sentence)),
+      ["The judge is always from a different company."],
+    );
     const surfaces = [
       ["package.json description", pkg.description],
       ["grill tool description", known],
@@ -266,11 +276,14 @@ describe("claims Grill does not make before they are measured", () => {
     const hits = [];
     for (const [name, text] of surfaces) {
       for (const sentence of unconditionalIn(text)) {
-        if (name.startsWith("grill tool description") && leftAlone(sentence)) continue;
+        if (name.startsWith("grill tool description") && kept(sentence)) continue;
         hits.push(`${name}: ${sentence}`);
       }
     }
     assert.deepEqual(hits, []);
+    // The two approved sentences are still the ones the tool description ships, so the allowlist cannot go stale.
+    assert.deepEqual(unconditionalIn(known).filter(kept).map(flatten).sort(), [flatten(onceLine), flatten(pinLine)].sort());
+    assert.deepEqual(unconditionalIn(guessed).filter(kept).map(flatten), [flatten(pinLine)]);
   });
 });
 
