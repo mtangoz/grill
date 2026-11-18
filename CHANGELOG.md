@@ -8,6 +8,10 @@ A change may add one optional line when someone has agreed to be named. Leave th
 
 Which channel each change reaches. **At merge and deploy:** Grill in your chat and the website change when the branch is deployed, and the plugin installed from git and the Docker image change at merge. **At the next release:** npm (`npx -y grillyour`), the `.mcpb` bundle and the skill zip still ship 0.2.0 until a new release is cut. No version number changes here.
 
+### At merge: the plugin from git and the Docker image (at the next release: npm and the .mcpb)
+
+- The installed grill tool's opening line says the judge is from a different company when Grill can tell which wrote it. The same condition is in the npm description and the Smithery judge setting.
+
 ## 0.2.0
 
 Released 16 November 2026. npm (`npx -y grillyour`), the `.mcpb` bundle and the skill zip ship this version when the release workflow runs. `server.json` still names the published 0.1.1 bundle and its checksum until that file exists. Publishing to the MCP Registry is not part of this change.

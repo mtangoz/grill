@@ -20,7 +20,7 @@ startCommand:
       judgeModel:
         type: string
         title: Judge model (optional)
-        description: Leave it blank for Grill's default, which picks a judge automatically from a different company than your assistant.
+        description: Leave it blank for Grill's default, which picks a judge automatically from a different company when Grill can tell which wrote it.
       showNews:
         type: boolean
         title: Show Grill news

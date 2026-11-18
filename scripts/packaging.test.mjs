@@ -480,7 +480,7 @@ describe("Smithery listing file", () => {
     assert.match(yaml, /GRILL_USAGE_STATS: config\.usageStats === true \? "true" : "false"/);
     assert.match(yaml, /GRILL_CLIENT: "smithery"/);
     assert.equal(pkg.dependencies, undefined);
-    assert.match(yaml, /Leave it blank for Grill's default, which picks a judge automatically from a different company than your assistant/);
+    assert.match(yaml, /Leave it blank for Grill's default, which picks a judge automatically from a different company when Grill can tell which wrote it/);
     assert.doesNotMatch(yaml, /gemini-2\.5-pro/);
     assert.doesNotMatch(manifest.user_config.judge_model.description, /gemini-2\.5-pro/);
     assert.doesNotMatch(plugin.userConfig.judge_model.description, /gemini-2\.5-pro/);

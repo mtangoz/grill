@@ -1398,7 +1398,7 @@ const HOSTED_GRILL_TAIL =
 // These are the installed sentences that hostedTools() swaps out. scripts/platformPolicy.test.mjs fails if
 // one of them stops matching, so a change to the installed text cannot leave it in place here.
 export const LOCAL_ONLY_OPENING =
-  "Send a decision, plan or forecast to an outside AI judge: a model from a different company than the assistant that wrote it (Claude, unless set otherwise).";
+  "Send a decision, plan or forecast to an outside AI judge: a model from a different company when Grill can tell which wrote it (Claude, unless set otherwise).";
 export const HOSTED_OPENING =
   "Send a decision, plan or forecast to an outside AI judge. The judge is from a different company than the one whose model wrote it, when Grill can tell which that is. When it cannot, the verdict says so.";
 export const LOCAL_ONLY_JUDGE_SETTING =
