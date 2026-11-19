@@ -33,7 +33,7 @@ Ordered by effect on reach. Times are rough guesses of the owner's own time, not
 17. **Reviewer sign-in without an emailed code.** The options are in the kit. About 30 minutes to choose.
 18. **Auth on the digest route.** About 10 minutes to decide.
 19. **A call to action on the share page.** ICP.md says share links are proof only. About 10 minutes to decide.
-20. **A homepage link to /demo, and a work-decision starter prompt.** Both are queued as experiments in [experiments/analytics-loop.md](experiments/analytics-loop.md), with their triggers. Both change copy the owner chose. About 15 minutes to approve or refuse each.
+20. **A homepage link to /demo, and a work-decision starter prompt.** The starter-prompt half shipped 2026-11-19 under the owner's delegation. The homepage /demo link half stays waiting. Both are experiments in [experiments/analytics-loop.md](experiments/analytics-loop.md). The homepage link changes copy the owner chose. About 15 minutes to approve or refuse that half.
 21. **Count verdict labels and quality checks by judge company on the server.** About 15 minutes to decide.
 22. **Add sound cases to the public eval set.** Six sound cases make the false-alarm gate flap: the weekly gate went red on 2026-11-13 at 3 of 6 and green on the next run with the same judge files. About 1 hour to review new cases. Status: six sound cases added, so the public set has 12 sound cases and 35 cases in all. The 0.34 cap is unchanged. Done (archived below).
 23. **A judge quality floor** (the router's cost tier and a price ceiling), without pinning a model. About 30 minutes to decide.
@@ -469,9 +469,9 @@ Consider when: the share link is used by outside accounts, and the owner says ye
 
 ### A homepage link to /demo, and a work-decision starter (item 20)
 
-Queued in [experiments/analytics-loop.md](experiments/analytics-loop.md) with their triggers and measures.
+The starter-prompt half shipped 2026-11-19 under the owner's delegation. The homepage /demo link half stays waiting. See [experiments/analytics-loop.md](experiments/analytics-loop.md).
 
-Consider when: the connect leak or the activation leak in that file shows for a week, and the owner says yes to that experiment.
+Consider when: the connect leak in that file shows for a week, and the owner says yes to the homepage link.
 
 ### Count verdict labels and quality checks by judge company on the server (item 21)
 

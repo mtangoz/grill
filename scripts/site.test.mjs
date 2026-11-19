@@ -698,7 +698,7 @@ describe("the /start page", () => {
   const VSCODE_LINK = "https://insiders.vscode.dev/redirect/mcp/install?name=Grill&amp;config=%7B%22name%22%3A%22Grill%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fgrillyour.ai%2Fmcp%22%7D";
   const HOSTED = "https://grillyour.ai/mcp";
   const PROMPT_LINK = "https://github.com/mtangoz/grill/blob/main/prompts/grill.md";
-  const STARTER = "Grill this: should I captain Erling Haaland or Nicholas Jackson this week?";
+  const STARTER = "Grill this: ChatGPT says I should move our launch up two weeks to beat a competitor. Should I tell my boss we can do it?";
   const PRIVACY_LINE = "Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.";
   const CHIPS = [
     ["chatgpt", "ChatGPT"],
@@ -805,6 +805,11 @@ describe("the /start page", () => {
     assert.match(start, /When Grill is connected, most apps show a Grill tool call when it runs\. If yours shows none and the answer still claims to be Grill's, Grill may not have run\./);
     assert.doesNotMatch(start, /Grill doesn't (see|keep)|Grill does not (see|keep) grills/i);
     assert.ok(start.includes(`<p id="starter-prompt">${STARTER}</p>`), "starter prompt");
+    const starter = start.match(/<p id="starter-prompt">([^<]*)<\/p>/)?.[1] ?? "";
+    assert.match(starter, /^Grill this:/, "the starter begins with Grill this");
+    assert.doesNotMatch(starter, /Haaland|Jackson|\bcaptain\b/i, "the starter is not the fantasy captaincy line");
+    assert.match(starter, /\b(boss|launch)\b/, "the starter is a work decision");
+    assert.ok(starter.length < 200, `starter is ${starter.length} characters`);
     assert.match(start, /<button class="button" type="button" id="copy-starter">Copy<\/button>/);
     assert.match(start, /class="tool-panel for-either" id="try-grill"/);
     assert.doesNotMatch(start, /Should work, testing now|coming soon|Meta AI|verified working|Keep Activity|Connected Apps|Add a custom app|personal Google account/i);
@@ -1633,7 +1638,7 @@ describe("markdown for agents", () => {
       assert.equal(start.includes("Meta AI"), false);
       assert.equal(start.includes("invite-only"), false);
       assert.equal(start.includes("You hit the invite wall"), false);
-      assert.ok(start.includes("Grill this: should I captain Erling Haaland or Nicholas Jackson this week?"));
+      assert.ok(start.includes("Grill this: ChatGPT says I should move our launch up two weeks to beat a competitor. Should I tell my boss we can do it?"));
       assert.ok(start.includes("https://grillyour.ai/mcp"));
       assert.ok(start.includes("https://grillyour.ai/terms"));
       assert.ok(start.includes("Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us."));

@@ -39,7 +39,10 @@ Vercel Hobby can read pageviews, but **custom events return 402**. PostHog (Gril
 One change per week. Revert it if its measure does not move in two weeks. At about one real user, a week of data may not separate signal from noise, so act only on a gap of several counts.
 
 1. **"See a grill first" under the homepage button.** Trigger: the connect leak above (`/` visitors far above `start_ref:home`) for a week. Change: one plain text link under the button, to `/demo/`. Measure: `start_ref:home` plus `start_ref:demo`. It changes the one-button homepage the owner chose, and breaks the site test that keeps `/demo/` off the homepage.
-2. **A work decision as the starter prompt.** Trigger: start views rise while outside first grills do not (the activation leak). Change: replace the fantasy-football starter on /start with a work decision in the person's own words. Measure: `First grills by app` in `node scripts/outside-loop.mjs`. It changes the starter prompt several tests pin.
+
+## Shipped experiments
+
+2. **A work decision as the starter prompt.** Shipped 2026-11-19 under the owner's delegation. Trigger: start views rise while outside first grills do not (the activation leak). Change: the fantasy-football starter on /start is a work decision in the person's own words. Measure: `First grills by app` in `node scripts/outside-loop.mjs`. Revert if that measure does not move in two weeks.
 
 ## Grill of this plan (9 Nov 2026)
 
@@ -49,4 +52,5 @@ Verdict: **Solid if**.
 
 ## Changes
 
+- 2026-11-19: experiment 2 shipped. The /start starter is a work decision. Measure: `First grills by app` in `node scripts/outside-loop.mjs`. Revert if that measure does not move in two weeks.
 - 2026-11-13: start views count browser GET views only, so the series breaks at merge. The weekly JSON line gains `date` and `installPings`, and five ref labels. The outside readout is added for activation and repeat. Two experiments are queued, not shipped.

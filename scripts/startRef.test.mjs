@@ -92,8 +92,10 @@ describe("start attribution", () => {
     const start = readFileSync(join(ROOT, "site/start.html"), "utf8");
     assert.match(start, /id="copy-starter"/);
     assert.match(start, /First 100 users get Grill free for life, 100 spots left\./);
-    const STARTER = "Grill this: should I captain Erling Haaland or Nicholas Jackson this week?";
+    const STARTER = "Grill this: ChatGPT says I should move our launch up two weeks to beat a competitor. Should I tell my boss we can do it?";
     assert.ok(start.includes(STARTER), "starter prompt");
+    assert.match(STARTER, /^Grill this:/);
+    assert.doesNotMatch(start.match(/<p id="starter-prompt">([^<]*)<\/p>/)?.[1] ?? "", /Haaland|Jackson|\bcaptain\b/i);
     assert.ok(start.includes("https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=Grill&amp;connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp"));
   });
 });
