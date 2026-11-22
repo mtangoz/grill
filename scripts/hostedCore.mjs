@@ -554,6 +554,41 @@ export function topupsEnabled(env = {}) {
   return String(env.GRILL_TOPUPS ?? "").trim() === "on";
 }
 
+/** Off-session pack charges. Off unless this is exactly `on`. The account checkbox still defaults to on. */
+export function autoTopupEnabled(env = {}) {
+  return String(env.GRILL_AUTO_TOPUP ?? "").trim() === "on";
+}
+
+export const AUTO_TOPUP_CEILINGS_CENTS = Object.freeze([1000, 2000, 5000]);
+export const DEFAULT_AUTO_TOPUP_CEILING_CENTS = 2000;
+
+export function autoTopupCeilingCents(account) {
+  const n = Number(account?.autoTopupCeilingCents);
+  return AUTO_TOPUP_CEILINGS_CENTS.includes(n) ? n : DEFAULT_AUTO_TOPUP_CEILING_CENTS;
+}
+
+export function autoTopupSpentKey(accountId, month) {
+  return `grill:autotopup:spent:${accountId}:${month}`;
+}
+
+export function autoTopupLockKey(accountId) {
+  return `grill:autotopup:lock:${accountId}`;
+}
+
+export function autoTopupAttemptKey(accountId, month) {
+  return `grill:autotopup:attempt:${accountId}:${month}`;
+}
+
+export function topupPaymentKey(paymentIntentId) {
+  return `grill:topup:pi:${paymentIntentId}`;
+}
+
+/** The in-chat stop when an automatic add was attempted and the card did not pay. No price. */
+export function autoTopupFailedText(origin = "") {
+  const base = accountPageUrl(origin);
+  return `You've run out of checks, so this one didn't run. The automatic top-up didn't go through. Add checks at ${base}. The free allowance starts again on the 1st.`;
+}
+
 export const DEFAULT_TOPUP_CHECKS = 100;
 export const DEFAULT_TOPUP_PRICE_CENTS = 500;
 

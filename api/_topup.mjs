@@ -4,11 +4,17 @@
 import { isStripeCustomerId, proClients, setMonthlyLimit, UpstreamError } from "./_pro.mjs";
 import { redisCommand } from "./_account.mjs";
 import {
+  autoTopupAttemptKey,
+  autoTopupCeilingCents,
+  autoTopupEnabled,
+  autoTopupLockKey,
+  autoTopupSpentKey,
   hostedAccountKey,
   isoMonth,
   keyLimitWithTopup,
   serviceRevenueKey,
   topupBalanceKey,
+  topupPaymentKey,
   topupBudgetUsd,
   topupEventKey,
   topupPack,
@@ -22,6 +28,8 @@ const EVENT_TTL_SECONDS = 40 * 24 * 60 * 60;
 const ACCOUNT_RE = /^[A-Za-z0-9_-]{8,80}$/;
 const EVENT_RE = /^evt_[A-Za-z0-9]{8,80}$/;
 const SESSION_RE = /^cs_(?:test|live)_[A-Za-z0-9]{8,200}$/;
+const PI_RE = /^pi_[A-Za-z0-9]{8,80}$/;
+const PM_RE = /^pm_[A-Za-z0-9_]{8,80}$/;
 
 /** A price a person pays, from integer cents. "$5" or "$5.50". */
 export function topupPriceLabel(cents) {
@@ -86,7 +94,7 @@ function stripeFailure(res, what) {
  * (`payment_intent_data[setup_future_usage]`). A failure carries `stripeCode` only.
  * @returns {Promise<{state: "off"|"mode"|"unconfigured"|"redirect", url?: string}>}
  */
-export async function startTopupCheckout({ env, fetch: fetchImpl, account, origin }) {
+export async function startTopupCheckout({ env, fetch: fetchImpl, account, origin, autoTopup = false }) {
   if (!topupsEnabled(env)) return { state: "off" };
   if (!stripeModeAllowed(env)) return { state: "mode" };
   const price = topupPriceId(env);
@@ -113,6 +121,7 @@ export async function startTopupCheckout({ env, fetch: fetchImpl, account, origi
     cancel_url: `${home}/account?topup=cancel`,
     "metadata[grill_topup]": "1",
     "metadata[grill_account]": account.id,
+    ...(autoTopupEnabled(env) ? { "metadata[grill_auto_topup]": autoTopup ? "1" : "0" } : {}),
   });
   const url = created.body?.url;
   if (!created.ok || typeof url !== "string" || !/^https:\/\/checkout\.stripe\.com\//.test(url)) {
@@ -123,7 +132,79 @@ export async function startTopupCheckout({ env, fetch: fetchImpl, account, origi
 
 async function release(command, eventKey, sessionKey) {
   await command(["DEL", eventKey]).catch(() => {});
-  await command(["DEL", sessionKey]).catch(() => {});
+  if (sessionKey) await command(["DEL", sessionKey]).catch(() => {});
+}
+
+function paymentMethodId(pi) {
+  const method = pi?.payment_method;
+  if (typeof method === "string" && PM_RE.test(method)) return method;
+  if (method && typeof method.id === "string" && PM_RE.test(method.id)) return method.id;
+  return "";
+}
+
+function cardLast4(pi) {
+  const method = pi?.payment_method;
+  const fromMethod = method && typeof method === "object" ? method.card?.last4 : "";
+  const charge = Array.isArray(pi?.charges?.data) ? pi.charges.data[0] : pi?.latest_charge;
+  const fromCharge = charge && typeof charge === "object" ? charge.payment_method_details?.card?.last4 : "";
+  const last4 = /^\d{4}$/.test(fromMethod) ? fromMethod : fromCharge;
+  return /^\d{4}$/.test(last4) ? last4 : "";
+}
+
+function failureCode(body) {
+  const code = String(body?.error?.code || body?.error?.decline_code || "");
+  if (code === "authentication_required" || code === "card_declined") return code;
+  if (body?.status === "requires_action" || body?.error?.payment_intent?.status === "requires_action") return "authentication_required";
+  return "failed";
+}
+
+function rememberCard(account, pi) {
+  const method = paymentMethodId(pi);
+  const last4 = cardLast4(pi);
+  if (method) account.stripePaymentMethodId = method;
+  if (last4) account.cardLast4 = last4;
+}
+
+async function loadPaymentIntent(stripe, id) {
+  if (!PI_RE.test(String(id || ""))) return null;
+  const got = await stripe.get(`/v1/payment_intents/${id}`);
+  return got.ok ? got.body : null;
+}
+
+async function creditBalance(redis, { env, fetchImpl, account, pack }) {
+  const person = account.human || account.email || account.id;
+  const balanceKey = topupBalanceKey(person);
+  const budgetMicros = toMicros(pack.budgetUsd);
+  const revenueMicros = toMicros(pack.priceCents / 100);
+  const revenueKey = serviceRevenueKey(isoMonth());
+  const undo = async () => {
+    await redis(["HINCRBY", balanceKey, "checks", String(-pack.checks)]).catch(() => {});
+    await redis(["HINCRBY", balanceKey, "budget_micros", String(-budgetMicros)]).catch(() => {});
+    await redis(["INCRBY", revenueKey, String(-revenueMicros)]).catch(() => {});
+  };
+  try {
+    await redis(["HINCRBY", balanceKey, "checks", String(pack.checks)]);
+    await redis(["HINCRBY", balanceKey, "budget_micros", String(budgetMicros)]);
+    await redis(["INCRBY", revenueKey, String(revenueMicros)]);
+    await redis(["EXPIRE", revenueKey, String(EVENT_TTL_SECONDS)]);
+  } catch (error) {
+    await undo();
+    throw error;
+  }
+  if (account.keyHash) {
+    const left = Number(await redis(["HGET", balanceKey, "budget_micros"])) || 0;
+    const checksLeft = Number(await redis(["HGET", balanceKey, "checks"])) || 0;
+    const limit = keyLimitWithTopup(env, left / 1_000_000, checksLeft);
+    try {
+      await setMonthlyLimit(account.keyHash, limit, { env, fetch: fetchImpl });
+    } catch (error) {
+      await undo();
+      throw error;
+    }
+    account.keyLimitUsd = limit;
+    account.keyReset = "monthly";
+  }
+  return undo;
 }
 
 /**
@@ -163,42 +244,164 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
     await release(redis, eventKey, sessionKey);
     return { action: "ignored" };
   }
-  const person = account.human || account.email || account.id;
-  const balanceKey = topupBalanceKey(person);
-  const budgetMicros = toMicros(pack.budgetUsd);
-  const revenueMicros = toMicros(pack.priceCents / 100);
-  const revenueKey = serviceRevenueKey(isoMonth());
-  const undo = async () => {
-    await redis(["HINCRBY", balanceKey, "checks", String(-pack.checks)]).catch(() => {});
-    await redis(["HINCRBY", balanceKey, "budget_micros", String(-budgetMicros)]).catch(() => {});
-    await redis(["INCRBY", revenueKey, String(-revenueMicros)]).catch(() => {});
-  };
+  let undo = async () => {};
   try {
-    await redis(["HINCRBY", balanceKey, "checks", String(pack.checks)]);
-    await redis(["HINCRBY", balanceKey, "budget_micros", String(budgetMicros)]);
-    await redis(["INCRBY", revenueKey, String(revenueMicros)]);
-    await redis(["EXPIRE", revenueKey, String(EVENT_TTL_SECONDS)]);
+    undo = await creditBalance(redis, { env, fetchImpl, account, pack });
   } catch (error) {
     await undo();
     await release(redis, eventKey, sessionKey);
     throw error;
   }
-  if (account.keyHash) {
-    const left = Number(await redis(["HGET", balanceKey, "budget_micros"])) || 0;
-    const checksLeft = Number(await redis(["HGET", balanceKey, "checks"])) || 0;
-    const limit = keyLimitWithTopup(env, left / 1_000_000, checksLeft);
+  if (autoTopupEnabled(env)) {
+    const choice = session.metadata?.grill_auto_topup;
+    if (choice === "1" || choice === "0") account.autoTopup = choice === "1";
+    if (!account.autoTopupCeilingCents) account.autoTopupCeilingCents = autoTopupCeilingCents(account);
     try {
-      await setMonthlyLimit(account.keyHash, limit, { env, fetch: fetchImpl });
-    } catch (error) {
-      await undo();
-      await release(redis, eventKey, sessionKey);
-      throw error;
+      const { stripe } = proClients(env, fetchImpl);
+      rememberCard(account, await loadPaymentIntent(stripe, session.payment_intent));
+    } catch {
+      // The pack is already paid. A missing card can be saved on the next pack.
     }
-    account.keyLimitUsd = limit;
-    account.keyReset = "monthly";
-    await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
   }
+  await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
   return { action: "credited" };
+}
+
+export function isAutoTopupPayment(event) {
+  const pi = event?.data?.object;
+  return (event?.type === "payment_intent.succeeded" || event?.type === "payment_intent.payment_failed") && pi?.metadata?.grill_auto === "1" && pi?.metadata?.grill_topup === "1";
+}
+
+/** Credit an off-session pack, or turn automatic add off when the card did not pay. */
+export async function applyAutoTopupPayment(event, { env, fetch: fetchImpl, command }) {
+  if (!isAutoTopupPayment(event)) return { action: "ignored" };
+  if (!topupsEnabled(env) || !autoTopupEnabled(env)) return { action: "off" };
+  const pi = event.data.object ?? {};
+  const accountId = String(pi.metadata?.grill_account || "");
+  if (!ACCOUNT_RE.test(accountId) || !PI_RE.test(String(pi.id || ""))) return { action: "ignored" };
+  const redis = command || redisCommand(env, fetchImpl);
+  if (event.type === "payment_intent.payment_failed") {
+    await disableAutoTopup(redis, accountId, failureCode(pi));
+    return { action: "disabled" };
+  }
+  if (pi.status !== "succeeded" || pi.currency !== "usd" || Number(pi.amount_received ?? pi.amount) !== topupPack(env).priceCents) {
+    return { action: "amount" };
+  }
+  return creditClaimedPayment(redis, { env, fetchImpl, accountId, pi });
+}
+
+async function disableAutoTopup(redis, accountId, code) {
+  const raw = await redis(["GET", hostedAccountKey(accountId)]);
+  if (typeof raw !== "string" || !raw) return;
+  let account;
+  try {
+    account = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  account.autoTopup = false;
+  account.autoTopupFailure = {
+    code: /^(card_declined|authentication_required|failed)$/.test(code) ? code : "failed",
+    at: new Date().toISOString(),
+  };
+  await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
+}
+
+async function creditClaimedPayment(redis, { env, fetchImpl, accountId, pi }) {
+  const claim = topupPaymentKey(pi.id);
+  if ((await redis(["SET", claim, accountId, "NX", "EX", String(EVENT_TTL_SECONDS)])) !== "OK") return { action: "duplicate" };
+  const raw = await redis(["GET", hostedAccountKey(accountId)]);
+  if (typeof raw !== "string" || !raw) {
+    await redis(["DEL", claim]);
+    return { action: "no-account" };
+  }
+  let account;
+  try {
+    account = JSON.parse(raw);
+  } catch {
+    await redis(["DEL", claim]);
+    return { action: "ignored" };
+  }
+  const pack = topupPack(env);
+  try {
+    await creditBalance(redis, { env, fetchImpl, account, pack });
+  } catch (error) {
+    await redis(["DEL", claim]);
+    throw error;
+  }
+  rememberCard(account, pi);
+  account.autoTopupFailure = null;
+  await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
+  const month = String(pi.metadata?.grill_month || isoMonth());
+  const spentKey = autoTopupSpentKey(accountId, month);
+  await redis(["INCRBY", spentKey, String(pack.priceCents)]);
+  await redis(["EXPIRE", spentKey, String(EVENT_TTL_SECONDS)]);
+  return { action: "credited" };
+}
+
+/**
+ * Charge one pack off-session when an opted-in account has no checks left.
+ * One lock per account, and a new idempotency key per attempt, so two grills cannot both charge.
+ */
+export async function chargeAutoTopup({ env, fetch: fetchImpl, account, command }) {
+  if (!autoTopupEnabled(env) || !topupsEnabled(env)) return { state: "off" };
+  if (account?.autoTopup !== true) return { state: "opt-out" };
+  if (!stripeModeAllowed(env)) return { state: "mode" };
+  if (!account?.id || !ACCOUNT_RE.test(account.id)) return { state: "unconfigured" };
+  if (!isStripeCustomerId(account.stripeCustomerId) || !PM_RE.test(String(account.stripePaymentMethodId || ""))) return { state: "no-card" };
+  const pack = topupPack(env);
+  if (!pack.priceId) return { state: "unconfigured" };
+  const redis = command || redisCommand(env, fetchImpl);
+  const lockKey = autoTopupLockKey(account.id);
+  if ((await redis(["SET", lockKey, "1", "NX", "EX", "60"])) !== "OK") return { state: "busy" };
+  try {
+    const month = isoMonth();
+    const spentKey = autoTopupSpentKey(account.id, month);
+    const spent = Number(await redis(["GET", spentKey])) || 0;
+    const ceiling = autoTopupCeilingCents(account);
+    if (spent + pack.priceCents > ceiling) return { state: "ceiling" };
+    const attempt = Number(await redis(["INCR", autoTopupAttemptKey(account.id, month)]));
+    await redis(["EXPIRE", autoTopupAttemptKey(account.id, month), String(EVENT_TTL_SECONDS)]);
+    const { stripe } = proClients(env, fetchImpl);
+    const created = await stripe.post(
+      "/v1/payment_intents",
+      {
+        amount: String(pack.priceCents),
+        currency: "usd",
+        customer: account.stripeCustomerId,
+        payment_method: account.stripePaymentMethodId,
+        confirm: "true",
+        off_session: "true",
+        "metadata[grill_topup]": "1",
+        "metadata[grill_auto]": "1",
+        "metadata[grill_account]": account.id,
+        "metadata[grill_month]": month,
+        "metadata[grill_seq]": String(attempt),
+      },
+      { "Idempotency-Key": `grill-auto-${account.id}-${month}-${attempt}` },
+    );
+    const body = created.body ?? {};
+    const pi = body.id ? body : body.error?.payment_intent;
+    if (created.ok && body.status === "succeeded" && pi?.id) {
+      const outcome = await creditClaimedPayment(redis, { env, fetchImpl, accountId: account.id, pi: { ...pi, metadata: { ...pi.metadata, grill_month: month } } });
+      if (outcome.action === "credited" || outcome.action === "duplicate") {
+        account.autoTopupFailure = null;
+        return { state: "credited" };
+      }
+      return { state: outcome.action };
+    }
+    const code = failureCode(body);
+    account.autoTopup = false;
+    account.autoTopupFailure = { code, at: new Date().toISOString() };
+    await disableAutoTopup(redis, account.id, code);
+    return { state: "failed", code };
+  } finally {
+    try {
+      await redis(["DEL", lockKey]);
+    } catch {
+      // The lock expires on its own if the store is already gone.
+    }
+  }
 }
 
 export { topupBudgetUsd };

@@ -3,7 +3,7 @@
 import { syncAccountSubscription } from "./_account.mjs";
 import { noteFreeToPaid } from "./_paidIntent.mjs";
 import { handleEvent, verifyStripeSignature } from "./_pro.mjs";
-import { applyTopupEvent, isTopupCheckout } from "./_topup.mjs";
+import { applyAutoTopupPayment, applyTopupEvent, isAutoTopupPayment, isTopupCheckout } from "./_topup.mjs";
 
 export async function POST(request) {
   const payload = await request.text();
@@ -19,6 +19,10 @@ export async function POST(request) {
   try {
     if (isTopupCheckout(event)) {
       const outcome = await applyTopupEvent(event, { env: process.env, fetch: globalThis.fetch });
+      return Response.json({ received: true, ...outcome });
+    }
+    if (isAutoTopupPayment(event)) {
+      const outcome = await applyAutoTopupPayment(event, { env: process.env, fetch: globalThis.fetch });
       return Response.json({ received: true, ...outcome });
     }
     const outcome = await handleEvent(event, { env: process.env, fetch: globalThis.fetch });
