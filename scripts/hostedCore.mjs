@@ -42,6 +42,8 @@ export const HOSTED_JUDGE_DEADLINE_MS = 270_000;
 /** One judge attempt, so a hung first attempt still leaves room for one retry inside the deadline. */
 export const HOSTED_JUDGE_ATTEMPT_MS = 180_000;
 export const DAILY_GRILL_LIMIT = 30;
+/** Completed checks per UTC day when GRILL_PRO_DAILY_LIMIT is unset or not a whole number. */
+export const DEFAULT_PRO_DAILY_LIMIT = 100;
 export const RUNNING_JOB_LIMIT = 3;
 export const CREDIT_CACHE_MS = 60_000;
 /**
@@ -710,6 +712,111 @@ export function monthlyCheckKey(accountId, month) {
 /** Completed checks for one account on a UTC day. The daily limit reads this, not attempts. */
 export function dailyCheckKey(accountId, day) {
   return `grill:hosted:day:${accountId}:${day}`;
+}
+
+/**
+ * GRILL_PRO_DAILY_LIMIT. A blank value, or anything that is not a whole number, stays at 100.
+ * A whole number below the free cap is raised to that cap.
+ */
+export function proDailyLimit(env = {}) {
+  const raw = env?.GRILL_PRO_DAILY_LIMIT;
+  if (raw == null) return DEFAULT_PRO_DAILY_LIMIT;
+  const text = String(raw).trim();
+  if (!/^[0-9]+$/.test(text)) return DEFAULT_PRO_DAILY_LIMIT;
+  const n = Number(text);
+  if (!Number.isSafeInteger(n)) return DEFAULT_PRO_DAILY_LIMIT;
+  return Math.max(DAILY_GRILL_LIMIT, n);
+}
+
+/** Whole hours until the next midnight UTC. A remaining part of an hour still counts as one. */
+function hoursUntilUtcMidnight(ms = Date.now()) {
+  const date = new Date(ms);
+  if (!Number.isFinite(date.getTime())) return 24;
+  const into =
+    date.getUTCHours() * 3_600_000 +
+    date.getUTCMinutes() * 60_000 +
+    date.getUTCSeconds() * 1_000 +
+    date.getUTCMilliseconds();
+  const left = 24 * 3_600_000 - into;
+  return Math.max(1, Math.ceil(left / 3_600_000));
+}
+
+/**
+ * What a person reads when the daily cap stops a grill. The same reset for everyone.
+ * A paid account is told the monthly check count. A free account is told when that
+ * allowance starts again. Neither names a plan.
+ */
+export function dailyLimitMessage({ limit, monthlyChecks = 0, paid = false, now = Date.now() } = {}) {
+  const hours = hoursUntilUtcMidnight(now);
+  const hourWord = hours === 1 ? "hour" : "hours";
+  const head = `You've used today's ${limit} grills on this account. It resets at midnight UTC (${hours} ${hourWord} left).`;
+  if (paid) {
+    const n = Math.max(0, Math.floor(Number(monthlyChecks) || 0));
+    return `${head} You've used ${n} of this month's 200 checks.`;
+  }
+  return `${head} The monthly allowance resets on the 1st.`;
+}
+
+/**
+ * The cap for this account. `lookup` runs only once `used` is already at the free cap,
+ * so a grill under that cap does not read the Pro store. `lookup` receives the email
+ * and returns true when that email has an active subscription there.
+ */
+export async function resolveDailyLimit({ used = 0, email = "", env = {}, lookup } = {}) {
+  const count = Math.max(0, Math.floor(Number(used) || 0));
+  if (count < DAILY_GRILL_LIMIT) return { limit: DAILY_GRILL_LIMIT, paid: false };
+  const address = String(email ?? "").trim();
+  if (!address || typeof lookup !== "function") return { limit: DAILY_GRILL_LIMIT, paid: false };
+  let paid = false;
+  try {
+    paid = Boolean(await lookup(address));
+  } catch {
+    paid = false;
+  }
+  return { limit: paid ? proDailyLimit(env) : DAILY_GRILL_LIMIT, paid };
+}
+
+/** The email the Pro store indexes, or "" when it would not store this address. */
+function proStoreEmail(raw) {
+  const email = String(raw ?? "").trim().toLowerCase();
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "";
+  return email;
+}
+
+/** Redis key for a Pro account id. Same prefix as the Pro store. */
+export function proAccountKey(id) {
+  const clean = String(id ?? "").trim();
+  if (!clean) return "";
+  return `grill:acct:${clean}`;
+}
+
+/** Redis key from an email to a Pro account id. Same hash the Pro store writes. */
+export function proEmailIndexKey(email) {
+  const normalized = proStoreEmail(email);
+  if (!normalized) return "";
+  return `grill:email:${createHash("sha256").update(normalized).digest("hex")}`;
+}
+
+/**
+ * Whether this email has an active subscription in the Pro store.
+ * `command` is one Redis command. Two reads: the email index, then the account row.
+ * A missing row, any other status, or a store error is not active.
+ */
+export async function lookupActivePro(email, command) {
+  const index = proEmailIndexKey(email);
+  if (!index || typeof command !== "function") return false;
+  try {
+    const id = await command(["GET", index]);
+    if (typeof id !== "string" || !id.trim()) return false;
+    const accountKey = proAccountKey(id);
+    if (!accountKey) return false;
+    const raw = await command(["GET", accountKey]);
+    if (typeof raw !== "string" || !raw) return false;
+    const row = JSON.parse(raw);
+    return row?.subscription === "active";
+  } catch {
+    return false;
+  }
 }
 
 /** One count per run. A second compose of the same run does not add another check. */
