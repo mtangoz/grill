@@ -5,7 +5,9 @@ import { isStripeCustomerId, proClients, setMonthlyLimit, UpstreamError } from "
 import { redisCommand } from "./_account.mjs";
 import {
   hostedAccountKey,
+  isoMonth,
   keyLimitWithTopup,
+  serviceRevenueKey,
   topupBalanceKey,
   topupBudgetUsd,
   topupEventKey,
@@ -164,23 +166,31 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
   const person = account.human || account.email || account.id;
   const balanceKey = topupBalanceKey(person);
   const budgetMicros = toMicros(pack.budgetUsd);
+  const revenueMicros = toMicros(pack.priceCents / 100);
+  const revenueKey = serviceRevenueKey(isoMonth());
+  const undo = async () => {
+    await redis(["HINCRBY", balanceKey, "checks", String(-pack.checks)]).catch(() => {});
+    await redis(["HINCRBY", balanceKey, "budget_micros", String(-budgetMicros)]).catch(() => {});
+    await redis(["INCRBY", revenueKey, String(-revenueMicros)]).catch(() => {});
+  };
   try {
     await redis(["HINCRBY", balanceKey, "checks", String(pack.checks)]);
     await redis(["HINCRBY", balanceKey, "budget_micros", String(budgetMicros)]);
+    await redis(["INCRBY", revenueKey, String(revenueMicros)]);
+    await redis(["EXPIRE", revenueKey, String(EVENT_TTL_SECONDS)]);
   } catch (error) {
-    await redis(["HINCRBY", balanceKey, "checks", String(-pack.checks)]).catch(() => {});
-    await redis(["HINCRBY", balanceKey, "budget_micros", String(-budgetMicros)]).catch(() => {});
+    await undo();
     await release(redis, eventKey, sessionKey);
     throw error;
   }
   if (account.keyHash) {
     const left = Number(await redis(["HGET", balanceKey, "budget_micros"])) || 0;
-    const limit = keyLimitWithTopup(env, left / 1_000_000);
+    const checksLeft = Number(await redis(["HGET", balanceKey, "checks"])) || 0;
+    const limit = keyLimitWithTopup(env, left / 1_000_000, checksLeft);
     try {
       await setMonthlyLimit(account.keyHash, limit, { env, fetch: fetchImpl });
     } catch (error) {
-      await redis(["HINCRBY", balanceKey, "checks", String(-pack.checks)]).catch(() => {});
-      await redis(["HINCRBY", balanceKey, "budget_micros", String(-budgetMicros)]).catch(() => {});
+      await undo();
       await release(redis, eventKey, sessionKey);
       throw error;
     }

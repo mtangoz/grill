@@ -2,6 +2,7 @@
 // The pack price is on the account page only. Chat text names no price, plan, or subscription.
 // Made-up keys and made-up Stripe ids. No live charge.
 import { createHmac, createSign, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { handleAccount, handleMcp, resetHostedCaches } from "../api/_hosted.mjs";
@@ -12,8 +13,11 @@ import {
   capBlock,
   createMemoryRedis,
   isoMonth,
+  checksForCost,
   keyLimitWithTopup,
+  MAX_HOSTED_KEY_LIMIT_USD,
   personSpendKey,
+  serviceRevenueKey,
   serviceSpendKey,
   splitCharge,
   topupBalanceKey,
@@ -182,6 +186,18 @@ describe("top-up pack config", () => {
     assert.doesNotMatch(userAllowanceUsedText("https://grillyour.ai"), /\$|Pro|subscription/i);
     assert.equal(capBlock({ serviceMicros: 0, userMicros: 5_000_000, topupChecks: 100, topupBudgetMicros: budget }).text, USER_CAP_TEXT);
     assert.equal(capBlock({ serviceMicros: toMicros(20), userMicros: 5_000_000, env, topupChecks: 40, topupBudgetMicros: budget }), null);
+    assert.equal(capBlock({ serviceMicros: toMicros(20), userMicros: 8_000_000, env, topupChecks: 2, topupBudgetMicros: 0 }), null);
+    assert.equal(capBlock({ serviceMicros: toMicros(20), userMicros: 0, env, revenueMicros: toMicros(5) }), null);
+    assert.equal(capBlock({ serviceMicros: toMicros(25), userMicros: 0, env, revenueMicros: toMicros(5) }).which, "service");
+    assert.equal(capBlock({ serviceMicros: toMicros(25), userMicros: 5_000_000, env, topupChecks: 1, revenueMicros: toMicros(5) }), null);
+    assert.equal(checksForCost(0.03), 1);
+    assert.equal(checksForCost(0), 1);
+    assert.equal(checksForCost(undefined), 1);
+    assert.equal(checksForCost(0.09), 3);
+    assert.equal(checksForCost(0.031), 2);
+    assert.equal(checksForCost(0.1, { GRILL_CHECK_UNIT_USD: "0.05" }), 2);
+    assert.equal(keyLimitWithTopup({ GRILL_TOPUPS: "on" }, 1000), MAX_HOSTED_KEY_LIMIT_USD);
+    assert.equal(keyLimitWithTopup({ GRILL_TOPUPS: "on" }, 0, 100), 8);
     assert.equal(capBlock({ serviceMicros: toMicros(20), userMicros: 0 }).text.startsWith("Grill has hit"), true);
   });
 });
@@ -226,7 +242,8 @@ describe("top-up webhook", () => {
     assert.equal(ctx.router.patches.at(-1).limit, keyLimitWithTopup(env, topupBudgetUsd(env)));
     assert.equal(ctx.router.patches.at(-1).limit_reset, "monthly");
     const stored = JSON.parse(await ctx.redis(["GET", `grill:hosted:acct:${account.id}`]));
-    assert.equal(stored.keyLimitUsd, keyLimitWithTopup(env, topupBudgetUsd(env)));
+    assert.equal(stored.keyLimitUsd, keyLimitWithTopup(env, topupBudgetUsd(env), 100));
+    assert.equal(Number(await ctx.redis(["GET", serviceRevenueKey(isoMonth())])), toMicros(5));
     const again = await applyTopupEvent(paidEvent(account.id), { env, fetch: ctx.fetch, command: ctx.redis });
     assert.equal(again.action, "duplicate");
     assert.equal(Number(await ctx.redis(["HGET", topupBalanceKey(account.email), "checks"])), 100);
@@ -421,7 +438,7 @@ describe("chat stops at the free allowance", () => {
       assert.equal(Number(await ctx.redis(["HGET", topupBalanceKey("tester@example.com"), "checks"])), 99);
       assert.ok(Number(await ctx.redis(["HGET", topupBalanceKey("tester@example.com"), "budget_micros"])) < budget);
       assert.equal(Number(await ctx.redis(["GET", service])), toMicros(20), "prepaid spend does not add to the free service cap");
-      assert.equal(Number(await ctx.redis(["GET", person])) > toMicros(5), true);
+      assert.equal(Number(await ctx.redis(["GET", person])), toMicros(5), "prepaid spend does not count against the free allowance");
       assert.equal(serviceAfterFree > 0, true);
     } finally {
       await fake.close();
@@ -451,6 +468,48 @@ describe("chat stops at the free allowance", () => {
       resetHostedCaches();
       const blocked = await call(2, "Decision: a different shed colour.");
       assert.equal((await blocked.json()).result.content[0].text, USER_CAP_TEXT);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("draws three checks for a long grill, leaves the free allowance, and raises a full router key", async () => {
+    const pricey = readFileSync(new URL("./fixtures/usable-response.json", import.meta.url), "utf8").replace('"cost": 0.0123', '"cost": 0.07');
+    const fake = await startFakeOpenRouter({ chat: () => ({ text: pricey }) });
+    try {
+      resetHostedCaches();
+      const ctx = world({ GRILL_TOPUPS: "on" });
+      const token = signJwt({ iss: "https://clerk.example.test", sub: "user_tester", aud: RESOURCE, exp: Math.floor(Date.now() / 1000) + 3600, redirect_uri: CLAUDE_WEB_REDIRECT });
+      const deps = { ...ctx, judgeOpenRouterUrl: fake.env.JUDGE_OPENROUTER_URL, judgeDecisionsUrl: fake.env.JUDGE_DECISIONS_URL };
+      const call = (id, subject) =>
+        handleMcp(
+          new Request(RESOURCE, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+            body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "grill", arguments: { subject, keep_records: false, quality_check: false } } }),
+          }),
+          deps,
+        );
+      const first = await call(1, "Decision: Repaint the shed\nI'm 60% sure.");
+      assert.equal((await first.json()).result.isError, false);
+      const month = isoMonth();
+      await ctx.redis(["SET", personSpendKey("tester@example.com", month), String(toMicros(5))]);
+      const budget = toMicros(topupBudgetUsd(ctx.env));
+      await ctx.redis(["HSET", topupBalanceKey("tester@example.com"), "checks", "100"]);
+      await ctx.redis(["HSET", topupBalanceKey("tester@example.com"), "budget_micros", String(budget)]);
+      await ctx.redis(["SET", serviceSpendKey(month), String(toMicros(20))]);
+      ctx.router.usage = 5;
+      ctx.router.limit = 5;
+      resetHostedCaches();
+      const paid = await call(2, "Decision: keep the door blue.");
+      const paidJson = await paid.json();
+      assert.equal(paidJson.result.isError, false, paidJson.result?.content?.[0]?.text || "");
+      assert.equal(Number(await ctx.redis(["HGET", topupBalanceKey("tester@example.com"), "checks"])), 97);
+      assert.equal(Number(await ctx.redis(["GET", personSpendKey("tester@example.com", month)])), toMicros(5));
+      assert.equal(Number(await ctx.redis(["GET", serviceSpendKey(month)])), toMicros(20));
+      assert.ok(ctx.router.limit > 5, "the router key was raised above the free allowance");
+      const page = await handleAccount(accountRequest("GET"), ctx);
+      assert.match(await page.text(), /Prepaid checks left: 97/);
     } finally {
       await fake.close();
     }

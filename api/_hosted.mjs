@@ -122,9 +122,11 @@ import {
   newCalendarToken,
   capBlock,
   chargeableUsd,
+  checksForCost,
   hostedAccountKey,
   keyLimitWithTopup,
   personSpendKey,
+  serviceRevenueKey,
   serviceSpendKey,
   splitCharge,
   topupBalanceKey,
@@ -1271,7 +1273,16 @@ async function readTopup(account, deps) {
 
 async function ensureMonthlyAllowance(account, deps) {
   const topup = await readTopup(account, deps);
-  const cap = keyLimitWithTopup(deps.env, topup.budgetMicros / 1_000_000);
+  let usage = 0;
+  if (account.keyHash && topupsEnabled(deps.env) && topup.checks > 0) {
+    try {
+      const live = await readManagedKey(account.keyHash, { env: deps.env, fetch: deps.fetch });
+      usage = Number(live?.usageUsd) || 0;
+    } catch {
+      usage = 0;
+    }
+  }
+  const cap = keyLimitWithTopup(deps.env, topup.budgetMicros / 1_000_000, topup.checks, usage);
   if (!account.keyHash || (account.keyReset === "monthly" && Number(account.keyLimitUsd) === cap)) return;
   try {
     await setMonthlyLimit(account.keyHash, cap, { env: deps.env, fetch: deps.fetch });
@@ -1756,9 +1767,10 @@ async function drawTopup(account, deps, paidMicros) {
   if (left < 0) await redis(deps, ["HSET", key, "budget_micros", "0"]);
 }
 
-async function consumeTopupCheck(account, deps) {
+async function consumeTopupChecks(account, deps, count) {
+  const n = Math.max(1, Math.floor(Number(count) || 1));
   const key = topupBalanceKey(capPerson(account));
-  const left = Number(await redis(deps, ["HINCRBY", key, "checks", "-1"]));
+  const left = Number(await redis(deps, ["HINCRBY", key, "checks", String(-n)]));
   if (left < 0) await redis(deps, ["HSET", key, "checks", "0"]);
 }
 
@@ -1768,16 +1780,17 @@ async function countSpend(account, deps, costUsd) {
   const personKey = personSpendKey(capPerson(account), month);
   const before = Number(await redis(deps, ["GET", personKey])) || 0;
   const split = splitCharge(before, micros, toMicros(userMonthlyCapUsd(deps.env)));
-  const serviceMicros = topupsEnabled(deps.env) ? split.freePart : micros;
-  if (serviceMicros > 0) {
+  const prepaid = topupsEnabled(deps.env);
+  const counted = prepaid ? split.freePart : micros;
+  if (counted > 0) {
     const serviceKey = serviceSpendKey(month);
-    await redis(deps, ["INCRBY", serviceKey, String(serviceMicros)]);
+    await redis(deps, ["INCRBY", serviceKey, String(counted)]);
     await redis(deps, ["EXPIRE", serviceKey, String(CAP_COUNTER_TTL_SECONDS)]);
+    await redis(deps, ["INCRBY", personKey, String(counted)]);
+    await redis(deps, ["EXPIRE", personKey, String(CAP_COUNTER_TTL_SECONDS)]);
   }
-  await redis(deps, ["INCRBY", personKey, String(micros)]);
-  await redis(deps, ["EXPIRE", personKey, String(CAP_COUNTER_TTL_SECONDS)]);
-  if (topupsEnabled(deps.env) && split.paidPart > 0) await drawTopup(account, deps, split.paidPart);
-  return split;
+  if (prepaid && split.paidPart > 0) await drawTopup(account, deps, split.paidPart);
+  return { ...split, checks: prepaid && split.paidPart > 0 ? checksForCost(costUsd, deps.env) : 0 };
 }
 
 async function capReached(account, deps) {
@@ -1785,6 +1798,7 @@ async function capReached(account, deps) {
   const serviceMicros = Number(await redis(deps, ["GET", serviceSpendKey(month)])) || 0;
   const userMicros = Number(await redis(deps, ["GET", personSpendKey(capPerson(account), month)])) || 0;
   const topup = await readTopup(account, deps);
+  const revenueMicros = topupsEnabled(deps.env) ? Number(await redis(deps, ["GET", serviceRevenueKey(month)])) || 0 : 0;
   return capBlock({
     serviceMicros,
     userMicros,
@@ -1793,6 +1807,7 @@ async function capReached(account, deps) {
     topupBudgetMicros: topup.budgetMicros,
     topupPresent: topup.present,
     origin: deps.origin,
+    revenueMicros,
   });
 }
 
@@ -1869,7 +1884,7 @@ async function composeReport({ outcome, subject, sourceApp, author = "none", acc
   const split = await countSpend(account, deps, cost);
   if (completedGrill(parsed)) {
     await countCompletedCheck(account, deps, runId, { sourceApp, spendRows });
-    if (topupsEnabled(deps.env) && split.paidPart > 0) await consumeTopupCheck(account, deps);
+    if (split.checks > 0) await consumeTopupChecks(account, deps, split.checks);
   }
   let text = appendRunNote(layers.brief, parsed || {}, Number(outcome.ms));
   // `author` is the company the judge was told to leave out, or "none". With "none" nobody was
@@ -1943,16 +1958,18 @@ async function callGrill(args, account, payload, params, deps) {
   const credit = await creditOf(account, deps);
   if (credit.out) {
     const topup = topupsEnabled(deps.env) ? await readTopup(account, deps) : {};
-    return toolText(
-      keyAllowanceText({
-        env: deps.env,
-        origin: deps.origin,
-        topupPresent: topup.present,
-        topupChecks: topup.checks,
-        topupBudgetMicros: topup.budgetMicros,
-      }),
-      true,
-    );
+    if (!(topupsEnabled(deps.env) && topup.checks > 0)) {
+      return toolText(
+        keyAllowanceText({
+          env: deps.env,
+          origin: deps.origin,
+          topupPresent: topup.present,
+          topupChecks: topup.checks,
+          topupBudgetMicros: topup.budgetMicros,
+        }),
+        true,
+      );
+    }
   }
   const keepArg = args.keep_records;
   if (account.records !== "keep" && account.records !== "off" && typeof keepArg !== "boolean") {
