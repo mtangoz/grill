@@ -537,12 +537,117 @@ export const TESTER_MONTHLY_USD = 5;
 export const DEFAULT_USER_MONTHLY_CAP_USD = TESTER_MONTHLY_USD;
 export const CAP_COUNTER_TTL_SECONDS = 40 * 24 * 60 * 60;
 
-// Each says what happened and when it starts again. Neither offers a way to get more:
-// a directory reads that as a sale.
+// Each says what happened and when it starts again. With top-ups off, neither offers a way
+// to get more: a directory reads that as a sale. With GRILL_TOPUPS=on, the person's own
+// monthly stop names the account page and still names no price, plan, or subscription.
 export const SERVICE_CAP_TEXT =
   "Grill has used up this month's free grills for everyone, so this one didn't run. It starts again on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.";
 export const USER_CAP_TEXT =
   "You've used this month's free grills, so this one didn't run. It starts again on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.";
+
+/** Prepaid check packs on the account page. Off unless this is exactly `on`. */
+export function topupsEnabled(env = {}) {
+  return String(env.GRILL_TOPUPS ?? "").trim() === "on";
+}
+
+export const DEFAULT_TOPUP_CHECKS = 100;
+export const DEFAULT_TOPUP_PRICE_CENTS = 400;
+
+function wholeIn(value, min, max) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= min && n <= max ? n : null;
+}
+
+/** Checks in one pack. GRILL_TOPUP_CHECKS overrides the default. A bad value keeps it. */
+export function topupChecks(env = {}) {
+  return wholeIn(env.GRILL_TOPUP_CHECKS, 1, 10_000) ?? DEFAULT_TOPUP_CHECKS;
+}
+
+/** What the person pays, in cents. GRILL_TOPUP_PRICE_CENTS overrides it. Shown on the account page only. */
+export function topupPriceCents(env = {}) {
+  return wholeIn(env.GRILL_TOPUP_PRICE_CENTS, 50, 100_000) ?? DEFAULT_TOPUP_PRICE_CENTS;
+}
+
+/**
+ * Internal dollar budget added to the per-person cap and the router key for one pack.
+ * GRILL_TOPUP_BUDGET_USD overrides it. This is not a price and is not shown to the person.
+ * The default covers one pack of checks at the typical grill the caps already use.
+ */
+export function topupBudgetUsd(env = {}) {
+  const raw = env.GRILL_TOPUP_BUDGET_USD;
+  if (raw != null && String(raw).trim() !== "") {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0 && n <= 100) return Math.round(n * 100) / 100;
+  }
+  return Math.round(topupChecks(env) * TYPICAL_GRILL_USD * 100) / 100;
+}
+
+/** Stripe price id for the pack, or "" when checkout is not configured. */
+export function topupPriceId(env = {}) {
+  const v = typeof env.GRILL_TOPUP_PRICE_ID === "string" ? env.GRILL_TOPUP_PRICE_ID.trim() : "";
+  return /^price_[A-Za-z0-9]{8,80}$/.test(v) ? v : "";
+}
+
+export function topupPack(env = {}) {
+  return {
+    checks: topupChecks(env),
+    priceCents: topupPriceCents(env),
+    budgetUsd: topupBudgetUsd(env),
+    priceId: topupPriceId(env),
+  };
+}
+
+/** The in-chat stop when the free monthly allowance is used up and top-ups are on. No price. */
+export function userAllowanceUsedText(origin = "") {
+  const base = /^https:\/\/[A-Za-z0-9.-]+(?::\d+)?$/.test(String(origin || "")) ? String(origin).replace(/\/$/, "") : PUBLIC_SITE_ORIGIN;
+  return `You've used this month's free allowance, so this one didn't run. It starts again on the 1st. Add more at ${base}/account.`;
+}
+
+/** Router-key cap: the free monthly allowance, plus prepaid budget still left when top-ups are on. */
+export function keyLimitWithTopup(env = {}, budgetUsd = 0) {
+  const extra = topupsEnabled(env) ? Math.max(0, Number(budgetUsd) || 0) : 0;
+  return Math.round((userMonthlyCapUsd(env) + extra) * 100) / 100;
+}
+
+/**
+ * How much of a charge still fits in this month's free allowance.
+ * `beforeMicros` is the person's counter before this charge. The rest is prepaid budget.
+ */
+export function splitCharge(beforeMicros, chargeMicros, freeCapMicros) {
+  const before = Math.max(0, Number(beforeMicros) || 0);
+  const charge = Math.max(0, Number(chargeMicros) || 0);
+  const freeRoom = Math.max(0, (Number(freeCapMicros) || 0) - before);
+  const freePart = Math.min(charge, freeRoom);
+  return { freePart, paidPart: charge - freePart };
+}
+
+export function hostedAccountKey(id) {
+  return `grill:hosted:acct:${id}`;
+}
+
+/** Month spend counters for the caps, in micro-dollars. The person key is a hash of the email, never the email. */
+export function serviceSpendKey(month) {
+  return `grill:hosted:capspend:all:${month}`;
+}
+
+export function personSpendKey(email, month) {
+  const hash = createHash("sha256").update(String(email || "").trim().toLowerCase()).digest("hex");
+  return `grill:hosted:capspend:person:${hash}:${month}`;
+}
+
+/** Prepaid checks and internal budget left. Not month-scoped: unused checks carry over. The person is a hash. */
+export function topupBalanceKey(person) {
+  const hash = createHash("sha256").update(String(person || "").trim().toLowerCase()).digest("hex");
+  return `grill:hosted:topup:${hash}`;
+}
+
+export function topupEventKey(eventId) {
+  return `grill:topup:evt:${eventId}`;
+}
+
+export function topupSessionKey(sessionId) {
+  return `grill:topup:session:${sessionId}`;
+}
 
 function capFromEnv(value, fallback) {
   const n = Number(value);
@@ -638,9 +743,18 @@ export function checksLine(count) {
  * month's counters. A grill is allowed while the spend so far is under the cap, so
  * one grill can finish a little over; the next one is stopped.
  */
-export function capBlock({ serviceMicros = 0, userMicros = 0, env = {} } = {}) {
-  if ((Number(serviceMicros) || 0) >= toMicros(monthlyCapUsd(env)) ) return { text: SERVICE_CAP_TEXT, which: "service" };
-  if ((Number(userMicros) || 0) >= toMicros(userMonthlyCapUsd(env))) return { text: USER_CAP_TEXT, which: "user" };
+export function capBlock({ serviceMicros = 0, userMicros = 0, env = {}, topupChecks = 0, topupBudgetMicros = 0, origin = "" } = {}) {
+  const serviceFull = (Number(serviceMicros) || 0) >= toMicros(monthlyCapUsd(env));
+  const spend = Number(userMicros) || 0;
+  const free = toMicros(userMonthlyCapUsd(env));
+  const checks = Math.max(0, Number(topupChecks) || 0);
+  const budget = Math.max(0, Number(topupBudgetMicros) || 0);
+  const room = topupsEnabled(env) && checks > 0 && budget > 0;
+  const userCap = free + (room ? budget : 0);
+  if (serviceFull && !room) return { text: SERVICE_CAP_TEXT, which: "service" };
+  if (spend >= userCap) {
+    return { text: topupsEnabled(env) ? userAllowanceUsedText(origin) : USER_CAP_TEXT, which: "user" };
+  }
   return null;
 }
 

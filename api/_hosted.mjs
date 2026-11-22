@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, setMonthlyLimit, WELCOME_HEADERS } from "./_pro.mjs";
+import { startTopupCheckout, topupPriceLabel } from "./_topup.mjs";
 import { assignFoundingMember, foundingMemberLine, foundingSpotsLine, readFoundingCount, readFoundingNumber } from "./_founding.mjs";
 import { refFromCookie } from "./_start.mjs";
 import { waitlistFormHtml } from "./_waitlist.mjs";
@@ -116,6 +117,15 @@ import {
   newCalendarToken,
   capBlock,
   chargeableUsd,
+  hostedAccountKey,
+  keyLimitWithTopup,
+  personSpendKey,
+  serviceSpendKey,
+  splitCharge,
+  topupBalanceKey,
+  topupPack,
+  topupsEnabled,
+  userAllowanceUsedText,
   checkOnceKey,
   checksLine,
   completedGrill,
@@ -373,7 +383,7 @@ async function foundingNumber(email, deps) {
 }
 
 function acctKey(id) {
-  return `grill:hosted:acct:${id}`;
+  return hostedAccountKey(id);
 }
 /**
  * Grill owns the person ID. The sign-in provider's user ID only points at it, per
@@ -456,14 +466,6 @@ function shareOfKey(userId, recordId) {
 /** Set once a UTC day when grill_decided showed the look-back line. */
 function remindedKey(userId, day) {
   return `grill:hosted:reminded:${userId}:${day}`;
-}
-/** Month spend counters for the caps, in micro-dollars. The person key is a hash of the email, never the email. */
-function serviceSpendKey(month) {
-  return `grill:hosted:capspend:all:${month}`;
-}
-function personSpendKey(email, month) {
-  const hash = createHash("sha256").update(String(email || "").trim().toLowerCase()).digest("hex");
-  return `grill:hosted:capspend:person:${hash}:${month}`;
 }
 /** A redeemed invite, keyed by a hash of the email. The value is a hash of the code, never the code. */
 function inviteGrantKey(email) {
@@ -1084,6 +1086,7 @@ async function saveAccount(account, deps) {
   if (account.human && account.human !== account.email) copy.human = account.human;
   // Set when this sign-in spends a key minted for someone else. Deleting it must not revoke that key.
   if (account.capFrom) copy.capFrom = account.capFrom;
+  if (typeof account.stripeCustomerId === "string" && account.stripeCustomerId.startsWith("cus_")) copy.stripeCustomerId = account.stripeCustomerId;
   // Absent means the Monday note is on. Only an explicit off is stored.
   if (account.impactEmail === false) copy.impactEmail = false;
   await redis(deps, ["SET", acctKey(account.id), JSON.stringify(copy)]);
@@ -1230,8 +1233,17 @@ async function ensureAccount(userId, email, deps, human) {
  * Early testers get a monthly allowance. A key minted before that was a one-off starter credit
  * with no reset; move it once to the monthly cap. A failure leaves the old key as it was.
  */
+async function readTopup(account, deps) {
+  if (!topupsEnabled(deps.env)) return { checks: 0, budgetMicros: 0 };
+  const key = topupBalanceKey(capPerson(account));
+  const checks = Number(await redis(deps, ["HGET", key, "checks"])) || 0;
+  const budgetMicros = Number(await redis(deps, ["HGET", key, "budget_micros"])) || 0;
+  return { checks: Math.max(0, checks), budgetMicros: Math.max(0, budgetMicros) };
+}
+
 async function ensureMonthlyAllowance(account, deps) {
-  const cap = userMonthlyCapUsd(deps.env);
+  const topup = await readTopup(account, deps);
+  const cap = keyLimitWithTopup(deps.env, topup.budgetMicros / 1_000_000);
   if (!account.keyHash || (account.keyReset === "monthly" && Number(account.keyLimitUsd) === cap)) return;
   try {
     await setMonthlyLimit(account.keyHash, cap, { env: deps.env, fetch: deps.fetch });
@@ -1247,7 +1259,8 @@ async function ensureMonthlyAllowance(account, deps) {
 async function creditOf(account, deps) {
   const now = Date.now();
   const hit = creditCache.get(account.id);
-  if (hit && now - hit.at < CREDIT_CACHE_MS) return hit;
+  // A pack bought in the last minute has to be visible. The cache would keep saying the key is empty.
+  if (hit && now - hit.at < CREDIT_CACHE_MS && !(hit.out && topupsEnabled(deps.env))) return hit;
   if (!account.keyHash) return { at: now, remaining: 0, out: true };
   await ensureMonthlyAllowance(account, deps);
   const live = await readManagedKey(account.keyHash, { env: deps.env, fetch: deps.fetch });
@@ -1704,20 +1717,49 @@ function capPerson(account) {
   return account.human || account.email || account.id;
 }
 
+async function drawTopup(account, deps, paidMicros) {
+  const key = topupBalanceKey(capPerson(account));
+  const left = Number(await redis(deps, ["HINCRBY", key, "budget_micros", String(-paidMicros)]));
+  if (left < 0) await redis(deps, ["HSET", key, "budget_micros", "0"]);
+}
+
+async function consumeTopupCheck(account, deps) {
+  const key = topupBalanceKey(capPerson(account));
+  const left = Number(await redis(deps, ["HINCRBY", key, "checks", "-1"]));
+  if (left < 0) await redis(deps, ["HSET", key, "checks", "0"]);
+}
+
 async function countSpend(account, deps, costUsd) {
   const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
   const micros = toMicros(chargeableUsd(costUsd));
-  for (const key of [serviceSpendKey(month), personSpendKey(capPerson(account), month)]) {
-    await redis(deps, ["INCRBY", key, String(micros)]);
-    await redis(deps, ["EXPIRE", key, String(CAP_COUNTER_TTL_SECONDS)]);
+  const personKey = personSpendKey(capPerson(account), month);
+  const before = Number(await redis(deps, ["GET", personKey])) || 0;
+  const split = splitCharge(before, micros, toMicros(userMonthlyCapUsd(deps.env)));
+  const serviceMicros = topupsEnabled(deps.env) ? split.freePart : micros;
+  if (serviceMicros > 0) {
+    const serviceKey = serviceSpendKey(month);
+    await redis(deps, ["INCRBY", serviceKey, String(serviceMicros)]);
+    await redis(deps, ["EXPIRE", serviceKey, String(CAP_COUNTER_TTL_SECONDS)]);
   }
+  await redis(deps, ["INCRBY", personKey, String(micros)]);
+  await redis(deps, ["EXPIRE", personKey, String(CAP_COUNTER_TTL_SECONDS)]);
+  if (topupsEnabled(deps.env) && split.paidPart > 0) await drawTopup(account, deps, split.paidPart);
+  return split;
 }
 
 async function capReached(account, deps) {
   const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
   const serviceMicros = Number(await redis(deps, ["GET", serviceSpendKey(month)])) || 0;
   const userMicros = Number(await redis(deps, ["GET", personSpendKey(capPerson(account), month)])) || 0;
-  return capBlock({ serviceMicros, userMicros, env: deps.env });
+  const topup = await readTopup(account, deps);
+  return capBlock({
+    serviceMicros,
+    userMicros,
+    env: deps.env,
+    topupChecks: topup.checks,
+    topupBudgetMicros: topup.budgetMicros,
+    origin: deps.origin,
+  });
 }
 
 /** True exactly once per account, even when two grills finish together. */
@@ -1780,8 +1822,11 @@ async function composeReport({ outcome, subject, sourceApp, author = "none", acc
   // here, so a grill finishing in the background can't undo another one's changes.
   const spendRows = Number(await redis(deps, ["RPUSH", spendLogKey(account.id), JSON.stringify({ at: new Date().toISOString(), costUsd: cost, model })])) || 0;
   await redis(deps, ["LTRIM", spendLogKey(account.id), String(-SPEND_LOG_MAX), "-1"]);
-  await countSpend(account, deps, cost);
-  if (completedGrill(parsed)) await countCompletedCheck(account, deps, runId, { sourceApp, spendRows });
+  const split = await countSpend(account, deps, cost);
+  if (completedGrill(parsed)) {
+    await countCompletedCheck(account, deps, runId, { sourceApp, spendRows });
+    if (topupsEnabled(deps.env) && split.paidPart > 0) await consumeTopupCheck(account, deps);
+  }
   let text = appendRunNote(layers.brief, parsed || {}, Number(outcome.ms));
   // `author` is the company the judge was told to leave out, or "none". With "none" nobody was
   // excluded: the verdict says so on its own line, and the first-use line makes no company claim.
@@ -1852,7 +1897,7 @@ async function callGrill(args, account, payload, params, deps) {
     return toolText(capped.text);
   }
   const credit = await creditOf(account, deps);
-  if (credit.out) return toolText(OUT_OF_CREDIT, true);
+  if (credit.out) return toolText(topupsEnabled(deps.env) ? userAllowanceUsedText(deps.origin) : OUT_OF_CREDIT, true);
   const keepArg = args.keep_records;
   if (account.records !== "keep" && account.records !== "off" && typeof keepArg !== "boolean") {
     return toolText(CONSENT_TEXT);
@@ -2617,7 +2662,7 @@ async function noteMcpConnect(request, deps) {
 export async function handleMcp(request, deps) {
   const id = requestId();
   const userAgent = String(request.headers.get("user-agent") || "").replace(/[\r\n]+/g, " ").slice(0, 300);
-  deps = { ...deps, requestId: id, userAgent };
+  deps = { ...deps, requestId: id, userAgent, origin: publicOrigin(request) };
   if (!hostedEnabled(deps.env)) return notFound();
   let toolCallId;
   try {
@@ -3408,11 +3453,30 @@ function renderAccount(account, credit, extra = {}) {
     </form>
     <p class="small">${esc(RECORDS_OFF_NOTE)}</p>
     <p><a href="/decisions">Your grills</a></p>
+    ${renderTopup(extra)}
     ${renderCalendar("/account", extra.calendar, extra.freshUrl || "")}
     ${renderImpactEmail(account)}
     <p><a class="button" href="/account?confirm=delete">Delete this account</a></p>
     <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
   );
+}
+
+function renderTopup(extra) {
+  const topup = extra.topup;
+  if (!topup) return "";
+  const pack = topup.pack;
+  const checks = Math.max(0, Math.floor(Number(topup.checks) || 0));
+  const note = topup.note ? `<p>${esc(topup.note)}</p>` : "";
+  const buy = pack.priceId
+    ? `<form method="post" action="/account"><input type="hidden" name="action" value="topup"><button type="submit">Add ${pack.checks} checks · ${esc(topupPriceLabel(pack.priceCents))}</button></form>`
+    : `<p>Adding checks isn't ready on this server yet.</p>`;
+  return `<section id="topup">
+    <h2>More checks</h2>
+    <p>Prepaid checks left: ${checks}. Unused checks carry over. The free monthly allowance still resets on the 1st. Nothing is charged later on its own.</p>
+    ${note}
+    ${buy}
+    <p class="small">One payment. A card you use can be saved for the next pack.</p>
+  </section>`;
 }
 
 function renderImpactEmail(account) {
@@ -3852,7 +3916,7 @@ function renderJudge({ packet, tooLong, askRecords, verdict, note, hint }) {
  */
 export async function handleJudge(request, deps) {
   const id = requestId();
-  deps = { ...deps, requestId: id };
+  deps = { ...deps, requestId: id, origin: publicOrigin(request) };
   if (!hostedEnabled(deps.env)) return notFound();
   if (request.method !== "GET" && request.method !== "POST" && request.method !== "HEAD") return methodNotAllowed();
   try {
@@ -4097,9 +4161,15 @@ export async function handleDecisions(request, deps) {
   }
 }
 
+const TOPUP_NOTES = {
+  ok: "Payment received. The checks show here once it is confirmed.",
+  cancel: "No payment was made.",
+  unready: "Adding checks isn't ready just now. Try again in a minute.",
+};
+
 export async function handleAccount(request, deps) {
   const id = requestId();
-  deps = { ...deps, requestId: id };
+  deps = { ...deps, requestId: id, origin: publicOrigin(request) };
   if (!hostedEnabled(deps.env)) return notFound();
   if (request.method === "DELETE") return methodNotAllowed();
   if (request.method === "GET" && pageUrl(request).searchParams.get("deleted") === "1") {
@@ -4151,6 +4221,23 @@ export async function handleAccount(request, deps) {
         await deleteAccount(session.account, deps, session.sub);
         return seeOther(`${publicOrigin(request)}/account?deleted=1`, [pageCookieHeader("", 0)]);
       }
+      if (form.get("action") === "topup") {
+        const back = `${publicOrigin(request)}/account`;
+        if (!topupsEnabled(deps.env)) return seeOther(back);
+        try {
+          const result = await startTopupCheckout({
+            env: deps.env,
+            fetch: deps.fetch,
+            account: session.account,
+            origin: publicOrigin(request),
+          });
+          if (session.account.stripeCustomerId) await saveAccount(session.account, deps);
+          if (result.state === "redirect") return seeOther(result.url);
+        } catch {
+          logHosted(id, "topup-checkout");
+        }
+        return seeOther(`${back}?topup=unready`);
+      }
       const cookies = fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), fresh))] : [];
       return seeOther(`${publicOrigin(request)}/account`, cookies);
     }
@@ -4159,7 +4246,11 @@ export async function handleAccount(request, deps) {
     const checks = await readMonthlyChecks(session.account, deps);
     const calendar = await calendarState(session.account, deps);
     const founding = await foundingNumber(session.account.email, deps);
-    return htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, checks }), { clearFlash: Boolean(flashed) });
+    const topupQuery = pageUrl(request).searchParams.get("topup") || "";
+    const topup = topupsEnabled(deps.env)
+      ? { pack: topupPack(deps.env), checks: (await readTopup(session.account, deps)).checks, note: TOPUP_NOTES[topupQuery] || "" }
+      : null;
+    return htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, checks, topup }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);

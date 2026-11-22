@@ -3,6 +3,7 @@
 import { syncAccountSubscription } from "./_account.mjs";
 import { noteFreeToPaid } from "./_paidIntent.mjs";
 import { handleEvent, verifyStripeSignature } from "./_pro.mjs";
+import { applyTopupEvent, isTopupCheckout } from "./_topup.mjs";
 
 export async function POST(request) {
   const payload = await request.text();
@@ -16,6 +17,10 @@ export async function POST(request) {
     return new Response("invalid JSON", { status: 400 });
   }
   try {
+    if (isTopupCheckout(event)) {
+      const outcome = await applyTopupEvent(event, { env: process.env, fetch: globalThis.fetch });
+      return Response.json({ received: true, ...outcome });
+    }
     const outcome = await handleEvent(event, { env: process.env, fetch: globalThis.fetch });
     // The key switch above is the part that must happen. The account record follows it,
     // and a failure there is retried: switching a key off twice changes nothing.
