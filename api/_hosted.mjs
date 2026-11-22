@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, setMonthlyLimit, WELCOME_HEADERS } from "./_pro.mjs";
-import { startTopupCheckout, topupPriceLabel } from "./_topup.mjs";
+import { chargeAutoTopup, startTopupCheckout, topupPriceLabel } from "./_topup.mjs";
 import { assignFoundingMember, foundingMemberLine, foundingSpotsLine, readFoundingCount, readFoundingNumber } from "./_founding.mjs";
 import { refFromCookie } from "./_start.mjs";
 import { waitlistFormHtml } from "./_waitlist.mjs";
@@ -130,6 +130,10 @@ import {
   serviceSpendKey,
   splitCharge,
   topupBalanceKey,
+  autoTopupCeilingCents,
+  autoTopupEnabled,
+  autoTopupFailedText,
+  autoTopupSpentKey,
   topupPack,
   topupsEnabled,
   checkOnceKey,
@@ -1113,6 +1117,11 @@ async function saveAccount(account, deps) {
   // Set when this sign-in spends a key minted for someone else. Deleting it must not revoke that key.
   if (account.capFrom) copy.capFrom = account.capFrom;
   if (typeof account.stripeCustomerId === "string" && account.stripeCustomerId.startsWith("cus_")) copy.stripeCustomerId = account.stripeCustomerId;
+  if (typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_")) copy.stripePaymentMethodId = account.stripePaymentMethodId;
+  if (typeof account.cardLast4 === "string" && /^\d{4}$/.test(account.cardLast4)) copy.cardLast4 = account.cardLast4;
+  if (account.autoTopup === true || account.autoTopup === false) copy.autoTopup = account.autoTopup;
+  if ([1000, 2000, 5000].includes(Number(account.autoTopupCeilingCents))) copy.autoTopupCeilingCents = Number(account.autoTopupCeilingCents);
+  if (account.autoTopupFailure && typeof account.autoTopupFailure.code === "string") copy.autoTopupFailure = { code: account.autoTopupFailure.code, at: account.autoTopupFailure.at || "" };
   // Absent means the Monday note is on. Only an explicit off is stored.
   if (account.impactEmail === false) copy.impactEmail = false;
   await redis(deps, ["SET", acctKey(account.id), JSON.stringify(copy)]);
@@ -1793,6 +1802,25 @@ async function countSpend(account, deps, costUsd) {
   return { ...split, checks: prepaid && split.paidPart > 0 ? checksForCost(costUsd, deps.env) : 0 };
 }
 
+async function refillPrepaid(account, deps) {
+  if (!autoTopupEnabled(deps.env) || account?.autoTopup !== true) return "";
+  const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
+  const userMicros = Number(await redis(deps, ["GET", personSpendKey(capPerson(account), month)])) || 0;
+  if (userMicros < toMicros(userMonthlyCapUsd(deps.env))) return "";
+  let topup = await readTopup(account, deps);
+  if (topup.checks > 0) return "";
+  const result = await chargeAutoTopup({ env: deps.env, fetch: deps.fetch, account, command: (args) => redis(deps, args) });
+  if (result.state === "credited") return "credited";
+  if (result.state === "failed") return "failed";
+  if (result.state !== "busy") return "";
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    topup = await readTopup(account, deps);
+    if (topup.checks > 0) return "credited";
+  }
+  return "";
+}
+
 async function capReached(account, deps) {
   const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
   const serviceMicros = Number(await redis(deps, ["GET", serviceSpendKey(month)])) || 0;
@@ -1950,6 +1978,8 @@ async function callGrill(args, account, payload, params, deps) {
   if (account.creditBlocked === "email") {
     return toolText(EMAIL_CLAIMED_TEXT, true);
   }
+  const refilled = await refillPrepaid(account, deps);
+  if (refilled === "failed") return toolText(autoTopupFailedText(deps.origin));
   const capped = await capReached(account, deps);
   if (capped) {
     logHosted(deps.requestId, `cap-${capped.which}`);
@@ -2542,7 +2572,8 @@ function seeOther(location, cookies = []) {
 /** A browser POST names its page in Origin. A missing Origin is still accepted. A different site is not. */
 function originAllowed(request) {
   const header = request.headers.get("origin");
-  if (!header) return true;
+  // Safari sends the literal "null" when it will not name the page. That is not another site.
+  if (!header || header === "null") return true;
   let posted;
   try {
     posted = new URL(header).origin;
@@ -3609,6 +3640,26 @@ function renderAccount(account, credit, extra = {}) {
   );
 }
 
+async function autoTopupView(account, deps) {
+  const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
+  const spent = Number(await redis(deps, ["GET", autoTopupSpentKey(account.id, month)])) || 0;
+  const hasCard = typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_");
+  return {
+    on: account.autoTopup === true && hasCard,
+    hasCard,
+    ceilingCents: autoTopupCeilingCents(account),
+    spentCents: Math.max(0, spent),
+    last4: /^\d{4}$/.test(account.cardLast4 || "") ? account.cardLast4 : "",
+    failure: account.autoTopup === true ? "" : account.autoTopupFailure?.code || "",
+  };
+}
+
+function autoFailureSentence(code) {
+  if (code === "card_declined") return "The card was declined.";
+  if (code === "authentication_required") return "The card needs a bank check, which can't be done from here.";
+  return "The payment didn't go through.";
+}
+
 function renderTopup(extra) {
   const topup = extra.topup;
   if (!topup) return "";
@@ -3616,16 +3667,43 @@ function renderTopup(extra) {
   const checks = Math.max(0, Math.floor(Number(topup.checks) || 0));
   const note = topup.note ? `<p>${esc(topup.note)}</p>` : "";
   const field = extra.field || "";
+  const auto = topup.auto;
+  const buyFields = `${field}<input type="hidden" name="action" value="topup">`;
+  const choice = auto
+    ? `<label class="choice"><input type="checkbox" name="auto_topup" value="1" checked> Automatically add another ${pack.checks} checks (${esc(topupPriceLabel(pack.priceCents))}) when I run out, up to ${esc(topupPriceLabel(auto.ceilingCents))} a month. You can turn this off anytime on this page.</label>`
+    : "";
   const buy = pack.priceId
-    ? `<form method="post" action="/account">${field}<input type="hidden" name="action" value="topup"><button type="submit">Add ${pack.checks} checks · ${esc(topupPriceLabel(pack.priceCents))}</button></form>`
+    ? `<form method="post" action="/account">${buyFields}${choice}<button type="submit">Add ${pack.checks} checks · ${esc(topupPriceLabel(pack.priceCents))}</button></form>`
     : `<p>Adding checks isn't ready on this server yet.</p>`;
+  const lead = auto
+    ? `Prepaid checks left: ${checks}. Unused checks carry over. The free monthly allowance still resets on the 1st. A saved card is charged again only if automatic add is on.`
+    : `Prepaid checks left: ${checks}. Unused checks carry over. The free monthly allowance still resets on the 1st. Nothing is charged later on its own.`;
   return `<section id="topup">
     <h2>More checks</h2>
-    <p>Prepaid checks left: ${checks}. Unused checks carry over. The free monthly allowance still resets on the 1st. Nothing is charged later on its own.</p>
+    <p>${lead}</p>
     ${note}
+    ${auto ? renderAutoTopup(auto, field) : ""}
     ${buy}
     <p class="small">One payment. A card you use can be saved for the next pack.</p>
   </section>`;
+}
+
+function renderAutoTopup(auto, field) {
+  const state = auto.on ? "On" : "Off";
+  const card = auto.last4 ? ` Card ending ${esc(auto.last4)}.` : "";
+  const why = !auto.on && auto.failure ? ` ${esc(autoFailureSentence(auto.failure))}` : "";
+  const needCard = !auto.on && !auto.hasCard ? " Buy a pack to save a card, then you can turn this on." : "";
+  const toggle = auto.on
+    ? `<form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-topup"><button type="submit" name="value" value="off">Turn off</button></form>`
+    : auto.hasCard
+      ? `<form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-topup"><button type="submit" name="value" value="on">Turn on</button></form>`
+      : "";
+  const options = [1000, 2000, 5000]
+    .map((cents) => `<option value="${cents}"${cents === auto.ceilingCents ? " selected" : ""}>${esc(topupPriceLabel(cents))}</option>`)
+    .join("");
+  return `<p>Automatic add: ${state}. Up to ${esc(topupPriceLabel(auto.ceilingCents))} a month. Spent this month: ${esc(topupPriceLabel(auto.spentCents))}.${card}${why}${needCard}</p>
+    ${toggle}
+    <form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-ceiling"><label class="choice">Monthly ceiling <select name="value">${options}</select></label> <button type="submit">Save</button></form>`;
 }
 
 function renderImpactEmail(account, field = "") {
@@ -4393,6 +4471,28 @@ export async function handleAccount(request, deps) {
         await deleteAccount(session.account, deps, session.sub);
         return seeOther(`${back}?deleted=1`, [pageCookieHeader("", 0)]);
       }
+      if (action === "auto-topup" && autoTopupEnabled(deps.env)) {
+        const value = form.get("value");
+        if (value === "off") {
+          session.account.autoTopup = false;
+          await saveAccount(session.account, deps);
+          return done(back);
+        }
+        if (value === "on" && typeof session.account.stripePaymentMethodId === "string" && session.account.stripePaymentMethodId.startsWith("pm_")) {
+          session.account.autoTopup = true;
+          session.account.autoTopupFailure = null;
+          await saveAccount(session.account, deps);
+        }
+        return done(back);
+      }
+      if (action === "auto-ceiling" && autoTopupEnabled(deps.env)) {
+        const cents = Number(form.get("value"));
+        if (cents === 1000 || cents === 2000 || cents === 5000) {
+          session.account.autoTopupCeilingCents = cents;
+          await saveAccount(session.account, deps);
+        }
+        return done(back);
+      }
       if (action === "topup") {
         if (!topupsEnabled(deps.env)) return done(`${back}?topup=unready`);
         try {
@@ -4401,6 +4501,7 @@ export async function handleAccount(request, deps) {
             fetch: deps.fetch,
             account: session.account,
             origin: publicOrigin(request),
+            autoTopup: autoTopupEnabled(deps.env) && form.get("auto_topup") === "1",
           });
           if (session.account.stripeCustomerId) await saveAccount(session.account, deps);
           if (result.state === "redirect") return rememberPage(seeOther(result.url), session.sub, deps);
@@ -4422,7 +4523,12 @@ export async function handleAccount(request, deps) {
     const notice = ACCOUNT_NOTICES[pageUrl(request).searchParams.get("notice") || ""] || "";
     const topupNote = TOPUP_NOTES[topupQuery] || "";
     const topup = topupsEnabled(deps.env)
-      ? { pack: topupPack(deps.env), checks: (await readTopup(session.account, deps)).checks, note: topupNote }
+      ? {
+          pack: topupPack(deps.env),
+          checks: (await readTopup(session.account, deps)).checks,
+          note: topupNote,
+          auto: autoTopupEnabled(deps.env) ? await autoTopupView(session.account, deps) : null,
+        }
       : null;
     const status = notice || topupNote;
     return rememberPage(

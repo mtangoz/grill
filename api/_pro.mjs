@@ -146,10 +146,14 @@ function clients(env, fetchImpl) {
   return {
     stripe: {
       get: (path) => call(`${STRIPE_API}${path}`, { headers: stripeAuth() }, `Stripe GET ${path.split("?")[0]}`),
-      post: (path, form) =>
+      post: (path, form, extraHeaders = {}) =>
         call(
           `${STRIPE_API}${path}`,
-          { method: "POST", headers: { ...stripeAuth(), "Content-Type": "application/x-www-form-urlencoded" }, body: formBody(form) },
+          {
+            method: "POST",
+            headers: { ...stripeAuth(), "Content-Type": "application/x-www-form-urlencoded", ...extraHeaders },
+            body: formBody(form),
+          },
           `Stripe POST ${path}`,
         ),
     },
