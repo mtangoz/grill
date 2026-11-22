@@ -1,6 +1,6 @@
 # How the pages are built
 
-Each page has one job. `/decisions` shows whether a grill changed the call, then gets a due look-back done. `/account` shows who you are, what Grill holds, and how to leave. A section earns its place by helping that job.
+Each page has one job. `/decisions` shows whether a grill changed the call, then gets a due look-back done. `/account` shows who you are, what Grill holds, and how to leave. The first block on `/account` is Checks: this month's free allowance in plain words, prepaid checks left, and the button that buys another pack. When automatic add is on, that same box holds the ticked checkbox and the on/off control. The price on the button is the configured pack price. The signed-in header on `/account` and `/decisions` links to `/account#checks`. When less than $0.50 of the free allowance is left, or there are no prepaid checks, both pages say so and link to that button. `/decisions` still does not show a dollar amount. A section earns its place by helping that job.
 
 The order on a page is: what needs you now, how your judgement is doing, your records, then the small ways to leave. Settings do not sit above the thing the page is for. Danger sits behind a confirm page.
 

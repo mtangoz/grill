@@ -1321,7 +1321,7 @@ async function creditOf(account, deps) {
   const usage = Number(account.keyReset === "monthly" ? live.usageUsd : live.usageTotalUsd) || 0;
   const limit = Number.isFinite(live.limitUsd) ? live.limitUsd : Number(account.keyLimitUsd) || 0;
   const remaining = Math.max(0, limit - usage);
-  const row = { at: now, remaining, out: remaining <= 0 };
+  const row = { at: now, remaining, out: remaining <= 0, usage };
   creditCache.set(account.id, row);
   return row;
 }
@@ -2569,18 +2569,92 @@ function seeOther(location, cookies = []) {
   return new Response(null, { status: 303, headers });
 }
 
-/** A browser POST names its page in Origin. A missing Origin is still accepted. A different site is not. */
-function originAllowed(request) {
-  const header = request.headers.get("origin");
-  // Safari sends the literal "null" when it will not name the page. That is not another site.
-  if (!header || header === "null") return true;
+function bareHost(host) {
+  return String(host || "")
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+$/, "")
+    .replace(/^www\./, "");
+}
+
+/** Apex and www are the same site. The public host and the request host both count, so a rewrite that sets x-forwarded-host still matches the browser. */
+function sameSiteOrigin(header, request) {
   let posted;
   try {
-    posted = new URL(header).origin;
+    posted = new URL(header);
   } catch {
     return false;
   }
-  return posted === publicOrigin(request) || posted === new URL(request.url).origin;
+  if (posted.protocol !== "https:" && posted.protocol !== "http:") return false;
+  const want = bareHost(posted.host);
+  if (!want) return false;
+  const candidates = [];
+  try {
+    candidates.push(publicOrigin(request));
+  } catch {
+    /* request.url is not a URL */
+  }
+  try {
+    candidates.push(new URL(request.url).origin);
+  } catch {
+    /* ignore */
+  }
+  for (const candidate of candidates) {
+    let url;
+    try {
+      url = new URL(candidate);
+    } catch {
+      continue;
+    }
+    if (url.protocol === posted.protocol && bareHost(url.host) === want) return true;
+  }
+  return false;
+}
+
+/** The hidden page value is the CSRF token. It has to be this person's, not merely well-signed. */
+function signedPageMatches(page, sub, env, now) {
+  if (!sub || !page) return false;
+  return readPageCookie(page, env, now) === sub;
+}
+
+/**
+ * A same-site account form.
+ * Safari sends Origin "null" (the four letters, which are not a URL) after the Clerk handshake
+ * on accounts.grillyour.ai, and when this page's Referrer-Policy is no-referrer. That post is
+ * this site when Sec-Fetch-Site is same-origin, none, or absent, and the form carries the signed
+ * page value. Any other Origin needs that value too. A missing Origin header is still accepted:
+ * a cross-site browser sends its own Origin, or "null", rather than no header.
+ * A cross-site post with a foreign Origin and no valid page value is rejected.
+ */
+function originAllowed(request, { sub = "", page = "", env = {}, now } = {}) {
+  const raw = request.headers.get("origin");
+  const header = raw == null ? "" : String(raw).trim();
+  const fetchSite = String(request.headers.get("sec-fetch-site") || "").trim().toLowerCase();
+  const signed = signedPageMatches(page, sub, env, now);
+  if (header && header.toLowerCase() !== "null") {
+    if (sameSiteOrigin(header, request)) return true;
+    return signed;
+  }
+  const trusted = fetchSite === "same-origin" || fetchSite === "none" || fetchSite === "";
+  if (!trusted) return false;
+  if (header.toLowerCase() === "null") return signed;
+  return true;
+}
+
+/** Origin, Sec-Fetch-Site, and host only. No cookie, no page value, no key. */
+function logOriginReject(request, id) {
+  const clip = (value) => String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 200);
+  const forwarded = request.headers.get("x-forwarded-host");
+  let host = "";
+  if (forwarded) host = forwarded.split(",")[0];
+  else {
+    try {
+      host = new URL(request.url).host;
+    } catch {
+      host = "";
+    }
+  }
+  logHosted(id, `origin-reject ${JSON.stringify({ origin: clip(request.headers.get("origin")), site: clip(request.headers.get("sec-fetch-site")), host: clip(host) })}`);
 }
 
 /**
@@ -3497,12 +3571,44 @@ const LIST_STYLE = `<style>
     @media (max-width: 390px) {
       .decision .record-title, .decision .meta { overflow-wrap: break-word; }
     }
+    nav.signed-in { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; margin: 0.6rem 0 0.2rem; }
+    nav.signed-in a { font-weight: 650; text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
     </style>`;
 
 function renderFooter(total, filtered) {
   if (!total) return `<p class="small footer"><a href="/account">Account</a></p>`;
   const remove = filtered ? "" : ` · <a href="/decisions?confirm=delete-all">Delete all</a>`;
   return `<p class="small footer"><a href="/decisions?export=text">Export</a> · <a href="/decisions?export=json">JSON</a>${remove} · <a href="/account">Account</a></p>`;
+}
+
+function signedInNav() {
+  return `<nav class="signed-in" aria-label="Account"><a href="/decisions">Your grills</a> <a href="/account#checks">Add checks</a> <a href="/account">Account</a></nav>`;
+}
+
+/** Under this much of the free allowance, or with no prepaid checks, the page points at Add checks. */
+const LOW_FREE_USD = 0.5;
+
+function freeRemainingUsd(account, credit, env) {
+  const cap = userMonthlyCapUsd(env);
+  if (!account?.keyHash) return cap;
+  if (credit?.out) return 0;
+  const usage = Number(credit?.usage);
+  if (Number.isFinite(usage)) return Math.max(0, cap - usage);
+  const remaining = Number(credit?.remaining);
+  return Number.isFinite(remaining) ? Math.min(cap, Math.max(0, remaining)) : cap;
+}
+
+function checksNotice({ topups = false, freeRemaining = 0, prepaid = 0 } = {}) {
+  if (!topups) return "";
+  const lowFree = Number(freeRemaining) < LOW_FREE_USD;
+  const noPrepaid = Math.floor(Number(prepaid) || 0) <= 0;
+  if (!lowFree && !noPrepaid) return "";
+  const text = lowFree && noPrepaid
+    ? "The free allowance is nearly used up, and there are no prepaid checks."
+    : lowFree
+      ? "The free allowance is nearly used up."
+      : "No prepaid checks left.";
+  return `<p class="banner" id="low-checks" role="status">${esc(text)} <a href="/account#checks">Add checks</a></p>`;
 }
 
 function renderDecisions(account, rows, _credit, habits, extra = {}) {
@@ -3528,7 +3634,9 @@ function renderDecisions(account, rows, _credit, habits, extra = {}) {
   return page(
     "Your grills",
     `${LIST_STYLE}
+    ${signedInNav()}
     <h1>Your grills</h1>
+    ${extra.low || ""}
     ${renderImpact(shown, type, source)}
     ${renderDueAction(shown, byId, now, query)}
     ${waiting}
@@ -3613,16 +3721,31 @@ function renderAccount(account, credit, extra = {}) {
   const keeping = account.records === "keep" ? "On" : account.records === "off" ? "Off" : "Not chosen yet";
   const field = extra.field || "";
   const status = extra.status ? `<p class="banner" role="status">${esc(extra.status)}</p>` : "";
+  const freeLeft = typeof extra.freeRemaining === "number" ? extra.freeRemaining : freeRemainingUsd(account, credit, extra.env);
+  const allowance = credit?.out ? esc(OUT_OF_CREDIT) : esc(allowanceLine(freeLeft, extra.env));
   return page(
     "Your Grill account",
-    `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
+    `<style>
+    @media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}
+    nav.signed-in { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; margin: 0.6rem 0 0.2rem; }
+    nav.signed-in a { font-weight: 650; text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
+    #checks { border: 1px solid var(--rule); border-radius: 12px; padding: 2px 16px 14px; margin: 0.4rem 0 1.4rem; }
+    #checks > h2 { margin-top: 0.85rem; }
+    #topup button { font-size: 1.08rem; padding: 12px 22px; }
+    </style>
+    ${signedInNav()}
     <h1>Your account</h1>
     ${status}
+    ${extra.low || ""}
+    <section id="checks">
+      <h2>Checks</h2>
+      <p>${allowance}</p>
+      <p>${esc(checksLine(extra.checks))}</p>
+      ${renderTopup(extra)}
+    </section>
     ${extra.founding ? `<p>${esc(foundingMemberLine(extra.founding))}</p>` : ""}
     <p>${esc(account.email)}</p>
     <p>Records: ${esc(keeping)}.</p>
-    <p>${credit?.out ? esc(OUT_OF_CREDIT) : esc(allowanceLine(credit?.remaining, extra.env))}</p>
-    <p>${esc(checksLine(extra.checks))}</p>
     <p>Grill holds a model-router key for you. It is not shown here. The write-up you approve passes through Grill's server in memory and is not stored.</p>
     <form method="post" action="/account" class="row">
       ${field}
@@ -3632,7 +3755,6 @@ function renderAccount(account, credit, extra = {}) {
     </form>
     <p class="small">${esc(RECORDS_OFF_NOTE)}</p>
     <p><a href="/decisions">Your grills</a></p>
-    ${renderTopup(extra)}
     ${renderCalendar("/account", extra.calendar, extra.freshUrl || "", field)}
     ${renderImpactEmail(account, field)}
     <p><a class="button" href="/account?confirm=delete">Delete this account</a></p>
@@ -4381,7 +4503,10 @@ export async function handleDecisions(request, deps) {
     }
     const type = decisionTypeId(url.searchParams.get("type"));
     const source = decisionSourceId(url.searchParams.get("source"));
-    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed, env: deps.env, shares, checks, type, source }), { clearFlash: Boolean(flashed) });
+    const topupOn = topupsEnabled(deps.env);
+    const prepaid = topupOn ? (await readTopup(session.account, deps)).checks : 0;
+    const low = checksNotice({ topups: topupOn, freeRemaining: freeRemainingUsd(session.account, credit, deps.env), prepaid });
+    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed, env: deps.env, shares, checks, type, source, low }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
@@ -4434,8 +4559,11 @@ export async function handleAccount(request, deps) {
       const back = `${publicOrigin(request)}/account`;
       const done = (location, cookies = []) => rememberPage(seeOther(location, cookies), session.sub, deps);
       const missed = () => done(`${back}?notice=missed`);
-      if (!originAllowed(request)) return done(`${back}?notice=origin`);
       const form = new URLSearchParams(await readRawBody(request));
+      if (!originAllowed(request, { sub: session.sub, page: form.get("page") || "", env: deps.env, now: deps.now })) {
+        logOriginReject(request, id);
+        return done(`${back}?notice=origin`);
+      }
       const action = form.get("action") || "";
       if (action === "calendar") {
         const result = await calendarAction(session.account, deps, form.get("value") || "");
@@ -4531,8 +4659,10 @@ export async function handleAccount(request, deps) {
         }
       : null;
     const status = notice || topupNote;
+    const freeRemaining = freeRemainingUsd(session.account, credit, deps.env);
+    const low = checksNotice({ topups: Boolean(topup), freeRemaining, prepaid: topup?.checks ?? 0 });
     return rememberPage(
-      htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, checks, topup, field, status }), { clearFlash: Boolean(flashed) }),
+      htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, checks, topup, field, status, low, freeRemaining }), { clearFlash: Boolean(flashed) }),
       session.sub,
       deps,
     );
