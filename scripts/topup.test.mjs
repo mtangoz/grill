@@ -182,7 +182,7 @@ describe("top-up pack config", () => {
     assert.doesNotMatch(userAllowanceUsedText("https://grillyour.ai"), /\$|Pro|subscription/i);
     assert.equal(capBlock({ serviceMicros: 0, userMicros: 5_000_000, topupChecks: 100, topupBudgetMicros: budget }).text, USER_CAP_TEXT);
     assert.equal(capBlock({ serviceMicros: toMicros(20), userMicros: 5_000_000, env, topupChecks: 40, topupBudgetMicros: budget }), null);
-    assert.equal(capBlock({ serviceMicros: toMicros(20), userMicros: 0 }).text.startsWith("Grill has used up"), true);
+    assert.equal(capBlock({ serviceMicros: toMicros(20), userMicros: 0 }).text.startsWith("Grill has hit"), true);
   });
 });
 

@@ -725,8 +725,19 @@ async function outcomeOf(job, detail = "brief") {
     return text(job.briefText);
   }
   jobs.delete(job.id);
+  const limitText = installedKeyLimitText(stderr);
+  if (limitText) return text(limitText, true);
   const why = error ?? (stderr.split("\n").filter((l) => l.includes("ERROR")).join("\n") || `the judge exited ${code}`);
   return text(`The grill did not finish: ${why}`, true);
+}
+
+/** The installed tool uses the person's own key. Grill does not choose when that key resets. */
+export function installedKeyLimitText(stderr = "") {
+  const s = String(stderr || "");
+  if (/\b402\b|insufficient credits|key limit exceeded/i.test(s)) {
+    return "Your OpenRouter key has hit its limit, so this one didn't run. Grill does not set when that key resets. Raise the key's limit or add funds at https://openrouter.ai/keys, then try again.";
+  }
+  return "";
 }
 
 function pending(job) {

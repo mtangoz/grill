@@ -2145,7 +2145,7 @@ describe("hosted Grill", { concurrency: false }, () => {
       assert.equal(html.includes(USER_KEY), false);
       // The account page shows the same sentence the tool returned, and it no longer says "credit".
       assert.ok(html.includes(esc(OUT_OF_CREDIT)), "the account page shows the limit sentence");
-      assert.match(OUT_OF_CREDIT, /^You've reached this month's free limit, so this one didn't run\./);
+      assert.match(OUT_OF_CREDIT, /^You've hit this month's limit on the key for your account, so this one didn't run\./);
       assert.doesNotMatch(html, /grill credit/i);
       const gone = await handleAccount(
         new Request("https://grillyour.ai/account", {
@@ -3159,7 +3159,7 @@ describe("hosted Grill: spending caps, open sign-up, races and plain errors", ()
   it("explains failures in plain words, with no codes or traces", () => {
     const cases = [
       ["[judge] ERROR: refusing a correlated verdict — x", /same company/],
-      ["[judge] ERROR: OpenRouter 402 insufficient credits", /You've reached this month's free limit/],
+      ["[judge] ERROR: OpenRouter 402 insufficient credits", /You've hit this month's limit on the key for your account/],
       ["[judge] ERROR: the subject contains what looks like an API key. Nothing was sent.", /password, key or token/],
       ["[judge] router retry: openrouter/auto · http_429", /busy/],
       ["[judge] abandoned the walk after the deadline", /took too long/],
@@ -3918,9 +3918,9 @@ describe("fair check counting", () => {
       const blocked = await postMcp(ctx, grillCall(2, "Decision: a different shed colour."), { token, deps });
       assert.equal(
         textOf(blocked.json),
-        "You've used today's 30 grills on this account. It resets at midnight UTC (8 hours left). The monthly allowance resets on the 1st.",
+        "You've hit today's daily limit of 30 checks on this account, so this one didn't run. It resets at 00:00 UTC. Wait until then.",
       );
-      assert.doesNotMatch(textOf(blocked.json), /\bPro\b|subscription|\$/);
+      assert.doesNotMatch(textOf(blocked.json), /\bPro\b|subscription|\$|add checks/i);
       assert.equal(fake.seen.chat.length, before);
       assert.equal(checks(ctx), 1);
       assert.equal(monthlyCapUsd({}), 20);
@@ -3959,9 +3959,9 @@ describe("fair check counting", () => {
       const blocked = await postMcp(ctx, grillCall(3, "Decision: paint the door too."), { token, deps });
       assert.equal(
         textOf(blocked.json),
-        "You've used today's 100 grills on this account. It resets at midnight UTC (8 hours left). You've used 47 of this month's 200 checks.",
+        "You've hit today's daily limit of 100 checks on this account, so this one didn't run. It resets at 00:00 UTC. Wait until then. You've used 47 of this month's 200 checks. That allowance resets next month on the 1st at 00:00 UTC.",
       );
-      assert.doesNotMatch(textOf(blocked.json), /\bPro\b|subscription|\$|resets on the 1st/);
+      assert.doesNotMatch(textOf(blocked.json), /\bPro\b|subscription|\$/);
       assert.equal(fake.seen.chat.length, chats);
       assert.equal(checks(ctx), 47);
       assert.equal(monthlyCapUsd({}), 20);
@@ -3989,14 +3989,14 @@ describe("fair check counting", () => {
       const blocked = await postMcp(ctx, grillCall(3, "Decision: paint the door too."), { token, deps });
       assert.equal(
         textOf(blocked.json),
-        "You've used today's 40 grills on this account. It resets at midnight UTC (8 hours left). You've used 12 of this month's 200 checks.",
+        "You've hit today's daily limit of 40 checks on this account, so this one didn't run. It resets at 00:00 UTC. Wait until then. You've used 12 of this month's 200 checks. That allowance resets next month on the 1st at 00:00 UTC.",
       );
     } finally {
       await fake.close();
     }
   });
 
-  it("keeps a canceled subscription on the free daily message", async () => {
+  it("says the higher daily limit has ended when that row is no longer active", async () => {
     const fake = await startFakeOpenRouter();
     try {
       const ctx = world();
@@ -4009,8 +4009,32 @@ describe("fair check counting", () => {
       const blocked = await postMcp(ctx, grillCall(2, "Decision: a different shed colour."), { token, deps });
       assert.equal(
         textOf(blocked.json),
-        "You've used today's 30 grills on this account. It resets at midnight UTC (8 hours left). The monthly allowance resets on the 1st.",
+        "The higher daily limit on this account has ended, so you've hit today's limit of 30 checks. It resets at 00:00 UTC. Wait until then.",
       );
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("stops an active account at this month's 200 checks before the daily cap", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      seedPro(ctx, "active");
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = depsFor(fake);
+      const first = await postMcp(ctx, grillCall(1, SUBJECT), { token, deps });
+      assert.equal(first.json.result.isError, false, textOf(first.json));
+      ctx.memory.command(["SET", dayKey(ctx), "10"]);
+      ctx.memory.command(["SET", monthKey(ctx), "200"]);
+      const before = fake.seen.chat.length;
+      const blocked = await postMcp(ctx, grillCall(2, "Decision: a different shed colour."), { token, deps });
+      assert.equal(
+        textOf(blocked.json),
+        "You've hit this month's limit of 200 checks (you've used 200), so this one didn't run. It resets next month on the 1st at 00:00 UTC. Wait until then.",
+      );
+      assert.doesNotMatch(textOf(blocked.json), /\bPro\b|subscription|\$|add checks/i);
+      assert.equal(fake.seen.chat.length, before);
     } finally {
       await fake.close();
     }
