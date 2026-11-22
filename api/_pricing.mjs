@@ -4,7 +4,9 @@
 import { recordPaidIntent } from "./_paidIntent.mjs";
 import { foundingMemberLine, foundingSkipsPaywall, foundingSpotsLine, readFoundingCount, readFoundingNumber } from "./_founding.mjs";
 import { PLANS, billingMode, couponId, esc, page } from "./_pro.mjs";
+import { topupPriceLabel } from "./_topup.mjs";
 import { openStore, redisCommand, sessionAccountId } from "./_account.mjs";
+import { topupPack } from "../scripts/hostedCore.mjs";
 
 const HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
@@ -38,6 +40,9 @@ function pricingPage(env, { spots = "", founding = null } = {}) {
 <p class="row"><input type="submit" value="Notify me"></p>
 </form>`
       : `<p><a href="/checkout?plan=month">Get Pro · ${esc(month)} a month</a> or <a href="/checkout?plan=year">${esc(year)} a year</a>.</p>`;
+  const pack = topupPack(env);
+  const topup = `<h2>Grill in chat</h2>
+<p>The first $5 of use each month is free, and unused free use does not roll over. Extra checks are a prepaid pack: ${esc(String(pack.checks))} checks for ${esc(topupPriceLabel(pack.priceCents))}, bought on the account page. Unused checks from a pack carry over. Nothing is charged automatically.</p>`;
   return page(
     "Pricing · Grill",
     `<h1>Grill Pro</h1>
@@ -46,6 +51,7 @@ ${member}
 <p>Pro is ${esc(month)} a month or ${esc(year)} a year. A founding member does not pay that.</p>
 ${offer}
 ${next}
+${topup}
 <p><a href="/">Back to Grill</a></p>`,
   );
 }
