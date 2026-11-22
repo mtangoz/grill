@@ -30,13 +30,14 @@ export function topupPriceLabel(cents) {
 
 function stripeKeyMode(secret) {
   const value = typeof secret === "string" ? secret.trim() : "";
-  if (value.startsWith("sk_test_")) return "test";
-  if (value.startsWith("sk_live_")) return "live";
+  if (value.startsWith("sk_test_") || value.startsWith("rk_test_")) return "test";
+  if (value.startsWith("sk_live_") || value.startsWith("rk_live_")) return "live";
   return "";
 }
 
 /**
  * Preview and local development take a test key. Production takes a live key.
+ * A restricted key is the same mode as the matching secret key (rk_test_, rk_live_).
  * An unset VERCEL_ENV (tests, a laptop) accepts either, so a fixture key still runs.
  */
 export function stripeModeAllowed(env = {}) {
