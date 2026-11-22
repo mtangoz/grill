@@ -110,3 +110,34 @@ describe("get it solid: revise and grill again, at most 3 grills", () => {
     assert.match(SERVER, /If the same decision is grilled again in the chat, and you did not revise it yourself, ask what changed\./);
   });
 });
+
+describe("a one-line session tally after What Grill changed", () => {
+  it("gives the line's shape: checks, plans changed, kept", async () => {
+    const { SESSION_TALLY_RULE } = await import("./judgeCore.mjs");
+    assert.match(SESSION_TALLY_RULE, /Grill this session: 3 checks, 2 plans changed, 1 kept/);
+  });
+
+  it("goes after the What Grill changed section, never before the verdict, once per answer", async () => {
+    const { SESSION_TALLY_RULE } = await import("./judgeCore.mjs");
+    assert.match(SESSION_TALLY_RULE, /After a What Grill changed section/);
+    assert.match(SESSION_TALLY_RULE, /never above the verdict/);
+    assert.match(SESSION_TALLY_RULE, /once per answer/);
+  });
+
+  it("counts only grills Grill actually returned, and reads nothing else", async () => {
+    const { SESSION_TALLY_RULE } = await import("./judgeCore.mjs");
+    assert.match(SESSION_TALLY_RULE, /Count only grills that grill or grill_result returned in this conversation/);
+  });
+
+  it("names no plan, price or limit", async () => {
+    const { SESSION_TALLY_RULE } = await import("./judgeCore.mjs");
+    assert.doesNotMatch(SESSION_TALLY_RULE, /\bPro\b|price|subscription|\$|limit|credit|balance/i);
+  });
+
+  it("is in every surface the assistant reads", async () => {
+    const { SESSION_TALLY_RULE } = await import("./judgeCore.mjs");
+    for (const [where, text] of Object.entries(surfaces())) assert.ok(text.includes(SESSION_TALLY_RULE), where);
+    assert.match(SERVER, /`\$\{SESSION_TALLY_RULE\} ` \+/);
+    assert.match(SKILL, /Grill this session: 3 checks, 2 plans changed, 1 kept/);
+  });
+});
