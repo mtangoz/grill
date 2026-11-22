@@ -1887,8 +1887,35 @@ function sentence(text) {
 
 function endsSentence(text) {
   const clean = String(text || "").trim();
-  if (!clean || endsMidClause(clean)) return false;
+  if (!clean || endsMidClause(clean) || endsOnAbbreviation(clean)) return false;
   return /[.!?]["'*]*$/.test(clean);
+}
+
+/** Periods that mark an abbreviation, not the end of a sentence. */
+const ABBREVIATION_TOKEN =
+  /^(?:e\.g|i\.e|etc|vs|cf|mr|mrs|ms|dr|prof|sr|jr|inc|ltd|corp|approx|viz|u\.s|u\.k|a\.m|p\.m|n\.b|al)$/i;
+
+function trailingToken(text) {
+  const tok = (String(text || "").trim().match(/(\S+)$/) || [])[1] || "";
+  return tok.replace(/^[("'[]+/, "").replace(/[),.;:"'*]+$/, "").replace(/\.+$/, "");
+}
+
+function endsOnAbbreviation(text) {
+  const clean = String(text || "").trim();
+  const tok = trailingToken(clean);
+  if (ABBREVIATION_TOKEN.test(tok)) return true;
+  // "subset (e.g." — the line stopped on the abbreviation, not a sentence.
+  return /(?:\b(?:e\.g|i\.e|etc|vs)|\([A-Za-z.]+)$/i.test(clean);
+}
+
+function isAbbreviationPeriod(text, periodIndex) {
+  const tok = trailingToken(String(text || "").slice(0, periodIndex));
+  if (ABBREVIATION_TOKEN.test(tok)) return true;
+  // Initials such as "U.S." or "A." when what follows is not a new sentence.
+  if (!/^[A-Za-z](?:\.[A-Za-z])*$/.test(tok)) return false;
+  const after = String(text || "").slice(periodIndex + 1);
+  const next = after.match(/[^\s"'*)\]]/);
+  return Boolean(next) && /[a-z0-9]/.test(next[0]);
 }
 
 /** A period inside **bold.** is not a sentence boundary. The closing marks stay on that sentence. */
@@ -1899,6 +1926,7 @@ function splitSentences(text) {
   let start = 0;
   for (let i = 0; i < clean.length; i++) {
     if (!/[.!?]/.test(clean[i])) continue;
+    if (clean[i] === "." && isAbbreviationPeriod(clean, i)) continue;
     let end = i + 1;
     while (end < clean.length && /["'*\]]/.test(clean[end])) end++;
     if (end < clean.length && !/\s/.test(clean[end])) continue;
@@ -1913,15 +1941,19 @@ function splitSentences(text) {
   return parts;
 }
 
-/** Leading complete sentences that fit. A sentence that does not fit is left out, not cut with an ellipsis. */
+/** Leading complete sentences that fit. A sentence that does not fit is skipped, not cut mid-clause. Later sentences may still be kept. */
 function takeCompleteSentences(text, maxWords) {
   if (maxWords <= 0) return "";
   const kept = [];
   for (const part of splitSentences(text)) {
     if (!endsSentence(part)) break;
     const candidate = [...kept, part].join(" ");
-    if (countWords(candidate) > maxWords) break;
-    kept.push(part);
+    if (countWords(candidate) <= maxWords) {
+      kept.push(part);
+      continue;
+    }
+    // Too long for the room. Do not crop it. If the kept list is still empty, try the next sentence.
+    if (kept.length) break;
   }
   return kept.join(" ");
 }
@@ -1934,31 +1966,17 @@ function closeClause(cut, maxWords) {
   return countWords(done) <= maxWords ? done : "";
 }
 
-/** When the first sentence is too long, keep its opening clause and close it. */
+/** When the first sentence is too long, keep a leading independent clause at a real boundary (; , ", but", or a dash then "but"), never a mid-clause comma or a bare "but". */
 function openingClause(text, maxWords) {
   const clean = String(text || "")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[.!?]+$/, "");
   if (!clean || maxWords <= 0) return "";
-  const marked = clean.split(/\s*;\s*|\s*,\s+but\s+|\s+but\s+/i)[0]?.trim() ?? "";
+  const marked = clean.split(/\s*;\s*|\s*,\s+but\s+|\s*[—–]\s*but\s+/i)[0]?.trim() ?? "";
   const broke = marked && marked.toLowerCase() !== clean.toLowerCase();
-  const head = broke ? marked : clean;
-  if (broke) {
-    const closed = closeClause(head, maxWords);
-    if (closed) return closed;
-  }
-  const bits = head.split(/,\s+/);
-  if (bits.length < 2) return "";
-  let acc = "";
-  let best = "";
-  for (let i = 0; i < bits.length - 1; i++) {
-    const next = acc ? `${acc}, ${bits[i]}` : bits[i];
-    if (countWords(`${next}.`) > maxWords) break;
-    acc = next;
-    if (countWords(next) >= 3) best = next;
-  }
-  return closeClause(best, maxWords);
+  if (!broke) return "";
+  return closeClause(marked, maxWords);
 }
 
 /** Whole sentences inside the cap. Empty when no complete sentence fits. */
@@ -2157,20 +2175,51 @@ function briefParagraphs(paragraphs, ask) {
   return `${body.join("\n\n")}\n\n${ask}`;
 }
 
+function isBareVerdict(text) {
+  return /^\*\*[^*]+\.\*\*$/.test(String(text || "").trim());
+}
+
+/** Prefer a Missing line, then a Cheap test, then a Risk, when the complete lines will not all fit. Never cut one mid-clause. */
+function packBriefLines(lines, room) {
+  const clean = lines.map((part) => String(part || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+  if (room <= 0 || !clean.length) return "";
+  const all = clean.join(" ");
+  if (countWords(all) <= room) return all;
+  const missing = clean.filter((line) => line.startsWith("Missing:"));
+  const tests = clean.filter((line) => line.startsWith("Cheap test:"));
+  const risks = clean.filter((line) => line.startsWith("Risk:"));
+  const other = clean.filter((line) => !/^(?:Missing|Cheap test|Risk):/.test(line));
+  const kept = [];
+  for (const line of [...missing, ...tests, ...risks, ...other]) {
+    if (kept.includes(line)) continue;
+    const candidate = [...kept, line].join(" ");
+    if (countWords(line) <= room && countWords(candidate) <= room) kept.push(line);
+  }
+  const chosen = new Set(kept);
+  return clean.filter((line) => chosen.has(line)).join(" ");
+}
+
 /** The verdict, the point and the test stay inside the old cap. The flip line is extra. */
-function fitBriefBody(lead, rest, sources, ask) {
+function fitBriefBody(lead, parts, sources, ask) {
   const room = Math.max(12, LAYER1_WORD_BUDGET - countWords(ask));
   const source = String(sources || "").trim();
   let head = String(lead || "").replace(/\s+/g, " ").trim();
-  let tail = String(rest || "").replace(/\s+/g, " ").trim();
   const sourceWords = countWords(source);
   if (countWords(head) + sourceWords > room) {
-    head = sentenceWithin(head, Math.max(12, room - sourceWords)) || "The judge did not finish the note.";
-    tail = "";
-  } else if (tail) {
-    const restRoom = room - countWords(head) - sourceWords;
-    tail = restRoom > 0 ? sentenceWithin(tail, restRoom) : "";
+    const trimmed = sentenceWithin(head, Math.max(12, room - sourceWords)) || "The judge did not finish the note.";
+    // A complete verdict reason is kept whole, even a little over the cap, rather than reduced to a bare label.
+    if (
+      isBareVerdict(trimmed) &&
+      !isBareVerdict(head) &&
+      endsSentence(head) &&
+      countWords(head) + sourceWords <= LAYER2_WORD_BUDGET
+    ) {
+      return { head, tail: "", source };
+    }
+    return { head: trimmed, tail: "", source };
   }
+  const lines = (Array.isArray(parts) ? parts : [parts]).map((part) => sentence(String(part || "").replace(/\s+/g, " ").trim())).filter(Boolean);
+  const tail = packBriefLines(lines, room - countWords(head) - sourceWords);
   return { head, tail, source };
 }
 
@@ -2182,13 +2231,14 @@ function renderBrief(result, subject, ask = CLOSING_ASK) {
   if (isThinGrill(result, subject)) {
     return briefParagraphs([withClosing(thinLayer(result, prefix, ask), sources, ask).split("\n\n")[0], flip], ask);
   }
-  const missing = sentenceWithin(explicitMissing(result), 16);
+  const fieldRoom = Math.max(12, LAYER1_WORD_BUDGET - countWords(ask));
+  const missing = sentenceWithin(explicitMissing(result), fieldRoom);
   const top = challengeList(result)[0];
-  const risk = sentenceWithin(top?.challenge || result?.strongestObjection || "", 16);
+  const risk = sentenceWithin(top?.challenge || result?.strongestObjection || "", fieldRoom);
   const sharp = missing ? `Missing: ${missing}` : risk ? `Risk: ${risk}` : "";
-  const testText = sentenceWithin(top?.falsifier || "", 14);
+  const testText = sentenceWithin(top?.falsifier || "", fieldRoom);
   const test = testText ? `Cheap test: ${sentence(testText)}` : "";
-  const reason = sentenceWithin(String(result?.verdictReason || "").replace(/\?/g, ""), 20);
+  const reason = sentenceWithin(String(result?.verdictReason || "").replace(/\?/g, ""), fieldRoom);
   const label = verdictLabel(result);
   const verdict = label
     ? reason
@@ -2198,8 +2248,7 @@ function renderBrief(result, subject, ask = CLOSING_ASK) {
       ? `**Quick read.** ${reason}`
       : "**No verdict.** The judge did not judge the decision.";
   const lead = [prefix, verdict].filter(Boolean).join(" ");
-  const rest = [sharp ? sentence(sharp) : "", test].filter(Boolean).join(" ");
-  const fitted = fitBriefBody(lead, rest, sources, ask);
+  const fitted = fitBriefBody(lead, [sharp ? sentence(sharp) : "", test], sources, ask);
   return briefParagraphs([fitted.head, flip, fitted.tail, fitted.source], ask);
 }
 

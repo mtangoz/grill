@@ -1685,7 +1685,9 @@ describe("the note a person reads", () => {
     assert.equal(paras.at(-1), CLOSING_ASK);
     assert.match(paras[0], /same month\.$/);
     assert.ok(paras[0].indexOf("The question that would change this:") === -1);
-    assert.match(paras[1], /^The question that would change this: What the \$20 overall and \$1 per-user caps are denominated in, over what window\?$/);
+    // The full question is over the 25-word flip budget. Leave the line off rather than cutting it at a comma.
+    const flip = paras.filter((para) => para.startsWith("The question that would change this:"));
+    assert.equal(flip.length, 0, note);
     assert.doesNotMatch(note, /,\s*\?/);
     assert.doesNotMatch(note, /"cap it"/);
 
@@ -1814,6 +1816,194 @@ describe("the note a person reads", () => {
   it("the scope guard is the shared sentence", () => {
     assert.match(SCOPE_GUARD, /no code changes, no PRs, no product questions/);
     assert.match(SCOPE_GUARD, /Grill's job ends at the verdict and the record/);
+  });
+});
+
+// These cases are the exact clipped lines from the 2026-11-22 prior-challenges
+// blind pairs. The formatter used to cut mid-clause (or on "e.g.") and then
+// close the fragment with a period. A line must end on a real sentence, or
+// be left out, never as a clipped bit.
+describe("layer 1 does not clip verdict lines mid-sentence", () => {
+  const launchSubject =
+    "Revised plan: we launch the new billing page on 3 March. Before that, a two-week beta with 50 existing customers runs from 14 February.";
+
+  it("keeps the full verdict reason instead of ending on 'make this a sound.'", () => {
+    const brief = renderUserFacing(
+      {
+        verdict: "holds-with-conditions",
+        verdictReason:
+          "The gated beta and 30-day instant rollback flag make this a sound, low-regret plan once four fixable conditions are met before 14 February: recalibrating the 2% gate against actual payment volume and baseline declines, confirming flow coverage, testing backward-compatible rollback, and briefing support.",
+        missingOption:
+          "Instead of jumping from 50 beta customers straight to 100% on 3 March, use the existing feature flag to ramp traffic in stages (such as 10%, then 50%, then 100% over several days) so any flaw missed by the beta affects only a fraction of customers.",
+        challenges: [
+          {
+            challenge:
+              "The beta gate assumes 50 existing customers will generate enough billing-page payments in two weeks for a 2% failure threshold to separate real bugs from noise.",
+            falsifier:
+              "Check the last 30 days of billing logs to find the old page's baseline payment-failure rate and how many payment attempts 50 typical existing customers make on the page in two weeks.",
+            what_would_have_to_be_true:
+              "The 50 beta customers must generate enough billing-page payment attempts in two weeks to detect regressions, and the old page's baseline payment-failure rate must be well below 2% or excluded from the gate.",
+          },
+        ],
+      },
+      { subject: launchSubject },
+    );
+    assert.doesNotMatch(brief, /make this a sound\./);
+    assert.doesNotMatch(
+      brief,
+      /Missing: Instead of jumping from 50 beta customers straight to 100% on 3 March\./,
+    );
+    assert.match(brief, /low-regret plan/);
+    if (/Missing:/.test(brief)) {
+      assert.match(brief, /ramp traffic in stages/);
+    }
+  });
+
+  it("does not clip a risk at 'but' into 'A payment can succeed.'", () => {
+    const brief = renderUserFacing(
+      {
+        verdict: "holds-with-conditions",
+        verdictReason:
+          "The beta and rollback make the launch defensible if payment correctness, sufficient test coverage, monitoring and support readiness are checked.",
+        challenges: [
+          {
+            challenge:
+              "A payment can succeed but charge the wrong amount or charge twice, so the failure-rate gate could pass while customers lose money. Add a beta reconciliation check and monitor these outcomes after launch, with a named rollback trigger and owner.",
+            falsifier: "Compare beta payment records with order amounts and transaction IDs.",
+            what_would_have_to_be_true:
+              "Successful beta and live payments must be checked for correct amounts and duplicates.",
+          },
+        ],
+      },
+      { subject: launchSubject },
+    );
+    assert.doesNotMatch(brief, /Risk: A payment can succeed\./);
+    if (/Risk:/.test(brief)) {
+      assert.match(brief, /charge the wrong amount/);
+    }
+  });
+
+  it("does not clip the flip line mid 'either...or'", () => {
+    const brief = renderUserFacing(
+      {
+        verdict: "holds-with-conditions",
+        verdictReason: "Testing $15 on new customers only is cheap and reversible.",
+        challenges: [
+          {
+            challenge: "Prospects may see the new price late.",
+            falsifier: "Check whether the $15 price is shown before the trial signup form.",
+            what_would_have_to_be_true:
+              "Prospects either do not see the $15 price until after starting a trial, or the 25% price increase does not reduce the rate at which visitors start trials.",
+            target: "the $15 price",
+          },
+        ],
+      },
+      {
+        subject:
+          "Revised plan: raise the Team plan from $12 to $15 per seat for new customers only on 1 April.",
+      },
+    );
+    assert.doesNotMatch(
+      brief,
+      /The question that would change this: Prospects either do not see the \$15 price until after starting a trial\./,
+    );
+    if (/Prospects either/.test(brief)) {
+      assert.match(brief, /or the 25% price increase/);
+    }
+  });
+
+  it("does not clip a cheap test at an introductory comma", () => {
+    const subject =
+      "Revised plan: move error tracking from our current vendor to a cheaper one to save $900 a month.";
+    const beforeFlows = renderUserFacing(
+      {
+        verdict: "holds-with-conditions",
+        verdictReason: "The plan's structure (parallel run, month-to-month) is sound.",
+        challenges: [
+          {
+            challenge: "Data residency may not be met.",
+            falsifier:
+              "Before any data flows, ask the cheaper vendor to state in writing where data is stored and processed, and check that against each on-prem customer's residency clause — one email and one contract review.",
+            what_would_have_to_be_true:
+              "The cheaper vendor's data storage and processing regions satisfy every on-prem customer's residency requirements.",
+            target: "data residency",
+          },
+        ],
+      },
+      { subject },
+    );
+    assert.doesNotMatch(beforeFlows, /Cheap test: Before any data flows\./);
+    if (/Cheap test:/.test(beforeFlows) && /Before any data flows/.test(beforeFlows)) {
+      assert.match(beforeFlows, /where data is stored/);
+    }
+
+    const forEach = renderUserFacing(
+      {
+        verdict: "holds-with-conditions",
+        verdictReason: "The switch is cheap and reversible.",
+        challenges: [
+          {
+            challenge:
+              "Comparing alert counts on the same incidents cannot detect incidents the new vendor misses entirely.",
+            falsifier:
+              "List the incidents observed in the last comparable two-week period and check, for each, whether an alert would appear in both systems; add a synthetic fault and confirm both vendors fire.",
+            what_would_have_to_be_true: "The two-week window must contain enough real or injected incidents.",
+            target: "alert counts",
+          },
+        ],
+      },
+      { subject },
+    );
+    assert.doesNotMatch(
+      forEach,
+      /Cheap test: List the incidents observed in the last comparable two-week period and check, for each\./,
+    );
+    if (/Cheap test:/.test(forEach) && /List the incidents/.test(forEach)) {
+      assert.match(forEach, /both systems/);
+    }
+  });
+
+  it("does not clip a missing option on 'e.g.' and keeps a reason that only looked over a short field cap", () => {
+    const subject = "Revised plan: start a weekly product email to all 4,000 free users on Mondays.";
+    const missing = renderUserFacing(
+      {
+        verdict: "holds-with-conditions",
+        verdictReason: "As a cheap, reversible experiment with a dedicated subdomain and a kill switch.",
+        missingOption:
+          "Roll out to an opted-in, recently active subset (e.g., 500–1,000 users) for four weeks—or start biweekly—to validate engagement and story production before mailing all 4,000 free users.",
+        challenges: [
+          {
+            challenge: "Consent may be missing.",
+            falsifier: "Check consent.",
+            what_would_have_to_be_true:
+              "All 4,000 free users must have valid addresses, marketing opt-in consent.",
+          },
+        ],
+      },
+      { subject },
+    );
+    assert.doesNotMatch(missing, /subset \(e\.g\.(?!,)/);
+    assert.match(missing, /Missing: Roll out to an opted-in, recently active subset \(e\.g\., 500–1,000 users\)/);
+
+    const cheap = renderUserFacing(
+      {
+        verdict: "holds-with-conditions",
+        verdictReason:
+          "Nothing fatal or serious survives: the direction is a cheap, reversible first test with the main beginner errors already handled in outline. But several load-bearing premises are unstated rather than established — the legal basis for the list, the scope of the warm-up, and the absence of any success metric — so the plan is sound only once those are fixed before the first full send.",
+        challenges: [
+          {
+            challenge: "The only monitored metric is unsubscribes.",
+            falsifier: "Read the warmup schedule and its recipient list, then pull complaint rate.",
+            what_would_have_to_be_true:
+              "Either the three-week warmup ramps the same 4,000 free users through small complaint-checked sends, or complaint rate.",
+          },
+        ],
+      },
+      { subject },
+    );
+    assert.doesNotMatch(cheap, /the direction is a cheap\./);
+    assert.match(cheap, /reversible first test/);
+    assert.match(cheap, /handled in outline/);
   });
 });
 
