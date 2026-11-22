@@ -173,8 +173,10 @@ import {
   newJobCredential,
   parseJobCredential,
   protectedResourceMetadata,
+  DAILY_GRILL_LIMIT,
   publicOrigin,
   queryHasToken,
+  proDailyLimit,
   resolveDailyLimit,
   recordsForLookBack,
   lookBackTargets,
@@ -1940,6 +1942,12 @@ async function callGrill(args, account, payload, params, deps) {
     env: deps.env,
     lookup: (address) => lookupActivePro(address, (args) => redis(deps, args)),
   });
+  // Prepaid checks use the same higher daily cap as an active subscription. The Pro store
+  // lookup above already ran only once the free cap was reached. This read does too.
+  if (used >= DAILY_GRILL_LIMIT && decision.limit <= DAILY_GRILL_LIMIT && topupsEnabled(deps.env)) {
+    const topup = await readTopup(account, deps);
+    if (topup.checks > 0 || topup.budgetMicros > 0) decision.limit = proDailyLimit(deps.env);
+  }
   if (used >= decision.limit) {
     const monthlyChecks = decision.paid ? await readMonthlyChecks(account, deps) : 0;
     const now = typeof deps.now === "number" ? deps.now : Date.now();
