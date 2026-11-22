@@ -336,9 +336,25 @@ function cookieValue(header, name) {
   for (const part of parts) {
     const i = part.indexOf("=");
     if (i < 0) continue;
-    if (part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+    if (part.slice(0, i).trim() !== name) continue;
+    const raw = part.slice(i + 1).trim();
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
   }
   return "";
+}
+
+const rawBodyCache = new WeakMap();
+
+/** The POST body, once. A later read on the same request returns the same bytes. */
+async function readRawBody(request) {
+  if (rawBodyCache.has(request)) return rawBodyCache.get(request);
+  const raw = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
+  rawBodyCache.set(request, raw);
+  return raw;
 }
 
 async function redis(deps, args) {
@@ -1369,17 +1385,22 @@ async function calendarTitles(account, deps, titles) {
 async function calendarAction(account, deps, value) {
   if (value === "on") {
     const state = await calendarState(account, deps);
-    if (state.on) return "";
-    return calendarOn(account, deps, false);
+    if (state.on) return { ok: true, fresh: "" };
+    return { ok: true, fresh: await calendarOn(account, deps, false) };
   }
   if (value === "reset") {
     const state = await calendarState(account, deps);
-    return calendarOn(account, deps, state.titles);
+    return { ok: true, fresh: await calendarOn(account, deps, state.titles) };
   }
-  if (value === "off") await calendarOff(account, deps);
-  else if (value === "titles-on") await calendarTitles(account, deps, true);
-  else if (value === "titles-off") await calendarTitles(account, deps, false);
-  return "";
+  if (value === "off") {
+    await calendarOff(account, deps);
+    return { ok: true, fresh: "" };
+  }
+  if (value === "titles-on" || value === "titles-off") {
+    await calendarTitles(account, deps, value === "titles-on");
+    return { ok: true, fresh: "" };
+  }
+  return { ok: false, fresh: "" };
 }
 
 function shareTokenShape(token) {
@@ -2414,6 +2435,18 @@ function pageCookieHeader(value, maxAge = PAGE_SESSION_SECONDS) {
   return `${PAGE_COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
 }
 
+/** The same signed value as the page cookie, carried in the form. A POST can prove who it is when the cookie is not sent. */
+function pageField(sub, env, now) {
+  const value = pageCookieValue(sub, env, now);
+  return value ? `<input type="hidden" name="page" value="${esc(value)}">` : "";
+}
+
+function rememberPage(response, sub, deps) {
+  const value = pageCookieValue(sub, deps?.env, deps?.now);
+  if (value) response.headers.append("Set-Cookie", pageCookieHeader(value));
+  return response;
+}
+
 /** The new calendar link, carried to the next GET and then forgotten. Not stored on the server. */
 function flashCookieHeader(value, maxAge = FLASH_SECONDS) {
   return `${FLASH_COOKIE}=${value ? encodeURIComponent(value) : ""}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
@@ -2437,6 +2470,19 @@ function seeOther(location, cookies = []) {
   const headers = new Headers({ Location: location, "Cache-Control": "no-store" });
   for (const cookie of cookies) headers.append("Set-Cookie", cookie);
   return new Response(null, { status: 303, headers });
+}
+
+/** A browser POST names its page in Origin. A missing Origin is still accepted. A different site is not. */
+function originAllowed(request) {
+  const header = request.headers.get("origin");
+  if (!header) return true;
+  let posted;
+  try {
+    posted = new URL(header).origin;
+  } catch {
+    return false;
+  }
+  return posted === publicOrigin(request) || posted === new URL(request.url).origin;
 }
 
 /**
@@ -2949,14 +2995,25 @@ function signInMissed(request, deps) {
 }
 
 async function pageVisitor(request, deps) {
-  const who = await identity(request, deps, { audience: false });
+  let who = await identity(request, deps, { audience: false });
   if (who.error) return { redirect: who.error };
   if (who.missing || !who.payload) {
     const back = await handshakeReturn(request, deps);
     if (back) return { redirect: back };
     if (request.method === "POST") {
-      // A form sent after the session lapsed: go back to the page, which signs in again. The form is not applied.
-      return { redirect: new Response(null, { status: 303, headers: { Location: cleanPageUrl(request).toString(), "Cache-Control": "no-store" } }) };
+      // Clerk's __session lasts about a minute, and these pages run no Clerk script to refresh it.
+      // Safari can also leave that cookie off a form POST. The form carries the same signed value as
+      // the page cookie, so the action still belongs to this person. With neither, go to sign-in.
+      const form = new URLSearchParams(await readRawBody(request));
+      const sub = readPageCookie(form.get("page") || "", deps.env, deps.now);
+      if (sub) who = { payload: { sub }, origin: publicOrigin(request) };
+    }
+  }
+  if (who.missing || !who.payload) {
+    if (request.method === "POST") {
+      const redirect = signInRedirect(request, deps);
+      if (!redirect) return { html: terminal("Sign-in isn't set up · Grill", "<h1>Sign-in isn't set up.</h1><p>This page can't open a sign-in right now. Write to support@grillyour.ai.</p>") };
+      return { redirect };
     }
     const start = handshakeStart(request, deps);
     if (start) return { redirect: start };
@@ -3155,9 +3212,9 @@ function calendarUrl(origin, token) {
 }
 
 /** The calendar switch. A fresh link is shown once, right after it is made. */
-function renderCalendar(action, calendar, freshUrl) {
+function renderCalendar(action, calendar, freshUrl, field = "") {
   const form = (value, label) =>
-    `<form method="post" action="${action}"><input type="hidden" name="action" value="calendar"><button type="submit" name="value" value="${value}">${label}</button></form>`;
+    `<form method="post" action="${action}">${field}<input type="hidden" name="action" value="calendar"><button type="submit" name="value" value="${value}">${label}</button></form>`;
   if (!calendar?.on) {
     return `<section class="banner">
     <h2>Look-back reminders in your calendar</h2>
@@ -3456,10 +3513,13 @@ function renderDeleteAllConfirm() {
 
 function renderAccount(account, credit, extra = {}) {
   const keeping = account.records === "keep" ? "On" : account.records === "off" ? "Off" : "Not chosen yet";
+  const field = extra.field || "";
+  const status = extra.status ? `<p class="banner" role="status">${esc(extra.status)}</p>` : "";
   return page(
     "Your Grill account",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Your account</h1>
+    ${status}
     ${extra.founding ? `<p>${esc(foundingMemberLine(extra.founding))}</p>` : ""}
     <p>${esc(account.email)}</p>
     <p>Records: ${esc(keeping)}.</p>
@@ -3467,6 +3527,7 @@ function renderAccount(account, credit, extra = {}) {
     <p>${esc(checksLine(extra.checks))}</p>
     <p>Grill holds a model-router key for you. It is not shown here. The write-up you approve passes through Grill's server in memory and is not stored.</p>
     <form method="post" action="/account" class="row">
+      ${field}
       <input type="hidden" name="action" value="records">
       <button type="submit" name="value" value="keep">Keep my decision records</button>
       <button type="submit" name="value" value="off">Don't keep records</button>
@@ -3474,8 +3535,8 @@ function renderAccount(account, credit, extra = {}) {
     <p class="small">${esc(RECORDS_OFF_NOTE)}</p>
     <p><a href="/decisions">Your grills</a></p>
     ${renderTopup(extra)}
-    ${renderCalendar("/account", extra.calendar, extra.freshUrl || "")}
-    ${renderImpactEmail(account)}
+    ${renderCalendar("/account", extra.calendar, extra.freshUrl || "", field)}
+    ${renderImpactEmail(account, field)}
     <p><a class="button" href="/account?confirm=delete">Delete this account</a></p>
     <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
   );
@@ -3487,8 +3548,9 @@ function renderTopup(extra) {
   const pack = topup.pack;
   const checks = Math.max(0, Math.floor(Number(topup.checks) || 0));
   const note = topup.note ? `<p>${esc(topup.note)}</p>` : "";
+  const field = extra.field || "";
   const buy = pack.priceId
-    ? `<form method="post" action="/account"><input type="hidden" name="action" value="topup"><button type="submit">Add ${pack.checks} checks · ${esc(topupPriceLabel(pack.priceCents))}</button></form>`
+    ? `<form method="post" action="/account">${field}<input type="hidden" name="action" value="topup"><button type="submit">Add ${pack.checks} checks · ${esc(topupPriceLabel(pack.priceCents))}</button></form>`
     : `<p>Adding checks isn't ready on this server yet.</p>`;
   return `<section id="topup">
     <h2>More checks</h2>
@@ -3499,7 +3561,7 @@ function renderTopup(extra) {
   </section>`;
 }
 
-function renderImpactEmail(account) {
+function renderImpactEmail(account, field = "") {
   const on = account?.impactEmail !== false;
   const button = on
     ? `<button type="submit" name="value" value="off">Turn off weekly email</button>`
@@ -3510,7 +3572,7 @@ function renderImpactEmail(account) {
   return `<section id="weekly-email">
     <h2>Weekly email</h2>
     <p>${state}</p>
-    <form method="post" action="/account"><input type="hidden" name="action" value="impact-email">${button}</form>
+    <form method="post" action="/account">${field}<input type="hidden" name="action" value="impact-email">${button}</form>
   </section>`;
 }
 
@@ -3554,13 +3616,14 @@ function renderOutcomeConfirm(row, value) {
   );
 }
 
-function renderDeleteAccountConfirm() {
+function renderDeleteAccountConfirm(field = "") {
   return page(
     "Delete this account? · Grill",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Delete this account?</h1>
     <p>This removes your records, switches off the model-router key, and deletes the sign-in. This cannot be undone.</p>
     <form method="post" action="/account">
+      ${field}
       <input type="hidden" name="action" value="delete-account">
       <button type="submit" name="confirm" value="delete">Delete this account</button>
     </form>
@@ -3822,7 +3885,7 @@ export async function handleRedeem(request, deps) {
     }
     if (!(await invitesOpen(deps))) return html(200, renderInviteOff());
     if (request.method === "POST") {
-      const form = new URLSearchParams(await request.text());
+      const form = new URLSearchParams(await readRawBody(request));
       const typed = form.get("code") ?? "";
       if (form.get("confirm") === "redeem") {
         const result = await redeemInvite(visitor.email, typed, deps);
@@ -3950,7 +4013,7 @@ export async function handleJudge(request, deps) {
       const hint = judgeHintFromList(url.searchParams.getAll("from"));
       return htmlPage(renderJudge({ packet: packet.text, tooLong: packet.tooLong, askRecords: needsRecordChoice(session.account), verdict: "", hint }));
     }
-    const raw = await request.text();
+    const raw = await readRawBody(request);
     if (raw.length > JUDGE_BODY_MAX) {
       return htmlPage(renderJudge({ packet: "", tooLong: true, askRecords: needsRecordChoice(session.account), verdict: "" }));
     }
@@ -4029,7 +4092,7 @@ export async function handleDecisions(request, deps) {
       return html(200, body);
     }
     if (request.method === "POST") {
-      const form = new URLSearchParams(await request.text());
+      const form = new URLSearchParams(await readRawBody(request));
       const action = form.get("action") || "";
       let next = `${publicOrigin(request)}/decisions`;
       if (action === "records") {
@@ -4136,7 +4199,8 @@ export async function handleDecisions(request, deps) {
         }
         if (recordId) next = `${publicOrigin(request)}/decisions?id=${encodeURIComponent(recordId)}`;
       } else if (action === "calendar") {
-        fresh = await calendarAction(session.account, deps, form.get("value") || "");
+        const result = await calendarAction(session.account, deps, form.get("value") || "");
+        if (result.ok) fresh = result.fresh;
       }
       const cookies = fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), fresh))] : [];
       return seeOther(next, cookies);
@@ -4185,6 +4249,12 @@ const TOPUP_NOTES = {
   ok: "Payment received. The checks show here once it is confirmed.",
   cancel: "No payment was made.",
   unready: "Adding checks isn't ready just now. Try again in a minute.",
+  failed: "The payment page did not open. Nothing was charged. Try again in a minute.",
+};
+
+const ACCOUNT_NOTICES = {
+  missed: "That did not go through. Try the button again.",
+  origin: "That request did not come from this site. Try the button again.",
 };
 
 export async function handleAccount(request, deps) {
@@ -4211,23 +4281,36 @@ export async function handleAccount(request, deps) {
     if (session.redirect) return session.redirect;
     if (session.missing) return html(200, terminal("Account deleted · Grill", "<h1>This account has been deleted.</h1>"));
     if (session.html) return html(200, session.html);
-    if (request.method === "GET" && pageUrl(request).searchParams.get("confirm") === "delete") return html(200, renderDeleteAccountConfirm());
-    let fresh = "";
+    const field = pageField(session.sub, deps.env, deps.now);
+    if (request.method === "GET" && pageUrl(request).searchParams.get("confirm") === "delete") {
+      return rememberPage(html(200, renderDeleteAccountConfirm(field)), session.sub, deps);
+    }
     if (request.method === "POST") {
-      const form = new URLSearchParams(await request.text());
-      if (form.get("action") === "calendar") fresh = await calendarAction(session.account, deps, form.get("value") || "");
-      if (form.get("action") === "records") {
-        const value = form.get("value");
-        if (value === "keep" || value === "off") {
-          const firstAnswer = needsRecordChoice(session.account);
-          session.account.records = value;
-          await saveAccount(session.account, deps);
-          if (value === "off") await deletePendings(session.account, deps);
-          if (firstAnswer) await countOutsideRecordsAnswer(session.account, deps, value === "keep");
-        }
+      const back = `${publicOrigin(request)}/account`;
+      const done = (location, cookies = []) => rememberPage(seeOther(location, cookies), session.sub, deps);
+      const missed = () => done(`${back}?notice=missed`);
+      if (!originAllowed(request)) return done(`${back}?notice=origin`);
+      const form = new URLSearchParams(await readRawBody(request));
+      const action = form.get("action") || "";
+      if (action === "calendar") {
+        const result = await calendarAction(session.account, deps, form.get("value") || "");
+        if (!result.ok) return missed();
+        const cookies = result.fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), result.fresh))] : [];
+        return done(back, cookies);
       }
-      if (form.get("action") === "impact-email") {
+      if (action === "records") {
         const value = form.get("value");
+        if (value !== "keep" && value !== "off") return missed();
+        const firstAnswer = needsRecordChoice(session.account);
+        session.account.records = value;
+        await saveAccount(session.account, deps);
+        if (value === "off") await deletePendings(session.account, deps);
+        if (firstAnswer) await countOutsideRecordsAnswer(session.account, deps, value === "keep");
+        return done(back);
+      }
+      if (action === "impact-email") {
+        const value = form.get("value");
+        if (value !== "on" && value !== "off") return missed();
         if (value === "off" && session.account.impactEmail !== false) {
           session.account.impactEmail = false;
           await saveAccount(session.account, deps);
@@ -4236,14 +4319,15 @@ export async function handleAccount(request, deps) {
           delete session.account.impactEmail;
           await saveAccount(session.account, deps);
         }
+        return done(back);
       }
-      if (form.get("action") === "delete-account" && form.get("confirm") === "delete") {
+      if (action === "delete-account") {
+        if (form.get("confirm") !== "delete") return missed();
         await deleteAccount(session.account, deps, session.sub);
-        return seeOther(`${publicOrigin(request)}/account?deleted=1`, [pageCookieHeader("", 0)]);
+        return seeOther(`${back}?deleted=1`, [pageCookieHeader("", 0)]);
       }
-      if (form.get("action") === "topup") {
-        const back = `${publicOrigin(request)}/account`;
-        if (!topupsEnabled(deps.env)) return seeOther(back);
+      if (action === "topup") {
+        if (!topupsEnabled(deps.env)) return done(`${back}?topup=unready`);
         try {
           const result = await startTopupCheckout({
             env: deps.env,
@@ -4252,14 +4336,15 @@ export async function handleAccount(request, deps) {
             origin: publicOrigin(request),
           });
           if (session.account.stripeCustomerId) await saveAccount(session.account, deps);
-          if (result.state === "redirect") return seeOther(result.url);
-        } catch {
-          logHosted(id, "topup-checkout");
+          if (result.state === "redirect") return rememberPage(seeOther(result.url), session.sub, deps);
+          return done(`${back}?topup=unready`);
+        } catch (error) {
+          const code = typeof error?.stripeCode === "string" ? error.stripeCode : "";
+          logHosted(id, code ? `topup-checkout ${code}` : "topup-checkout");
+          return done(`${back}?topup=failed`);
         }
-        return seeOther(`${back}?topup=unready`);
       }
-      const cookies = fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), fresh))] : [];
-      return seeOther(`${publicOrigin(request)}/account`, cookies);
+      return missed();
     }
     const flashed = readFlashLink(request);
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
@@ -4267,10 +4352,17 @@ export async function handleAccount(request, deps) {
     const calendar = await calendarState(session.account, deps);
     const founding = await foundingNumber(session.account.email, deps);
     const topupQuery = pageUrl(request).searchParams.get("topup") || "";
+    const notice = ACCOUNT_NOTICES[pageUrl(request).searchParams.get("notice") || ""] || "";
+    const topupNote = TOPUP_NOTES[topupQuery] || "";
     const topup = topupsEnabled(deps.env)
-      ? { pack: topupPack(deps.env), checks: (await readTopup(session.account, deps)).checks, note: TOPUP_NOTES[topupQuery] || "" }
+      ? { pack: topupPack(deps.env), checks: (await readTopup(session.account, deps)).checks, note: topupNote }
       : null;
-    return htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, checks, topup }), { clearFlash: Boolean(flashed) });
+    const status = notice || topupNote;
+    return rememberPage(
+      htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, checks, topup, field, status }), { clearFlash: Boolean(flashed) }),
+      session.sub,
+      deps,
+    );
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);

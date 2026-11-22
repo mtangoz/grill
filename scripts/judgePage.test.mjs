@@ -393,10 +393,14 @@ describe("the /judge page", { concurrency: false }, () => {
         cookie: "",
         body: new URLSearchParams({ q: PACKET, keep: "no" }).toString(),
       });
-      assert.equal(res.status, 303);
+      assert.equal(res.status, 302);
       const loc = new URL(res.headers.get("location"));
-      assert.equal(loc.pathname, "/judge");
-      assert.equal(loc.searchParams.get("q"), "Keep the maple stand.");
+      assert.equal(loc.origin, "https://accounts.example.test");
+      assert.match(loc.pathname, /sign-in/);
+      const back = new URL(loc.searchParams.get("redirect_url"));
+      assert.equal(back.pathname, "/judge");
+      assert.equal(back.searchParams.get("q"), "Keep the maple stand.");
+      assert.equal(back.searchParams.get("from"), "signin");
       assert.equal(fake.seen.chat.length, 0);
     } finally {
       await fake.close();

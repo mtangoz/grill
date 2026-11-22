@@ -410,15 +410,16 @@ describe("share this verdict", { concurrency: false }, () => {
     const ctx = world();
     const planted = await plant(ctx);
     const created = await postDecisions(ctx, `action=share&id=${planted.id}&confirm=share`, { cookieHeader: "" });
-    assert.equal(created.status, 303);
-    assert.equal(created.headers.get("location"), "https://grillyour.ai/decisions");
+    assert.equal(created.status, 302);
+    assert.match(new URL(created.headers.get("location")).pathname, /sign-in/);
     assert.equal(ctx.shareSets.length, 0);
     assert.equal((await publicPage(ctx, "d".repeat(43))).res.status, 404);
 
     await postDecisions(ctx, `action=share&id=${planted.id}&confirm=share`);
     const token = tokenFrom((await recordPage(ctx, planted.id)).html);
     const revoked = await postDecisions(ctx, `action=unshare&id=${planted.id}`, { cookieHeader: "" });
-    assert.equal(revoked.status, 303);
+    assert.equal(revoked.status, 302);
+    assert.match(new URL(revoked.headers.get("location")).pathname, /sign-in/);
     assert.equal((await publicPage(ctx, token)).res.status, 200);
     assert.equal(ctx.memory.command(["GET", `grill:hosted:share:${token}`]), JSON.stringify({ verdict: WORKSHOP.verdict, challenge: WORKSHOP.sharpest }));
   });

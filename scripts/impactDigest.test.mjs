@@ -394,7 +394,8 @@ describe("weekly impact email batch", () => {
         }),
         { ...ctx, now: MONDAY },
       );
-      assert.equal(unsigned.status, 303);
+      assert.equal(unsigned.status, 302);
+      assert.match(new URL(unsigned.headers.get("location")).pathname, /sign-in/);
       assert.equal(await ctx.memory.command(["GET", "grill:metric:impact_email_lookbacks"]), null);
       const recorded = await handleDecisions(
         new Request("https://grillyour.ai/decisions", {
