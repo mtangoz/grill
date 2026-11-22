@@ -555,7 +555,7 @@ export function topupsEnabled(env = {}) {
 }
 
 export const DEFAULT_TOPUP_CHECKS = 100;
-export const DEFAULT_TOPUP_PRICE_CENTS = 400;
+export const DEFAULT_TOPUP_PRICE_CENTS = 500;
 
 function wholeIn(value, min, max) {
   const n = Number(value);
