@@ -44,6 +44,8 @@ One change per week. Revert it if its measure does not move in two weeks. At abo
 
 2. **A work decision as the starter prompt.** Shipped 2026-11-19 under the owner's delegation. Trigger: start views rise while outside first grills do not (the activation leak). Change: the fantasy-football starter on /start is a work decision in the person's own words. Measure: `First grills by app` in `node scripts/outside-loop.mjs`. Revert if that measure does not move in two weeks.
 
+3. **A grilled-plan starter on /start.** Shipped 2026-11-22 on the owner's yes (it lands inside experiment 2's two weeks, so the owner's yes overrides one change per week). Change: a second starter under the work-decision one: "Make a plan to hit our launch date, grill it until it's solid, and show me what Grill changed." The work-decision starter stays first and unchanged. Measure: grills per account per day and the share of grills followed by a changed call (grill_decided after or supersedes), from counts only. Read experiment 2's measure with this in mind. Revert if neither moves in two weeks.
+
 ## Grill of this plan (9 Nov 2026)
 
 Verdict: **Solid if**.
@@ -52,5 +54,6 @@ Verdict: **Solid if**.
 
 ## Changes
 
+- 2026-11-22: experiment 3 shipped. /start gains a grilled-plan starter under the work-decision one.
 - 2026-11-19: experiment 2 shipped. The /start starter is a work decision. Measure: `First grills by app` in `node scripts/outside-loop.mjs`. Revert if that measure does not move in two weeks.
 - 2026-11-13: start views count browser GET views only, so the series breaks at merge. The weekly JSON line gains `date` and `installPings`, and five ref labels. The outside readout is added for activation and repeat. Two experiments are queued, not shipped.
