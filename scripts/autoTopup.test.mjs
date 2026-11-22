@@ -131,6 +131,12 @@ describe("automatic add on the account page", () => {
     resetHostedCaches();
     const ctx = world();
     const html = await (await handleAccount(accountRequest("GET"), ctx)).text();
+    const checks = html.indexOf('id="checks"');
+    const records = html.indexOf('name="action" value="records"');
+    assert.ok(checks > 0 && checks < records, "the checks box, including automatic add, sits above records");
+    const box = html.slice(checks, records);
+    assert.match(box, /type="checkbox" name="auto_topup" value="1" checked/);
+    assert.match(box, /Add 100 checks · \$5/);
     assert.match(html, /type="checkbox" name="auto_topup" value="1" checked/);
     assert.match(html, /Automatically add another 100 checks \(\$5\) when I run out, up to \$20 a month\. You can turn this off anytime on this page\./);
     assert.doesNotMatch(html, /\bPro\b|subscription/i);
@@ -141,13 +147,18 @@ describe("automatic add on the account page", () => {
   it("passes an untick as opt-out metadata and a tick as opt-in", async () => {
     resetHostedCaches();
     const ctx = world();
-    await handleAccount(accountRequest("GET"), ctx);
+    const html = await (await handleAccount(accountRequest("GET"), ctx)).text();
+    const token = html.match(/name="page" value="([^"]+)"/)?.[1] || "";
+    assert.ok(token);
     const off = await handleAccount(accountRequest("POST", { body: "action=topup", origin: "https://grillyour.ai" }), ctx);
     assert.equal(off.headers.get("location"), "https://checkout.stripe.com/c/pay/cs_test_topup");
     const unticked = ctx.stripe.calls.find((call) => call.url.endsWith("/v1/checkout/sessions"));
     assert.equal(unticked.params.get("metadata[grill_auto_topup]"), "0");
     ctx.stripe.calls.length = 0;
-    const on = await handleAccount(accountRequest("POST", { body: "action=topup&auto_topup=1", origin: "null" }), ctx);
+    const on = await handleAccount(
+      accountRequest("POST", { body: `page=${encodeURIComponent(token)}&action=topup&auto_topup=1`, origin: "null" }),
+      ctx,
+    );
     assert.equal(on.headers.get("location"), "https://checkout.stripe.com/c/pay/cs_test_topup");
     const ticked = ctx.stripe.calls.find((call) => call.url.endsWith("/v1/checkout/sessions"));
     assert.equal(ticked.params.get("metadata[grill_auto_topup]"), "1");

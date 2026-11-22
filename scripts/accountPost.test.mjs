@@ -4,8 +4,8 @@
 import { createSign, randomBytes } from "node:crypto";
 import { before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { handleAccount, resetHostedCaches } from "../api/_hosted.mjs";
-import { createMemoryRedis } from "./hostedCore.mjs";
+import { handleAccount, handleDecisions, resetHostedCaches } from "../api/_hosted.mjs";
+import { createMemoryRedis, topupBalanceKey } from "./hostedCore.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
 
 const PRICE = "price_testpack1";
@@ -39,9 +39,10 @@ function clerkCookies(jwt = sessionJwt()) {
   return `__session=${jwt}; __client_uat=${uat}`;
 }
 
-function world({ stripeStatus = 200, stripeBody, key = "rk_live_restricted_for_tests" } = {}) {
+function world({ stripeStatus = 200, stripeBody, key = "rk_live_restricted_for_tests", usage = 0 } = {}) {
   const memory = createMemoryRedis();
   const stripe = { calls: [] };
+  const router = { usage };
   const env = {
     GRILL_HOSTED: "on",
     GRILL_TOPUPS: "on",
@@ -79,7 +80,7 @@ function world({ stripeStatus = 200, stripeBody, key = "rk_live_restricted_for_t
     }
     if (u.startsWith("https://openrouter.ai/api/v1/keys/")) {
       if (init.method === "DELETE") return new Response("{}", { status: 200 });
-      return Response.json({ data: { hash: "hash_tester_1", limit: 5, usage: 0, usage_monthly: 0, disabled: false } });
+      return Response.json({ data: { hash: "hash_tester_1", limit: 5, usage: router.usage, usage_monthly: router.usage, disabled: false } });
     }
     if (u.startsWith("https://api.stripe.com/")) {
       const params = new URLSearchParams(init.body || "");
@@ -93,7 +94,7 @@ function world({ stripeStatus = 200, stripeBody, key = "rk_live_restricted_for_t
     }
     throw new Error(`unexpected fetch ${init.method || "GET"} ${u}`);
   };
-  return { env, fetch: fetchImpl, redis: (args) => memory.command(args), memory, stripe };
+  return { env, fetch: fetchImpl, redis: (args) => memory.command(args), memory, stripe, router };
 }
 
 function safariInit(method, cookie, body) {
@@ -322,14 +323,29 @@ describe("Safari account form posts", { concurrency: false }, () => {
     assert.doesNotMatch(page, /\bPro\b|subscription/i);
     assert.equal(storedAccount(ctx).records, null);
 
-    const evil = await handleAccount(
-      new Request(accountUrl(), {
-        ...safariInit("POST", cookie, `page=${encodeURIComponent(token)}&action=records&value=keep`),
-        headers: { ...safariInit("POST", cookie, "").headers, origin: "https://evil.example" },
-      }),
-      ctx,
-    );
+    const lines = [];
+    const original = console.error;
+    console.error = (...args) => lines.push(args.map(String).join(" "));
+    let evil;
+    try {
+      evil = await handleAccount(
+        new Request(accountUrl(), {
+          method: "POST",
+          headers: { ...safariInit("POST", cookie, "").headers, origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+          body: "page=not-the-page-value&action=records&value=keep",
+        }),
+        ctx,
+      );
+    } finally {
+      console.error = original;
+    }
     assert.match(evil.headers.get("location"), /notice=origin/);
+    const logged = lines.join("\n");
+    assert.match(logged, /origin-reject/);
+    assert.match(logged, /"origin":"https:\/\/evil\.example"/);
+    assert.match(logged, /"site":"cross-site"/);
+    assert.match(logged, /"host":"grillyour\.ai"/);
+    assert.doesNotMatch(logged, /not-the-page-value|__session|sk_test|whsec_/);
     const warned = await openAccount(ctx, cookie, "/account?notice=origin");
     assert.match(warned, /did not come from this site/);
     assert.equal(storedAccount(ctx).records, null);
@@ -369,5 +385,243 @@ describe("Safari account form posts", { concurrency: false }, () => {
     } finally {
       console.error = original;
     }
+  });
+});
+
+function postHeaders(cookie, { origin, site, extra = {} } = {}) {
+  const headers = { ...safariInit("POST", cookie, "").headers, ...extra };
+  if (origin === null) delete headers.origin;
+  else if (origin !== undefined) headers.origin = origin;
+  if (site === null) delete headers["sec-fetch-site"];
+  else if (site !== undefined) headers["sec-fetch-site"] = site;
+  return headers;
+}
+
+function pageToken(html) {
+  const token = formsIn(html)[0]?.fields?.page || "";
+  if (!token) throw new Error("page token missing");
+  return token;
+}
+
+function recordsBody(token, value = "keep") {
+  return `page=${encodeURIComponent(token)}&action=records&value=${value}`;
+}
+
+describe("Safari same-site posts and the checks box", { concurrency: false }, () => {
+  beforeEach(() => resetHostedCaches());
+
+  async function keepRecords(ctx, cookie, html, headers, url = accountUrl()) {
+    const res = await handleAccount(new Request(url, { method: "POST", headers, body: recordsBody(pageToken(html)) }), ctx);
+    assert.equal(res.status, 303, await res.clone().text());
+    assert.equal(new URL(res.headers.get("location"), accountUrl()).pathname, "/account");
+    assert.doesNotMatch(res.headers.get("location"), /notice=origin/);
+    assert.equal(storedAccount(ctx).records, "keep");
+    return res;
+  }
+
+  it("accepts Origin null from Safari when the form carries the signed page value", async () => {
+    const ctx = world();
+    const signedIn = clerkCookies();
+    const markerOnly = `__client_uat=${Math.floor(Date.now() / 1000)}`;
+    const html = await openAccount(ctx, signedIn);
+    await keepRecords(ctx, signedIn, html, postHeaders(signedIn, { origin: "null", site: "same-origin" }));
+    const again = await handleAccount(
+      new Request(accountUrl(), { method: "POST", headers: postHeaders(markerOnly, { origin: "null", site: "same-origin" }), body: recordsBody(pageToken(html), "off") }),
+      ctx,
+    );
+    assert.equal(again.status, 303);
+    assert.doesNotMatch(again.headers.get("location"), /notice=origin/);
+    assert.equal(storedAccount(ctx).records, "off");
+  });
+
+  it("accepts a missing Origin and Sec-Fetch-Site none or absent when the page value is valid", async () => {
+    const ctx = world();
+    const cookie = clerkCookies();
+    const html = await openAccount(ctx, cookie);
+    await keepRecords(ctx, cookie, html, postHeaders(cookie, { origin: null, site: "same-origin" }));
+    const off = await handleAccount(
+      new Request(accountUrl(), { method: "POST", headers: postHeaders(cookie, { origin: null, site: null }), body: recordsBody(pageToken(html), "off") }),
+      ctx,
+    );
+    assert.equal(off.status, 303);
+    assert.equal(storedAccount(ctx).records, "off");
+    const none = await handleAccount(
+      new Request(accountUrl(), { method: "POST", headers: postHeaders(cookie, { origin: "null", site: "none" }), body: recordsBody(pageToken(html), "keep") }),
+      ctx,
+    );
+    assert.equal(none.status, 303);
+    assert.equal(storedAccount(ctx).records, "keep");
+  });
+
+  it("treats www and the apex as the same site, including behind the hosted rewrite", async () => {
+    const ctx = world();
+    const cookie = clerkCookies();
+    const html = await openAccount(ctx, cookie);
+    await keepRecords(ctx, cookie, html, postHeaders(cookie, { origin: "https://www.grillyour.ai" }), accountUrl());
+
+    const saved = { fetch: globalThis.fetch, env: { ...process.env } };
+    Object.assign(process.env, ctx.env);
+    globalThis.fetch = ctx.fetch;
+    try {
+      const { POST } = await import("../api/hosted.js");
+      const res = await POST(
+        new Request("https://grill-abc123.vercel.app/api/hosted?__route=account", {
+          method: "POST",
+          headers: postHeaders(cookie, {
+            origin: "https://grillyour.ai",
+            site: "same-origin",
+            extra: { "x-forwarded-host": "www.grillyour.ai", "x-forwarded-proto": "https" },
+          }),
+          body: recordsBody(pageToken(html), "off"),
+        }),
+      );
+      assert.equal(res.status, 303, await res.clone().text());
+      assert.doesNotMatch(res.headers.get("location") || "", /notice=origin/);
+      assert.equal(storedAccount(ctx).records, "off");
+    } finally {
+      globalThis.fetch = saved.fetch;
+      for (const key of Object.keys(process.env)) {
+        if (!(key in saved.env)) delete process.env[key];
+      }
+      Object.assign(process.env, saved.env);
+    }
+  });
+
+  it("sends Add checks to Stripe from an Origin of null, on /account and the hosted rewrite", async () => {
+    const ctx = world();
+    const cookie = `__client_uat=${Math.floor(Date.now() / 1000)}`;
+    const html = await openAccount(ctx, clerkCookies());
+    const form = formsIn(html).find((item) => item.buttons.some((button) => button.label.startsWith("Add ")));
+    assert.match(form.buttons[0].label, /Add 100 checks · \$/);
+    const direct = await handleAccount(
+      new Request(accountUrl(), { method: "POST", headers: postHeaders(cookie, { origin: "null", site: "same-origin" }), body: formBody(form, form.buttons[0]) }),
+      ctx,
+    );
+    assert.equal(direct.status, 303);
+    assert.equal(direct.headers.get("location"), "https://checkout.stripe.com/c/pay/cs_test_topup");
+
+    const saved = { fetch: globalThis.fetch, env: { ...process.env } };
+    Object.assign(process.env, ctx.env);
+    globalThis.fetch = ctx.fetch;
+    try {
+      const { POST } = await import("../api/hosted.js");
+      const via = await POST(
+        new Request("https://grillyour.ai/api/hosted?__route=account", {
+          method: "POST",
+          headers: postHeaders(clerkCookies(), { origin: "null", site: "same-origin" }),
+          body: formBody(form, form.buttons[0]),
+        }),
+      );
+      assert.equal(via.status, 303);
+      assert.equal(via.headers.get("location"), "https://checkout.stripe.com/c/pay/cs_test_topup");
+    } finally {
+      globalThis.fetch = saved.fetch;
+      for (const key of Object.keys(process.env)) {
+        if (!(key in saved.env)) delete process.env[key];
+      }
+      Object.assign(process.env, saved.env);
+    }
+  });
+
+  it("rejects Origin null without the signed page value, and a cross-site null Origin", async () => {
+    const ctx = world();
+    const cookie = clerkCookies();
+    await openAccount(ctx, cookie);
+    const lines = [];
+    const original = console.error;
+    console.error = (...args) => lines.push(args.map(String).join(" "));
+    try {
+      const bare = await handleAccount(
+        new Request(accountUrl(), { method: "POST", headers: postHeaders(cookie, { origin: "null", site: "same-origin" }), body: "action=records&value=keep" }),
+        ctx,
+      );
+      assert.match(bare.headers.get("location"), /notice=origin/);
+      const crossed = await handleAccount(
+        new Request(accountUrl(), {
+          method: "POST",
+          headers: postHeaders(cookie, { origin: "null", site: "cross-site" }),
+          body: recordsBody(pageToken(await openAccount(ctx, cookie))),
+        }),
+        ctx,
+      );
+      assert.match(crossed.headers.get("location"), /notice=origin/);
+    } finally {
+      console.error = original;
+    }
+    const logged = lines.join("\n");
+    assert.match(logged, /"origin":"null"/);
+    assert.match(logged, /"site":"same-origin"/);
+    assert.doesNotMatch(logged, /__session/);
+    assert.equal(storedAccount(ctx).records, null);
+  });
+
+  it("accepts a foreign Origin when the signed page value matches this account", async () => {
+    const ctx = world();
+    const cookie = clerkCookies();
+    const html = await openAccount(ctx, cookie);
+    const res = await handleAccount(
+      new Request(accountUrl(), {
+        method: "POST",
+        headers: postHeaders(cookie, { origin: "https://evil.example", site: "cross-site" }),
+        body: recordsBody(pageToken(html)),
+      }),
+      ctx,
+    );
+    assert.equal(res.status, 303);
+    assert.doesNotMatch(res.headers.get("location"), /notice=origin/);
+    assert.equal(storedAccount(ctx).records, "keep");
+  });
+
+  it("puts Checks above records, with the configured price, and links Add checks from both pages", async () => {
+    const ctx = world();
+    ctx.env.GRILL_TOPUP_PRICE_CENTS = "250";
+    ctx.env.GRILL_AUTO_TOPUP = "on";
+    const cookie = clerkCookies();
+    const html = await openAccount(ctx, cookie);
+    const checksAt = html.indexOf('id="checks"');
+    const recordsAt = html.indexOf('name="action" value="records"');
+    assert.ok(checksAt > 0 && checksAt < recordsAt, "checks box sits above the records form");
+    assert.ok(html.indexOf('href="/account#checks"') < html.indexOf("<h1>"));
+    const box = html.slice(checksAt, recordsAt);
+    assert.match(box, /<h2>Checks<\/h2>/);
+    assert.match(box, /\$5 of use each month/);
+    assert.match(box, /left this month/);
+    assert.match(box, /Prepaid checks left: 0/);
+    assert.match(box, /Add 100 checks · \$2\.50/);
+    assert.match(box, /type="checkbox" name="auto_topup" value="1" checked/);
+    assert.match(box, /Automatically add another 100 checks \(\$2\.50\)/);
+    assert.match(html, /<a href="\/account#checks">Add checks<\/a>/);
+    assert.match(html, /<a href="\/account">Account<\/a>/);
+    assert.match(html, /id="low-checks"/);
+    assert.match(html, /No prepaid checks left\./);
+    assert.doesNotMatch(html, /\bPro\b|subscription/i);
+
+    const decisions = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx)).text();
+    assert.match(decisions, /<a href="\/account#checks">Add checks<\/a>/);
+    assert.match(decisions, /<a href="\/account">Account<\/a>/);
+    assert.match(decisions, /id="low-checks"/);
+    assert.match(decisions, /No prepaid checks left\./);
+    assert.doesNotMatch(decisions, /of use each month|left this month|checks this month|judge spend|\bPro\b|subscription/i);
+  });
+
+  it("warns when the free allowance is under $0.50, and stays quiet when checks remain", async () => {
+    const quiet = world();
+    quiet.memory.command(["HSET", topupBalanceKey("tester@example.com"), "checks", "8"]);
+    const cookie = clerkCookies();
+    const fine = await openAccount(quiet, cookie);
+    assert.equal(fine.includes('id="low-checks"'), false);
+    assert.match(fine, /Prepaid checks left: 8/);
+    const fineDecisions = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), quiet)).text();
+    assert.equal(fineDecisions.includes('id="low-checks"'), false);
+
+    const low = world({ usage: 4.6 });
+    low.memory.command(["HSET", topupBalanceKey("tester@example.com"), "checks", "8"]);
+    const account = await openAccount(low, cookie);
+    assert.match(account, /The free allowance is nearly used up\./);
+    assert.match(account, /<a href="\/account#checks">Add checks<\/a>/);
+    assert.match(account, /\$0\.40 left this month/);
+    const decisions = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), low)).text();
+    assert.match(decisions, /The free allowance is nearly used up\./);
+    assert.doesNotMatch(decisions, /of use each month|left this month|checks this month|\$0\.40/);
   });
 });
