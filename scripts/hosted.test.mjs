@@ -24,6 +24,8 @@ import {
   authorForJudge,
   capBlock,
   dailyCheckKey,
+  proAccountKey,
+  proEmailIndexKey,
   isoDay,
   isoMonth,
   monthlyCheckKey,
@@ -3914,11 +3916,101 @@ describe("fair check counting", () => {
       ctx.memory.command(["SET", dayKey(ctx), "30"]);
       const before = fake.seen.chat.length;
       const blocked = await postMcp(ctx, grillCall(2, "Decision: a different shed colour."), { token, deps });
-      assert.match(textOf(blocked.json), /You've used today's 30 grills on this account/);
+      assert.equal(
+        textOf(blocked.json),
+        "You've used today's 30 grills on this account. It resets at midnight UTC (8 hours left). The monthly allowance resets on the 1st.",
+      );
+      assert.doesNotMatch(textOf(blocked.json), /\bPro\b|subscription|\$/);
       assert.equal(fake.seen.chat.length, before);
       assert.equal(checks(ctx), 1);
       assert.equal(monthlyCapUsd({}), 20);
       assert.equal(userMonthlyCapUsd({}), 5);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  const proReads = (ctx) => ctx.writes.filter((row) => row[0] === "GET" && String(row[1]).startsWith("grill:email:"));
+  const seedPro = (ctx, subscription) => {
+    const id = "acct_pro_daily";
+    ctx.memory.command(["SET", proEmailIndexKey("invitee@example.com"), id]);
+    ctx.memory.command(["SET", proAccountKey(id), JSON.stringify({ id, email: "invitee@example.com", subscription })]);
+  };
+
+  it("lets an active subscription past 30, and at its cap names this month's 200 checks", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      seedPro(ctx, "active");
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = depsFor(fake);
+      const first = await postMcp(ctx, grillCall(1, SUBJECT), { token, deps });
+      assert.equal(first.json.result.isError, false, textOf(first.json));
+      assert.equal(proReads(ctx).length, 0, "a grill under 30 does not read the Pro store");
+      ctx.memory.command(["SET", dayKey(ctx), "30"]);
+      const before = fake.seen.chat.length;
+      const allowed = await postMcp(ctx, grillCall(2, "Decision: a different shed colour."), { token, deps });
+      assert.equal(allowed.json.result.isError, false, textOf(allowed.json));
+      assert.ok(fake.seen.chat.length > before, "30 completed checks is still under the higher cap");
+      assert.ok(proReads(ctx).length > 0, "reaching 30 reads the Pro store");
+      ctx.memory.command(["SET", dayKey(ctx), "100"]);
+      ctx.memory.command(["SET", monthKey(ctx), "47"]);
+      const chats = fake.seen.chat.length;
+      const blocked = await postMcp(ctx, grillCall(3, "Decision: paint the door too."), { token, deps });
+      assert.equal(
+        textOf(blocked.json),
+        "You've used today's 100 grills on this account. It resets at midnight UTC (8 hours left). You've used 47 of this month's 200 checks.",
+      );
+      assert.doesNotMatch(textOf(blocked.json), /\bPro\b|subscription|\$|resets on the 1st/);
+      assert.equal(fake.seen.chat.length, chats);
+      assert.equal(checks(ctx), 47);
+      assert.equal(monthlyCapUsd({}), 20);
+      assert.equal(userMonthlyCapUsd({}), 5);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("uses GRILL_PRO_DAILY_LIMIT in the stop message", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      ctx.env.GRILL_PRO_DAILY_LIMIT = "40";
+      seedPro(ctx, "active");
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = depsFor(fake);
+      const first = await postMcp(ctx, grillCall(1, SUBJECT), { token, deps });
+      assert.equal(first.json.result.isError, false, textOf(first.json));
+      ctx.memory.command(["SET", dayKey(ctx), "39"]);
+      const under = await postMcp(ctx, grillCall(2, "Decision: a different shed colour."), { token, deps });
+      assert.equal(under.json.result.isError, false, textOf(under.json));
+      ctx.memory.command(["SET", dayKey(ctx), "40"]);
+      ctx.memory.command(["SET", monthKey(ctx), "12"]);
+      const blocked = await postMcp(ctx, grillCall(3, "Decision: paint the door too."), { token, deps });
+      assert.equal(
+        textOf(blocked.json),
+        "You've used today's 40 grills on this account. It resets at midnight UTC (8 hours left). You've used 12 of this month's 200 checks.",
+      );
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("keeps a canceled subscription on the free daily message", async () => {
+    const fake = await startFakeOpenRouter();
+    try {
+      const ctx = world();
+      seedPro(ctx, "canceled");
+      const token = signJwt(claims({ redirect_uri: CLAUDE_WEB_REDIRECT }));
+      const deps = depsFor(fake);
+      const first = await postMcp(ctx, grillCall(1, SUBJECT), { token, deps });
+      assert.equal(first.json.result.isError, false, textOf(first.json));
+      ctx.memory.command(["SET", dayKey(ctx), "30"]);
+      const blocked = await postMcp(ctx, grillCall(2, "Decision: a different shed colour."), { token, deps });
+      assert.equal(
+        textOf(blocked.json),
+        "You've used today's 30 grills on this account. It resets at midnight UTC (8 hours left). The monthly allowance resets on the 1st.",
+      );
     } finally {
       await fake.close();
     }

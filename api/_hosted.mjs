@@ -69,7 +69,7 @@ import {
   CAP_RETRY_TEXT,
   CONSENT_TEXT,
   CREDIT_CACHE_MS,
-  DAILY_GRILL_LIMIT,
+  dailyLimitMessage,
   DATA_FLOW_URL,
   EMAIL_CLAIMED_TEXT,
   HOSTED_INSTRUCTIONS,
@@ -156,6 +156,7 @@ import {
   keyFromEnv,
   linkChains,
   lookbackOffer,
+  lookupActivePro,
   lookbackStatus,
   mcpResource,
   negotiateProtocol,
@@ -164,6 +165,7 @@ import {
   protectedResourceMetadata,
   publicOrigin,
   queryHasToken,
+  resolveDailyLimit,
   recordsForLookBack,
   lookBackTargets,
   lookbackAskText,
@@ -1887,7 +1889,17 @@ async function callGrill(args, account, payload, params, deps) {
   }
   if (running >= RUNNING_JOB_LIMIT) return toolText(CAP_RETRY_TEXT, true);
   const used = await dailyChecksUsed(account, deps);
-  if (used >= DAILY_GRILL_LIMIT) return toolText(`You've used today's ${DAILY_GRILL_LIMIT} grills on this account. It resets tomorrow (UTC).`);
+  const decision = await resolveDailyLimit({
+    used,
+    email: account.human || account.email || "",
+    env: deps.env,
+    lookup: (address) => lookupActivePro(address, (args) => redis(deps, args)),
+  });
+  if (used >= decision.limit) {
+    const monthlyChecks = decision.paid ? await readMonthlyChecks(account, deps) : 0;
+    const now = typeof deps.now === "number" ? deps.now : Date.now();
+    return toolText(dailyLimitMessage({ limit: decision.limit, monthlyChecks, paid: decision.paid, now }));
+  }
   const apiKey = openSecret(account.keyCipher, deps.env, "GRILL_KEY_ENCRYPTION_KEY");
   if (!apiKey) {
     logHosted(deps.requestId, "key-open");
