@@ -436,13 +436,13 @@ describe("invite codes", { concurrency: false }, () => {
 
       ctx.memory.command(["SET", `grill:hosted:capspend:person:${hash("friend@example.com")}:${month}`, "5000000"]);
       const userCap = await mcpText(ctx, fake, "user_friend");
-      assert.match(userCap.text, /this month's free grills/);
+      assert.match(userCap.text, /this month's limit on your account/);
       assert.match(userCap.text, /Nothing was charged to you/);
 
       ctx.memory.command(["SET", `grill:hosted:capspend:person:${hash("friend@example.com")}:${month}`, "0"]);
       ctx.memory.command(["SET", `grill:hosted:capspend:all:${month}`, "20000000"]);
       const serviceCap = await mcpText(ctx, fake, "user_friend");
-      assert.match(serviceCap.text, /this month's free grills for everyone/);
+      assert.match(serviceCap.text, /this month's limit for everyone/);
       assert.match(serviceCap.text, /Nothing was charged to you/);
     } finally {
       await fake.close();

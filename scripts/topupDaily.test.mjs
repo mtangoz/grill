@@ -103,7 +103,7 @@ describe("prepaid balance and the daily cap", () => {
       const before = fake.seen.chat.length;
       const blocked = await call(2, "Decision: a different shed colour.");
       const blockedText = (await blocked.json()).result.content[0].text;
-      assert.match(blockedText, /today's 30 grills/);
+      assert.match(blockedText, /today's daily limit of 30 checks/);
       assert.equal(fake.seen.chat.length, before);
       await ctx.redis(["HSET", topupBalanceKey("tester@example.com"), "checks", "4"]);
       await ctx.redis(["HSET", topupBalanceKey("tester@example.com"), "budget_micros", String(toMicros(1))]);
@@ -115,7 +115,7 @@ describe("prepaid balance and the daily cap", () => {
       resetHostedCaches();
       const full = await call(4, "Decision: paint the frame white.");
       const fullText = (await full.json()).result.content[0].text;
-      assert.match(fullText, /today's 100 grills/);
+      assert.match(fullText, /today's higher daily limit of 100 checks/);
       assert.doesNotMatch(fullText, /\$|\bPro\b|subscription|200 checks/i);
     } finally {
       await fake.close();
@@ -151,7 +151,7 @@ describe("prepaid balance and the daily cap", () => {
         }),
         deps,
       );
-      assert.match((await blocked.json()).result.content[0].text, /today's 30 grills/);
+      assert.match((await blocked.json()).result.content[0].text, /today's daily limit of 30 checks/);
     } finally {
       await fake.close();
     }

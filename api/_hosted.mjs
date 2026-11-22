@@ -71,6 +71,11 @@ import {
   CONSENT_TEXT,
   CREDIT_CACHE_MS,
   dailyLimitMessage,
+  higherDailyEndedMessage,
+  keyAllowanceText,
+  monthlyCheckLimitMessage,
+  MONTHLY_CHECK_ALLOWANCE,
+  proSubscriptionStatus,
   DATA_FLOW_URL,
   EMAIL_CLAIMED_TEXT,
   HOSTED_INSTRUCTIONS,
@@ -125,7 +130,6 @@ import {
   topupBalanceKey,
   topupPack,
   topupsEnabled,
-  userAllowanceUsedText,
   checkOnceKey,
   checksLine,
   completedGrill,
@@ -1238,11 +1242,15 @@ async function ensureAccount(userId, email, deps, human) {
  * with no reset; move it once to the monthly cap. A failure leaves the old key as it was.
  */
 async function readTopup(account, deps) {
-  if (!topupsEnabled(deps.env)) return { checks: 0, budgetMicros: 0 };
+  if (!topupsEnabled(deps.env)) return { checks: 0, budgetMicros: 0, present: false };
   const key = topupBalanceKey(capPerson(account));
-  const checks = Number(await redis(deps, ["HGET", key, "checks"])) || 0;
-  const budgetMicros = Number(await redis(deps, ["HGET", key, "budget_micros"])) || 0;
-  return { checks: Math.max(0, checks), budgetMicros: Math.max(0, budgetMicros) };
+  const checksRaw = await redis(deps, ["HGET", key, "checks"]);
+  const budgetRaw = await redis(deps, ["HGET", key, "budget_micros"]);
+  return {
+    checks: Math.max(0, Number(checksRaw) || 0),
+    budgetMicros: Math.max(0, Number(budgetRaw) || 0),
+    present: checksRaw != null || budgetRaw != null,
+  };
 }
 
 async function ensureMonthlyAllowance(account, deps) {
@@ -1762,6 +1770,7 @@ async function capReached(account, deps) {
     env: deps.env,
     topupChecks: topup.checks,
     topupBudgetMicros: topup.budgetMicros,
+    topupPresent: topup.present,
     origin: deps.origin,
   });
 }
@@ -1780,7 +1789,17 @@ async function composeReport({ outcome, subject, sourceApp, author = "none", acc
   if (!outcome || outcome.code !== 0 || (!parsed && !String(outcome.report || "").trim())) {
     if (depthJob) await depthJob.promise;
     logHosted(deps.requestId, `judge-exit ${outcome?.code ?? "none"}`);
-    return { text: judgeFailureText(stderr, deps.requestId), isError: true };
+    const topup = topupsEnabled(deps.env) ? await readTopup(account, deps).catch(() => ({})) : {};
+    return {
+      text: judgeFailureText(stderr, deps.requestId, {
+        env: deps.env,
+        origin: deps.origin,
+        topupPresent: topup.present,
+        topupChecks: topup.checks,
+        topupBudgetMicros: topup.budgetMicros,
+      }),
+      isError: true,
+    };
   }
   const now = typeof deps.now === "number" ? new Date(deps.now) : new Date();
   const layers = renderLayers(parsed || {}, { subject, big: big === true, deepenTest: deepenTestEnabled(deps.env) });
@@ -1901,7 +1920,19 @@ async function callGrill(args, account, payload, params, deps) {
     return toolText(capped.text);
   }
   const credit = await creditOf(account, deps);
-  if (credit.out) return toolText(topupsEnabled(deps.env) ? userAllowanceUsedText(deps.origin) : OUT_OF_CREDIT, true);
+  if (credit.out) {
+    const topup = topupsEnabled(deps.env) ? await readTopup(account, deps) : {};
+    return toolText(
+      keyAllowanceText({
+        env: deps.env,
+        origin: deps.origin,
+        topupPresent: topup.present,
+        topupChecks: topup.checks,
+        topupBudgetMicros: topup.budgetMicros,
+      }),
+      true,
+    );
+  }
   const keepArg = args.keep_records;
   if (account.records !== "keep" && account.records !== "off" && typeof keepArg !== "boolean") {
     return toolText(CONSENT_TEXT);
@@ -1936,22 +1967,41 @@ async function callGrill(args, account, payload, params, deps) {
   }
   if (running >= RUNNING_JOB_LIMIT) return toolText(CAP_RETRY_TEXT, true);
   const used = await dailyChecksUsed(account, deps);
-  const decision = await resolveDailyLimit({
-    used,
-    email: account.human || account.email || "",
-    env: deps.env,
-    lookup: (address) => lookupActivePro(address, (args) => redis(deps, args)),
-  });
+  const email = account.human || account.email || "";
+  const lookup = (address) => lookupActivePro(address, (args) => redis(deps, args));
+  const monthlySoFar = await readMonthlyChecks(account, deps);
+  if (monthlySoFar >= MONTHLY_CHECK_ALLOWANCE && (await lookup(email))) {
+    return toolText(monthlyCheckLimitMessage({ count: monthlySoFar }));
+  }
+  const decision = await resolveDailyLimit({ used, email, env: deps.env, lookup });
   // Prepaid checks use the same higher daily cap as an active subscription. The Pro store
   // lookup above already ran only once the free cap was reached. This read does too.
+  let prepaid = false;
   if (used >= DAILY_GRILL_LIMIT && decision.limit <= DAILY_GRILL_LIMIT && topupsEnabled(deps.env)) {
     const topup = await readTopup(account, deps);
-    if (topup.checks > 0 || topup.budgetMicros > 0) decision.limit = proDailyLimit(deps.env);
+    if (topup.checks > 0 || topup.budgetMicros > 0) {
+      decision.limit = proDailyLimit(deps.env);
+      prepaid = true;
+    }
   }
   if (used >= decision.limit) {
-    const monthlyChecks = decision.paid ? await readMonthlyChecks(account, deps) : 0;
-    const now = typeof deps.now === "number" ? deps.now : Date.now();
-    return toolText(dailyLimitMessage({ limit: decision.limit, monthlyChecks, paid: decision.paid, now }));
+    if (!decision.paid && !prepaid) {
+      const status = await proSubscriptionStatus(email, (args) => redis(deps, args));
+      if (status === "canceled") {
+        return toolText(higherDailyEndedMessage({ limit: decision.limit, topups: topupsEnabled(deps.env), origin: deps.origin }));
+      }
+    }
+    const monthlyChecks = decision.paid ? monthlySoFar : 0;
+    return toolText(
+      dailyLimitMessage({
+        limit: decision.limit,
+        monthlyChecks,
+        paid: decision.paid,
+        prepaid,
+        topups: topupsEnabled(deps.env),
+        origin: deps.origin,
+      }),
+    );
   }
   const apiKey = openSecret(account.keyCipher, deps.env, "GRILL_KEY_ENCRYPTION_KEY");
   if (!apiKey) {

@@ -158,18 +158,18 @@ describe("the Pro store read", () => {
 });
 
 describe("the daily stop message", () => {
-  it("tells a free account when the day and the month reset", () => {
+  it("tells a free account when the day resets", () => {
     assert.equal(
       dailyLimitMessage({ limit: 30, paid: false, now: NOW }),
-      "You've used today's 30 grills on this account. It resets at midnight UTC (8 hours left). The monthly allowance resets on the 1st.",
+      "You've hit today's daily limit of 30 checks on this account, so this one didn't run. It resets at 00:00 UTC. Wait until then.",
     );
-    assert.match(dailyLimitMessage({ limit: 30, now: Date.parse("2026-11-07T23:30:00.000Z") }), /\(1 hour left\)/);
+    assert.match(dailyLimitMessage({ limit: 30, topups: true, origin: "https://grillyour.ai" }), /Add checks at https:\/\/grillyour\.ai\/account/);
   });
 
   it("tells a paid account how many of this month's 200 checks are used", () => {
     assert.equal(
       dailyLimitMessage({ limit: 100, monthlyChecks: 47, paid: true, now: NOW }),
-      "You've used today's 100 grills on this account. It resets at midnight UTC (8 hours left). You've used 47 of this month's 200 checks.",
+      "You've hit today's daily limit of 100 checks on this account, so this one didn't run. It resets at 00:00 UTC. Wait until then. You've used 47 of this month's 200 checks. That allowance resets next month on the 1st at 00:00 UTC.",
     );
   });
 });

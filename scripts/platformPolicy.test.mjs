@@ -405,15 +405,15 @@ describe("Grill in chat shows no plan, price, upgrade or credit", () => {
   it("says plainly what happened at a limit, and offers no way to get more", () => {
     assert.equal(
       hostedCore.USER_CAP_TEXT,
-      "You've used this month's free grills, so this one didn't run. It starts again on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.",
+      "You've hit this month's limit on your account, so this one didn't run. It resets next month on the 1st at 00:00 UTC. Nothing was charged to you. Wait until then.",
     );
     assert.equal(
       hostedCore.SERVICE_CAP_TEXT,
-      "Grill has used up this month's free grills for everyone, so this one didn't run. It starts again on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.",
+      "Grill has hit this month's limit for everyone, so this one didn't run. Nothing to do. Grill is paused for everyone until next month on the 1st at 00:00 UTC. Nothing was charged to you.",
     );
     assert.equal(
       hostedCore.OUT_OF_CREDIT,
-      "You've reached this month's free limit, so this one didn't run. It resets on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.",
+      "You've hit this month's limit on the key for your account, so this one didn't run. It resets next month on the 1st at 00:00 UTC. Nothing was charged to you. Wait until then.",
     );
     assert.equal(
       hostedCore.EMAIL_CLAIMED_TEXT,

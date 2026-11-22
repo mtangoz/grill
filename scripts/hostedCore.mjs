@@ -44,6 +44,8 @@ export const HOSTED_JUDGE_ATTEMPT_MS = 180_000;
 export const DAILY_GRILL_LIMIT = 30;
 /** Completed checks per UTC day when GRILL_PRO_DAILY_LIMIT is unset or not a whole number. */
 export const DEFAULT_PRO_DAILY_LIMIT = 100;
+/** Completed checks in a UTC month for an account with an active row in the Pro store. The number is not a setting. */
+export const MONTHLY_CHECK_ALLOWANCE = 200;
 export const RUNNING_JOB_LIMIT = 3;
 export const CREDIT_CACHE_MS = 60_000;
 /**
@@ -52,7 +54,7 @@ export const CREDIT_CACHE_MS = 60_000;
  * scripts/platformPolicy.test.mjs holds that line.
  */
 export const OUT_OF_CREDIT =
-  "You've reached this month's free limit, so this one didn't run. It resets on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.";
+  "You've hit this month's limit on the key for your account, so this one didn't run. It resets next month on the 1st at 00:00 UTC. Nothing was charged to you. Wait until then.";
 /** One email, two sign-ins, and the second one cannot share the first one's account. */
 export const EMAIL_CLAIMED_TEXT =
   "This email is already set up with Grill on another sign-in. Sign in with that one instead, or write to support@grillyour.ai if you've lost it.";
@@ -101,7 +103,7 @@ export function hostedFeedbackReply(share, record) {
 
 /** When three grills are still running after the wait. The assistant retries. The person is not asked for a job id. */
 export const CAP_RETRY_TEXT =
-  "Three grills are still running. Wait about 2 minutes, then call grill again yourself. Do not ask the person for a job id.";
+  "Three grills are already running on this account, so this one didn't start. There is no clock reset: it clears as soon as one of them finishes. Wait and retry. Wait about 2 minutes, then call grill again yourself. Do not ask the person for a job id.";
 
 const AUTHOR_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -543,9 +545,9 @@ export const CAP_COUNTER_TTL_SECONDS = 40 * 24 * 60 * 60;
 // to get more: a directory reads that as a sale. With GRILL_TOPUPS=on, the person's own
 // monthly stop names the account page and still names no price, plan, or subscription.
 export const SERVICE_CAP_TEXT =
-  "Grill has used up this month's free grills for everyone, so this one didn't run. It starts again on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.";
+  "Grill has hit this month's limit for everyone, so this one didn't run. Nothing to do. Grill is paused for everyone until next month on the 1st at 00:00 UTC. Nothing was charged to you.";
 export const USER_CAP_TEXT =
-  "You've used this month's free grills, so this one didn't run. It starts again on the 1st. Nothing was charged to you. Questions: support@grillyour.ai.";
+  "You've hit this month's limit on your account, so this one didn't run. It resets next month on the 1st at 00:00 UTC. Nothing was charged to you. Wait until then.";
 
 /** Prepaid check packs on the account page. Off unless this is exactly `on`. */
 export function topupsEnabled(env = {}) {
@@ -599,10 +601,32 @@ export function topupPack(env = {}) {
   };
 }
 
+/** Account page for this host, or the public site when the origin is not a plain https host. */
+export function accountPageUrl(origin = "") {
+  const base = /^https:\/\/[A-Za-z0-9.-]+(?::\d+)?$/.test(String(origin || "")) ? String(origin).replace(/\/$/, "") : PUBLIC_SITE_ORIGIN;
+  return `${base}/account`;
+}
+
 /** The in-chat stop when the free monthly allowance is used up and top-ups are on. No price. */
 export function userAllowanceUsedText(origin = "") {
-  const base = /^https:\/\/[A-Za-z0-9.-]+(?::\d+)?$/.test(String(origin || "")) ? String(origin).replace(/\/$/, "") : PUBLIC_SITE_ORIGIN;
-  return `You've used this month's free allowance, so this one didn't run. It starts again on the 1st. Add more at ${base}/account.`;
+  return `You've hit this month's free allowance on your account, so this one didn't run. It resets next month on the 1st at 00:00 UTC. Add checks at ${accountPageUrl(origin)}.`;
+}
+
+/** Prepaid checks or budget are gone. They do not come back on a date. The free allowance still does. */
+export function topupExhaustedText(origin = "") {
+  return `Your prepaid balance is used up, so this one didn't run. A prepaid balance does not reset on a clock. The free allowance resets next month on the 1st at 00:00 UTC. Add checks at ${accountPageUrl(origin)}.`;
+}
+
+/**
+ * The router key has nothing left. With top-ups off that is the monthly limit.
+ * With top-ups on, a balance that was bought and is now empty is the prepaid stop.
+ */
+export function keyAllowanceText({ env = {}, origin = "", topupPresent = false, topupChecks = 0, topupBudgetMicros = 0 } = {}) {
+  if (!topupsEnabled(env)) return OUT_OF_CREDIT;
+  const checks = Math.max(0, Number(topupChecks) || 0);
+  const budget = Math.max(0, Number(topupBudgetMicros) || 0);
+  if (topupPresent && !(checks > 0 && budget > 0)) return topupExhaustedText(origin);
+  return userAllowanceUsedText(origin);
 }
 
 /** Router-key cap: the free monthly allowance, plus prepaid budget still left when top-ups are on. */
@@ -728,33 +752,40 @@ export function proDailyLimit(env = {}) {
   return Math.max(DAILY_GRILL_LIMIT, n);
 }
 
-/** Whole hours until the next midnight UTC. A remaining part of an hour still counts as one. */
-function hoursUntilUtcMidnight(ms = Date.now()) {
-  const date = new Date(ms);
-  if (!Number.isFinite(date.getTime())) return 24;
-  const into =
-    date.getUTCHours() * 3_600_000 +
-    date.getUTCMinutes() * 60_000 +
-    date.getUTCSeconds() * 1_000 +
-    date.getUTCMilliseconds();
-  const left = 24 * 3_600_000 - into;
-  return Math.max(1, Math.ceil(left / 3_600_000));
+/**
+ * What a person reads when the daily cap stops a grill. The reset is 00:00 UTC for everyone.
+ * `prepaid` is the higher cap that a remaining prepaid balance unlocks. `paid` is an active
+ * row in the Pro store: the sentence also says where this month's check allowance stands.
+ * With top-ups on, and no prepaid balance, the person can add checks. Neither names a plan.
+ */
+export function dailyLimitMessage({ limit, monthlyChecks = 0, paid = false, prepaid = false, topups = false, origin = "" } = {}) {
+  const n = Math.max(0, Math.floor(Number(limit) || 0));
+  const kind = prepaid ? "higher daily limit" : "daily limit";
+  const head = `You've hit today's ${kind} of ${n} checks on this account, so this one didn't run. It resets at 00:00 UTC.`;
+  if (paid) {
+    const used = Math.max(0, Math.floor(Number(monthlyChecks) || 0));
+    return `${head} Wait until then. You've used ${used} of this month's ${MONTHLY_CHECK_ALLOWANCE} checks. That allowance resets next month on the 1st at 00:00 UTC.`;
+  }
+  if (prepaid) return `${head} Wait until then.`;
+  if (topups) return `${head} Add checks at ${accountPageUrl(origin)} for the higher daily limit, or wait until 00:00 UTC.`;
+  return `${head} Wait until then.`;
+}
+
+/** The UTC-month check allowance is used up. It is a count, not a price. */
+export function monthlyCheckLimitMessage({ count = MONTHLY_CHECK_ALLOWANCE } = {}) {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  return `You've hit this month's limit of ${MONTHLY_CHECK_ALLOWANCE} checks (you've used ${n}), so this one didn't run. It resets next month on the 1st at 00:00 UTC. Wait until then.`;
 }
 
 /**
- * What a person reads when the daily cap stops a grill. The same reset for everyone.
- * A paid account is told the monthly check count. A free account is told when that
- * allowance starts again. Neither names a plan.
+ * A higher daily limit that is no longer active (a trial or other higher limit that ended).
+ * The person is on the ordinary daily limit. With top-ups on they can add checks. No plan name.
  */
-export function dailyLimitMessage({ limit, monthlyChecks = 0, paid = false, now = Date.now() } = {}) {
-  const hours = hoursUntilUtcMidnight(now);
-  const hourWord = hours === 1 ? "hour" : "hours";
-  const head = `You've used today's ${limit} grills on this account. It resets at midnight UTC (${hours} ${hourWord} left).`;
-  if (paid) {
-    const n = Math.max(0, Math.floor(Number(monthlyChecks) || 0));
-    return `${head} You've used ${n} of this month's 200 checks.`;
-  }
-  return `${head} The monthly allowance resets on the 1st.`;
+export function higherDailyEndedMessage({ limit = DAILY_GRILL_LIMIT, topups = false, origin = "" } = {}) {
+  const n = Math.max(0, Math.floor(Number(limit) || DAILY_GRILL_LIMIT));
+  const head = `The higher daily limit on this account has ended, so you've hit today's limit of ${n} checks. It resets at 00:00 UTC.`;
+  if (topups) return `${head} Add checks at ${accountPageUrl(origin)} for the higher daily limit, or wait until 00:00 UTC.`;
+  return `${head} Wait until then.`;
 }
 
 /**
@@ -798,25 +829,33 @@ export function proEmailIndexKey(email) {
 }
 
 /**
- * Whether this email has an active subscription in the Pro store.
+ * The Pro-store status for this email: "active", "canceled", "none", or "" when there is no row.
  * `command` is one Redis command. Two reads: the email index, then the account row.
+ * A missing row or a store error is "".
+ */
+export async function proSubscriptionStatus(email, command) {
+  const index = proEmailIndexKey(email);
+  if (!index || typeof command !== "function") return "";
+  try {
+    const id = await command(["GET", index]);
+    if (typeof id !== "string" || !id.trim()) return "";
+    const accountKey = proAccountKey(id);
+    if (!accountKey) return "";
+    const raw = await command(["GET", accountKey]);
+    if (typeof raw !== "string" || !raw) return "";
+    const row = JSON.parse(raw);
+    return typeof row?.subscription === "string" ? row.subscription : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Whether this email has an active subscription in the Pro store.
  * A missing row, any other status, or a store error is not active.
  */
 export async function lookupActivePro(email, command) {
-  const index = proEmailIndexKey(email);
-  if (!index || typeof command !== "function") return false;
-  try {
-    const id = await command(["GET", index]);
-    if (typeof id !== "string" || !id.trim()) return false;
-    const accountKey = proAccountKey(id);
-    if (!accountKey) return false;
-    const raw = await command(["GET", accountKey]);
-    if (typeof raw !== "string" || !raw) return false;
-    const row = JSON.parse(raw);
-    return row?.subscription === "active";
-  } catch {
-    return false;
-  }
+  return (await proSubscriptionStatus(email, command)) === "active";
 }
 
 /** One count per run. A second compose of the same run does not add another check. */
@@ -850,7 +889,7 @@ export function checksLine(count) {
  * month's counters. A grill is allowed while the spend so far is under the cap, so
  * one grill can finish a little over; the next one is stopped.
  */
-export function capBlock({ serviceMicros = 0, userMicros = 0, env = {}, topupChecks = 0, topupBudgetMicros = 0, origin = "" } = {}) {
+export function capBlock({ serviceMicros = 0, userMicros = 0, env = {}, topupChecks = 0, topupBudgetMicros = 0, topupPresent = false, origin = "" } = {}) {
   const serviceFull = (Number(serviceMicros) || 0) >= toMicros(monthlyCapUsd(env));
   const spend = Number(userMicros) || 0;
   const free = toMicros(userMonthlyCapUsd(env));
@@ -860,7 +899,9 @@ export function capBlock({ serviceMicros = 0, userMicros = 0, env = {}, topupChe
   const userCap = free + (room ? budget : 0);
   if (serviceFull && !room) return { text: SERVICE_CAP_TEXT, which: "service" };
   if (spend >= userCap) {
-    return { text: topupsEnabled(env) ? userAllowanceUsedText(origin) : USER_CAP_TEXT, which: "user" };
+    if (!topupsEnabled(env)) return { text: USER_CAP_TEXT, which: "user" };
+    if (topupPresent && !room) return { text: topupExhaustedText(origin), which: "topup" };
+    return { text: userAllowanceUsedText(origin), which: "user" };
   }
   return null;
 }
@@ -874,12 +915,12 @@ function ref(requestId) {
 }
 
 /** For a judge run that ended without a verdict, read from the judge's own error lines. */
-export function judgeFailureText(stderr = "", requestId = "") {
+export function judgeFailureText(stderr = "", requestId = "", opts = {}) {
   const s = String(stderr || "");
   if (/correlated verdict|excluded company/i.test(s)) {
     return "The only judge available was from the same company that wrote this, so Grill held back the verdict. Try again in a few minutes.";
   }
-  if (/\b402\b|insufficient credits|key limit exceeded/i.test(s)) return OUT_OF_CREDIT;
+  if (/\b402\b|insufficient credits|key limit exceeded/i.test(s)) return keyAllowanceText(opts);
   if (/looks like .*(key|token)|Nothing was sent/i.test(s)) {
     return "This write-up seems to contain a password, key or token, so Grill didn't send it. Take that out and try again.";
   }
