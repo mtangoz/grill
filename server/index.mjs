@@ -67,6 +67,7 @@ import {
   CLOSING_ASK_DEEPEN,
   DEEPEN_OFF,
   DEEPEN_ONLY_BIG,
+  OWN_PLAN_RULE,
   SCOPE_GUARD,
   clientCompanyHint,
   deepenTestEnabled,
@@ -388,6 +389,7 @@ export function buildGrillTools({ checkOn, authorGuessed = false }) {
     "Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Pass big: true only when they already marked the decision as big. Never ask whether it is big.",
     "Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask.",
     SCOPE_GUARD,
+    OWN_PLAN_RULE,
     "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default.",
     "If the result is a job id, call grill_result with it before you reply. Do not ask the user for a job id, and do not tell them how long it takes.",
     FEEDBACK_POINTER,
@@ -854,6 +856,7 @@ async function handle(msg) {
             `Grill sends the decision as the user stated it to ${judgeIs}. Do not rewrite it, do not add your own case against, and do not wait for an OK. Ask at most one short question, and only if the decision is truly unclear. The first time, say the outside-judge disclosure once, as one line, then never again. If grill returns a job id, call grill_result before you reply. Do not ask the user for a job id. Relay layer 1 as written. It is at most 50 words, plus one line of at most 25 words after the verdict: The question that would change this. Never put that line before the verdict. Do not add a required question, a fact list, or a confidence question. When the user says more, why, or what else, call grill_result with detail more. When they say options, help me decide, or they are stuck, call grill_result with detail options. When they say full report, call grill_result with detail full. Call grill_result with detail deepen only when the person asks to deepen or go bigger. Do not call it on a quick or bulk grill, and do not ask them to. Do not write a layer yourself. Each result ends with a two-line run note (models and time, then privacy), after the closing line. Show it as written. Never drop the run note. Never put it before the verdict. ${INDEPENDENCE_RELAY} ` +
             "Do not add a model name of your own, and do not show a record, a score, a balance, a quote check, or a disclaimer. The verdict never becomes the decision. If the user asks 'so should I do it?', hand the choice back and name the deciding test. Do not flip the verdict on push-back without new evidence. If the same decision is grilled again in the chat, ask what changed. Nothing changed is a re-run: show the earlier verdict beside the new one, and do not add a supersedes line. A changed choice names the earlier record and what changed. Never send the earlier verdict to the judge. Write a decision record only after the user states a choice, including a quick take. Any stated choice counts, such as do it, yes, keep it, or delay. Confidence is optional. If they did not say a percent, leave it empty and do not ask. If they never answer, write no record and set no look-back. When they say look back, call grill_look_back and relay its one line. It stores nothing. If the report includes a 'Grill news' line, show it once, word for word, after the verdict and before the next-step line. The run note comes after that line. The tool adds the news line only within 7 days of a release or on the first 3 days of a month. Don't ask about it or repeat it. " +
               `${FEEDBACK_POINTER} ` +
+              `${OWN_PLAN_RULE} ` +
               SCOPE_GUARD,
         },
       });
