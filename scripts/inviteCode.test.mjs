@@ -275,7 +275,7 @@ describe("invite codes", { concurrency: false }, () => {
     assert.equal(shown.html.includes("<b&"), false);
     assert.match(shown.html, /<form method="post" action="\/redeem">/);
     assert.match(shown.html, /min-height:\s*44px/);
-    assert.match(shown.html, /free, \$5 of use each month/i);
+    assert.match(shown.html, /free, 100 checks a month, reset on the 1st/i);
     assert.match(shown.html, /First 100 users get Grill free for life, 100 spots left\./);
     assert.doesNotMatch(shown.html, /GRILL_|Clerk|CLERK_|Upstash/);
     assert.equal(mutations(ctx).length, before);
@@ -294,7 +294,7 @@ describe("invite codes", { concurrency: false }, () => {
     assert.equal(done.location, "https://grillyour.ai/redeem?done=1");
     assert.equal(done.location.includes("friend-code"), false);
     assert.match(done.html, /You're in/);
-    assert.match(done.html, /Free for life: \$5 of use each month/);
+    assert.match(done.html, /Free: 100 checks a month, resets on the 1st\./);
     assert.match(done.html, /href="\/decisions"/);
     assert.equal(done.html.includes("<script"), false);
     assert.equal(ctx.memory.command(["GET", grantKey("friend@example.com")]), hash("friend-code"));
@@ -310,7 +310,7 @@ describe("invite codes", { concurrency: false }, () => {
     const decisions = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: cookie() } }), ctx);
     const html = await decisions.text();
     assert.match(html, /<h1>Your grills<\/h1>/);
-    assert.doesNotMatch(html, /Free for life: \$5 of use each month/);
+    assert.doesNotMatch(html, /Free: 100 checks a month/);
     assert.equal(ctx.router.creates[0].limit, 5);
     assert.ok(ctx.router.patches.some((row) => row.limit_reset === "monthly"));
   });

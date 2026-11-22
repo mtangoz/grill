@@ -58,7 +58,7 @@ describe("what a person reads when a Grill limit stops the chat", () => {
     const env = { GRILL_TOPUPS: "on" };
     const text = capBlock({ serviceMicros: 0, userMicros: 5_000_000, env, origin: "https://grillyour.ai" }).text;
     assert.equal(text, userAllowanceUsedText("https://grillyour.ai"));
-    assert.match(text, /this month's free allowance on your account/);
+    assert.match(text, /this month's 100 free checks/);
     assertPlain(text, { reset: /next month on the 1st at 00:00 UTC/, action: new RegExp(`Add checks at ${ACCOUNT.replaceAll(".", "\\.")}`) });
   });
 

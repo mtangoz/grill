@@ -528,17 +528,20 @@ export function inviteCodeHash(code) {
 // Two hard caps on what Grill pays for starter credit, counted in Upstash in
 // micro-dollars (whole numbers, so INCRBY stays atomic and exact):
 //   - one for the whole service per calendar month (UTC), GRILL_MONTHLY_CAP_USD, default $20;
-//   - one per person per calendar month, GRILL_USER_MONTHLY_CAP_USD, default $5: the early-tester
-//     allowance, free for life, which resets on the 1st. Each person's router key is minted at the
-//     same amount with a monthly reset.
+//   - one per person per calendar month, GRILL_USER_MONTHLY_CAP_USD, default $5: a safety cap on
+//     what Grill pays for free use. The allowance a person sees is GRILL_FREE_CHECKS (default 100),
+//     counted in the same units as a prepaid pack, and it resets on the 1st. Each person's router
+//     key is minted at the safety cap with a monthly reset.
 // A person is keyed by the human email the starter credit belongs to, so an agent
 // signed in for someone shares that person's cap. Each person's router key is
 // still capped by the router itself; these counters are the second lock.
 
 export const DEFAULT_MONTHLY_CAP_USD = 20;
-/** Early testers: free for life, $5 of use each month, reset on the 1st (UTC). */
+/** Safety cap on dollars Grill pays for one person's free use in a month. Not shown. */
 export const TESTER_MONTHLY_USD = 5;
 export const DEFAULT_USER_MONTHLY_CAP_USD = TESTER_MONTHLY_USD;
+/** Free checks each UTC month. Same units as a prepaid pack. GRILL_FREE_CHECKS overrides it. */
+export const DEFAULT_FREE_CHECKS = 100;
 export const CAP_COUNTER_TTL_SECONDS = 40 * 24 * 60 * 60;
 
 // Each says what happened and when it starts again. With top-ups off, neither offers a way
@@ -586,7 +589,7 @@ export function topupPaymentKey(paymentIntentId) {
 /** The in-chat stop when an automatic add was attempted and the card did not pay. No price. */
 export function autoTopupFailedText(origin = "") {
   const base = accountPageUrl(origin);
-  return `You've run out of checks, so this one didn't run. The automatic top-up didn't go through. Add checks at ${base}. The free allowance starts again on the 1st.`;
+  return `You've run out of checks, so this one didn't run. The automatic top-up didn't go through. Add checks at ${base}. Free checks start again on the 1st.`;
 }
 
 export const DEFAULT_TOPUP_CHECKS = 100;
@@ -600,6 +603,11 @@ function wholeIn(value, min, max) {
 /** Checks in one pack. GRILL_TOPUP_CHECKS overrides the default. A bad value keeps it. */
 export function topupChecks(env = {}) {
   return wholeIn(env.GRILL_TOPUP_CHECKS, 1, 10_000) ?? DEFAULT_TOPUP_CHECKS;
+}
+
+/** Free checks each UTC month. GRILL_FREE_CHECKS overrides the default. A bad value keeps it. */
+export function freeMonthlyChecks(env = {}) {
+  return wholeIn(env.GRILL_FREE_CHECKS, 0, 100_000) ?? DEFAULT_FREE_CHECKS;
 }
 
 /** What the person pays, in cents. GRILL_TOPUP_PRICE_CENTS overrides it. Shown on the account page only. */
@@ -642,14 +650,15 @@ export function accountPageUrl(origin = "") {
   return `${base}/account`;
 }
 
-/** The in-chat stop when the free monthly allowance is used up and top-ups are on. No price. */
-export function userAllowanceUsedText(origin = "") {
-  return `You've hit this month's free allowance on your account, so this one didn't run. It resets next month on the 1st at 00:00 UTC. Add checks at ${accountPageUrl(origin)}.`;
+/** The in-chat stop when this month's free checks are used up and top-ups are on. No price. */
+export function userAllowanceUsedText(origin = "", env = {}) {
+  const n = freeMonthlyChecks(env);
+  return `You've used this month's ${n} free checks, so this one didn't run. It resets next month on the 1st at 00:00 UTC. Add checks at ${accountPageUrl(origin)}.`;
 }
 
-/** Prepaid checks or budget are gone. They do not come back on a date. The free allowance still does. */
+/** Prepaid checks are gone. They do not come back on a date. The free checks still do. */
 export function topupExhaustedText(origin = "") {
-  return `Your prepaid balance is used up, so this one didn't run. A prepaid balance does not reset on a clock. The free allowance resets next month on the 1st at 00:00 UTC. Add checks at ${accountPageUrl(origin)}.`;
+  return `Your prepaid balance is used up, so this one didn't run. A prepaid balance does not reset on a clock. Free checks reset next month on the 1st at 00:00 UTC. Add checks at ${accountPageUrl(origin)}.`;
 }
 
 /**
@@ -660,7 +669,7 @@ export function keyAllowanceText({ env = {}, origin = "", topupPresent = false, 
   if (!topupsEnabled(env)) return OUT_OF_CREDIT;
   const checks = Math.max(0, Number(topupChecks) || 0);
   if (topupPresent && !(checks > 0)) return topupExhaustedText(origin);
-  return userAllowanceUsedText(origin);
+  return userAllowanceUsedText(origin, env);
 }
 
 /** The OpenRouter key for a hosted account stays finite. */
@@ -698,6 +707,27 @@ export function splitCharge(beforeMicros, chargeMicros, freeCapMicros) {
   return { freePart, paidPart: charge - freePart };
 }
 
+/** Free checks are used first. What does not fit is prepaid. */
+export function splitChecks(used, draw, allowance) {
+  const before = Math.max(0, Math.floor(Number(used) || 0));
+  const n = Math.max(0, Math.floor(Number(draw) || 0));
+  const room = Math.max(0, Math.floor(Number(allowance) || 0) - before);
+  const freePart = Math.min(n, room);
+  return { freePart, paidPart: n - freePart };
+}
+
+/** Split a dollar charge in the same proportion as the checks it drew. */
+export function splitChargeByChecks(chargeMicros, freeChecks, paidChecks) {
+  const free = Math.max(0, Math.floor(Number(freeChecks) || 0));
+  const paid = Math.max(0, Math.floor(Number(paidChecks) || 0));
+  const charge = Math.max(0, Math.floor(Number(chargeMicros) || 0));
+  const total = free + paid;
+  if (paid <= 0 || total <= 0) return { freePart: charge, paidPart: 0 };
+  if (free <= 0) return { freePart: 0, paidPart: charge };
+  const freePart = Math.min(charge, Math.round((charge * free) / total));
+  return { freePart, paidPart: charge - freePart };
+}
+
 export function hostedAccountKey(id) {
   return `grill:hosted:acct:${id}`;
 }
@@ -715,6 +745,12 @@ export function serviceRevenueKey(month) {
 export function personSpendKey(email, month) {
   const hash = createHash("sha256").update(String(email || "").trim().toLowerCase()).digest("hex");
   return `grill:hosted:capspend:person:${hash}:${month}`;
+}
+
+/** Free checks used this UTC month. A new month is a new key, so it resets on the 1st. The person is a hash. */
+export function freeChecksKey(person, month) {
+  const hash = createHash("sha256").update(String(person || "").trim().toLowerCase()).digest("hex");
+  return `grill:hosted:freechecks:${hash}:${month}`;
 }
 
 /** Prepaid checks and internal budget left. Not month-scoped: unused checks carry over. The person is a hash. */
@@ -747,12 +783,15 @@ export function userMonthlyCapUsd(env = {}) {
   return capFromEnv(env.GRILL_USER_MONTHLY_CAP_USD, DEFAULT_USER_MONTHLY_CAP_USD);
 }
 
-/** The allowance line /decisions and /account show, with what is left of this month's use. */
-export function allowanceLine(remainingUsd, env = {}) {
-  const cap = userMonthlyCapUsd(env);
-  const whole = Number.isInteger(cap) ? String(cap) : cap.toFixed(2);
-  const left = Math.max(0, Number(remainingUsd) || 0).toFixed(2);
-  return `Free for life: $${whole} of use each month, resets on the 1st. $${left} left this month.`;
+/** The allowance, without how many are left. Pages that are not the account use this. */
+export function freeChecksOffer(env = {}) {
+  return `Free: ${freeMonthlyChecks(env)} checks a month, resets on the 1st.`;
+}
+
+/** The allowance line /account shows. A count of checks, not a dollar amount. */
+export function allowanceLine(remainingChecks, env = {}) {
+  const left = Math.max(0, Math.floor(Number(remainingChecks) || 0));
+  return `${freeChecksOffer(env).replace(/\.$/, "")}. ${left} left this month.`;
 }
 
 /** "2026-10" in UTC. */
@@ -794,6 +833,40 @@ export function checksForCost(costUsd, env = {}) {
   const costMicros = toMicros(chargeableUsd(costUsd));
   if (unitMicros <= 0) return 1;
   return Math.max(1, Math.ceil(costMicros / unitMicros));
+}
+
+/**
+ * How one grill is split between this month's free checks and a prepaid balance.
+ * Free checks are used first. A draw that still fits does not touch prepaid.
+ * `draw` is 0 when the run is not a completed grill: no checks move, and the
+ * dollar safety cap still splits the charge. With top-ups off there is no
+ * prepaid pool, so the whole dollar charge is counted and only the free checks
+ * that fit are consumed. When the free dollar share does not fit in the safety
+ * cap, and top-ups are on, the grill is prepaid so the cap still holds.
+ */
+export function allotGrill({
+  usedChecks = 0,
+  draw = 0,
+  allowance = 0,
+  beforeMicros = 0,
+  chargeMicros = 0,
+  freeCapMicros = 0,
+  topups = false,
+} = {}) {
+  const n = Math.max(0, Math.floor(Number(draw) || 0));
+  const charge = Math.max(0, Math.floor(Number(chargeMicros) || 0));
+  const before = Math.max(0, Math.floor(Number(beforeMicros) || 0));
+  const room = Math.max(0, Math.floor(Number(freeCapMicros) || 0) - before);
+  if (n === 0) {
+    if (!topups) return { freeChecks: 0, paidChecks: 0, freeMicros: charge, paidMicros: 0 };
+    const split = splitCharge(before, charge, freeCapMicros);
+    return { freeChecks: 0, paidChecks: 0, freeMicros: split.freePart, paidMicros: split.paidPart };
+  }
+  const { freePart: freeFit, paidPart: paidFit } = splitChecks(usedChecks, n, allowance);
+  if (!topups) return { freeChecks: freeFit, paidChecks: 0, freeMicros: charge, paidMicros: 0 };
+  const dollars = splitChargeByChecks(charge, freeFit, paidFit);
+  if (dollars.freePart > room) return { freeChecks: 0, paidChecks: n, freeMicros: 0, paidMicros: charge };
+  return { freeChecks: freeFit, paidChecks: paidFit, freeMicros: dollars.freePart, paidMicros: dollars.paidPart };
 }
 
 /**
@@ -966,19 +1039,20 @@ export function checksLine(count) {
  * month's counters. A grill is allowed while the spend so far is under the cap, so
  * one grill can finish a little over; the next one is stopped.
  */
-export function capBlock({ serviceMicros = 0, userMicros = 0, env = {}, topupChecks = 0, topupBudgetMicros = 0, topupPresent = false, origin = "", revenueMicros = 0 } = {}) {
+export function capBlock({ serviceMicros = 0, userMicros = 0, env = {}, topupChecks = 0, topupBudgetMicros = 0, topupPresent = false, origin = "", revenueMicros = 0, freeChecksUsed = 0 } = {}) {
   const revenue = Math.max(0, Math.floor(Number(revenueMicros) || 0));
   const serviceFull = (Number(serviceMicros) || 0) >= toMicros(monthlyCapUsd(env)) + revenue;
   const spend = Number(userMicros) || 0;
   const free = toMicros(userMonthlyCapUsd(env));
   const checks = Math.max(0, Number(topupChecks) || 0);
-  // A prepaid check balance is not stopped by the free allowance or the service cap.
+  const checksFull = Math.max(0, Math.floor(Number(freeChecksUsed) || 0)) >= freeMonthlyChecks(env);
+  // A prepaid check balance is not stopped by the free checks or either dollar cap.
   if (topupsEnabled(env) && checks > 0) return null;
   if (serviceFull) return { text: SERVICE_CAP_TEXT, which: "service" };
-  if (spend >= free) {
+  if (spend >= free || checksFull) {
     if (!topupsEnabled(env)) return { text: USER_CAP_TEXT, which: "user" };
     if (topupPresent) return { text: topupExhaustedText(origin), which: "topup" };
-    return { text: userAllowanceUsedText(origin), which: "user" };
+    return { text: userAllowanceUsedText(origin, env), which: "user" };
   }
   return null;
 }

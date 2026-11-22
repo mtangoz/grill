@@ -3789,7 +3789,7 @@ describe("fair check counting", () => {
       const decisions = await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: `__session=${session}` } }), { ...ctx, now: NOW });
       const accountHtml = await account.text();
       assert.match(accountHtml, /1 check this month\./);
-      assert.match(accountHtml, /Free for life: \$5 of use each month/);
+      assert.match(accountHtml, /Free: 100 checks a month, resets on the 1st\. 99 left this month\./);
       assert.doesNotMatch(await decisions.text(), /of use each month|left this month|checks this month|judge spend/);
     } finally {
       await fake.close();

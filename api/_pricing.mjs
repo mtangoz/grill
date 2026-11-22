@@ -6,7 +6,7 @@ import { foundingMemberLine, foundingSkipsPaywall, foundingSpotsLine, readFoundi
 import { PLANS, billingMode, couponId, esc, page } from "./_pro.mjs";
 import { topupPriceLabel } from "./_topup.mjs";
 import { openStore, redisCommand, sessionAccountId } from "./_account.mjs";
-import { topupPack } from "../scripts/hostedCore.mjs";
+import { freeMonthlyChecks, topupPack } from "../scripts/hostedCore.mjs";
 
 const HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
@@ -42,7 +42,7 @@ function pricingPage(env, { spots = "", founding = null } = {}) {
       : `<p><a href="/checkout?plan=month">Get Pro · ${esc(month)} a month</a> or <a href="/checkout?plan=year">${esc(year)} a year</a>.</p>`;
   const pack = topupPack(env);
   const topup = `<h2>Grill in chat</h2>
-<p>The first $5 of use each month is free, and unused free use does not roll over. Extra checks are a prepaid pack: ${esc(String(pack.checks))} checks for ${esc(topupPriceLabel(pack.priceCents))}, bought on the account page. Unused checks from a pack carry over. Nothing is charged automatically.</p>`;
+<p>You get ${esc(String(freeMonthlyChecks(env)))} free checks a month, and unused free checks do not roll over. Extra checks are a prepaid pack: ${esc(String(pack.checks))} checks for ${esc(topupPriceLabel(pack.priceCents))}, bought on the account page. Unused checks from a pack carry over. Nothing is charged automatically.</p>`;
   return page(
     "Pricing · Grill",
     `<h1>Grill Pro</h1>

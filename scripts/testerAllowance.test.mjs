@@ -1,5 +1,5 @@
-// Early testers in chat are free for life: $5 of use each month, reset on the 1st (UTC), on the
-// router key and on the per-person monthly counter. The whole-service cap stays $20 a month.
+// Early testers in chat get 100 free checks a month, reset on the 1st (UTC). The router key and
+// the per-person dollar counter stay a $5 safety cap. The whole-service cap stays $20 a month.
 // Made-up fixtures only.
 import { createSign, randomBytes } from "node:crypto";
 import { before, describe, it } from "node:test";
@@ -14,7 +14,7 @@ import { testSigningKey } from "./testSigningKey.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RESOURCE = "https://mcp.example/mcp";
-const ALLOWANCE_LINE = "Free for life: $5 of use each month, resets on the 1st.";
+const ALLOWANCE_LINE = "Free: 100 checks a month, resets on the 1st.";
 let privateKey;
 let jwk;
 before(async () => {
@@ -147,7 +147,7 @@ describe("the early-tester monthly allowance", () => {
       const decisions = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie: cookie() } }), ctx)).text();
       const account = await (await handleAccount(new Request("https://grillyour.ai/account", { headers: { cookie: cookie() } }), ctx)).text();
       assert.ok(account.includes(ALLOWANCE_LINE), "the allowance line is shown");
-      assert.match(account, /\$4\.97 left this month\./, "worked out from this month's use, not the lifetime total");
+      assert.match(account, /99 left this month\./, "one grill draws one free check");
       assert.doesNotMatch(account, /grills of credit left/);
       assert.doesNotMatch(decisions, /of use each month|left this month|grills of credit/);
     } finally {
@@ -155,10 +155,10 @@ describe("the early-tester monthly allowance", () => {
     }
   });
 
-  it("says in the terms that early testers get $5 a month, and no longer says only that credit does not refill", () => {
+  it("says in the terms that early testers get 100 free checks a month, and no longer says only that credit does not refill", () => {
     const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
     assert.match(terms, /Early testers/);
-    assert.ok(terms.includes("free for life: $5 of use each month, resets on the 1st"));
+    assert.ok(terms.includes("100 free checks a month, resets on the 1st"));
     const chat = terms.slice(terms.indexOf("<h2>Grill inside your chat</h2>"), terms.indexOf("<h2>Using Grill fairly</h2>"));
     assert.doesNotMatch(chat, /does not refill/, "the monthly early-tester allowance is not the one-time starter key");
     for (const sentence of terms.match(/[^.]*does not refill[^.]*\./g) || []) {

@@ -22,6 +22,7 @@ import {
   splitCharge,
   topupBalanceKey,
   topupBudgetUsd,
+  freeMonthlyChecks,
   topupPack,
   topupsEnabled,
   toMicros,
@@ -169,8 +170,9 @@ describe("top-up pack config", () => {
     });
   });
 
-  it("keeps the free allowance at $5 and adds prepaid budget only while top-ups are on", () => {
+  it("keeps the dollar safety cap at $5, the free allowance at 100 checks, and adds prepaid budget only while top-ups are on", () => {
     assert.equal(userMonthlyCapUsd({}), 5);
+    assert.equal(freeMonthlyChecks({}), 100);
     assert.equal(keyLimitWithTopup({}, 3), 5);
     assert.equal(keyLimitWithTopup({ GRILL_TOPUPS: "on" }, 3), 8);
     assert.deepEqual(splitCharge(4_000_000, 1_500_000, 5_000_000), { freePart: 1_000_000, paidPart: 500_000 });
@@ -310,7 +312,7 @@ describe("the account page sells a pack", () => {
     const html = await res.text();
     assert.equal(res.status, 200);
     assert.doesNotMatch(html, /id="topup"|Add \d+ checks/);
-    assert.match(html, /\$5 of use each month/);
+    assert.match(html, /Free: 100 checks a month, resets on the 1st\./);
   });
 
   it("starts a one-time checkout and saves the card for reuse", async () => {
