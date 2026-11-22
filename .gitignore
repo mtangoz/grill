@@ -6,6 +6,7 @@ node_modules/
 dist/
 evals/results/
 evals/verdict-quality/out/
+evals/prior-challenges/out/
 _site/
 .grill-pro-dev.json
 grill-pro-dev.json
