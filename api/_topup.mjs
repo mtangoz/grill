@@ -21,7 +21,7 @@ const ACCOUNT_RE = /^[A-Za-z0-9_-]{8,80}$/;
 const EVENT_RE = /^evt_[A-Za-z0-9]{8,80}$/;
 const SESSION_RE = /^cs_(?:test|live)_[A-Za-z0-9]{8,200}$/;
 
-/** A price a person pays, from integer cents. "$4" or "$4.50". */
+/** A price a person pays, from integer cents. "$5" or "$5.50". */
 export function topupPriceLabel(cents) {
   const dollars = Number(cents) / 100;
   const text = Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);

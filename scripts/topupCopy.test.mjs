@@ -30,7 +30,7 @@ describe("prepaid packs in the public terms and pricing", () => {
     });
     const html = await res.text();
     assert.equal(res.status, 200);
-    assert.match(html, /100 checks for \$4/);
+    assert.match(html, /100 checks for \$5/);
     assert.match(html, /Nothing is charged automatically/);
     assert.match(html, /\$9 a month/);
     assert.match(html, /The first \$5 of use each month is free/);

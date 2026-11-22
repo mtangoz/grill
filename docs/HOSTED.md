@@ -37,7 +37,7 @@ These are set in production at grillyour.ai, and on any preview you test with. T
 | `GRILL_TOPUPS` | `on` lets a signed-in person buy a prepaid pack of checks on `/account` (Stripe Checkout, one payment). Anything else, including unset, is off: no buy control, and the chat limit sentence stays as it is. |
 | `GRILL_TOPUP_PRICE_ID` | Stripe Price id for one pack. Required before checkout starts. The Price is a one-time charge, and its amount must match `GRILL_TOPUP_PRICE_CENTS`. |
 | `GRILL_TOPUP_CHECKS` | Optional. Checks in one pack. Default `100`. |
-| `GRILL_TOPUP_PRICE_CENTS` | Optional. What the person pays, in cents. Default `400`. |
+| `GRILL_TOPUP_PRICE_CENTS` | Optional. What the person pays, in cents. Default `500` ($5). The account button and the pricing page read this, not a fixed amount. It must match the amount on `GRILL_TOPUP_PRICE_ID`. |
 | `GRILL_TOPUP_BUDGET_USD` | Optional. Internal cap added, per pack, to that person's monthly cap and to their router key. Unused pack budget carries over with the unused checks. Not shown on the site or in chat. A bad value keeps the code default. |
 | `STRIPE_SECRET_KEY` | Used for Checkout. A secret key (`sk_`) or a restricted key (`rk_`) is accepted. On a preview (`VERCEL_ENV=preview` or `development`) it must be a test key. In production it must be a live key. A restricted key needs write access to Checkout Sessions, Customers, and PaymentIntents. |
 | `STRIPE_WEBHOOK_SECRET` | Signs `api/stripe-webhook`. The same endpoint credits a pack when the event is a paid one-time Checkout with top-up metadata. A repeat delivery does not credit twice. |

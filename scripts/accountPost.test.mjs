@@ -169,7 +169,7 @@ describe("Safari account form posts", { concurrency: false }, () => {
     const markerOnly = `__client_uat=${Math.floor(Date.now() / 1000)}`;
     let html = await openAccount(ctx, signedIn);
     assert.match(html, /Keep my decision records/);
-    assert.match(html, /Add 100 checks · \$4/);
+    assert.match(html, /Add 100 checks · \$5/);
     for (const form of formsIn(html)) {
       assert.ok(form.fields.page, `form ${form.action} ${form.buttons.map((b) => b.label).join(", ")} embeds a page token`);
     }
@@ -234,7 +234,7 @@ describe("Safari account form posts", { concurrency: false }, () => {
     await pressAndRead("Turn off", signedIn);
     assert.match(html, /Get a calendar link/);
 
-    const bought = await press("Add 100 checks · $4", { cookie: markerOnly });
+    const bought = await press("Add 100 checks · $5", { cookie: markerOnly });
     assert.equal(bought.res.status, 303);
     assert.equal(bought.res.headers.get("location"), "https://checkout.stripe.com/c/pay/cs_test_topup");
     assert.equal(ctx.stripe.calls.some((call) => call.url.endsWith("/v1/checkout/sessions")), true);

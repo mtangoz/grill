@@ -126,7 +126,7 @@ function signStripe(payload, secret = SECRET) {
   return { t, header: `t=${t},v1=${v1}` };
 }
 
-function paidEvent(accountId, { id = "evt_topup12345678", session = "cs_test_topupsession1", amount = 400, currency = "usd" } = {}) {
+function paidEvent(accountId, { id = "evt_topup12345678", session = "cs_test_topupsession1", amount = 500, currency = "usd" } = {}) {
   return {
     id,
     type: "checkout.session.completed",
@@ -146,13 +146,13 @@ function paidEvent(accountId, { id = "evt_topup12345678", session = "cs_test_top
 }
 
 describe("top-up pack config", () => {
-  it("is off unless GRILL_TOPUPS is on, and the pack defaults to 100 checks for $4", () => {
+  it("is off unless GRILL_TOPUPS is on, and the pack defaults to 100 checks for $5", () => {
     assert.equal(topupsEnabled({}), false);
     assert.equal(topupsEnabled({ GRILL_TOPUPS: "yes" }), false);
     assert.equal(topupsEnabled({ GRILL_TOPUPS: "on" }), true);
     const pack = topupPack({ GRILL_TOPUPS: "on" });
     assert.equal(pack.checks, 100);
-    assert.equal(pack.priceCents, 400);
+    assert.equal(pack.priceCents, 500);
     assert.equal(pack.priceId, "");
     assert.equal(pack.budgetUsd, topupBudgetUsd({}));
     assert.ok(pack.budgetUsd > 0);
@@ -301,7 +301,7 @@ describe("the account page sells a pack", () => {
     const ctx = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE });
     const page = await handleAccount(accountRequest("GET"), ctx);
     const html = await page.text();
-    assert.match(html, /Add 100 checks · \$4/);
+    assert.match(html, /Add 100 checks · \$5/);
     assert.match(html, /Prepaid checks left: 0/);
     assert.match(html, /Unused checks carry over/);
     assert.match(html, /Nothing is charged later on its own/);
@@ -316,6 +316,10 @@ describe("the account page sells a pack", () => {
     assert.equal(session.params.get("metadata[grill_topup]"), "1");
     assert.match(session.params.get("success_url"), /\/account\?topup=ok$/);
     assert.equal(session.params.get("customer"), "cus_topuptester");
+    resetHostedCaches();
+    const priced = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE, GRILL_TOPUP_PRICE_CENTS: "250" });
+    const custom = await handleAccount(accountRequest("GET"), priced);
+    assert.match(await custom.text(), /Add 100 checks · \$2\.50/);
     const account = await storedAccount(ctx);
     assert.equal(account.stripeCustomerId, "cus_topuptester");
     assert.equal(session.params.get("metadata[grill_account]"), account.id);
@@ -323,6 +327,18 @@ describe("the account page sells a pack", () => {
     const second = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
     assert.equal(second.status, 303);
     assert.equal(ctx.stripe.calls.some((call) => call.url.endsWith("/v1/customers")), false);
+  });
+
+  it("accepts a restricted key in the matching environment", async () => {
+    resetHostedCaches();
+    const live = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE, VERCEL_ENV: "production", STRIPE_SECRET_KEY: "rk_live_restricted_made_up" });
+    const res = await handleAccount(accountRequest("POST", { body: "action=topup" }), live);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), "https://checkout.stripe.com/c/pay/cs_test_topup");
+    resetHostedCaches();
+    const preview = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE, VERCEL_ENV: "preview", STRIPE_SECRET_KEY: "rk_test_restricted_made_up" });
+    const also = await handleAccount(accountRequest("POST", { body: "action=topup" }), preview);
+    assert.equal(also.headers.get("location"), "https://checkout.stripe.com/c/pay/cs_test_topup");
   });
 
   it("does not start checkout with a live key on a preview, or a test key in production", async () => {
