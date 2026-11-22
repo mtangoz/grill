@@ -294,6 +294,36 @@ describe("automatic charges", () => {
     assert.equal(Number(await ctx.redis(["GET", autoTopupSpentKey(account.id, isoMonth())])), 500);
   });
 
+  it("still charges a saved card when the payment-method lookup is forbidden or unavailable", async () => {
+    for (const status of [403, 503]) {
+      const ctx = world({}, async (url, init) => {
+        if (String(url).includes("/v1/payment_methods/") && (init.method || "GET") !== "POST") {
+          return Response.json({ error: { code: "more_permissions_required" } }, { status });
+        }
+        if (url.endsWith("/v1/payment_intents") && init.method === "POST") {
+          return Response.json({
+            id: `pi_autolookup${status}`,
+            status: "succeeded",
+            amount: 500,
+            amount_received: 500,
+            currency: "usd",
+            payment_method: "pm_savedcard1",
+            charges: { data: [{ payment_method_details: { card: { last4: "4242" } } }] },
+          });
+        }
+        return Response.json({ error: { message: "unexpected" } }, { status: 404 });
+      });
+      const account = readyAccount(`g_accountlookup${status}`);
+      await ctx.redis(["SET", `grill:hosted:acct:${account.id}`, JSON.stringify(account)]);
+      const { chargeAutoTopup } = await import("../api/_topup.mjs");
+      const result = await chargeAutoTopup({ env: ctx.env, fetch: ctx.fetch, account, command: ctx.redis });
+      assert.equal(result.state, "credited", String(status));
+      const charged = ctx.stripe.calls.find((call) => call.url.endsWith("/v1/payment_intents"));
+      assert.equal(charged.params.get("payment_method_types[0]"), "card", String(status));
+      assert.equal([...charged.params.values()].includes("link"), false, String(status));
+    }
+  });
+
   it("does not charge a Link payment method off-session", async () => {
     const ctx = world();
     const account = readyAccount();

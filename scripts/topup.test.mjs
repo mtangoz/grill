@@ -100,7 +100,8 @@ function world(extra = {}) {
         return Response.json({ id: "cus_topuptester" });
       }
       if (u === "https://api.stripe.com/v1/checkout/sessions" && init.method === "POST") {
-        return Response.json({ id: "cs_test_topupsession1", url: "https://checkout.stripe.com/c/pay/cs_test_topup" });
+        stripe.checkoutCount = (stripe.checkoutCount || 0) + 1;
+        return Response.json({ id: `cs_test_topupsession${stripe.checkoutCount}`, url: "https://checkout.stripe.com/c/pay/cs_test_topup" });
       }
       return Response.json({ error: { message: "unexpected stripe call" } }, { status: 404 });
     }
@@ -352,13 +353,15 @@ describe("the account page sells a pack", () => {
     assert.equal(ctx.stripe.calls.some((call) => call.url.endsWith("/v1/customers")), false);
   });
 
-  it("says a cancelled payment charged nothing, and shows the balance only after the webhook credits", async () => {
+  it("says a cancelled payment charged nothing, and shows the balance after the first of two sessions is credited", async () => {
     resetHostedCaches();
     const ctx = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE });
-    const started = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
-    assert.equal(started.status, 303);
+    const first = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
+    const second = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
+    assert.equal(first.status, 303);
+    assert.equal(second.status, 303);
     const account = await storedAccount(ctx);
-    assert.equal(account.topupOpenSession, "cs_test_topupsession1");
+    assert.deepEqual(account.topupOpenSessions, ["cs_test_topupsession1", "cs_test_topupsession2"]);
     const cancel = await handleAccount(accountRequest("GET", { query: "?topup=cancel" }), ctx);
     const cancelHtml = await cancel.text();
     assert.match(cancelHtml, /Payment not completed\. Nothing was charged\./);
@@ -367,8 +370,14 @@ describe("the account page sells a pack", () => {
     const earlyHtml = await early.text();
     assert.match(earlyHtml, /processing, refresh in a moment/);
     assert.doesNotMatch(earlyHtml, /Payment received\. Prepaid checks left:/);
-    await ctx.redis(["SET", topupSessionKey(account.topupOpenSession), account.id]);
-    await ctx.redis(["HSET", topupBalanceKey("tester@example.com"), "checks", "100"]);
+    const credited = await applyTopupEvent(paidEvent(account.id, { id: "evt_topupfirstsess", session: "cs_test_topupsession1" }), {
+      env: ctx.env,
+      fetch: ctx.fetch,
+      command: ctx.redis,
+    });
+    assert.equal(credited.action, "credited");
+    assert.equal(await ctx.redis(["GET", topupSessionKey("cs_test_topupsession1")]), "credited");
+    assert.equal(await ctx.redis(["GET", topupSessionKey("cs_test_topupsession2")]), null);
     const done = await handleAccount(accountRequest("GET", { query: "?topup=ok" }), ctx);
     const doneHtml = await done.text();
     assert.match(doneHtml, /Payment received\. Prepaid checks left: 100\./);

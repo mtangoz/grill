@@ -1121,7 +1121,8 @@ async function saveAccount(account, deps) {
   // Set when this sign-in spends a key minted for someone else. Deleting it must not revoke that key.
   if (account.capFrom) copy.capFrom = account.capFrom;
   if (typeof account.stripeCustomerId === "string" && account.stripeCustomerId.startsWith("cus_")) copy.stripeCustomerId = account.stripeCustomerId;
-  if (typeof account.topupOpenSession === "string" && /^cs_(?:test|live)_[A-Za-z0-9]{8,200}$/.test(account.topupOpenSession)) copy.topupOpenSession = account.topupOpenSession;
+  const openSessions = openTopupSessions(account);
+  if (openSessions.length) copy.topupOpenSessions = openSessions;
   if (typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_")) copy.stripePaymentMethodId = account.stripePaymentMethodId;
   if (typeof account.cardLast4 === "string" && /^\d{4}$/.test(account.cardLast4)) copy.cardLast4 = account.cardLast4;
   if (account.autoTopup === true || account.autoTopup === false) copy.autoTopup = account.autoTopup;
@@ -4543,6 +4544,18 @@ const TOPUP_NOTES = {
   failed: "The payment page did not open. Nothing was charged. Try again in a minute.",
 };
 
+const TOPUP_SESSION_RE = /^cs_(?:test|live)_[A-Za-z0-9]{8,200}$/;
+
+function openTopupSessions(account) {
+  const raw = Array.isArray(account?.topupOpenSessions) ? account.topupOpenSessions : [];
+  return raw.filter((id) => typeof id === "string" && TOPUP_SESSION_RE.test(id)).slice(-5);
+}
+
+function rememberOpenTopup(account, sessionId) {
+  if (!TOPUP_SESSION_RE.test(String(sessionId || ""))) return;
+  account.topupOpenSessions = [...openTopupSessions(account).filter((id) => id !== sessionId), sessionId].slice(-5);
+}
+
 function topupReturnNote(query, { checks = 0, credited = false } = {}) {
   if (query === "cancel") return "Payment not completed. Nothing was charged.";
   if (query !== "ok") return "";
@@ -4660,9 +4673,7 @@ export async function handleAccount(request, deps) {
             origin: publicOrigin(request),
             autoTopup: autoTopupEnabled(deps.env) && form.get("auto_topup") === "1",
           });
-          if (typeof result.sessionId === "string" && /^cs_(?:test|live)_[A-Za-z0-9]{8,200}$/.test(result.sessionId)) {
-            session.account.topupOpenSession = result.sessionId;
-          }
+          rememberOpenTopup(session.account, result.sessionId);
           if (session.account.stripeCustomerId) await saveAccount(session.account, deps);
           if (result.state === "redirect") return rememberPage(seeOther(result.url), session.sub, deps);
           return done(`${back}?topup=unready`);
@@ -4681,15 +4692,17 @@ export async function handleAccount(request, deps) {
     const founding = await foundingNumber(session.account.email, deps);
     const topupQuery = pageUrl(request).searchParams.get("topup") || "";
     const notice = ACCOUNT_NOTICES[pageUrl(request).searchParams.get("notice") || ""] || "";
-    const prepaid = topupsEnabled(deps.env) ? await readTopup(session.account, deps) : { checks: 0 };
     let credited = false;
     if (topupQuery === "ok") {
-      const open = session.account.topupOpenSession;
-      if (typeof open === "string" && /^cs_(?:test|live)_[A-Za-z0-9]{8,200}$/.test(open)) {
-        const marked = await redis(deps, ["GET", topupSessionKey(open)]);
-        credited = marked != null && String(marked) !== "";
+      for (const id of openTopupSessions(session.account)) {
+        const marked = await redis(deps, ["GET", topupSessionKey(id)]);
+        if (marked === "credited") {
+          credited = true;
+          break;
+        }
       }
     }
+    const prepaid = topupsEnabled(deps.env) ? await readTopup(session.account, deps) : { checks: 0 };
     const topupNote = topupReturnNote(topupQuery, { checks: prepaid.checks, credited }) || TOPUP_NOTES[topupQuery] || "";
     const topup = topupsEnabled(deps.env)
       ? {

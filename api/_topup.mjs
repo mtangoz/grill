@@ -172,10 +172,12 @@ function rememberCard(account, pi) {
   if (last4) account.cardLast4 = last4;
 }
 
-async function isCardPaymentMethod(stripe, id) {
-  if (!PM_RE.test(String(id || ""))) return false;
+/** "card" can be charged. "no" is a confirmed non-card. "unknown" means the lookup itself failed. */
+async function cardPaymentMethodState(stripe, id) {
+  if (!PM_RE.test(String(id || ""))) return "no";
   const got = await stripe.get(`/v1/payment_methods/${id}`);
-  return Boolean(got.ok && got.body?.type === "card");
+  if (!got.ok) return got.status === 404 ? "no" : "unknown";
+  return got.body?.type === "card" ? "card" : "no";
 }
 
 async function loadPaymentIntent(stripe, id) {
@@ -277,6 +279,8 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
     }
   }
   await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
+  // After the balance write, so a page that sees this value is reading a committed credit.
+  await redis(["SET", sessionKey, "credited", "EX", String(EVENT_TTL_SECONDS)]);
   return { action: "credited" };
 }
 
@@ -374,7 +378,9 @@ export async function chargeAutoTopup({ env, fetch: fetchImpl, account, command 
     const ceiling = autoTopupCeilingCents(account);
     if (spent + pack.priceCents > ceiling) return { state: "ceiling" };
     const { stripe } = proClients(env, fetchImpl);
-    if (!(await isCardPaymentMethod(stripe, account.stripePaymentMethodId))) return { state: "no-card" };
+    // A restricted key may not be allowed to read payment methods. A failed lookup is not proof
+    // the saved method is Link, so the charge still goes out as a card. A confirmed non-card does not.
+    if ((await cardPaymentMethodState(stripe, account.stripePaymentMethodId)) === "no") return { state: "no-card" };
     const attempt = Number(await redis(["INCR", autoTopupAttemptKey(account.id, month)]));
     await redis(["EXPIRE", autoTopupAttemptKey(account.id, month), String(EVENT_TTL_SECONDS)]);
     const created = await stripe.post(
