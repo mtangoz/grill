@@ -104,6 +104,11 @@ When Claude Code shows you a plan to approve, Grill adds one line, once a sessio
 
 Claude Code's advisor (`/advisor`) has a stronger Claude look over the work. That is a second opinion from the same company. Grill's judge is from another one when Grill can tell which AI wrote the plan. Use both.
 
+## Two ways to use it
+
+- **Grill your own call.** Say "Grill this:" and the decision, as above.
+- **Grill your AI's plan before you see it.** Ask: *Make a plan to hit our launch date, grill it until it's solid, and show me what Grill changed.* Your AI writes the plan, sends it to Grill, revises it, and grills it again until it is solid, up to 3 grills. You get the final plan, a short "What Grill changed" list, and the verdict before and after. Grill improves the first answer your AI gives you, not only the back-and-forth after it.
+
 ## What it costs
 
 Grill is free. On your own key you pay the router. Copy and paste uses the assistants you already have.

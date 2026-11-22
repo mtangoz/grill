@@ -70,6 +70,8 @@ Check [Windsurf's MCP docs](https://docs.devin.ai/windsurf/plugins/cascade/mcp) 
 
 Restart the app, then ask: *"Grill this: we're moving our launch to March. I'm 70% sure it gets us more signups."* The assistant sends the decision as you said it, with at most a few sentences of context, and does not wait for a second OK.
 
+Or let the assistant do the first draft: *"Make a plan to hit our launch date, grill it until it's solid, and show me what Grill changed."* It writes the plan, grills it, revises it and grills again until it is solid, up to 3 grills, then shows the final plan with a short "What Grill changed" list. Grill improves the first answer your AI gives you, not only the back-and-forth after it.
+
 ## ChatGPT and claude.ai in a browser
 
 Use the hosted connector: [https://grillyour.ai/mcp](https://grillyour.ai/mcp). Steps for each app are in the [README](../README.md#grill-in-chat).

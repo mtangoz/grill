@@ -69,6 +69,9 @@
       <p class="note">Paste this in a new chat.</p>
       <p id="starter-prompt">Grill this: ChatGPT says I should move our launch up two weeks to beat a competitor. Should I tell my boss we can do it?</p>
       <p><button class="button" type="button" id="copy-starter">Copy</button></p>
+      <p class="note">Or let your AI make the plan, and have Grill check it before you see it.</p>
+      <p id="starter-plan">Make a plan to hit our launch date, grill it until it's solid, and show me what Grill changed.</p>
+      <p><button class="button" type="button" id="copy-starter-plan">Copy</button></p>
     </div>
   </fieldset>
 
@@ -80,17 +83,19 @@
 </main>
 <script>
 (function () {
-  var button = document.getElementById("copy-starter");
-  var prompt = document.getElementById("starter-prompt");
-  if (!button || !prompt) return;
-  button.addEventListener("click", function () {
-    var value = prompt.textContent.trim();
-    function done() { button.textContent = "Copied"; }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(value).then(done, function () { done(); });
-    } else {
-      done();
-    }
-  });
+  function wire(button, prompt) {
+    if (!button || !prompt) return;
+    button.addEventListener("click", function () {
+      var value = prompt.textContent.trim();
+      function done() { button.textContent = "Copied"; }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(value).then(done, function () { done(); });
+      } else {
+        done();
+      }
+    });
+  }
+  wire(document.getElementById("copy-starter"), document.getElementById("starter-prompt"));
+  wire(document.getElementById("copy-starter-plan"), document.getElementById("starter-plan"));
 })();
 </script>
