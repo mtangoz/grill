@@ -88,11 +88,13 @@ function stripeFailure(res, what) {
 }
 
 /**
- * Start a one-time Checkout for one pack. Saves the card for a later pack.
- * Sets `account.stripeCustomerId` when it creates a customer. The caller stores the account.
+ * Start a one-time Checkout for one pack. Card only, so Apple Pay and Google Pay
+ * still show, and Link, Klarna, Cash App and Amazon Pay do not. Saves that card
+ * for a later off-session pack. Sets `account.stripeCustomerId` when it creates
+ * a customer. The caller stores the account.
  * A restricted key needs write on Checkout Sessions, Customers, and PaymentIntents
  * (`payment_intent_data[setup_future_usage]`). A failure carries `stripeCode` only.
- * @returns {Promise<{state: "off"|"mode"|"unconfigured"|"redirect", url?: string}>}
+ * @returns {Promise<{state: "off"|"mode"|"unconfigured"|"redirect", url?: string, sessionId?: string}>}
  */
 export async function startTopupCheckout({ env, fetch: fetchImpl, account, origin, autoTopup = false }) {
   if (!topupsEnabled(env)) return { state: "off" };
@@ -116,6 +118,7 @@ export async function startTopupCheckout({ env, fetch: fetchImpl, account, origi
     customer: customerId,
     "line_items[0][price]": price,
     "line_items[0][quantity]": "1",
+    "payment_method_types[0]": "card",
     "payment_intent_data[setup_future_usage]": "off_session",
     success_url: `${home}/account?topup=ok`,
     cancel_url: `${home}/account?topup=cancel`,
@@ -127,7 +130,8 @@ export async function startTopupCheckout({ env, fetch: fetchImpl, account, origi
   if (!created.ok || typeof url !== "string" || !/^https:\/\/checkout\.stripe\.com\//.test(url)) {
     throw stripeFailure(created, "Stripe didn't start checkout");
   }
-  return { state: "redirect", url };
+  const sessionId = SESSION_RE.test(String(created.body?.id || "")) ? created.body.id : "";
+  return { state: "redirect", url, sessionId };
 }
 
 async function release(command, eventKey, sessionKey) {
@@ -159,10 +163,19 @@ function failureCode(body) {
 }
 
 function rememberCard(account, pi) {
+  const methodObj = pi?.payment_method && typeof pi.payment_method === "object" ? pi.payment_method : null;
+  if (methodObj?.type && methodObj.type !== "card") return;
   const method = paymentMethodId(pi);
   const last4 = cardLast4(pi);
+  if (methodObj?.type !== "card" && !last4) return;
   if (method) account.stripePaymentMethodId = method;
   if (last4) account.cardLast4 = last4;
+}
+
+async function isCardPaymentMethod(stripe, id) {
+  if (!PM_RE.test(String(id || ""))) return false;
+  const got = await stripe.get(`/v1/payment_methods/${id}`);
+  return Boolean(got.ok && got.body?.type === "card");
 }
 
 async function loadPaymentIntent(stripe, id) {
@@ -360,9 +373,10 @@ export async function chargeAutoTopup({ env, fetch: fetchImpl, account, command 
     const spent = Number(await redis(["GET", spentKey])) || 0;
     const ceiling = autoTopupCeilingCents(account);
     if (spent + pack.priceCents > ceiling) return { state: "ceiling" };
+    const { stripe } = proClients(env, fetchImpl);
+    if (!(await isCardPaymentMethod(stripe, account.stripePaymentMethodId))) return { state: "no-card" };
     const attempt = Number(await redis(["INCR", autoTopupAttemptKey(account.id, month)]));
     await redis(["EXPIRE", autoTopupAttemptKey(account.id, month), String(EVENT_TTL_SECONDS)]);
-    const { stripe } = proClients(env, fetchImpl);
     const created = await stripe.post(
       "/v1/payment_intents",
       {
@@ -370,6 +384,7 @@ export async function chargeAutoTopup({ env, fetch: fetchImpl, account, command 
         currency: "usd",
         customer: account.stripeCustomerId,
         payment_method: account.stripePaymentMethodId,
+        "payment_method_types[0]": "card",
         confirm: "true",
         off_session: "true",
         "metadata[grill_topup]": "1",

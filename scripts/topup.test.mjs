@@ -24,6 +24,7 @@ import {
   topupBudgetUsd,
   freeMonthlyChecks,
   topupPack,
+  topupSessionKey,
   topupsEnabled,
   toMicros,
   userAllowanceUsedText,
@@ -99,7 +100,7 @@ function world(extra = {}) {
         return Response.json({ id: "cus_topuptester" });
       }
       if (u === "https://api.stripe.com/v1/checkout/sessions" && init.method === "POST") {
-        return Response.json({ url: "https://checkout.stripe.com/c/pay/cs_test_topup" });
+        return Response.json({ id: "cs_test_topupsession1", url: "https://checkout.stripe.com/c/pay/cs_test_topup" });
       }
       return Response.json({ error: { message: "unexpected stripe call" } }, { status: 404 });
     }
@@ -331,6 +332,9 @@ describe("the account page sells a pack", () => {
     const session = ctx.stripe.calls.find((call) => call.url.endsWith("/v1/checkout/sessions"));
     assert.equal(session.params.get("mode"), "payment");
     assert.equal(session.params.get("line_items[0][price]"), PRICE);
+    assert.equal(session.params.get("payment_method_types[0]"), "card");
+    assert.equal(session.params.get("payment_method_types[1]"), null);
+    assert.equal([...session.params.values()].includes("link"), false);
     assert.equal(session.params.get("payment_intent_data[setup_future_usage]"), "off_session");
     assert.equal(session.params.get("metadata[grill_topup]"), "1");
     assert.match(session.params.get("success_url"), /\/account\?topup=ok$/);
@@ -346,6 +350,29 @@ describe("the account page sells a pack", () => {
     const second = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
     assert.equal(second.status, 303);
     assert.equal(ctx.stripe.calls.some((call) => call.url.endsWith("/v1/customers")), false);
+  });
+
+  it("says a cancelled payment charged nothing, and shows the balance only after the webhook credits", async () => {
+    resetHostedCaches();
+    const ctx = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE });
+    const started = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
+    assert.equal(started.status, 303);
+    const account = await storedAccount(ctx);
+    assert.equal(account.topupOpenSession, "cs_test_topupsession1");
+    const cancel = await handleAccount(accountRequest("GET", { query: "?topup=cancel" }), ctx);
+    const cancelHtml = await cancel.text();
+    assert.match(cancelHtml, /Payment not completed\. Nothing was charged\./);
+    assert.doesNotMatch(cancelHtml, /Payment received/);
+    const early = await handleAccount(accountRequest("GET", { query: "?topup=ok" }), ctx);
+    const earlyHtml = await early.text();
+    assert.match(earlyHtml, /processing, refresh in a moment/);
+    assert.doesNotMatch(earlyHtml, /Payment received\. Prepaid checks left:/);
+    await ctx.redis(["SET", topupSessionKey(account.topupOpenSession), account.id]);
+    await ctx.redis(["HSET", topupBalanceKey("tester@example.com"), "checks", "100"]);
+    const done = await handleAccount(accountRequest("GET", { query: "?topup=ok" }), ctx);
+    const doneHtml = await done.text();
+    assert.match(doneHtml, /Payment received\. Prepaid checks left: 100\./);
+    assert.doesNotMatch(doneHtml, /processing, refresh in a moment/);
   });
 
   it("accepts a restricted key in the matching environment", async () => {
