@@ -131,7 +131,7 @@ Grill has bound itself, in tests as well as prose, to: a different-company judge
 - Judge requests use `provider: { zdr: true, data_collection: "deny" }`; Jev quality check (TypeSafe) is on by default and zero-retention. Masking covers email, phone, cards, bank numbers, SSN/NI, DOB, addresses, postcodes, IPs; keys and passwords stop the run; "Names are still not masked." — [docs/DATA-LEDGER.md](docs/DATA-LEDGER.md), [CHANGELOG.md](CHANGELOG.md)
 - "Data partnerships of any kind" are "Not now", and principle 9 says Grill will not sell decision data "at any price". — [docs/STRATEGY.md](docs/STRATEGY.md)
 - Gate T: no marketing of hosted Grill for work or team use until listed privacy steps merge. — [docs/PRD-privacy-foundations.md](docs/PRD-privacy-foundations.md), [docs/ROADMAP.md](docs/ROADMAP.md)
-- Founding members: first 100 accounts given access (invite, allowlist, waitlist approval; open sign-up does not take a spot) are free for life at $5 of use a month. — [docs/HOSTED.md](docs/HOSTED.md)
+- Founding members: first 100 accounts given access (invite, allowlist, waitlist approval; open sign-up does not take a spot) are free for life at 100 free checks a month. — [docs/HOSTED.md](docs/HOSTED.md)
 
 ### Internal contradictions and tensions (flagged)
 - **"Measurably better" is asserted as the moat but not measured.** Principle 8 rests the anti-copy defence on published evals versus a same-company critique; no such comparison exists in the repo (section 4), and publishing eval results is a roadmap item marked "not met". — [docs/STRATEGY.md](docs/STRATEGY.md), [docs/ROADMAP.md](docs/ROADMAP.md), [evals/README.md](evals/README.md)

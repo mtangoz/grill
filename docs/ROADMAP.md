@@ -201,7 +201,7 @@ Impact: high, revenue. Pro is built and priced at $9 a month or $90 a year (owne
 
 A simple paid plan above the free monthly allowance. Revenue stays parked until the trigger. Not calibration, and not what is already free (STRATEGY rec 4).
 
-Status 2026-11-13: STRATEGY.md now says there is no defined paid product for one person. Saved records and look-back reminders are free with Grill in your chat, and the free allowance ($5 a month) is more than a paid key allows ($3). Rec 4 holds this until the kill threshold for the record bet reaches rule 3.
+Status 2026-11-22: the free allowance is 100 checks a month, reset on the 1st. Saved records and look-back reminders are free with Grill in your chat. Rec 4 holds this until the kill threshold for the record bet reaches rule 3.
 
 Consider when: 100 evidenced users (people who ran a grill) and at least 20 evidenced look-backs from people other than the maintainers, as STRATEGY.md rec 4 sets. Or Tony says so. Monthly judge spend nearing the service cap is a reason to look again. On its own it means tightening the free allowance, not selling.
 

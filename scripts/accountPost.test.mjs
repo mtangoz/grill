@@ -5,7 +5,7 @@ import { createSign, randomBytes } from "node:crypto";
 import { before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { handleAccount, handleDecisions, resetHostedCaches } from "../api/_hosted.mjs";
-import { createMemoryRedis, topupBalanceKey } from "./hostedCore.mjs";
+import { createMemoryRedis, freeChecksKey, isoMonth, topupBalanceKey } from "./hostedCore.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
 
 const PRICE = "price_testpack1";
@@ -584,7 +584,7 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.ok(html.indexOf('href="/account#checks"') < html.indexOf("<h1>"));
     const box = html.slice(checksAt, recordsAt);
     assert.match(box, /<h2>Checks<\/h2>/);
-    assert.match(box, /\$5 of use each month/);
+    assert.match(box, /Free: 100 checks a month, resets on the 1st\./);
     assert.match(box, /left this month/);
     assert.match(box, /Prepaid checks left: 0/);
     assert.match(box, /Add 100 checks · \$2\.50/);
@@ -604,7 +604,7 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.doesNotMatch(decisions, /of use each month|left this month|checks this month|judge spend|\bPro\b|subscription/i);
   });
 
-  it("warns when the free allowance is under $0.50, and stays quiet when checks remain", async () => {
+  it("warns when fewer than 10 free checks are left, and stays quiet when checks remain", async () => {
     const quiet = world();
     quiet.memory.command(["HSET", topupBalanceKey("tester@example.com"), "checks", "8"]);
     const cookie = clerkCookies();
@@ -614,12 +614,13 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     const fineDecisions = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), quiet)).text();
     assert.equal(fineDecisions.includes('id="low-checks"'), false);
 
-    const low = world({ usage: 4.6 });
+    const low = world();
+    low.memory.command(["SET", freeChecksKey("tester@example.com", isoMonth()), "95"]);
     low.memory.command(["HSET", topupBalanceKey("tester@example.com"), "checks", "8"]);
     const account = await openAccount(low, cookie);
     assert.match(account, /The free allowance is nearly used up\./);
     assert.match(account, /<a href="\/account#checks">Add checks<\/a>/);
-    assert.match(account, /\$0\.40 left this month/);
+    assert.match(account, /5 left this month/);
     const decisions = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), low)).text();
     assert.match(decisions, /The free allowance is nearly used up\./);
     assert.doesNotMatch(decisions, /of use each month|left this month|checks this month|\$0\.40/);

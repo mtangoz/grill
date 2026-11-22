@@ -128,7 +128,6 @@ import {
   personSpendKey,
   serviceRevenueKey,
   serviceSpendKey,
-  splitCharge,
   topupBalanceKey,
   autoTopupCeilingCents,
   autoTopupEnabled,
@@ -206,7 +205,11 @@ import {
   serviceFailureText,
   signInUrl,
   sourceAppFromClient,
+  allotGrill,
   allowanceLine,
+  freeChecksKey,
+  freeChecksOffer,
+  freeMonthlyChecks,
   userMonthlyCapUsd,
   toMicros,
   wwwAuthenticate,
@@ -1783,30 +1786,45 @@ async function consumeTopupChecks(account, deps, count) {
   if (left < 0) await redis(deps, ["HSET", key, "checks", "0"]);
 }
 
-async function countSpend(account, deps, costUsd) {
+async function countSpend(account, deps, costUsd, { completed = false } = {}) {
   const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
   const micros = toMicros(chargeableUsd(costUsd));
   const personKey = personSpendKey(capPerson(account), month);
   const before = Number(await redis(deps, ["GET", personKey])) || 0;
-  const split = splitCharge(before, micros, toMicros(userMonthlyCapUsd(deps.env)));
-  const prepaid = topupsEnabled(deps.env);
-  const counted = prepaid ? split.freePart : micros;
-  if (counted > 0) {
+  const usedKey = freeChecksKey(capPerson(account), month);
+  const used = Number(await redis(deps, ["GET", usedKey])) || 0;
+  const allot = allotGrill({
+    usedChecks: used,
+    draw: completed ? checksForCost(costUsd, deps.env) : 0,
+    allowance: freeMonthlyChecks(deps.env),
+    beforeMicros: before,
+    chargeMicros: micros,
+    freeCapMicros: toMicros(userMonthlyCapUsd(deps.env)),
+    topups: topupsEnabled(deps.env),
+  });
+  if (allot.freeMicros > 0) {
     const serviceKey = serviceSpendKey(month);
-    await redis(deps, ["INCRBY", serviceKey, String(counted)]);
+    await redis(deps, ["INCRBY", serviceKey, String(allot.freeMicros)]);
     await redis(deps, ["EXPIRE", serviceKey, String(CAP_COUNTER_TTL_SECONDS)]);
-    await redis(deps, ["INCRBY", personKey, String(counted)]);
+    await redis(deps, ["INCRBY", personKey, String(allot.freeMicros)]);
     await redis(deps, ["EXPIRE", personKey, String(CAP_COUNTER_TTL_SECONDS)]);
   }
-  if (prepaid && split.paidPart > 0) await drawTopup(account, deps, split.paidPart);
-  return { ...split, checks: prepaid && split.paidPart > 0 ? checksForCost(costUsd, deps.env) : 0 };
+  if (topupsEnabled(deps.env) && allot.paidMicros > 0) await drawTopup(account, deps, allot.paidMicros);
+  if (allot.freeChecks > 0) {
+    await redis(deps, ["INCRBY", usedKey, String(allot.freeChecks)]);
+    await redis(deps, ["EXPIRE", usedKey, String(CAP_COUNTER_TTL_SECONDS)]);
+  }
+  return { freePart: allot.freeMicros, paidPart: allot.paidMicros, checks: allot.paidChecks, freeChecks: allot.freeChecks };
 }
 
 async function refillPrepaid(account, deps) {
   if (!autoTopupEnabled(deps.env) || account?.autoTopup !== true) return "";
   const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
   const userMicros = Number(await redis(deps, ["GET", personSpendKey(capPerson(account), month)])) || 0;
-  if (userMicros < toMicros(userMonthlyCapUsd(deps.env))) return "";
+  const freeUsed = Number(await redis(deps, ["GET", freeChecksKey(capPerson(account), month)])) || 0;
+  const dollarFull = userMicros >= toMicros(userMonthlyCapUsd(deps.env));
+  const checksFull = freeUsed >= freeMonthlyChecks(deps.env);
+  if (!dollarFull && !checksFull) return "";
   let topup = await readTopup(account, deps);
   if (topup.checks > 0) return "";
   const result = await chargeAutoTopup({ env: deps.env, fetch: deps.fetch, account, command: (args) => redis(deps, args) });
@@ -1825,6 +1843,7 @@ async function capReached(account, deps) {
   const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
   const serviceMicros = Number(await redis(deps, ["GET", serviceSpendKey(month)])) || 0;
   const userMicros = Number(await redis(deps, ["GET", personSpendKey(capPerson(account), month)])) || 0;
+  const freeChecksUsed = Number(await redis(deps, ["GET", freeChecksKey(capPerson(account), month)])) || 0;
   const topup = await readTopup(account, deps);
   const revenueMicros = topupsEnabled(deps.env) ? Number(await redis(deps, ["GET", serviceRevenueKey(month)])) || 0 : 0;
   return capBlock({
@@ -1836,6 +1855,7 @@ async function capReached(account, deps) {
     topupPresent: topup.present,
     origin: deps.origin,
     revenueMicros,
+    freeChecksUsed,
   });
 }
 
@@ -1909,8 +1929,9 @@ async function composeReport({ outcome, subject, sourceApp, author = "none", acc
   // here, so a grill finishing in the background can't undo another one's changes.
   const spendRows = Number(await redis(deps, ["RPUSH", spendLogKey(account.id), JSON.stringify({ at: new Date().toISOString(), costUsd: cost, model })])) || 0;
   await redis(deps, ["LTRIM", spendLogKey(account.id), String(-SPEND_LOG_MAX), "-1"]);
-  const split = await countSpend(account, deps, cost);
-  if (completedGrill(parsed)) {
+  const done = completedGrill(parsed);
+  const split = await countSpend(account, deps, cost, { completed: done });
+  if (done) {
     await countCompletedCheck(account, deps, runId, { sourceApp, spendRows });
     if (split.checks > 0) await consumeTopupChecks(account, deps, split.checks);
   }
@@ -3585,22 +3606,19 @@ function signedInNav() {
   return `<nav class="signed-in" aria-label="Account"><a href="/decisions">Your grills</a> <a href="/account#checks">Add checks</a> <a href="/account">Account</a></nav>`;
 }
 
-/** Under this much of the free allowance, or with no prepaid checks, the page points at Add checks. */
-const LOW_FREE_USD = 0.5;
+/** Under this many free checks, or with no prepaid checks, the page points at Add checks. */
+const LOW_FREE_CHECKS = 10;
 
-function freeRemainingUsd(account, credit, env) {
-  const cap = userMonthlyCapUsd(env);
-  if (!account?.keyHash) return cap;
-  if (credit?.out) return 0;
-  const usage = Number(credit?.usage);
-  if (Number.isFinite(usage)) return Math.max(0, cap - usage);
-  const remaining = Number(credit?.remaining);
-  return Number.isFinite(remaining) ? Math.min(cap, Math.max(0, remaining)) : cap;
+async function freeChecksRemaining(account, deps) {
+  const cap = freeMonthlyChecks(deps.env);
+  const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
+  const used = Number(await redis(deps, ["GET", freeChecksKey(capPerson(account), month)])) || 0;
+  return Math.max(0, cap - Math.max(0, Math.floor(used)));
 }
 
 function checksNotice({ topups = false, freeRemaining = 0, prepaid = 0 } = {}) {
   if (!topups) return "";
-  const lowFree = Number(freeRemaining) < LOW_FREE_USD;
+  const lowFree = Math.floor(Number(freeRemaining) || 0) < LOW_FREE_CHECKS;
   const noPrepaid = Math.floor(Number(prepaid) || 0) <= 0;
   if (!lowFree && !noPrepaid) return "";
   const text = lowFree && noPrepaid
@@ -3721,8 +3739,9 @@ function renderAccount(account, credit, extra = {}) {
   const keeping = account.records === "keep" ? "On" : account.records === "off" ? "Off" : "Not chosen yet";
   const field = extra.field || "";
   const status = extra.status ? `<p class="banner" role="status">${esc(extra.status)}</p>` : "";
-  const freeLeft = typeof extra.freeRemaining === "number" ? extra.freeRemaining : freeRemainingUsd(account, credit, extra.env);
-  const allowance = credit?.out ? esc(OUT_OF_CREDIT) : esc(allowanceLine(freeLeft, extra.env));
+  const freeLeft = typeof extra.freeRemaining === "number" ? extra.freeRemaining : freeMonthlyChecks(extra.env);
+  const allowance = esc(allowanceLine(freeLeft, extra.env));
+  const stopped = credit?.out ? `<p>${esc(OUT_OF_CREDIT)}</p>` : "";
   return page(
     "Your Grill account",
     `<style>
@@ -3740,6 +3759,7 @@ function renderAccount(account, credit, extra = {}) {
     <section id="checks">
       <h2>Checks</h2>
       <p>${allowance}</p>
+      ${stopped}
       <p>${esc(checksLine(extra.checks))}</p>
       ${renderTopup(extra)}
     </section>
@@ -4032,7 +4052,7 @@ function renderRedeemed(env, { number = null, spots = "" } = {}) {
     <p>Early-tester access is on for this email.</p>
     ${member}
     ${offer}
-    <p>Free for life: $${Number.isInteger(userMonthlyCapUsd(env)) ? String(userMonthlyCapUsd(env)) : userMonthlyCapUsd(env).toFixed(2)} of use each month, resets on the 1st.</p>
+    <p>${esc(freeChecksOffer(env))}</p>
     <p>Next: <a href="/start">connect Grill to your AI</a>.</p>
     <p><a class="button" href="/decisions">Your grills</a></p>
     <p><a href="/">Back to Grill</a></p>`,
@@ -4047,7 +4067,7 @@ function renderInviteOff() {
   );
 }
 
-function renderRedeemForm(error, spots = "") {
+function renderRedeemForm(error, spots = "", env = {}) {
   const note = REDEEM_ERRORS[error] ? `<p><strong>${REDEEM_ERRORS[error]}</strong></p>` : "";
   const offer = spots ? `<p>${esc(spots)}</p>` : "";
   return page(
@@ -4055,7 +4075,7 @@ function renderRedeemForm(error, spots = "") {
     `${REDEEM_NARROW}
     <h1>Enter an invite code</h1>
     ${offer}
-    <p>Grill in chat is invite-only. A code lets you in as an early tester: free, $5 of use each month, reset on the 1st.</p>
+    <p>Grill in chat is invite-only. A code lets you in as an early tester: free, ${esc(String(freeMonthlyChecks(env)))} checks a month, reset on the 1st.</p>
     ${note}
     <form method="post" action="/redeem">
       <label for="code">Invite code</label>
@@ -4066,14 +4086,14 @@ function renderRedeemForm(error, spots = "") {
   );
 }
 
-function renderRedeemConfirm(code, spots = "") {
+function renderRedeemConfirm(code, spots = "", env = {}) {
   const offer = spots ? `<p>${esc(spots)}</p>` : "";
   return page(
     "Use this invite code? · Grill",
     `${REDEEM_NARROW}
     <h1>Use this invite code?</h1>
     ${offer}
-    <p>This gives you early-tester access: free, $5 of use each month, reset on the 1st.</p>
+    <p>This gives you early-tester access: free, ${esc(String(freeMonthlyChecks(env)))} checks a month, reset on the 1st.</p>
     <p class="banner">${esc(code)}</p>
     <form method="post" action="/redeem">
       <input type="hidden" name="code" value="${esc(code)}">
@@ -4158,15 +4178,15 @@ export async function handleRedeem(request, deps) {
         const result = await redeemInvite(visitor.email, typed, deps);
         if (result.ok) return seeOther(`${publicOrigin(request)}/redeem?done=1`);
         if (result.reason === "off") return html(200, renderInviteOff());
-        return html(200, renderRedeemForm(result.reason, spots));
+        return html(200, renderRedeemForm(result.reason, spots, deps.env));
       }
       const preview = await previewInvite(visitor.email, typed, deps);
       if (preview.already) return seeOther(`${publicOrigin(request)}/redeem?done=1`);
-      if (preview.confirm) return html(200, renderRedeemConfirm(preview.code, spots));
+      if (preview.confirm) return html(200, renderRedeemConfirm(preview.code, spots, deps.env));
       if (preview.reason === "off") return html(200, renderInviteOff());
-      return html(200, renderRedeemForm(preview.reason || "bad", spots));
+      return html(200, renderRedeemForm(preview.reason || "bad", spots, deps.env));
     }
-    return htmlPage(renderRedeemForm("", spots));
+    return htmlPage(renderRedeemForm("", spots, deps.env));
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
@@ -4489,7 +4509,8 @@ export async function handleDecisions(request, deps) {
     }
     const flashed = readFlashLink(request);
     const rows = await loadRecords(session.account, deps);
-    const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
+    // Reading credit also moves an old one-off key onto the monthly safety cap.
+    if (session.account.keyHash) await creditOf(session.account, deps);
     const checks = await readMonthlyChecks(session.account, deps);
     const waiting = (await loadPendings(session.account, deps)).length;
     const now = typeof deps.now === "number" ? deps.now : Date.now();
@@ -4505,8 +4526,8 @@ export async function handleDecisions(request, deps) {
     const source = decisionSourceId(url.searchParams.get("source"));
     const topupOn = topupsEnabled(deps.env);
     const prepaid = topupOn ? (await readTopup(session.account, deps)).checks : 0;
-    const low = checksNotice({ topups: topupOn, freeRemaining: freeRemainingUsd(session.account, credit, deps.env), prepaid });
-    return htmlPage(renderDecisions(session.account, rows, credit, habits, { now, calendar, freshUrl: flashed, env: deps.env, shares, checks, type, source, low }), { clearFlash: Boolean(flashed) });
+    const low = checksNotice({ topups: topupOn, freeRemaining: await freeChecksRemaining(session.account, deps), prepaid });
+    return htmlPage(renderDecisions(session.account, rows, null, habits, { now, calendar, freshUrl: flashed, env: deps.env, shares, checks, type, source, low }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
@@ -4659,7 +4680,7 @@ export async function handleAccount(request, deps) {
         }
       : null;
     const status = notice || topupNote;
-    const freeRemaining = freeRemainingUsd(session.account, credit, deps.env);
+    const freeRemaining = await freeChecksRemaining(session.account, deps);
     const low = checksNotice({ topups: Boolean(topup), freeRemaining, prepaid: topup?.checks ?? 0 });
     return rememberPage(
       htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, checks, topup, field, status, low, freeRemaining }), { clearFlash: Boolean(flashed) }),

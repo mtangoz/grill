@@ -27,6 +27,7 @@ const ANSWERS = [
   "Planned. No further way in is listed here. The free tool stays free.",
   "If you say yes to keeping records, choices you make are saved at grillyour.ai/decisions (Your grills), with a 14-day look-back and an optional calendar link. You can also say \"look back\" in chat. It stays private, and off until you opt in.",
   "No. Whether an outside judge catches more than the same model starting fresh is not measured yet. Grill’s weekly check of its judge is a regression check on made-up cases. Those cases were used to write the judge’s instructions, so a full score says nothing about how good the judge is. The counts from that check, and what has not been measured, are at grillyour.ai/how-we-test/ (How Grill tests its judge). Examples on this site use invented numbers. They are not a benchmark.",
+  "Grill in chat includes 100 free checks a month. They reset on the 1st. Unused free checks do not roll over. Extra checks are a pack on the account page.",
 ];
 
 // The page lede. The one-line summary the build gives the page, in its head and in llms.txt,

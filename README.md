@@ -111,7 +111,7 @@ Claude Code's advisor (`/advisor`) has a stronger Claude look over the work. Tha
 
 ## What it costs
 
-Grill is free. On your own key you pay the router. Copy and paste uses the assistants you already have.
+Grill is free. On your own key you pay the router. Copy and paste uses the assistants you already have. An account in chat includes 100 free checks a month, reset on the 1st.
 
 Saved decisions and look-back reminders are free today with [Grill in your chat](https://grillyour.ai/start/?ref=readme). Paid plans are off. The free tool stays free and account-free.
 

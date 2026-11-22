@@ -13,7 +13,7 @@ describe("prepaid packs in the public terms and pricing", () => {
   it("says extra checks are prepaid and that a card is not charged on its own", () => {
     const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
     const chat = terms.slice(terms.indexOf("<h2>Grill inside your chat</h2>"), terms.indexOf("<h2>Using Grill fairly</h2>"));
-    assert.match(chat, /\$5 of use each month/);
+    assert.match(chat, /100 free checks a month/);
     assert.match(chat, /prepaid pack/);
     assert.match(chat, /Unused checks from a pack carry over/);
     assert.match(chat, /Grill does not charge a card on its own/);
@@ -33,6 +33,6 @@ describe("prepaid packs in the public terms and pricing", () => {
     assert.match(html, /100 checks for \$5/);
     assert.match(html, /Nothing is charged automatically/);
     assert.match(html, /\$9 a month/);
-    assert.match(html, /The first \$5 of use each month is free/);
+    assert.match(html, /You get 100 free checks a month/);
   });
 });

@@ -186,7 +186,7 @@ describe("public copy states no AI input cost", () => {
     assert.match(terms, new RegExp(STARTER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.match(terms, PRO);
     assert.match(terms, /\$9 a month or \$90 a year/);
-    assert.match(terms, /\$5 of use each month/);
+    assert.match(terms, /100 free checks a month/);
 
     const welcome = renderWelcome({ state: "issued", key: "sk-or-v1-test", limitUsd: 3 }, {});
     assert.match(welcome, PRO);
