@@ -69,6 +69,7 @@ import {
   DEEPEN_ONLY_BIG,
   OWN_PLAN_RULE,
   SCOPE_GUARD,
+  SESSION_TALLY_RULE,
   SOLID_LOOP_RULE,
   clientCompanyHint,
   deepenTestEnabled,
@@ -392,6 +393,7 @@ export function buildGrillTools({ checkOn, authorGuessed = false }) {
     SCOPE_GUARD,
     OWN_PLAN_RULE,
     SOLID_LOOP_RULE,
+    SESSION_TALLY_RULE,
     "If Grill's settings name a judge model, that model is used, and it must be from a different company than the assistant that wrote the subject. A same-company pin is refused. Leave it blank to use Grill's default.",
     "If the result is a job id, call grill_result with it before you reply. Do not ask the user for a job id, and do not tell them how long it takes.",
     FEEDBACK_POINTER,
@@ -860,6 +862,7 @@ async function handle(msg) {
               `${FEEDBACK_POINTER} ` +
               `${OWN_PLAN_RULE} ` +
               `${SOLID_LOOP_RULE} ` +
+              `${SESSION_TALLY_RULE} ` +
               SCOPE_GUARD,
         },
       });

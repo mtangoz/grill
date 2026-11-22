@@ -1663,6 +1663,14 @@ export const OWN_PLAN_RULE =
 export const SOLID_LOOP_RULE =
   "When the person asked for a solid or grilled plan, keep going until the verdict is solid: revise the plan and grill the revised version. solid if counts as not solid yet. Do the same, without being asked, when a plan you wrote comes back shaky or doesn't hold up. Stop after 3 grills of the same plan in total. Each grill is a normal check. You made the revision, so do not ask the person what changed. Then show the final plan with its What Grill changed section. If it is still not solid after 3 grills, say what is still weak, and do not call it solid. Do not loop on a quick or bulk grill unless they asked.";
 
+/**
+ * A running count makes the value visible while the person works. Hosted Grill has no chat
+ * session to count on the server, and only the assistant knows which revisions it made, so the
+ * assistant keeps the count, from grills Grill returned in this conversation only.
+ */
+export const SESSION_TALLY_RULE =
+  "After a What Grill changed section, add one line that counts this conversation's grills, such as: Grill this session: 3 checks, 2 plans changed, 1 kept. Count only grills that grill or grill_result returned in this conversation. Show it once per answer, and never above the verdict.";
+
 const THIN_FILLER = new Set("the a an of to and or for in on is it this that with as by at from be we i you your our will are was were".split(" "));
 
 export function countWords(text) {

@@ -4,7 +4,7 @@
  */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
 import { addDays, confidenceValue, isoDate, lookBackPrompt, parseDecided, parseOutcomes, parseRecords, plainVerdict, REVIEW_DAYS, reviewDateFor, shortDecision } from "./reflection.mjs";
-import { CHALLENGE_KINDS, OWN_PLAN_RULE, SCOPE_GUARD, SOLID_LOOP_RULE, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
+import { CHALLENGE_KINDS, OWN_PLAN_RULE, SCOPE_GUARD, SESSION_TALLY_RULE, SOLID_LOOP_RULE, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
 import { INDEPENDENCE_NOT_VERIFIED, INDEPENDENCE_RELAY, buildGrillTools, groundedAuthor } from "../server/index.mjs";
 import { FEEDBACK_KEEP_DAYS, FEEDBACK_POINTER } from "./feedbackCore.mjs";
 
@@ -1836,6 +1836,7 @@ export const HOSTED_INSTRUCTIONS = [
   SCOPE_GUARD,
   OWN_PLAN_RULE,
   SOLID_LOOP_RULE,
+  SESSION_TALLY_RULE,
 ].join(" ");
 
 /** A tiny Redis used by tests. Production talks to Upstash over fetch instead. */
