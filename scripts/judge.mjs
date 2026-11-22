@@ -48,6 +48,9 @@
  *                      no pinned model. This is not the default grill. The MCP server runs
  *                      it only when GRILL_DEEPEN_TEST is on, the decision was marked big,
  *                      and the person asks. --check is ignored on this path.
+ *   --prior <text>     CANDIDATE, off by default. One challenge from an earlier grill of this
+ *                      plan. Repeatable, at most 6. Sent only when GRILL_JUDGE_PRIOR_CHALLENGES
+ *                      is on; the judge then marks each fixed or open.
  *   --check-flaw <text>
  *                      with --check, also ask Jev whether any challenge identifies this
  *                      specific flaw. The eval loop passes each case's planted flaw; the text
@@ -147,6 +150,10 @@ import {
   MIN_LINK_TIMEOUT_MS,
   buildDeepenMessages,
   buildJudgeMessages,
+  judgeToolFor,
+  normalizePriorChallenges,
+  priorChallengesEnabled,
+  readPriorChallenges,
   checkGrounding,
   DEEPEN_TOOL,
   findCitedSources,
@@ -237,6 +244,7 @@ function parseArgs(argv) {
     check: false,
     checkFlaw: null,
     deepen: false,
+    priors: [],
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -289,6 +297,9 @@ function parseArgs(argv) {
         break;
       case "--check-flaw":
         opts.checkFlaw = next();
+        break;
+      case "--prior":
+        opts.priors.push(next());
         break;
       case "--set-key":
         {
@@ -442,6 +453,12 @@ for (const path of opts.contexts) {
   contextBlocks.push({ label: path, text: block.text });
 }
 
+// ── Earlier challenges (candidate, off by default) ───────────────────────────
+// Sent only when GRILL_JUDGE_PRIOR_CHALLENGES is on, masked like everything else that is sent.
+const priorsGiven = opts.deepen ? [] : normalizePriorChallenges(opts.priors);
+const priorsOn = priorsGiven.length > 0 && priorChallengesEnabled(process.env);
+const priors = priorsOn ? priorsGiven.map((item) => outgoing(item, "earlier challenge")) : [];
+
 // ── The request ──────────────────────────────────────────────────────────────
 const messages = opts.deepen
   ? buildDeepenMessages({ subject: subject.text, question: opts.question })
@@ -450,8 +467,9 @@ const messages = opts.deepen
       question: opts.question,
       contextBlocks,
       subjectLabel,
+      priorChallenges: priors,
     });
-const judgeTool = opts.deepen ? DEEPEN_TOOL : JUDGE_TOOL;
+const judgeTool = opts.deepen ? DEEPEN_TOOL : judgeToolFor({ priorCount: priors.length });
 
 const chainChoice = resolveChain(process.env.JUDGE_MODEL, { defaultChain: DEFAULT_CHAIN });
 if (chainChoice.source === "env-empty") {
@@ -557,6 +575,13 @@ if (opts.dryRun) {
         : "off (--check or JUDGE_CHECK=1 turns it on)"
     }`,
   );
+  if (priorsGiven.length > 0) {
+    console.log(
+      priorsOn
+        ? `[judge] earlier challenges: ${priors.length}, marked fixed or open (GRILL_JUDGE_PRIOR_CHALLENGES on)`
+        : `[judge] earlier challenges: ${priorsGiven.length} given and not sent (GRILL_JUDGE_PRIOR_CHALLENGES is off)`,
+    );
+  }
   console.log(`[judge] prompt: ${promptChars} chars`);
   for (const d of degraded) console.log(`[judge] DEGRADED: ${d}`);
   for (const note of notes) console.log(`[judge] note: ${note}`);
@@ -884,6 +909,8 @@ const result = {
   // null: not asked for. Otherwise readCheck's summary, or `{unavailable: reason}`.
   quality: null,
 };
+// Only when earlier challenges were sent: the judge's marks, each fixed mark checked against the subject.
+if (priors.length > 0) result.priorChallenges = readPriorChallenges(parsed, { priors, subject: subject.text });
 
 /** Why a check request that went out came back with nothing usable, for the report. */
 function checkFailure(r) {
