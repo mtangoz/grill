@@ -3626,14 +3626,18 @@ describe("page sign-in through Clerk's handshake", { concurrency: false }, () =>
     assert.match(fresh.headers.get("location"), /accounts\.example\.test\/sign-in/);
   });
 
-  it("a form sent with no session goes back to the page instead of applying", async () => {
+  it("a form sent with no session goes to sign-in and does not apply", async () => {
     const ctx = world();
     const res = await handleDecisions(
       new Request("https://grillyour.ai/decisions", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "action=delete-all&confirm=delete" }),
       ctx,
     );
-    assert.equal(res.status, 303);
-    assert.equal(res.headers.get("location"), "https://grillyour.ai/decisions");
+    assert.equal(res.status, 302);
+    const loc = new URL(res.headers.get("location"));
+    assert.equal(loc.origin, "https://accounts.example.test");
+    assert.match(loc.pathname, /sign-in/);
+    assert.equal(loc.searchParams.get("redirect_url"), "https://grillyour.ai/decisions?from=signin");
+    assert.equal(ctx.memory.command(["GET", `grill:hosted:acct:${personOf(ctx) || "none"}`]), null);
   });
 });
 

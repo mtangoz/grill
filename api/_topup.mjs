@@ -59,9 +59,29 @@ export function isTopupCheckout(event) {
   return event?.type === "checkout.session.completed" && session?.mode === "payment" && session?.metadata?.grill_topup === "1";
 }
 
+/** A Stripe error code or type. Never a key, and never the error message. */
+function stripeErrorCode(body, status) {
+  const error = body?.error;
+  for (const value of [error?.code, error?.type, status ? String(status) : ""]) {
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!/^[a-z0-9_]{1,80}$/.test(text)) continue;
+    if (text.includes("sk_") || text.includes("rk_") || text.includes("whsec")) continue;
+    return text;
+  }
+  return "";
+}
+
+function stripeFailure(res, what) {
+  const error = new UpstreamError(`${what} (${res?.status || 0})`);
+  error.stripeCode = stripeErrorCode(res?.body, res?.status);
+  return error;
+}
+
 /**
  * Start a one-time Checkout for one pack. Saves the card for a later pack.
  * Sets `account.stripeCustomerId` when it creates a customer. The caller stores the account.
+ * A restricted key needs write on Checkout Sessions, Customers, and PaymentIntents
+ * (`payment_intent_data[setup_future_usage]`). A failure carries `stripeCode` only.
  * @returns {Promise<{state: "off"|"mode"|"unconfigured"|"redirect", url?: string}>}
  */
 export async function startTopupCheckout({ env, fetch: fetchImpl, account, origin }) {
@@ -77,7 +97,7 @@ export async function startTopupCheckout({ env, fetch: fetchImpl, account, origi
       "metadata[grill_account]": account.id,
     });
     customerId = made.body?.id || "";
-    if (!made.ok || !isStripeCustomerId(customerId)) throw new UpstreamError("Stripe didn't save the customer");
+    if (!made.ok || !isStripeCustomerId(customerId)) throw stripeFailure(made, "Stripe didn't save the customer");
     account.stripeCustomerId = customerId;
   }
   const home = checkoutOrigin(origin);
@@ -94,7 +114,7 @@ export async function startTopupCheckout({ env, fetch: fetchImpl, account, origi
   });
   const url = created.body?.url;
   if (!created.ok || typeof url !== "string" || !/^https:\/\/checkout\.stripe\.com\//.test(url)) {
-    throw new UpstreamError(`Stripe didn't start checkout (${created.status})`);
+    throw stripeFailure(created, "Stripe didn't start checkout");
   }
   return { state: "redirect", url };
 }
