@@ -1646,6 +1646,15 @@ export function closingAsk({ big = false, deepenTest = false } = {}) {
 export const SCOPE_GUARD =
   "After a grill, don't start doing the decision (no code changes, no PRs, no product questions) unless the person separately asks. Grill's job ends at the verdict and the record.";
 
+/**
+ * When the assistant grills a plan it wrote, the person should see what the grill did to it.
+ * The verdict is still relayed first and as written, and nothing is asked before it. The
+ * revised plan and its What Grill changed section come after the run note, labelled as the
+ * assistant's own summary, so they are never passed off as Grill's verdict.
+ */
+export const OWN_PLAN_RULE =
+  "When the subject is a plan or recommendation you wrote yourself, revising it after the grill is part of your answer, not starting the decision. Still send the plan as you wrote it. Relay Grill's result first, as written. Then, after the run note, revise the plan and show the revised plan with a short What Grill changed section: one line for each challenge, saying what you changed or why you kept that part, then the verdict before and, if you grilled the revised plan, after. Label that section as your own summary, not Grill's verdict. Do not ask the person anything first.";
+
 const THIN_FILLER = new Set("the a an of to and or for in on is it this that with as by at from be we i you your our will are was were".split(" "));
 
 export function countWords(text) {
