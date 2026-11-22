@@ -453,6 +453,7 @@ const FAMILY_ROWS = {
   "grill:hosted:spendlog": "Spend of that key",
   "grill:hosted:capspend": "Monthly spend counters for the caps",
   "grill:hosted:topup": "Prepaid check balance",
+  "grill:hosted:topuprev": "Prepaid check balance",
   "grill:topup:evt": "Prepaid check balance",
   "grill:topup:session": "Prepaid check balance",
   "grill:hosted:invite": "Invite-code redemption",

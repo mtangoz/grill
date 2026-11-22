@@ -624,15 +624,31 @@ export function topupExhaustedText(origin = "") {
 export function keyAllowanceText({ env = {}, origin = "", topupPresent = false, topupChecks = 0, topupBudgetMicros = 0 } = {}) {
   if (!topupsEnabled(env)) return OUT_OF_CREDIT;
   const checks = Math.max(0, Number(topupChecks) || 0);
-  const budget = Math.max(0, Number(topupBudgetMicros) || 0);
-  if (topupPresent && !(checks > 0 && budget > 0)) return topupExhaustedText(origin);
+  if (topupPresent && !(checks > 0)) return topupExhaustedText(origin);
   return userAllowanceUsedText(origin);
 }
 
-/** Router-key cap: the free monthly allowance, plus prepaid budget still left when top-ups are on. */
-export function keyLimitWithTopup(env = {}, budgetUsd = 0) {
-  const extra = topupsEnabled(env) ? Math.max(0, Number(budgetUsd) || 0) : 0;
-  return Math.round((userMonthlyCapUsd(env) + extra) * 100) / 100;
+/** The OpenRouter key for a hosted account stays finite. */
+export const MAX_HOSTED_KEY_LIMIT_USD = 200;
+
+/**
+ * Router-key cap: the free monthly allowance, plus prepaid budget still left.
+ * Checks left count as budget at the reference cost, and any checks left leave room for one
+ * long grill. Never above MAX_HOSTED_KEY_LIMIT_USD. `usageUsd` keeps the limit above this
+ * month's use so the router does not stop a grill the prepaid balance still covers.
+ */
+export function keyLimitWithTopup(env = {}, budgetUsd = 0, checks = 0, usageUsd = 0) {
+  const free = userMonthlyCapUsd(env);
+  if (!topupsEnabled(env)) return free;
+  const unit = checkUnitUsd(env);
+  const count = Math.max(0, Number(checks) || 0);
+  const fromBudget = Math.max(0, Number(budgetUsd) || 0);
+  let extra = Math.max(fromBudget, count * unit);
+  if (count > 0) extra = Math.max(extra, unit * 3);
+  let limit = free + extra;
+  const usage = Math.max(0, Number(usageUsd) || 0);
+  if (count > 0 && usage >= limit) limit = usage + unit;
+  return Math.round(Math.min(limit, MAX_HOSTED_KEY_LIMIT_USD) * 100) / 100;
 }
 
 /**
@@ -654,6 +670,11 @@ export function hostedAccountKey(id) {
 /** Month spend counters for the caps, in micro-dollars. The person key is a hash of the email, never the email. */
 export function serviceSpendKey(month) {
   return `grill:hosted:capspend:all:${month}`;
+}
+
+/** Pack price credited this UTC month, in micro-dollars. Raises the service cap. Not a person. */
+export function serviceRevenueKey(month) {
+  return `grill:hosted:topuprev:${month}`;
 }
 
 export function personSpendKey(email, month) {
@@ -717,6 +738,27 @@ export function toMicros(usd) {
 export function chargeableUsd(costUsd) {
   const n = Number(costUsd);
   return Number.isFinite(n) && n > 0 ? n : TYPICAL_GRILL_USD;
+}
+
+/** Reference cost of one check. GRILL_CHECK_UNIT_USD overrides it. A bad value keeps $0.03. */
+export function checkUnitUsd(env = {}) {
+  const raw = env.GRILL_CHECK_UNIT_USD;
+  if (raw != null && String(raw).trim() !== "") {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0 && n <= 10) return Math.round(n * 1_000_000) / 1_000_000;
+  }
+  return TYPICAL_GRILL_USD;
+}
+
+/**
+ * Checks one grill draws from a prepaid balance. A normal grill ($0.03) is 1.
+ * An unreported cost uses the same fallback, so it is also 1.
+ */
+export function checksForCost(costUsd, env = {}) {
+  const unitMicros = toMicros(checkUnitUsd(env));
+  const costMicros = toMicros(chargeableUsd(costUsd));
+  if (unitMicros <= 0) return 1;
+  return Math.max(1, Math.ceil(costMicros / unitMicros));
 }
 
 /**
@@ -889,18 +931,18 @@ export function checksLine(count) {
  * month's counters. A grill is allowed while the spend so far is under the cap, so
  * one grill can finish a little over; the next one is stopped.
  */
-export function capBlock({ serviceMicros = 0, userMicros = 0, env = {}, topupChecks = 0, topupBudgetMicros = 0, topupPresent = false, origin = "" } = {}) {
-  const serviceFull = (Number(serviceMicros) || 0) >= toMicros(monthlyCapUsd(env));
+export function capBlock({ serviceMicros = 0, userMicros = 0, env = {}, topupChecks = 0, topupBudgetMicros = 0, topupPresent = false, origin = "", revenueMicros = 0 } = {}) {
+  const revenue = Math.max(0, Math.floor(Number(revenueMicros) || 0));
+  const serviceFull = (Number(serviceMicros) || 0) >= toMicros(monthlyCapUsd(env)) + revenue;
   const spend = Number(userMicros) || 0;
   const free = toMicros(userMonthlyCapUsd(env));
   const checks = Math.max(0, Number(topupChecks) || 0);
-  const budget = Math.max(0, Number(topupBudgetMicros) || 0);
-  const room = topupsEnabled(env) && checks > 0 && budget > 0;
-  const userCap = free + (room ? budget : 0);
-  if (serviceFull && !room) return { text: SERVICE_CAP_TEXT, which: "service" };
-  if (spend >= userCap) {
+  // A prepaid check balance is not stopped by the free allowance or the service cap.
+  if (topupsEnabled(env) && checks > 0) return null;
+  if (serviceFull) return { text: SERVICE_CAP_TEXT, which: "service" };
+  if (spend >= free) {
     if (!topupsEnabled(env)) return { text: USER_CAP_TEXT, which: "user" };
-    if (topupPresent && !room) return { text: topupExhaustedText(origin), which: "topup" };
+    if (topupPresent) return { text: topupExhaustedText(origin), which: "topup" };
     return { text: userAllowanceUsedText(origin), which: "user" };
   }
   return null;
