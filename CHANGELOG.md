@@ -8,6 +8,10 @@ A change may add one optional line when someone has agreed to be named. Leave th
 
 Which channel each change reaches. **At merge and deploy:** Grill in your chat and the website change when the branch is deployed, and the plugin installed from git and the Docker image change at merge. **At the next release:** npm (`npx -y grillyour`), the `.mcpb` bundle and the skill zip still ship 0.2.0 until a new release is cut. No version number changes here.
 
+### At merge and deploy: Grill in your chat
+
+- A free or trial account still stops at 30 completed checks a UTC day. An account whose email has an active subscription in the Pro store stops at `GRILL_PRO_DAILY_LIMIT` instead (default 100; a value that is not a whole number stays 100; it never goes below 30). That store is read only after the day's 30th completed check. The stop says it resets at midnight UTC and how many hours are left. A free account is also told the monthly allowance resets on the 1st. A paid account is told how many of this month's 200 checks it has used. The monthly count and the dollar caps are unchanged.
+
 ### At merge: the plugin from git and the Docker image (at the next release: npm and the .mcpb)
 
 - The installed grill tool's opening line says the judge is from a different company when Grill can tell which wrote it. The same condition is in the npm description and the Smithery judge setting.
