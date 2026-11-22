@@ -39,7 +39,7 @@ These are set in production at grillyour.ai, and on any preview you test with. T
 | `GRILL_TOPUP_CHECKS` | Optional. Checks in one pack. Default `100`. |
 | `GRILL_TOPUP_PRICE_CENTS` | Optional. What the person pays, in cents. Default `400`. |
 | `GRILL_TOPUP_BUDGET_USD` | Optional. Internal cap added, per pack, to that person's monthly cap and to their router key. Unused pack budget carries over with the unused checks. Not shown on the site or in chat. A bad value keeps the code default. |
-| `STRIPE_SECRET_KEY` | Used for Checkout. On a preview (`VERCEL_ENV=preview`) it must be a test key. In production it must be a live key. |
+| `STRIPE_SECRET_KEY` | Used for Checkout. A secret key (`sk_`) or a restricted key (`rk_`) is accepted. On a preview (`VERCEL_ENV=preview` or `development`) it must be a test key. In production it must be a live key. |
 | `STRIPE_WEBHOOK_SECRET` | Signs `api/stripe-webhook`. The same endpoint credits a pack when the event is a paid one-time Checkout with top-up metadata. A repeat delivery does not credit twice. |
 | `CLERK_ISSUER` | Clerk Frontend API URL, no trailing slash. This is the authorization server in the protected-resource metadata. It does not serve the sign-in page. |
 | `CLERK_SIGN_IN_URL` | Optional. Absolute URL of the Clerk Account Portal sign-in page. When unset, Grill derives it from `CLERK_ISSUER`: `name.clerk.accounts.dev` becomes `https://name.accounts.dev/sign-in`, `name.clerk.accountsstage.dev` becomes `https://name.accountsstage.dev/sign-in`, and `clerk.example.com` becomes `https://accounts.example.com/sign-in`. Set this when the Frontend API host does not follow those shapes. |

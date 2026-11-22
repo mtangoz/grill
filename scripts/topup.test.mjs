@@ -338,6 +338,28 @@ describe("the account page sells a pack", () => {
     assert.match(also.headers.get("location"), /topup=unready/);
     assert.equal(production.stripe.calls.length, 0);
   });
+
+  it("counts a restricted key as live or test on preview and on production", async () => {
+    const cases = [
+      { vercel: "preview", key: "rk_live_not_for_preview", ready: false },
+      { vercel: "preview", key: "rk_test_for_preview", ready: true },
+      { vercel: "production", key: "rk_live_for_production", ready: true },
+      { vercel: "production", key: "rk_test_not_for_production", ready: false },
+    ];
+    for (const item of cases) {
+      resetHostedCaches();
+      const ctx = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE, VERCEL_ENV: item.vercel, STRIPE_SECRET_KEY: item.key });
+      const res = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
+      assert.equal(res.status, 303, `${item.vercel} ${item.key}`);
+      if (item.ready) {
+        assert.equal(res.headers.get("location"), "https://checkout.stripe.com/c/pay/cs_test_topup", `${item.vercel} ${item.key}`);
+        assert.equal(ctx.stripe.calls.some((call) => call.url.endsWith("/v1/checkout/sessions")), true, `${item.vercel} ${item.key}`);
+      } else {
+        assert.match(res.headers.get("location"), /topup=unready/, `${item.vercel} ${item.key}`);
+        assert.equal(ctx.stripe.calls.length, 0, `${item.vercel} ${item.key}`);
+      }
+    }
+  });
 });
 
 describe("chat stops at the free allowance", () => {
