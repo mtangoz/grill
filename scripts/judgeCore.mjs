@@ -1655,6 +1655,14 @@ export const SCOPE_GUARD =
 export const OWN_PLAN_RULE =
   "When the subject is a plan or recommendation you wrote yourself, revising it after the grill is part of your answer, not starting the decision. Still send the plan as you wrote it. Relay Grill's result first, as written. Then, after the run note, revise the plan and show the revised plan with a short What Grill changed section: one line for each challenge, saying what you changed or why you kept that part, then the verdict before and, if you grilled the revised plan, after. Label that section as your own summary, not Grill's verdict. Do not ask the person anything first.";
 
+/**
+ * When the person wants a solid plan, or the assistant's own plan came back weak, the
+ * assistant revises and grills again. The cap keeps a loop from spending checks forever,
+ * and a plan that is still weak after it is reported as weak, never as solid.
+ */
+export const SOLID_LOOP_RULE =
+  "When the person asked for a solid or grilled plan, keep going until the verdict is solid: revise the plan and grill the revised version. solid if counts as not solid yet. Do the same, without being asked, when a plan you wrote comes back shaky or doesn't hold up. Stop after 3 grills of the same plan in total. Each grill is a normal check. You made the revision, so do not ask the person what changed. Then show the final plan with its What Grill changed section. If it is still not solid after 3 grills, say what is still weak, and do not call it solid. Do not loop on a quick or bulk grill unless they asked.";
+
 const THIN_FILLER = new Set("the a an of to and or for in on is it this that with as by at from be we i you your our will are was were".split(" "));
 
 export function countWords(text) {
