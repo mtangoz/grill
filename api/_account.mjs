@@ -1293,7 +1293,12 @@ export async function handlePro(request, deps) {
   const env = deps.env;
   const secret = sessionSecret(env);
   const store = deps.store ?? openStore(env, deps.fetch);
-  if (!secret || !store) return html(503, missingSetupPage(env));
+  if (!secret || !store) {
+    return new Response(null, {
+      status: 308,
+      headers: { Location: "/start", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" },
+    });
+  }
   const now = deps.now ?? Date.now();
   const bound = { ...deps, store, now };
   if (request.method === "GET") {

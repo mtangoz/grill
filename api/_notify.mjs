@@ -173,7 +173,7 @@ What doesn't change:
 - The free tool stays free and account-free. Bring your own key, no sign-in, nothing stored.
 - Pro is opt-in. What's kept and where: ${PRIVACY_URL}
 
-Try it: https://grillyour.ai/pro
+Try it: ${START_URL}
 
 This is the only email this list gets. We delete the list 60 days after this email.
 
