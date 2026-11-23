@@ -427,6 +427,19 @@ describe("automatic add on the account page", () => {
     assert.equal(stored.stripePaymentMethodId, "pm_savedcard1");
   });
 
+  it("deleting the account removes the auto-add choice time", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    await handleAccount(accountRequest("GET"), ctx);
+    const account = await storedAccount(ctx);
+    const off = await handleAccount(accountRequest("POST", { body: "action=auto-topup&value=off", origin: "https://grillyour.ai" }), ctx);
+    assert.equal(off.status, 303);
+    assert.match(String(await ctx.redis(["GET", `grill:hosted:autoat:${account.id}`])), /^\d+:0$/);
+    const gone = await handleAccount(accountRequest("POST", { body: "action=delete-account&confirm=delete", origin: "https://grillyour.ai" }), ctx);
+    assert.equal(gone.status, 303);
+    assert.equal(await ctx.redis(["GET", `grill:hosted:autoat:${account.id}`]), null);
+  });
+
   it("keeps an off that lands after the webhook has reread the account", async () => {
     resetHostedCaches();
     const ctx = world();

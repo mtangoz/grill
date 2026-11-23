@@ -4167,6 +4167,7 @@ async function deleteAccount(account, deps, sub) {
   await redis(deps, ["DEL", spendLogKey(account.id)]);
   await redis(deps, ["DEL", disclosedKey(account.id)]);
   await redis(deps, ["DEL", outsideMarkKey(account.id)]);
+  await redis(deps, ["DEL", autoChoiceKey(account.id)]);
   await redis(deps, ["DEL", recordKeyRedisKey(account.id)]);
   await deleteFeedbackForAccount((command) => redis(deps, command), account.id);
   await calendarOff(account, deps);
