@@ -152,11 +152,12 @@ function world(extra = {}) {
 describe("account page allowance", () => {
   it("shows the internal allowance, and the ordinary one for everyone else", async () => {
     resetHostedCaches();
-    const internal = world({ GRILL_INTERNAL_EMAILS: "Tester@Example.com", GRILL_TOPUPS: "on", GRILL_AUTO_TOPUP: "on" });
+    const internal = world({ GRILL_INTERNAL_EMAILS: "Tester@Example.com", GRILL_TOPUPS: "on", GRILL_AUTO_TOPUP: "on", GRILL_TOPUP_PRICE_ID: "price_testpack1" });
     const res = await handleAccount(new Request("https://grillyour.ai/account", { headers: { cookie: `__session=${signJwt({ iss: "https://clerk.example.test", sub: "user_tester", exp: Math.floor(Date.now() / 1000) + 3600 })}` } }), internal);
     const html = await res.text();
     assert.equal(res.status, 200);
     assert.match(html, /Free: 2000 checks a month, resets on the 1st\./);
+    assert.match(html, /Need more than 2000 a month\? Add 100 checks for \$5/);
     assert.doesNotMatch(html, /\binternal\b/i);
     assert.match(html, /If automatic add is on, another pack is charged to your saved card when you run out, up to your monthly ceiling\. You can turn it off on your account page\./);
     assert.doesNotMatch(html, /Nothing is charged later on its own/);

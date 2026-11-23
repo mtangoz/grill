@@ -90,7 +90,7 @@ function stripeFailure(res, what) {
 /**
  * Start a one-time Checkout for one pack. Card only, so Apple Pay and Google Pay
  * still show, and Link, Klarna, Cash App and Amazon Pay do not. Saves that card
- * for a later off-session pack. Sets `account.stripeCustomerId` when it creates
+ * for a later off-session pack only when auto-add is ticked. Sets `account.stripeCustomerId` when it creates
  * a customer. The caller stores the account.
  * A restricted key needs write on Checkout Sessions, Customers, and PaymentIntents
  * (`payment_intent_data[setup_future_usage]`). A failure carries `stripeCode` only.
@@ -119,7 +119,7 @@ export async function startTopupCheckout({ env, fetch: fetchImpl, account, origi
     "line_items[0][price]": price,
     "line_items[0][quantity]": "1",
     "payment_method_types[0]": "card",
-    "payment_intent_data[setup_future_usage]": "off_session",
+    ...(autoTopup ? { "payment_intent_data[setup_future_usage]": "off_session" } : {}),
     success_url: `${home}/account?topup=ok&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${home}/account?topup=cancel`,
     "metadata[grill_topup]": "1",
@@ -269,19 +269,97 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
   }
   if (autoTopupEnabled(env)) {
     const choice = session.metadata?.grill_auto_topup;
-    if (choice === "1" || choice === "0") account.autoTopup = choice === "1";
     if (!account.autoTopupCeilingCents) account.autoTopupCeilingCents = autoTopupCeilingCents(account);
+    const sessionCreatedMs = Number(session.created) > 0 ? Number(session.created) * 1000 : 0;
+    const changedAt = Number(account.autoTopupChangedAt) || 0;
+    const startedAt = account.autoTopupCheckoutSession === String(session.id || "") ? Number(account.autoTopupCheckoutAt) || 0 : 0;
+    // Our own millisecond stamp orders a toggle and a checkout inside one Stripe second. Without it, an explicit off in that second stands.
+    const newerChoice = startedAt > 0 ? changedAt > startedAt : sessionCreatedMs > 0 && changedAt >= sessionCreatedMs;
+    const loadedChangedAt = changedAt;
+    if (newerChoice) {
+      // The person changed auto-add after this checkout started. That choice stands.
+    } else if (choice === "1") {
+      const wasOn = account.autoTopup === true;
+      let method = "";
+      try {
+        const { stripe } = proClients(env, fetchImpl);
+        const pi = await loadPaymentIntent(stripe, session.payment_intent);
+        if (pi) {
+          rememberCard(account, pi);
+          method = paymentMethodId(pi);
+        }
+      } catch {
+        // The pack is already paid. A failed card read does not turn auto-add on.
+      }
+      if (method.startsWith("pm_")) {
+        account.autoTopup = true;
+        delete account.autoTopupKeptCard;
+        delete account.autoTopupCardMissed;
+      } else if (wasOn && typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_")) {
+        account.autoTopupKeptCard = true;
+        delete account.autoTopupCardMissed;
+      } else if (!wasOn) {
+        account.autoTopupCardMissed = true;
+      }
+    } else if (choice === "0") {
+      account.autoTopup = false;
+      delete account.autoTopupKeptCard;
+      delete account.autoTopupCardMissed;
+    }
+    const freshRaw = await redis(["GET", hostedAccountKey(accountId)]);
+    let fresh = null;
     try {
-      const { stripe } = proClients(env, fetchImpl);
-      rememberCard(account, await loadPaymentIntent(stripe, session.payment_intent));
+      fresh = JSON.parse(freshRaw);
     } catch {
-      // The pack is already paid. A missing card can be saved on the next pack.
+      fresh = null;
+    }
+    if (fresh && Number(fresh.autoTopupChangedAt) > loadedChangedAt) {
+      if (fresh.autoTopup === true || fresh.autoTopup === false) account.autoTopup = fresh.autoTopup;
+      else delete account.autoTopup;
+      account.autoTopupChangedAt = fresh.autoTopupChangedAt;
+      if (typeof fresh.stripePaymentMethodId === "string") account.stripePaymentMethodId = fresh.stripePaymentMethodId;
+      else delete account.stripePaymentMethodId;
+      if (typeof fresh.cardLast4 === "string") account.cardLast4 = fresh.cardLast4;
+      else delete account.cardLast4;
+      delete account.autoTopupKeptCard;
+      delete account.autoTopupCardMissed;
+      if (fresh.autoTopupKeptCard === true) account.autoTopupKeptCard = true;
+      if (fresh.autoTopupCardMissed === true) account.autoTopupCardMissed = true;
+    }
+    const adopt = (choice) => {
+      if (!choice) return false;
+      const afterCheckout = startedAt > 0 ? choice.at > startedAt : sessionCreatedMs > 0 && choice.at >= sessionCreatedMs;
+      if (!(choice.at > Number(account.autoTopupChangedAt || 0)) || !afterCheckout) return false;
+      account.autoTopup = choice.on;
+      account.autoTopupChangedAt = choice.at;
+      delete account.autoTopupKeptCard;
+      delete account.autoTopupCardMissed;
+      return true;
+    };
+    adopt(readAutoChoice(await redis(["GET", autoChoiceKey(accountId)])));
+    await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
+    if (adopt(readAutoChoice(await redis(["GET", autoChoiceKey(accountId)])))) {
+      await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
     }
   }
-  await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
+  if (!autoTopupEnabled(env)) await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
   // After the balance write, so a page that sees this value is reading a committed credit.
   await redis(["SET", sessionKey, "credited", "EX", String(EVENT_TTL_SECONDS)]);
   return { action: "credited" };
+}
+
+export function autoChoiceKey(accountId) {
+  return `grill:hosted:autoat:${accountId}`;
+}
+
+export function autoChoiceRecord(at, on) {
+  return `${Math.floor(Number(at) || 0)}:${on ? "1" : "0"}`;
+}
+
+function readAutoChoice(raw) {
+  const match = /^(\d+):([01])$/.exec(String(raw || ""));
+  if (!match) return null;
+  return { at: Number(match[1]), on: match[2] === "1" };
 }
 
 export function isAutoTopupPayment(event) {

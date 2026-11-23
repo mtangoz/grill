@@ -336,7 +336,7 @@ describe("the account page sells a pack", () => {
     assert.equal(session.params.get("payment_method_types[0]"), "card");
     assert.equal(session.params.get("payment_method_types[1]"), null);
     assert.equal([...session.params.values()].includes("link"), false);
-    assert.equal(session.params.get("payment_intent_data[setup_future_usage]"), "off_session");
+    assert.equal(session.params.get("payment_intent_data[setup_future_usage]"), null);
     assert.equal(session.params.get("metadata[grill_topup]"), "1");
     assert.equal(session.params.get("success_url"), "https://grillyour.ai/account?topup=ok&session_id={CHECKOUT_SESSION_ID}");
     assert.equal(session.params.get("customer"), "cus_topuptester");

@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, setMonthlyLimit, WELCOME_HEADERS } from "./_pro.mjs";
-import { chargeAutoTopup, startTopupCheckout, topupPriceLabel } from "./_topup.mjs";
+import { autoChoiceKey, autoChoiceRecord, chargeAutoTopup, startTopupCheckout, topupPriceLabel } from "./_topup.mjs";
 import { assignFoundingMember, foundingMemberLine, readFoundingNumber } from "./_founding.mjs";
 import { refFromCookie } from "./_start.mjs";
 import { waitlistFormHtml } from "./_waitlist.mjs";
@@ -1120,6 +1120,12 @@ async function saveAccount(account, deps) {
   if (typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_")) copy.stripePaymentMethodId = account.stripePaymentMethodId;
   if (typeof account.cardLast4 === "string" && /^\d{4}$/.test(account.cardLast4)) copy.cardLast4 = account.cardLast4;
   if (account.autoTopup === true || account.autoTopup === false) copy.autoTopup = account.autoTopup;
+  if (Number.isFinite(account.autoTopupChangedAt) && account.autoTopupChangedAt > 0) copy.autoTopupChangedAt = account.autoTopupChangedAt;
+  if (Number.isFinite(account.autoTopupCheckoutAt) && account.autoTopupCheckoutAt > 0) copy.autoTopupCheckoutAt = account.autoTopupCheckoutAt;
+  if (account.autoTopupCheckoutChoice === "1" || account.autoTopupCheckoutChoice === "0") copy.autoTopupCheckoutChoice = account.autoTopupCheckoutChoice;
+  if (typeof account.autoTopupCheckoutSession === "string" && account.autoTopupCheckoutSession.startsWith("cs_")) copy.autoTopupCheckoutSession = account.autoTopupCheckoutSession;
+  if (account.autoTopupKeptCard === true) copy.autoTopupKeptCard = true;
+  if (account.autoTopupCardMissed === true) copy.autoTopupCardMissed = true;
   if ([1000, 2000, 5000].includes(Number(account.autoTopupCeilingCents))) copy.autoTopupCeilingCents = Number(account.autoTopupCeilingCents);
   if (account.autoTopupFailure && typeof account.autoTopupFailure.code === "string") copy.autoTopupFailure = { code: account.autoTopupFailure.code, at: account.autoTopupFailure.at || "" };
   // Absent means the Monday note is on. Only an explicit off is stored.
@@ -2518,6 +2524,7 @@ async function clerkCookieIdentity(request, deps) {
 // same exchange Clerk's own server SDK does (format "nonce").
 const PAGE_COOKIE = "__Host-grill_page";
 const FLASH_COOKIE = "__Host-grill_flash";
+const SAVED_COOKIE = "__Host-grill_saved";
 const FLASH_SECONDS = 120;
 const HANDSHAKE_STATE_COOKIE = "__Host-grill_hs";
 const HANDSHAKE_MARK = "__grill_hs";
@@ -2575,6 +2582,11 @@ function rememberPage(response, sub, deps) {
 /** The new calendar link, carried to the next GET and then forgotten. Not stored on the server. */
 function flashCookieHeader(value, maxAge = FLASH_SECONDS) {
   return `${FLASH_COOKIE}=${value ? encodeURIComponent(value) : ""}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+}
+
+/** A one-time saved line. The calendar-link notice is an event, so a reload of the same address does not announce it again. */
+function savedNoticeCookie(value, maxAge = FLASH_SECONDS) {
+  return `${SAVED_COOKIE}=${value ? encodeURIComponent(value) : ""}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
 }
 
 function readFlashLink(request) {
@@ -3274,9 +3286,10 @@ function html(status, body) {
   return new Response(body, { status, headers: WELCOME_HEADERS });
 }
 
-function htmlPage(body, { clearFlash = false } = {}) {
+function htmlPage(body, { clearFlash = false, clearSaved = false } = {}) {
   const res = html(200, body);
   if (clearFlash) res.headers.append("Set-Cookie", flashCookieHeader("", 0));
+  if (clearSaved) res.headers.append("Set-Cookie", savedNoticeCookie("", 0));
   return res;
 }
 
@@ -3773,6 +3786,8 @@ function renderDeleteAllConfirm() {
 }
 
 const ACCOUNT_STYLE = `<style>
+    :root { --help:#4a453f; --switch-off:#7a746c; }
+    @media (prefers-color-scheme: dark) { :root { --help:#c8c0b6; } }
     @media (max-width: 40rem) {
       button, .button { width: 100%; box-sizing: border-box; text-align: center; }
       #delete-account a.danger { width: auto; }
@@ -3782,12 +3797,16 @@ const ACCOUNT_STYLE = `<style>
     .balance .num { display: block; font-size: 3.4rem; line-height: 0.95; letter-spacing: -0.04em; font-weight: 650; color: var(--ink); }
     .buy { margin: 1rem 0 0.4rem; }
     label.pack-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 0.75rem; min-height: 44px; font-weight: 650; color: var(--ink); }
-    label.pack-option input { appearance: none; width: 44px; height: 26px; min-height: 26px; margin: 0; flex: 0 0 auto; border-radius: 999px; background: var(--rule); position: relative; }
+    .pack-switch { display: inline-flex; align-items: center; gap: 8px; flex-direction: row-reverse; }
+    .pack-switch .when-on { display: none; }
+    .pack-switch input:checked ~ .when-off { display: none; }
+    .pack-switch input:checked ~ .when-on { display: inline; }
+    label.pack-option input { appearance: none; width: 44px; height: 26px; min-height: 26px; margin: 0; flex: 0 0 auto; border-radius: 999px; background: var(--switch-off); box-shadow: inset 0 0 0 1px var(--switch-off); position: relative; }
     label.pack-option input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: var(--paper); }
     label.pack-option input:checked { background: var(--ink); }
     label.pack-option input:checked::after { left: 20px; }
-    button.switch, p.switch { position: relative; display: flex; align-items: center; width: 100%; min-height: 44px; margin: 0.75rem 0 0.35rem; padding: 10px 68px 10px 14px; box-sizing: border-box; border: 1px solid var(--rule); border-radius: 12px; background: transparent; color: var(--ink); font: 650 0.98rem var(--sans); text-align: left; }
-    button.switch::after, p.switch::after { content: ""; position: absolute; right: 12px; top: 50%; width: 44px; height: 26px; margin-top: -13px; border-radius: 999px; background: var(--rule); }
+    button.switch, p.switch { position: relative; display: flex; align-items: center; width: 100%; min-height: 44px; margin: 0.75rem 0 0.35rem; padding: 10px 68px 10px 14px; box-sizing: border-box; border: 1px solid var(--switch-off); border-radius: 12px; background: transparent; color: var(--ink); font: 650 0.98rem var(--sans); text-align: left; }
+    button.switch::after, p.switch::after { content: ""; position: absolute; right: 12px; top: 50%; width: 44px; height: 26px; margin-top: -13px; border-radius: 999px; background: var(--switch-off); box-shadow: inset 0 0 0 1px var(--switch-off); }
     button.switch::before, p.switch::before { content: ""; position: absolute; right: 32px; top: 50%; width: 22px; height: 22px; margin-top: -11px; border-radius: 50%; background: var(--paper); z-index: 1; }
     button.switch[aria-pressed="true"] { border-color: var(--ink); }
     button.switch[aria-pressed="true"]::after { background: var(--ink); }
@@ -3795,14 +3814,16 @@ const ACCOUNT_STYLE = `<style>
     .setting { border-top: 1px solid var(--rule); padding: 0.7rem 0 0.35rem; }
     .setting-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
     .setting-name { flex: 1 1 8rem; font-weight: 650; color: var(--ink); }
-    .state { flex: 0 0 auto; font-weight: 700; color: var(--quiet); }
+    .state { flex: 0 0 auto; font-weight: 700; color: var(--help); }
     .state[data-state="on"] { color: var(--ink); }
+    .small, details.quiet summary, .consent { color: var(--help); }
     .setting-row button { flex: 1 1 100%; }
     @media (min-width: 40.01rem) { .setting-row button { flex: 0 0 auto; width: auto; } }
     #settings > h2 { margin-bottom: 0.2rem; }
     details summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--ink); }
     details.quiet { margin-top: 0.4rem; }
-    details.quiet summary { color: var(--quiet); font-weight: 500; }
+    details.quiet summary { font-weight: 650; }
+    details.more-checks summary { color: var(--ink); font-size: 1rem; font-weight: 550; letter-spacing: 0; text-transform: none; }
     #delete-account { margin: 2.6rem 0 0; padding-top: 1.2rem; border-top: 1px solid var(--rule); }
     #delete-account summary { list-style: none; color: #8d3b32; font-weight: 650; }
     #delete-account summary::-webkit-details-marker { display: none; }
@@ -3839,7 +3860,7 @@ function renderAccount(account, credit, extra = {}) {
       <p class="balance"><span class="num">${left}</span> ${noun} left</p>
       <p class="small">${prepaid > 0 ? "Free checks reset on the 1st. Prepaid checks carry over." : "Free checks reset on the 1st."}</p>
       ${stopped}
-      ${renderTopup(extra)}
+      ${renderTopup(extra, { account, freeLeft, prepaid })}
       ${renderHowChecks(extra, allowance)}
     </section>
     <section id="settings">
@@ -3926,7 +3947,7 @@ async function autoTopupView(account, deps) {
   const spent = Number(await redis(deps, ["GET", autoTopupSpentKey(account.id, month)])) || 0;
   const hasCard = typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_");
   return {
-    on: account.autoTopup === true && hasCard,
+    on: account.autoTopup === true,
     hasCard,
     ceilingCents: autoTopupCeilingCents(account),
     spentCents: Math.max(0, spent),
@@ -3941,7 +3962,10 @@ function autoFailureSentence(code) {
   return "The payment didn't go through.";
 }
 
-function renderTopup(extra) {
+/** The big pack button shows at this many free checks left, and only when nothing is prepaid. */
+const PACK_BUTTON_FREE = 10;
+
+function renderTopup(extra, { account = null, freeLeft = 0, prepaid = 0 } = {}) {
   const topup = extra.topup;
   if (!topup) return "";
   const pack = topup.pack;
@@ -3951,13 +3975,19 @@ function renderTopup(extra) {
   const consent = auto
     ? `<p class="small consent">Automatically add another ${pack.checks} checks (${price}) when I run out, up to ${esc(topupPriceLabel(auto.ceilingCents))} a month. You can turn this off anytime on this page.</p>`
     : "";
+  const opted = Boolean(auto?.on);
   const choice = auto
-    ? `<label class="pack-option"><span>Auto-add with this pack</span><input type="checkbox" name="auto_topup" value="1"${auto.on ? " checked" : ""}></label>`
+    ? `<label class="pack-option"><span>Auto-add with this pack</span> <span class="pack-switch"><input type="checkbox" name="auto_topup" value="1"${opted ? " checked" : ""}><span class="state when-off" data-state="off">Off</span><span class="state when-on" data-state="on">On</span></span></label>`
     : "";
-  const buy = pack.priceId
+  const form = pack.priceId
     ? `<form method="post" action="/account" class="buy">${field}<input type="hidden" name="action" value="topup">${consent}${choice}<button type="submit" class="primary">Add ${pack.checks} checks · ${price}</button></form>`
     : `<p>Adding checks isn't ready on this server yet.</p>`;
-  return `${buy}${auto ? renderAutoTopup(auto, field, pack) : ""}`;
+  const urgent = prepaid <= 0 && freeLeft <= PACK_BUTTON_FREE;
+  const allowance = freeChecksFor(extra.env, account);
+  const buy = !pack.priceId || urgent
+    ? form
+    : `<details class="more-checks"><summary>Need more than ${allowance} a month? Add ${pack.checks} checks for ${price} ▸</summary>${form}</details>`;
+  return `${buy}${auto && (auto.hasCard || auto.on) ? renderAutoTopup(auto, field) : ""}`;
 }
 
 function renderHowChecks(extra, allowance) {
@@ -3973,16 +4003,15 @@ function renderHowChecks(extra, allowance) {
     <summary>How checks work</summary>
     <p>${allowance}</p>
     <p>${esc(lead)}</p>
-    <p class="small">One payment. A card you use can be saved for the next pack.</p>
+    <p class="small">${topup.auto ? "One payment. A card is saved for a later pack only when auto-add is ticked." : "One payment."}</p>
   </details>`;
 }
 
-function renderAutoTopup(auto, field, pack) {
+function renderAutoTopup(auto, field) {
   const state = auto.on ? "On" : "Off";
   const pressed = auto.on ? "true" : "false";
   const card = auto.last4 ? ` Card ending ${esc(auto.last4)}.` : "";
   const why = !auto.on && auto.failure ? `<p>${esc(autoFailureSentence(auto.failure))}</p>` : "";
-  const needCard = !auto.on && !auto.hasCard ? `<p class="small">Buy a pack to save a card, then you can turn this on.</p>` : "";
   const label = `Auto-add when I run out · ${state}`;
   const control = auto.on
     ? `<form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-topup"><button type="submit" class="switch" name="value" value="off" aria-pressed="true" data-state="on">${label}</button></form>`
@@ -3994,7 +4023,6 @@ function renderAutoTopup(auto, field, pack) {
     .join("");
   return `${control}
     ${why}
-    ${needCard}
     <details class="ceiling"${auto.on ? " open" : ""}>
       <summary>Monthly ceiling</summary>
       <p>Up to ${esc(topupPriceLabel(auto.ceilingCents))} a month. Spent this month: ${esc(topupPriceLabel(auto.spentCents))}.${card}</p>
@@ -4139,6 +4167,7 @@ async function deleteAccount(account, deps, sub) {
   await redis(deps, ["DEL", spendLogKey(account.id)]);
   await redis(deps, ["DEL", disclosedKey(account.id)]);
   await redis(deps, ["DEL", outsideMarkKey(account.id)]);
+  await redis(deps, ["DEL", autoChoiceKey(account.id)]);
   await redis(deps, ["DEL", recordKeyRedisKey(account.id)]);
   await deleteFeedbackForAccount((command) => redis(deps, command), account.id);
   await calendarOff(account, deps);
@@ -4725,6 +4754,50 @@ const ACCOUNT_NOTICES = {
   origin: "That request did not come from this site. Try the button again.",
 };
 
+const SAVED_NOTICES = {
+  "records-on": "Saved. Decision records are on.",
+  "records-off": "Saved. Decision records are off.",
+  "email-on": "Saved. Weekly email is on.",
+  "email-off": "Saved. Weekly email is off.",
+  "calendar-on": "Saved. Calendar reminders are on.",
+  "calendar-off": "Saved. Calendar reminders are off.",
+  "calendar-titles-on": "Saved. Calendar titles are on.",
+  "calendar-titles-off": "Saved. Calendar titles are off.",
+  "calendar-link": "Saved. A new calendar link is ready.",
+  "ceiling-10": "Saved. The monthly ceiling is $10.",
+  "ceiling-20": "Saved. The monthly ceiling is $20.",
+  "ceiling-50": "Saved. The monthly ceiling is $50.",
+  "auto-on": "Saved. Auto-add is on.",
+  "auto-off": "Saved. Auto-add is off.",
+};
+
+function savedMatches(code, account, calendar) {
+  const ceiling = autoTopupCeilingCents(account);
+  const checks = {
+    "records-on": account?.records === "keep",
+    "records-off": account?.records === "off",
+    "email-on": account?.impactEmail !== false,
+    "email-off": account?.impactEmail === false,
+    "calendar-on": Boolean(calendar?.on),
+    "calendar-off": !calendar?.on,
+    "calendar-titles-on": Boolean(calendar?.on && calendar?.titles),
+    "calendar-titles-off": Boolean(calendar?.on && !calendar?.titles),
+    "calendar-link": Boolean(calendar?.on),
+    "ceiling-10": ceiling === 1000,
+    "ceiling-20": ceiling === 2000,
+    "ceiling-50": ceiling === 5000,
+    "auto-on": account?.autoTopup === true,
+    "auto-off": account?.autoTopup !== true,
+  };
+  return Boolean(checks[code]);
+}
+
+function savedAccountNotice(code, account, calendar, flashCode = "") {
+  if (code === "calendar-link" && flashCode !== "calendar-link") return "";
+  if (!savedMatches(code, account, calendar)) return "";
+  return SAVED_NOTICES[code] || "";
+}
+
 export async function handleAccount(request, deps) {
   const id = requestId();
   deps = { ...deps, requestId: id, origin: publicOrigin(request) };
@@ -4764,10 +4837,13 @@ export async function handleAccount(request, deps) {
       }
       const action = form.get("action") || "";
       if (action === "calendar") {
-        const result = await calendarAction(session.account, deps, form.get("value") || "");
+        const value = form.get("value") || "";
+        const result = await calendarAction(session.account, deps, value);
         if (!result.ok) return missed();
         const cookies = result.fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), result.fresh))] : [];
-        return done(back, cookies);
+        const saved = { on: "calendar-on", off: "calendar-off", "titles-on": "calendar-titles-on", "titles-off": "calendar-titles-off", reset: "calendar-link" }[value];
+        if (saved === "calendar-link") cookies.push(savedNoticeCookie("calendar-link"));
+        return done(saved ? `${back}?saved=${saved}` : back, cookies);
       }
       if (action === "records") {
         const value = form.get("value");
@@ -4777,7 +4853,7 @@ export async function handleAccount(request, deps) {
         await saveAccount(session.account, deps);
         if (value === "off") await deletePendings(session.account, deps);
         if (firstAnswer) await countOutsideRecordsAnswer(session.account, deps, value === "keep");
-        return done(back);
+        return done(`${back}?saved=${value === "keep" ? "records-on" : "records-off"}`);
       }
       if (action === "impact-email") {
         const value = form.get("value");
@@ -4790,7 +4866,7 @@ export async function handleAccount(request, deps) {
           delete session.account.impactEmail;
           await saveAccount(session.account, deps);
         }
-        return done(back);
+        return done(`${back}?saved=${value === "on" ? "email-on" : "email-off"}`);
       }
       if (action === "delete-account") {
         if (form.get("confirm") !== "delete") return missed();
@@ -4800,22 +4876,35 @@ export async function handleAccount(request, deps) {
       if (action === "auto-topup" && autoTopupEnabled(deps.env)) {
         const value = form.get("value");
         if (value === "off") {
+          const at = typeof deps.now === "number" ? deps.now : Date.now();
           session.account.autoTopup = false;
+          session.account.autoTopupChangedAt = at;
+          delete session.account.autoTopupCardMissed;
+          delete session.account.autoTopupKeptCard;
           await saveAccount(session.account, deps);
-          return done(back);
+          await redis(deps, ["SET", autoChoiceKey(session.account.id), autoChoiceRecord(at, false)]);
+          return done(`${back}?saved=auto-off`);
         }
         if (value === "on" && typeof session.account.stripePaymentMethodId === "string" && session.account.stripePaymentMethodId.startsWith("pm_")) {
+          const at = typeof deps.now === "number" ? deps.now : Date.now();
           session.account.autoTopup = true;
           session.account.autoTopupFailure = null;
+          session.account.autoTopupChangedAt = at;
+          delete session.account.autoTopupCardMissed;
+          delete session.account.autoTopupKeptCard;
           await saveAccount(session.account, deps);
+          await redis(deps, ["SET", autoChoiceKey(session.account.id), autoChoiceRecord(at, true)]);
+          return done(`${back}?saved=auto-on`);
         }
         return done(back);
       }
       if (action === "auto-ceiling" && autoTopupEnabled(deps.env)) {
         const cents = Number(form.get("value"));
-        if (cents === 1000 || cents === 2000 || cents === 5000) {
+        const saved = { 1000: "ceiling-10", 2000: "ceiling-20", 5000: "ceiling-50" }[cents];
+        if (saved) {
           session.account.autoTopupCeilingCents = cents;
           await saveAccount(session.account, deps);
+          return done(`${back}?saved=${saved}`);
         }
         return done(back);
       }
@@ -4830,7 +4919,12 @@ export async function handleAccount(request, deps) {
             autoTopup: autoTopupEnabled(deps.env) && form.get("auto_topup") === "1",
           });
           await rememberOpenTopup(session.account, result.sessionId, (args) => redis(deps, args));
-          if (session.account.stripeCustomerId) await saveAccount(session.account, deps);
+          if (result.sessionId) {
+            session.account.autoTopupCheckoutAt = typeof deps.now === "number" ? deps.now : Date.now();
+            session.account.autoTopupCheckoutChoice = autoTopupEnabled(deps.env) && form.get("auto_topup") === "1" ? "1" : "0";
+            session.account.autoTopupCheckoutSession = result.sessionId;
+          }
+          if (result.sessionId || session.account.stripeCustomerId) await saveAccount(session.account, deps);
           if (result.state === "redirect") return rememberPage(seeOther(result.url), session.sub, deps);
           return done(`${back}?topup=unready`);
         } catch (error) {
@@ -4848,6 +4942,19 @@ export async function handleAccount(request, deps) {
     const topupQuery = pageUrl(request).searchParams.get("topup") || "";
     const sessionId = pageUrl(request).searchParams.get("session_id") || "";
     const notice = ACCOUNT_NOTICES[pageUrl(request).searchParams.get("notice") || ""] || "";
+    const savedCode = pageUrl(request).searchParams.get("saved") || "";
+    const savedFlash = cookieValue(request.headers.get("cookie"), SAVED_COOKIE);
+    const saved = savedAccountNotice(savedCode, session.account, calendar, savedFlash);
+    let keptCard = "";
+    if (!notice && !saved && session.account.autoTopupKeptCard === true) {
+      keptCard = "Auto-add stays on the card already saved. This payment did not save a new card.";
+      delete session.account.autoTopupKeptCard;
+      await saveAccount(session.account, deps);
+    } else if (!notice && !saved && session.account.autoTopupCardMissed === true) {
+      keptCard = "Auto-add is still off. This payment did not save a card. Tick auto-add on the next pack to turn it on.";
+      delete session.account.autoTopupCardMissed;
+      await saveAccount(session.account, deps);
+    }
     const owned = topupQuery === "ok" && TOPUP_SESSION_RE.test(sessionId) && openTopupSessions(session.account).includes(sessionId);
     const credited = owned && (await redis(deps, ["GET", topupSessionKey(sessionId)])) === "credited";
     const prepaid = topupsEnabled(deps.env) ? await readTopup(session.account, deps) : { checks: 0 };
@@ -4859,11 +4966,11 @@ export async function handleAccount(request, deps) {
           auto: autoTopupEnabled(deps.env) ? await autoTopupView(session.account, deps) : null,
         }
       : null;
-    const status = notice || topupNote;
+    const status = notice || saved || keptCard || topupNote;
     const freeRemaining = await freeChecksRemaining(session.account, deps);
     const low = checksNotice({ topups: Boolean(topup), freeRemaining, prepaid: topup?.checks ?? 0 });
     return rememberPage(
-      htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, topup, field, status, low, freeRemaining }), { clearFlash: Boolean(flashed) }),
+      htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, topup, field, status, low, freeRemaining }), { clearFlash: Boolean(flashed), clearSaved: savedFlash === "calendar-link" }),
       session.sub,
       deps,
     );
