@@ -3773,21 +3773,24 @@ function renderDeleteAllConfirm() {
 }
 
 const ACCOUNT_STYLE = `<style>
+    :root { --help:#4a453f; --switch-off:#7a746c; }
+    @media (prefers-color-scheme: dark) { :root { --help:#c8c0b6; } }
     @media (max-width: 40rem) {
       button, .button { width: 100%; box-sizing: border-box; text-align: center; }
-      #delete-account a.danger { width: auto; }
+      a.button.danger { width: auto; }
     }
     #checks { margin: 0.15rem 0 1.5rem; }
     .balance { margin: 0.15rem 0 0; color: var(--muted); }
     .balance .num { display: block; font-size: 3.4rem; line-height: 0.95; letter-spacing: -0.04em; font-weight: 650; color: var(--ink); }
     .buy { margin: 1rem 0 0.4rem; }
     label.pack-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 0.75rem; min-height: 44px; font-weight: 650; color: var(--ink); }
-    label.pack-option input { appearance: none; width: 44px; height: 26px; min-height: 26px; margin: 0; flex: 0 0 auto; border-radius: 999px; background: var(--rule); position: relative; }
+    .pack-switch { display: inline-flex; align-items: center; gap: 8px; }
+    label.pack-option input { appearance: none; width: 44px; height: 26px; min-height: 26px; margin: 0; flex: 0 0 auto; border-radius: 999px; background: var(--switch-off); box-shadow: inset 0 0 0 1px var(--switch-off); position: relative; }
     label.pack-option input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: var(--paper); }
     label.pack-option input:checked { background: var(--ink); }
     label.pack-option input:checked::after { left: 20px; }
-    button.switch, p.switch { position: relative; display: flex; align-items: center; width: 100%; min-height: 44px; margin: 0.75rem 0 0.35rem; padding: 10px 68px 10px 14px; box-sizing: border-box; border: 1px solid var(--rule); border-radius: 12px; background: transparent; color: var(--ink); font: 650 0.98rem var(--sans); text-align: left; }
-    button.switch::after, p.switch::after { content: ""; position: absolute; right: 12px; top: 50%; width: 44px; height: 26px; margin-top: -13px; border-radius: 999px; background: var(--rule); }
+    button.switch, p.switch { position: relative; display: flex; align-items: center; width: 100%; min-height: 44px; margin: 0.75rem 0 0.35rem; padding: 10px 68px 10px 14px; box-sizing: border-box; border: 1px solid var(--switch-off); border-radius: 12px; background: transparent; color: var(--ink); font: 650 0.98rem var(--sans); text-align: left; }
+    button.switch::after, p.switch::after { content: ""; position: absolute; right: 12px; top: 50%; width: 44px; height: 26px; margin-top: -13px; border-radius: 999px; background: var(--switch-off); box-shadow: inset 0 0 0 1px var(--switch-off); }
     button.switch::before, p.switch::before { content: ""; position: absolute; right: 32px; top: 50%; width: 22px; height: 22px; margin-top: -11px; border-radius: 50%; background: var(--paper); z-index: 1; }
     button.switch[aria-pressed="true"] { border-color: var(--ink); }
     button.switch[aria-pressed="true"]::after { background: var(--ink); }
@@ -3795,20 +3798,20 @@ const ACCOUNT_STYLE = `<style>
     .setting { border-top: 1px solid var(--rule); padding: 0.7rem 0 0.35rem; }
     .setting-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
     .setting-name { flex: 1 1 8rem; font-weight: 650; color: var(--ink); }
-    .state { flex: 0 0 auto; font-weight: 700; color: var(--quiet); }
+    .state { flex: 0 0 auto; font-weight: 700; color: var(--help); }
     .state[data-state="on"] { color: var(--ink); }
+    .small, details.quiet summary, .consent { color: var(--help); }
     .setting-row button { flex: 1 1 100%; }
     @media (min-width: 40.01rem) { .setting-row button { flex: 0 0 auto; width: auto; } }
     #settings > h2 { margin-bottom: 0.2rem; }
     details summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--ink); }
     details.quiet { margin-top: 0.4rem; }
-    details.quiet summary { color: var(--quiet); font-weight: 500; }
-    #delete-account { margin: 2.6rem 0 0; padding-top: 1.2rem; border-top: 1px solid var(--rule); }
-    #delete-account summary { list-style: none; color: #8d3b32; font-weight: 650; }
-    #delete-account summary::-webkit-details-marker { display: none; }
-    #delete-account a.danger { color: #8d3b32; font-weight: 650; }
+    details.quiet summary { font-weight: 650; }
+    details.more-checks summary { color: var(--ink); font-size: 1rem; font-weight: 550; letter-spacing: 0; text-transform: none; }
+    a.button.danger { background: transparent; color: #8d3b32; border: 1px solid #e4b8b2; font-weight: 550; box-shadow: none; }
+    .delete-account { margin-top: 1.75rem; }
     @media (prefers-color-scheme: dark) {
-      #delete-account summary, #delete-account a.danger { color: #f0b4aa; }
+      a.button.danger { color: #f0b4aa; border-color: #6a3a34; }
     }
     </style>`;
 
@@ -3839,7 +3842,7 @@ function renderAccount(account, credit, extra = {}) {
       <p class="balance"><span class="num">${left}</span> ${noun} left</p>
       <p class="small">${prepaid > 0 ? "Free checks reset on the 1st. Prepaid checks carry over." : "Free checks reset on the 1st."}</p>
       ${stopped}
-      ${renderTopup(extra)}
+      ${renderTopup(extra, { account, freeLeft, prepaid })}
       ${renderHowChecks(extra, allowance)}
     </section>
     <section id="settings">
@@ -3849,11 +3852,8 @@ function renderAccount(account, credit, extra = {}) {
       ${renderImpactEmail(account, field)}
     </section>
     ${renderAccountDetails(account, extra)}
-    <details id="delete-account">
-      <summary>Delete account ▸</summary>
-      <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>
-      <p><a class="danger" href="/account?confirm=delete">Delete this account</a></p>
-    </details>`,
+    <p class="delete-account"><a class="button danger" href="/account?confirm=delete">Delete this account</a></p>
+    <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
     "account",
   );
 }
@@ -3941,7 +3941,10 @@ function autoFailureSentence(code) {
   return "The payment didn't go through.";
 }
 
-function renderTopup(extra) {
+/** The big pack button shows at this many free checks left, and only when nothing is prepaid. */
+const PACK_BUTTON_FREE = 10;
+
+function renderTopup(extra, { account = null, freeLeft = 0, prepaid = 0 } = {}) {
   const topup = extra.topup;
   if (!topup) return "";
   const pack = topup.pack;
@@ -3951,13 +3954,19 @@ function renderTopup(extra) {
   const consent = auto
     ? `<p class="small consent">Automatically add another ${pack.checks} checks (${price}) when I run out, up to ${esc(topupPriceLabel(auto.ceilingCents))} a month. You can turn this off anytime on this page.</p>`
     : "";
+  const opted = Boolean(auto?.on);
   const choice = auto
-    ? `<label class="pack-option"><span>Auto-add with this pack</span><input type="checkbox" name="auto_topup" value="1"${auto.on ? " checked" : ""}></label>`
+    ? `<label class="pack-option"><span>Auto-add with this pack</span> <span class="pack-switch"><span class="state" data-state="${opted ? "on" : "off"}">${opted ? "On" : "Off"}</span><input type="checkbox" name="auto_topup" value="1"${opted ? " checked" : ""}></span></label>`
     : "";
-  const buy = pack.priceId
+  const form = pack.priceId
     ? `<form method="post" action="/account" class="buy">${field}<input type="hidden" name="action" value="topup">${consent}${choice}<button type="submit" class="primary">Add ${pack.checks} checks · ${price}</button></form>`
     : `<p>Adding checks isn't ready on this server yet.</p>`;
-  return `${buy}${auto ? renderAutoTopup(auto, field, pack) : ""}`;
+  const urgent = prepaid <= 0 && freeLeft <= PACK_BUTTON_FREE;
+  const allowance = freeChecksFor(extra.env, account);
+  const buy = !pack.priceId || urgent
+    ? form
+    : `<details class="more-checks"><summary>Need more than ${allowance} a month? Add ${pack.checks} checks for ${price} ▸</summary>${form}</details>`;
+  return `${buy}${auto?.hasCard ? renderAutoTopup(auto, field) : ""}`;
 }
 
 function renderHowChecks(extra, allowance) {
@@ -3973,16 +3982,15 @@ function renderHowChecks(extra, allowance) {
     <summary>How checks work</summary>
     <p>${allowance}</p>
     <p>${esc(lead)}</p>
-    <p class="small">One payment. A card you use can be saved for the next pack.</p>
+    <p class="small">${topup.auto ? "One payment. A card is saved for a later pack only when auto-add is ticked." : "One payment."}</p>
   </details>`;
 }
 
-function renderAutoTopup(auto, field, pack) {
+function renderAutoTopup(auto, field) {
   const state = auto.on ? "On" : "Off";
   const pressed = auto.on ? "true" : "false";
   const card = auto.last4 ? ` Card ending ${esc(auto.last4)}.` : "";
   const why = !auto.on && auto.failure ? `<p>${esc(autoFailureSentence(auto.failure))}</p>` : "";
-  const needCard = !auto.on && !auto.hasCard ? `<p class="small">Buy a pack to save a card, then you can turn this on.</p>` : "";
   const label = `Auto-add when I run out · ${state}`;
   const control = auto.on
     ? `<form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-topup"><button type="submit" class="switch" name="value" value="off" aria-pressed="true" data-state="on">${label}</button></form>`
@@ -3994,7 +4002,6 @@ function renderAutoTopup(auto, field, pack) {
     .join("");
   return `${control}
     ${why}
-    ${needCard}
     <details class="ceiling"${auto.on ? " open" : ""}>
       <summary>Monthly ceiling</summary>
       <p>Up to ${esc(topupPriceLabel(auto.ceilingCents))} a month. Spent this month: ${esc(topupPriceLabel(auto.spentCents))}.${card}</p>
@@ -4725,6 +4732,27 @@ const ACCOUNT_NOTICES = {
   origin: "That request did not come from this site. Try the button again.",
 };
 
+const SAVED_NOTICES = {
+  "records-on": "Saved. Decision records are on.",
+  "records-off": "Saved. Decision records are off.",
+  "email-on": "Saved. Weekly email is on.",
+  "email-off": "Saved. Weekly email is off.",
+  "calendar-on": "Saved. Calendar reminders are on.",
+  "calendar-off": "Saved. Calendar reminders are off.",
+  "calendar-titles-on": "Saved. Calendar titles are on.",
+  "calendar-titles-off": "Saved. Calendar titles are off.",
+  "calendar-link": "Saved. A new calendar link is ready.",
+  "ceiling-10": "Saved. The monthly ceiling is $10.",
+  "ceiling-20": "Saved. The monthly ceiling is $20.",
+  "ceiling-50": "Saved. The monthly ceiling is $50.",
+  "auto-on": "Saved. Auto-add is on.",
+  "auto-off": "Saved. Auto-add is off.",
+};
+
+function savedAccountNotice(code) {
+  return SAVED_NOTICES[code] || "";
+}
+
 export async function handleAccount(request, deps) {
   const id = requestId();
   deps = { ...deps, requestId: id, origin: publicOrigin(request) };
@@ -4764,10 +4792,12 @@ export async function handleAccount(request, deps) {
       }
       const action = form.get("action") || "";
       if (action === "calendar") {
-        const result = await calendarAction(session.account, deps, form.get("value") || "");
+        const value = form.get("value") || "";
+        const result = await calendarAction(session.account, deps, value);
         if (!result.ok) return missed();
         const cookies = result.fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), result.fresh))] : [];
-        return done(back, cookies);
+        const saved = { on: "calendar-on", off: "calendar-off", "titles-on": "calendar-titles-on", "titles-off": "calendar-titles-off", reset: "calendar-link" }[value];
+        return done(saved ? `${back}?saved=${saved}` : back, cookies);
       }
       if (action === "records") {
         const value = form.get("value");
@@ -4777,7 +4807,7 @@ export async function handleAccount(request, deps) {
         await saveAccount(session.account, deps);
         if (value === "off") await deletePendings(session.account, deps);
         if (firstAnswer) await countOutsideRecordsAnswer(session.account, deps, value === "keep");
-        return done(back);
+        return done(`${back}?saved=${value === "keep" ? "records-on" : "records-off"}`);
       }
       if (action === "impact-email") {
         const value = form.get("value");
@@ -4790,7 +4820,7 @@ export async function handleAccount(request, deps) {
           delete session.account.impactEmail;
           await saveAccount(session.account, deps);
         }
-        return done(back);
+        return done(`${back}?saved=${value === "on" ? "email-on" : "email-off"}`);
       }
       if (action === "delete-account") {
         if (form.get("confirm") !== "delete") return missed();
@@ -4802,20 +4832,23 @@ export async function handleAccount(request, deps) {
         if (value === "off") {
           session.account.autoTopup = false;
           await saveAccount(session.account, deps);
-          return done(back);
+          return done(`${back}?saved=auto-off`);
         }
         if (value === "on" && typeof session.account.stripePaymentMethodId === "string" && session.account.stripePaymentMethodId.startsWith("pm_")) {
           session.account.autoTopup = true;
           session.account.autoTopupFailure = null;
           await saveAccount(session.account, deps);
+          return done(`${back}?saved=auto-on`);
         }
         return done(back);
       }
       if (action === "auto-ceiling" && autoTopupEnabled(deps.env)) {
         const cents = Number(form.get("value"));
-        if (cents === 1000 || cents === 2000 || cents === 5000) {
+        const saved = { 1000: "ceiling-10", 2000: "ceiling-20", 5000: "ceiling-50" }[cents];
+        if (saved) {
           session.account.autoTopupCeilingCents = cents;
           await saveAccount(session.account, deps);
+          return done(`${back}?saved=${saved}`);
         }
         return done(back);
       }
@@ -4848,6 +4881,7 @@ export async function handleAccount(request, deps) {
     const topupQuery = pageUrl(request).searchParams.get("topup") || "";
     const sessionId = pageUrl(request).searchParams.get("session_id") || "";
     const notice = ACCOUNT_NOTICES[pageUrl(request).searchParams.get("notice") || ""] || "";
+    const saved = savedAccountNotice(pageUrl(request).searchParams.get("saved") || "");
     const owned = topupQuery === "ok" && TOPUP_SESSION_RE.test(sessionId) && openTopupSessions(session.account).includes(sessionId);
     const credited = owned && (await redis(deps, ["GET", topupSessionKey(sessionId)])) === "credited";
     const prepaid = topupsEnabled(deps.env) ? await readTopup(session.account, deps) : { checks: 0 };
@@ -4859,7 +4893,7 @@ export async function handleAccount(request, deps) {
           auto: autoTopupEnabled(deps.env) ? await autoTopupView(session.account, deps) : null,
         }
       : null;
-    const status = notice || topupNote;
+    const status = notice || saved || topupNote;
     const freeRemaining = await freeChecksRemaining(session.account, deps);
     const low = checksNotice({ topups: Boolean(topup), freeRemaining, prepaid: topup?.checks ?? 0 });
     return rememberPage(

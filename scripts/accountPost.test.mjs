@@ -9,6 +9,19 @@ import { createMemoryRedis, freeChecksKey, isoMonth, monthlyCheckKey, topupBalan
 import { testSigningKey } from "./testSigningKey.mjs";
 
 const PRICE = "price_testpack1";
+
+function channel(hex, shift) {
+  const value = (parseInt(hex.slice(1), 16) >> shift) & 255;
+  const unit = value / 255;
+  return unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
+}
+
+function contrast(a, b) {
+  const lum = (hex) => 0.2126 * channel(hex, 16) + 0.7152 * channel(hex, 8) + 0.0722 * channel(hex, 0);
+  const hi = Math.max(lum(a), lum(b));
+  const lo = Math.min(lum(a), lum(b));
+  return (hi + 0.05) / (lo + 0.05);
+}
 const SAFARI =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.7 Mobile/15E148 Safari/604.1";
 
@@ -205,18 +218,21 @@ describe("Safari account form posts", { concurrency: false }, () => {
     }
 
     await pressAndRead("Turn records on", signedIn);
+    assert.match(html, /Saved\. Decision records are on\./);
     assert.match(html, /<span class="setting-name">Decision records<\/span> <span class="state" data-state="on">On<\/span>/);
     assert.match(html, /Turn records off/);
     assert.doesNotMatch(html, /Turn records on|Don't keep records/);
     assert.equal(storedAccount(ctx).records, "keep");
 
     await pressAndRead("Turn records off", markerOnly);
+    assert.match(html, /Saved\. Decision records are off\./);
     assert.match(html, /<span class="setting-name">Decision records<\/span> <span class="state" data-state="off">Off<\/span>/);
     assert.match(html, /Turn records on/);
     assert.doesNotMatch(html, /Turn records off/);
     assert.equal(storedAccount(ctx).records, "off");
 
     await pressAndRead("Turn off weekly email", signedIn);
+    assert.match(html, /Saved\. Weekly email is off\./);
     assert.match(html, /<span class="setting-name">Weekly email<\/span> <span class="state" data-state="off">Off<\/span>/);
     assert.equal(storedAccount(ctx).impactEmail, false);
 
@@ -225,6 +241,7 @@ describe("Safari account form posts", { concurrency: false }, () => {
     assert.equal(storedAccount(ctx).impactEmail, undefined);
 
     await pressAndRead("Turn calendar on", signedIn);
+    assert.match(html, /Saved\. Calendar reminders are on\./);
     assert.match(html, /<span class="setting-name">Calendar look-back reminders<\/span> <span class="state" data-state="on">On<\/span>/);
     assert.match(html, /shown only once/);
     assert.match(html, /Titles in the calendar: off/);
@@ -599,25 +616,35 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.match(box, /<span class="num">100<\/span>/);
     assert.match(box, /Free checks reset on the 1st\./);
     assert.doesNotMatch(box.slice(0, box.indexOf("How checks work")), /Prepaid checks carry over/);
-    const consentAt = box.indexOf("Automatically add another 100 checks ($2.50) when I run out");
-    const buttonAt = box.indexOf("Add 100 checks · $2.50");
-    const ceilingAt = box.indexOf('<details class="ceiling"');
-    assert.ok(consentAt > 0 && consentAt < buttonAt && buttonAt < ceilingAt, "the later-charge sentence sits above the pack button, outside the ceiling disclosure");
+    const more = box.match(/<details class="more-checks">([\s\S]*?)<\/details>/);
+    assert.ok(more, "plenty of checks keeps the pack form folded");
+    assert.match(more[0], /Need more than 100 a month\? Add 100 checks for \$2\.50/);
+    assert.equal(box.includes('<details class="more-checks" open'), false);
+    assert.doesNotMatch(box.replace(more[0], ""), /class="primary"/);
+    const consentAt = more[1].indexOf("Automatically add another 100 checks ($2.50) when I run out");
+    const buttonAt = more[1].indexOf("Add 100 checks · $2.50");
+    assert.ok(consentAt > 0 && consentAt < buttonAt, "the later-charge sentence sits above the pack button");
     assert.match(box, /Free: 100 checks a month, resets on the 1st\./);
     assert.match(box, /left this month/);
     assert.match(box, /Prepaid checks left: 0/);
     assert.match(box, /Add 100 checks · \$2\.50/);
     assert.equal(box.match(/<input type="checkbox" name="auto_topup"[^>]*>/)?.[0], '<input type="checkbox" name="auto_topup" value="1">');
-    assert.match(box, /Auto-add with this pack/);
-    assert.match(box, /Auto-add when I run out · Off/);
+    assert.match(box, /Auto-add with this pack<\/span> <span class="pack-switch"><span class="state" data-state="off">Off<\/span>/);
+    assert.doesNotMatch(box, /Auto-add when I run out/);
     assert.match(box, /<summary>How checks work<\/summary>/);
     assert.equal(box.includes('<details class="how" open'), false);
-    assert.match(box, /<details class="ceiling">/);
-    assert.equal(box.includes('<details class="ceiling" open'), false);
+    assert.equal(box.includes('class="ceiling"'), false);
     assert.match(box, /Automatically add another 100 checks \(\$2\.50\)/);
     assert.equal(html.includes('id="low-checks"'), false);
     assert.doesNotMatch(html, /No prepaid checks left\./);
     assert.doesNotMatch(html, /\bPro\b|subscription|\$5 of use/);
+    assert.ok(contrast("#4a453f", "#f7f4ef") >= 4.5, "helper text on the light page");
+    assert.ok(contrast("#c8c0b6", "#161513") >= 4.5, "helper text on the dark page");
+    assert.ok(contrast("#7a746c", "#f7f4ef") >= 3, "off switch on the light page");
+    assert.ok(contrast("#7a746c", "#161513") >= 3, "off switch on the dark page");
+    assert.match(html, /--help:\s*#4a453f/);
+    assert.match(html, /--help:\s*#c8c0b6/);
+    assert.match(html, /--switch-off:\s*#7a746c/);
 
     const decisions = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx)).text();
     const decisionsHeader = decisions.match(/<header class="site-header">[\s\S]*?<\/header>/)?.[0] || "";
@@ -648,6 +675,7 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.match(coveredHtml, /5 left this month/);
     assert.match(coveredHtml, /<span class="num">13<\/span>/);
     assert.match(coveredHtml, /Free checks reset on the 1st\. Prepaid checks carry over\./);
+    assert.match(coveredHtml, /Need more than 100 a month\?/);
 
     const freeGone = world();
     freeGone.memory.command(["SET", freeChecksKey("tester@example.com", isoMonth()), "100"]);
@@ -662,6 +690,8 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.match(account, /<a href="\/account#checks">Add checks<\/a>/);
     assert.match(account, /5 left this month/);
     assert.match(account, /<span class="num">5<\/span>/);
+    assert.match(account, /<button type="submit" class="primary">Add 100 checks · \$5<\/button>/);
+    assert.doesNotMatch(account, /Need more than/);
     assert.doesNotMatch(account, /No prepaid checks left\./);
     const decisions = await (await decisionsOf(low)).text();
     assert.match(decisions, /id="low-checks"/);
@@ -676,6 +706,8 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.match(empty, /No checks left\./);
     assert.match(empty, /0 left this month/);
     assert.match(empty, /<span class="num">0<\/span>/);
+    assert.match(empty, /class="primary">Add 100 checks · \$5/);
+    assert.doesNotMatch(empty, /Need more than/);
     assert.match(await (await decisionsOf(out)).text(), /No checks left\./);
   });
 

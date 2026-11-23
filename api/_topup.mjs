@@ -90,7 +90,7 @@ function stripeFailure(res, what) {
 /**
  * Start a one-time Checkout for one pack. Card only, so Apple Pay and Google Pay
  * still show, and Link, Klarna, Cash App and Amazon Pay do not. Saves that card
- * for a later off-session pack. Sets `account.stripeCustomerId` when it creates
+ * for a later off-session pack only when auto-add is ticked. Sets `account.stripeCustomerId` when it creates
  * a customer. The caller stores the account.
  * A restricted key needs write on Checkout Sessions, Customers, and PaymentIntents
  * (`payment_intent_data[setup_future_usage]`). A failure carries `stripeCode` only.
@@ -119,7 +119,7 @@ export async function startTopupCheckout({ env, fetch: fetchImpl, account, origi
     "line_items[0][price]": price,
     "line_items[0][quantity]": "1",
     "payment_method_types[0]": "card",
-    "payment_intent_data[setup_future_usage]": "off_session",
+    ...(autoTopup ? { "payment_intent_data[setup_future_usage]": "off_session" } : {}),
     success_url: `${home}/account?topup=ok&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${home}/account?topup=cancel`,
     "metadata[grill_topup]": "1",
@@ -271,11 +271,13 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
     const choice = session.metadata?.grill_auto_topup;
     if (choice === "1" || choice === "0") account.autoTopup = choice === "1";
     if (!account.autoTopupCeilingCents) account.autoTopupCeilingCents = autoTopupCeilingCents(account);
-    try {
-      const { stripe } = proClients(env, fetchImpl);
-      rememberCard(account, await loadPaymentIntent(stripe, session.payment_intent));
-    } catch {
-      // The pack is already paid. A missing card can be saved on the next pack.
+    if (choice === "1") {
+      try {
+        const { stripe } = proClients(env, fetchImpl);
+        rememberCard(account, await loadPaymentIntent(stripe, session.payment_intent));
+      } catch {
+        // The pack is already paid. A missing card can be saved on the next ticked pack.
+      }
     }
   }
   await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);

@@ -147,17 +147,15 @@ describe("automatic add on the account page", () => {
     const checkbox = html.match(/<input type="checkbox" name="auto_topup"[^>]*>/)?.[0] || "";
     assert.equal(checkbox, '<input type="checkbox" name="auto_topup" value="1">');
     assert.match(box, /Add 100 checks · \$5/);
-    assert.match(html, /Auto-add with this pack/);
+    assert.match(html, /Auto-add with this pack<\/span> <span class="pack-switch"><span class="state" data-state="off">Off<\/span>/);
     const consentAt = html.indexOf("Automatically add another 100 checks ($5) when I run out, up to $20 a month.");
     const buttonAt = html.indexOf("Add 100 checks · $5");
-    const ceilingAt = html.indexOf('<details class="ceiling"');
-    assert.ok(consentAt > 0 && consentAt < buttonAt && buttonAt < ceilingAt);
+    assert.ok(consentAt > 0 && consentAt < buttonAt);
     assert.match(html, /Automatically add another 100 checks \(\$5\) when I run out, up to \$20 a month\. You can turn this off anytime on this page\./);
     assert.doesNotMatch(html, /\bPro\b|subscription/i);
-    assert.match(html, /Auto-add when I run out · Off/);
-    assert.match(html, /aria-pressed="false"/);
-    assert.match(html, /Buy a pack to save a card/);
-    assert.equal(html.includes('<details class="ceiling" open'), false);
+    assert.doesNotMatch(html, /Auto-add when I run out/);
+    assert.doesNotMatch(html, /Buy a pack to save a card/);
+    assert.equal(html.includes('class="ceiling"'), false);
   });
 
   it("passes an untick as opt-out metadata and a tick as opt-in", async () => {
@@ -170,6 +168,7 @@ describe("automatic add on the account page", () => {
     assert.equal(off.headers.get("location"), "https://checkout.stripe.com/c/pay/cs_test_topup");
     const unticked = ctx.stripe.calls.find((call) => call.url.endsWith("/v1/checkout/sessions"));
     assert.equal(unticked.params.get("metadata[grill_auto_topup]"), "0");
+    assert.equal(unticked.params.get("payment_intent_data[setup_future_usage]"), null);
     ctx.stripe.calls.length = 0;
     const on = await handleAccount(
       accountRequest("POST", { body: `page=${encodeURIComponent(token)}&action=topup&auto_topup=1`, origin: "null" }),
@@ -178,6 +177,7 @@ describe("automatic add on the account page", () => {
     assert.equal(on.headers.get("location"), "https://checkout.stripe.com/c/pay/cs_test_topup");
     const ticked = ctx.stripe.calls.find((call) => call.url.endsWith("/v1/checkout/sessions"));
     assert.equal(ticked.params.get("metadata[grill_auto_topup]"), "1");
+    assert.equal(ticked.params.get("payment_intent_data[setup_future_usage]"), "off_session");
     const bare = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
     assert.equal(bare.headers.get("location"), "https://checkout.stripe.com/c/pay/cs_test_topup");
   });
@@ -190,8 +190,17 @@ describe("automatic add on the account page", () => {
     assert.equal(optedOut.action, "credited");
     const stored = JSON.parse(await ctx.redis(["GET", `grill:hosted:acct:${account.id}`]));
     assert.equal(stored.autoTopup, false);
-    assert.equal(stored.stripePaymentMethodId, "pm_savedcard1");
-    assert.equal(stored.cardLast4, "4242");
+    assert.equal(stored.stripePaymentMethodId, undefined);
+    assert.equal(stored.cardLast4, undefined);
+    const optedIn = paidSession(account.id, { auto: "1", pi: "pi_checkoutpack2" });
+    optedIn.id = "evt_autopack223456";
+    optedIn.data.object.id = "cs_test_autopack2";
+    const kept = await applyTopupEvent(optedIn, { env: ctx.env, fetch: ctx.fetch, command: ctx.redis });
+    assert.equal(kept.action, "credited");
+    const withCard = JSON.parse(await ctx.redis(["GET", `grill:hosted:acct:${account.id}`]));
+    assert.equal(withCard.autoTopup, true);
+    assert.equal(withCard.stripePaymentMethodId, "pm_savedcard1");
+    assert.equal(withCard.cardLast4, "4242");
   });
 
   it("turns automatic add on and off, and only on when a card is saved", async () => {
@@ -213,8 +222,10 @@ describe("automatic add on the account page", () => {
     assert.match(html, /<details class="ceiling" open>/);
     assert.match(html, /Card ending 4242/);
     assert.match(html, /name="value" value="off"[^>]*>Auto-add when I run out · On</);
-    await handleAccount(accountRequest("POST", { body: "action=auto-ceiling&value=1000", origin: "https://grillyour.ai" }), ctx);
-    html = await (await handleAccount(accountRequest("GET"), ctx)).text();
+    const ceiling = await handleAccount(accountRequest("POST", { body: "action=auto-ceiling&value=1000", origin: "https://grillyour.ai" }), ctx);
+    assert.match(ceiling.headers.get("location"), /[?&]saved=ceiling-10$/);
+    html = await (await handleAccount(new Request(ceiling.headers.get("location"), { headers: { cookie: cookie() } }), ctx)).text();
+    assert.match(html, /Saved\. The monthly ceiling is \$10\./);
     assert.match(html, /Up to \$10 a month/);
     await handleAccount(accountRequest("POST", { body: "action=auto-topup&value=off", origin: "https://grillyour.ai" }), ctx);
     html = await (await handleAccount(accountRequest("GET"), ctx)).text();
@@ -228,7 +239,8 @@ describe("automatic add on the account page", () => {
     resetHostedCaches();
     await handleAccount(accountRequest("POST", { body: "action=auto-topup&value=on", origin: "https://grillyour.ai" }), ctx);
     html = await (await handleAccount(accountRequest("GET"), ctx)).text();
-    assert.match(html, /Buy a pack to save a card/);
+    assert.doesNotMatch(html, /Auto-add when I run out/);
+    assert.doesNotMatch(html, /Buy a pack to save a card/);
     assert.equal((await storedAccount(ctx)).autoTopup, false);
   });
 });
