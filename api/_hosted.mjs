@@ -3825,7 +3825,7 @@ function renderAccount(account, credit, extra = {}) {
     ${extra.low || ""}
     <section id="checks">
       <p class="balance"><span class="num">${left}</span> ${noun} left</p>
-      <p class="small">Resets on the 1st.</p>
+      <p class="small">${prepaid > 0 ? "Free checks reset on the 1st. Prepaid checks carry over." : "Free checks reset on the 1st."}</p>
       ${stopped}
       ${renderTopup(extra)}
       ${renderHowChecks(extra, allowance)}
@@ -3865,9 +3865,9 @@ function renderRecordsSetting(account, field) {
     : "";
   return `<section class="setting" id="records">
     <form method="post" action="/account">${field}<input type="hidden" name="action" value="records">${settingRow("Decision records", label, mode, flip)}</form>
+    ${chooseOff}
     <details>
       <summary>About decision records</summary>
-      ${chooseOff}
       <p class="small">${esc(RECORDS_OFF_NOTE)}</p>
     </details>
   </section>`;
@@ -3933,11 +3933,14 @@ function renderTopup(extra) {
   const field = extra.field || "";
   const auto = topup.auto;
   const price = esc(topupPriceLabel(pack.priceCents));
+  const consent = auto
+    ? `<p class="small consent">Automatically add another ${pack.checks} checks (${price}) when I run out, up to ${esc(topupPriceLabel(auto.ceilingCents))} a month. You can turn this off anytime on this page.</p>`
+    : "";
   const choice = auto
     ? `<label class="pack-option"><span>Auto-add with this pack</span><input type="checkbox" name="auto_topup" value="1"${auto.on ? " checked" : ""}></label>`
     : "";
   const buy = pack.priceId
-    ? `<form method="post" action="/account" class="buy">${field}<input type="hidden" name="action" value="topup">${choice}<button type="submit" class="primary">Add ${pack.checks} checks · ${price}</button></form>`
+    ? `<form method="post" action="/account" class="buy">${field}<input type="hidden" name="action" value="topup">${consent}${choice}<button type="submit" class="primary">Add ${pack.checks} checks · ${price}</button></form>`
     : `<p>Adding checks isn't ready on this server yet.</p>`;
   return `${buy}${auto ? renderAutoTopup(auto, field, pack) : ""}`;
 }
@@ -3971,7 +3974,6 @@ function renderAutoTopup(auto, field, pack) {
     : auto.hasCard
       ? `<form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-topup"><button type="submit" class="switch" name="value" value="on" aria-pressed="false" data-state="off">${label}</button></form>`
       : `<p class="switch" aria-pressed="${pressed}" data-state="off">${label}</p>`;
-  const explain = `Automatically add another ${pack.checks} checks (${topupPriceLabel(pack.priceCents)}) when I run out, up to ${topupPriceLabel(auto.ceilingCents)} a month. You can turn this off anytime on this page.`;
   const options = [1000, 2000, 5000]
     .map((cents) => `<option value="${cents}"${cents === auto.ceilingCents ? " selected" : ""}>${esc(topupPriceLabel(cents))}</option>`)
     .join("");
@@ -3980,7 +3982,6 @@ function renderAutoTopup(auto, field, pack) {
     ${needCard}
     <details class="ceiling"${auto.on ? " open" : ""}>
       <summary>Monthly ceiling</summary>
-      <p>${esc(explain)}</p>
       <p>Up to ${esc(topupPriceLabel(auto.ceilingCents))} a month. Spent this month: ${esc(topupPriceLabel(auto.spentCents))}.${card}</p>
       <form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-ceiling"><label class="choice">Monthly ceiling <select name="value">${options}</select></label> <button type="submit">Save</button></form>
     </details>`;

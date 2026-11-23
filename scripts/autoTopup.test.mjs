@@ -148,6 +148,10 @@ describe("automatic add on the account page", () => {
     assert.equal(checkbox, '<input type="checkbox" name="auto_topup" value="1">');
     assert.match(box, /Add 100 checks · \$5/);
     assert.match(html, /Auto-add with this pack/);
+    const consentAt = html.indexOf("Automatically add another 100 checks ($5) when I run out, up to $20 a month.");
+    const buttonAt = html.indexOf("Add 100 checks · $5");
+    const ceilingAt = html.indexOf('<details class="ceiling"');
+    assert.ok(consentAt > 0 && consentAt < buttonAt && buttonAt < ceilingAt);
     assert.match(html, /Automatically add another 100 checks \(\$5\) when I run out, up to \$20 a month\. You can turn this off anytime on this page\./);
     assert.doesNotMatch(html, /\bPro\b|subscription/i);
     assert.match(html, /Auto-add when I run out · Off/);

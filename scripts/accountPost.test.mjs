@@ -171,6 +171,8 @@ describe("Safari account form posts", { concurrency: false }, () => {
     let html = await openAccount(ctx, signedIn);
     assert.match(html, /<span class="setting-name">Decision records<\/span> <span class="state" data-state="unset">Not chosen<\/span>/);
     assert.match(html, /Turn records on/);
+    const records = html.slice(html.indexOf('id="records"'), html.indexOf('id="calendar"'));
+    assert.ok(records.indexOf("Don't keep records") > 0 && records.indexOf("Don't keep records") < records.indexOf("<summary>About decision records</summary>"));
     assert.match(html, /Add 100 checks · \$5/);
     for (const form of formsIn(html)) {
       assert.ok(form.fields.page, `form ${form.action} ${form.buttons.map((b) => b.label).join(", ")} embeds a page token`);
@@ -595,7 +597,12 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.equal(html.includes('href="/account#checks"'), false);
     const box = html.slice(checksAt, recordsAt);
     assert.match(box, /<span class="num">100<\/span>/);
-    assert.match(box, /Resets on the 1st\./);
+    assert.match(box, /Free checks reset on the 1st\./);
+    assert.doesNotMatch(box.slice(0, box.indexOf("How checks work")), /Prepaid checks carry over/);
+    const consentAt = box.indexOf("Automatically add another 100 checks ($2.50) when I run out");
+    const buttonAt = box.indexOf("Add 100 checks · $2.50");
+    const ceilingAt = box.indexOf('<details class="ceiling"');
+    assert.ok(consentAt > 0 && consentAt < buttonAt && buttonAt < ceilingAt, "the later-charge sentence sits above the pack button, outside the ceiling disclosure");
     assert.match(box, /Free: 100 checks a month, resets on the 1st\./);
     assert.match(box, /left this month/);
     assert.match(box, /Prepaid checks left: 0/);
@@ -640,6 +647,7 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.match(coveredHtml, /Prepaid checks left: 8/);
     assert.match(coveredHtml, /5 left this month/);
     assert.match(coveredHtml, /<span class="num">13<\/span>/);
+    assert.match(coveredHtml, /Free checks reset on the 1st\. Prepaid checks carry over\./);
 
     const freeGone = world();
     freeGone.memory.command(["SET", freeChecksKey("tester@example.com", isoMonth()), "100"]);
