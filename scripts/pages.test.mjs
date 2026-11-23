@@ -209,6 +209,26 @@ describe("pages a person sees", () => {
     assert.match(askHtml, /<button type="submit" name="confirm" value="delete">Delete this account<\/button>/);
   });
 
+  it("folds delete account into a danger disclosure at the end, separate from settings", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const account = await handleAccount(new Request("https://grillyour.ai/account", { headers: { cookie: cookieHeader() } }), { ...ctx, now: FEB });
+    const html = await account.text();
+    const settings = html.indexOf('id="settings"');
+    const details = html.indexOf('id="account-details"');
+    const del = html.indexOf('<details id="delete-account">');
+    assert.ok(settings > 0 && details > settings && del > details, `settings ${settings}, details ${details}, delete ${del}`);
+    const block = html.slice(del, html.indexOf("</details>", del) + "</details>".length);
+    assert.match(block, /<summary>Delete account ▸<\/summary>/);
+    assert.match(block, /<a class="danger" href="\/account\?confirm=delete">Delete this account<\/a>/);
+    assert.doesNotMatch(block, /class="button/);
+    const weekly = html.slice(html.indexOf('id="weekly-email"'), html.indexOf('id="account-details"'));
+    assert.equal(weekly.includes("Delete this account"), false);
+    assert.match(html, /#delete-account summary \{[^}]*color:\s*#8d3b32/);
+    assert.match(html, /#delete-account a\.danger \{[^}]*color:\s*#8d3b32/);
+    assert.equal(html.lastIndexOf("<details"), del);
+  });
+
   it("answers 303 after a successful form and leaves a second identical post unchanged", async () => {
     resetHostedCaches();
     const ctx = world();
