@@ -3250,8 +3250,7 @@ describe("look-back reminders", { concurrency: false }, () => {
       let html = await page(ctx, handleDecisions, "/decisions", { now: FEB });
       assert.match(html, /1 decision due for a look-back/);
       assert.match(html, /Hire contractor/);
-      assert.match(html, /Chose: Go with Hire contractor\./);
-      assert.match(html, / · Due</);
+      assert.match(html, /Grill said: <strong>Shaky<\/strong> · You chose: Go with Hire contractor\. · Look back 15 Jan/);
       assert.equal(html.includes("2026-01-15"), false);
       const dueHref = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
       const dueDetail = await page(ctx, handleDecisions, dueHref, { now: FEB });

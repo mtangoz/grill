@@ -168,7 +168,7 @@ describe("pages a person sees", () => {
       const exported = html.indexOf(">Export<");
       assert.ok(due > html.indexOf("<h1>"), "due list is missing");
       assert.ok(due < records && due < exported);
-      assert.match(html, /Chose: Go with Hire contractor\. · <strong>shaky<\/strong> · Due/);
+      assert.match(html, /Grill said: <strong>Shaky<\/strong> · You chose: Go with Hire contractor\. · Look back 15 Jan/);
       assert.doesNotMatch(html, /of use each month|left this month|judge spend/);
     } finally {
       await fake.close();
@@ -354,7 +354,7 @@ describe("pages a person sees", () => {
       const ctx = world();
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(html, /Chose: Go with Hire contractor\./);
+      assert.match(html, /You chose: Go with Hire contractor\. · Look back 15 Jan/);
       assert.equal(html.includes("2026-01-15"), false);
       const href = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
       const detail = await getPage(ctx, href, { now: FEB });
@@ -421,10 +421,10 @@ describe("the decisions page layout", () => {
       const recordsSwitch = html.indexOf("Keep my decision records");
       const calendar = html.indexOf("Look-back reminders in your calendar");
       assert.ok(record > 0, "a record row is shown");
-      assert.ok(exported > record, "export follows the records");
-      assert.ok(recordsSwitch > exported && calendar > recordsSwitch, "settings sit under the list");
       const settings = html.indexOf('<details class="settings">');
-      assert.ok(settings > exported && settings < recordsSwitch && html.indexOf("</details>") > calendar, "settings fold away under one closed Settings line");
+      assert.ok(settings > record && exported > settings, "export sits inside Settings, after the records");
+      assert.ok(recordsSwitch > exported && calendar > recordsSwitch && html.indexOf("</details>") > calendar, "records and calendar stay inside Settings");
+      assert.match(html, /<summary>Settings ▸<\/summary>/);
       assert.equal(html.includes('<details class="settings" open'), false);
       assert.match(html, /href="\/decisions\?confirm=delete-all">Delete all</);
       assert.equal(html.includes("<h2>Manage</h2>"), false);
@@ -532,7 +532,7 @@ describe("the decisions page layout", () => {
       const href = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
       assert.ok(href, "the title links to the record");
       assert.ok(html.includes(`<a class="record-title" href="${href}">Hire contractor</a>`));
-      assert.match(html, /Chose: Hire the contractor\. · <strong>shaky<\/strong> · Due/);
+      assert.match(html, /Grill said: <strong>Shaky<\/strong> · You chose: Hire the contractor\. · Look back 15 Jan/);
       assert.equal(html.includes('name="happened"'), false, "the page does not post a look-back");
       const detail = await getPage(ctx, `${href}#look-back`, { now: FEB });
       assert.equal(detail.res.status, 200);
@@ -558,7 +558,9 @@ describe("the decisions page layout", () => {
       const looked = await send(3, "grill_look_back", { happened: "came_true: no\nhappened: The contractor left after a week." }, FEB);
       assert.equal(looked.result.isError, false, looked.result?.content?.[0]?.text || "");
       const after = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(after.html, /Didn(?:'|&#39;)t/);
+      assert.match(after.html, /Grill said: <strong>Shaky<\/strong> · You chose: Hire the contractor\. · Look back 15 Jan/);
+      assert.match(after.html, /flagged \(not proof\)/);
+      assert.doesNotMatch(after.html, /Your first look-back is on/);
       assert.equal(after.html.includes('class="happened"'), false);
       assert.equal(after.html.includes("came_true:"), false);
       const again = await getPage(ctx, href, { now: FEB });
@@ -643,14 +645,24 @@ describe("the decisions page layout", () => {
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
       const due = html.indexOf("3 decisions due for a look-back");
       const impact = html.indexOf("What Grill changed");
-      const score = html.indexOf("3 decisions · 0% looked back");
+      const sentence = html.indexOf("Your first look-back is on 15 Jan");
       const filters = html.indexOf('class="filters"');
       const impactEnd = html.indexOf("</section>", impact);
-      assert.ok(impact > 0 && score > impact && score < impactEnd && due > impactEnd && filters > due, "the learning line sits inside the impact block, once");
-      assert.equal((html.match(/3 decisions · 0% looked back/g) || []).length, 1);
+      assert.ok(impact > 0 && sentence > impact && sentence < impactEnd && due > impactEnd && filters > due, "the first look-back line sits inside the impact block, once");
+      assert.match(html, /3 decisions\. Your first look-back is on 15 Jan: we(?:'|&#39;)ll ask how it turned out\./);
+      assert.equal((html.match(/Your first look-back is on 15 Jan/g) || []).length, 1);
+      assert.doesNotMatch(html, /unknown \(impact not confirmed\)|flagged \(not proof\)|\d+% looked back/);
       assert.doesNotMatch(html, /verdict held up/);
       assert.doesNotMatch(html, /A look-back is due 14 days/);
       assert.equal((html.match(/class="filters"/g) || []).length, 1);
+      const id = new URL(`https://grillyour.ai${html.match(/href="(\/decisions\?id=[^"#]+)"/)[1]}`).searchParams.get("id");
+      await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=held`, FEB);
+      const after = await getPage(ctx, "/decisions", { now: FEB });
+      const afterImpact = after.html.slice(after.html.indexOf('<section id="impact">'), after.html.indexOf("</section>", after.html.indexOf('<section id="impact">')));
+      assert.match(afterImpact, /3 decisions · 33% looked back/);
+      assert.match(afterImpact, /unknown \(impact not confirmed\)|flagged \(not proof\)/);
+      assert.doesNotMatch(after.html, /Your first look-back is on/);
+      assert.doesNotMatch(after.html, /verdict held up/);
     } finally {
       await fake.close();
     }
@@ -746,8 +758,11 @@ describe("the decisions page layout", () => {
       const tapped = await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=no`, FEB);
       assert.equal(tapped.status, 303);
       const after = await getPage(ctx, "/decisions", { now: FEB });
-      assert.match(after.html, /Didn(?:'|&#39;)t/);
+      assert.match(after.html, /Look back 15 Jan/);
+      assert.doesNotMatch(after.html, /Your first look-back is on/);
       assert.equal(after.html.includes("decision due for a look-back"), false);
+      const noted = await getPage(ctx, `/decisions?id=${encodeURIComponent(id)}`, { now: FEB });
+      assert.match(noted.html, /It did not come true/);
       const replaced = await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=held`, FEB);
       assert.equal(replaced.status, 303);
       const kept = await getPage(ctx, `/decisions?id=${encodeURIComponent(id)}`, { now: FEB });
@@ -823,10 +838,11 @@ describe("the decisions page layout", () => {
       const records = html.indexOf("Keep my decision records");
       assert.ok(impact > html.indexOf("<h1>") && impact < due && due < records);
       assert.match(html, /No grill is marked as changing a call yet/);
-      assert.match(html, /1 unknown \(impact not confirmed\) · 1 flagged \(not proof\)/);
+      assert.match(html, /1 decision\. Your first look-back is on 15 Jan: we(?:'|&#39;)ll ask how it turned out\./);
+      assert.doesNotMatch(html, /unknown \(impact not confirmed\)|flagged \(not proof\)|\d+% looked back/);
       assert.doesNotMatch(html, /not holding up/);
       const impactSection = html.slice(html.indexOf('<section id="impact">'), html.indexOf("</section>", html.indexOf('<section id="impact">')));
-      assert.equal((impactSection.match(/<p/g) || []).length, 2, "impact is one headline and one detail line");
+      assert.equal((impactSection.match(/<p/g) || []).length, 2, "impact is one headline and the first look-back line");
       assert.doesNotMatch(html, /Did this grill change your call/);
       assert.doesNotMatch(html, /of use each month|left this month|judge spend/);
       const href = html.match(/href="(\/decisions\?id=[^"#]+)"/)?.[1];
@@ -856,8 +872,13 @@ describe("the decisions page layout", () => {
       const counted = await getPage(ctx, "/decisions", { now: FEB });
       assert.match(counted.html, /1 of 1 grill changed the call\./);
       assert.doesNotMatch(counted.html, /still unknown/);
-      assert.match(counted.html, /1 flagged \(not proof\)/);
-      assert.doesNotMatch(counted.html, /called out/);
+      assert.doesNotMatch(counted.html, /flagged \(not proof\)/);
+      assert.match(counted.html, /Your first look-back is on 15 Jan/);
+      await postForm(ctx, `action=outcome&id=${encodeURIComponent(id)}&value=no`, FEB);
+      const looked = await getPage(ctx, "/decisions", { now: FEB });
+      assert.match(looked.html, /1 flagged \(not proof\)/);
+      assert.doesNotMatch(looked.html, /Your first look-back is on/);
+      assert.doesNotMatch(looked.html, /called out/);
       const no = await postForm(ctx, `action=impact&id=${encodeURIComponent(id)}&value=kept`, FEB);
       assert.equal(no.status, 303);
       const quiet = await getPage(ctx, "/decisions", { now: FEB });
@@ -884,7 +905,7 @@ describe("the decisions page layout", () => {
       await decide(ctx, fake, "Hire contractor", JAN);
       const { html } = await getPage(ctx, "/decisions", { now: FEB });
       const row = html.slice(html.indexOf('class="record-title"'), html.indexOf("</li>"));
-      assert.match(row, /Chose: Go with Hire contractor\. · <strong>shaky<\/strong> · Due/);
+      assert.match(row, /Grill said: <strong>Shaky<\/strong> · You chose: Go with Hire contractor\. · Look back 15 Jan/);
       assert.equal(row.includes("unknown"), false);
       assert.equal(html.includes("2026-01-"), false);
     } finally {

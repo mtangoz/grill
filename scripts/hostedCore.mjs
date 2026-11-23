@@ -1479,6 +1479,29 @@ export function scorecardLine(rows, { type = "", source = "" } = {}) {
   return line;
 }
 
+/** The look-back day on the row, or the same field inside the saved block. */
+function reviewDay(row) {
+  const direct = String(row?.review || "");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(direct)) return direct;
+  const parsed = String(parseRecords(row?.block || "")[0]?.review || "");
+  return /^\d{4}-\d{2}-\d{2}$/.test(parsed) ? parsed : "";
+}
+
+/**
+ * What the list says until a look-back counts. Nothing saved: no line.
+ * Decisions with no look-back date: the count only, and no invented day.
+ */
+export function firstLookbackLine(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return "";
+  const noun = list.length === 1 ? "decision" : "decisions";
+  const head = `${list.length} ${noun}.`;
+  const dates = list.map(reviewDay).filter(Boolean).sort();
+  const day = dates.length ? formatDay(dates[0]) : "";
+  if (!day) return head;
+  return `${head} Your first look-back is on ${day}: we'll ask how it turned out.`;
+}
+
 export const LOOKBACK_HOW =
   "A look-back is due 14 days after you choose. Say “look back” in your chat and say what happened.";
 
