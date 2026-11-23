@@ -1,11 +1,13 @@
 // The signed-in header is one component on every server-rendered page that already
 // has a session: the pitchfork and wordmark go home, and Your grills, Add checks,
-// and Account stay on that row. The homepage is a static file with no session, so
-// it is not in this list.
+// and Account stay on that row. /pricing uses it when the visitor is already
+// signed in, and stays the public page otherwise. The homepage is a static file
+// with no session, so it is not in this list.
 import { createHash, createSign, randomBytes } from "node:crypto";
 import { before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { handleAccount, handleDecisions, handleJudge, handleRedeem, resetHostedCaches } from "../api/_hosted.mjs";
+import { handlePricing } from "../api/_pricing.mjs";
 import { createMemoryRedis, encryptString, keyFromEnv } from "./hostedCore.mjs";
 import { recordBlock } from "./reflection.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
@@ -190,6 +192,21 @@ describe("the shared signed-in header", { concurrency: false }, () => {
     const outcome = await open(handleDecisions, ctx, `/decisions?confirm=outcome&id=${id}&value=held`);
     assertSharedNav(outcome, { current: "decisions" });
     assert.match(outcome, /Record this look-back\?/);
+  });
+
+  it("is on /pricing when there is already a session, and absent when there is not", async () => {
+    const ctx = world();
+    const signed = await open(handlePricing, ctx, "/pricing");
+    assertSharedNav(signed, { current: "other" });
+    assert.match(signed, /<h1>Pricing<\/h1>/);
+    assert.match(signed, /100 checks for \$5/);
+    assert.doesNotMatch(signed, /Grill Pro|subscription|\$9|\$90/);
+
+    const anon = await handlePricing(new Request("https://grillyour.ai/pricing"), ctx);
+    const html = await anon.text();
+    assert.equal(anon.status, 200);
+    assert.equal(headerOf(html), "");
+    assert.match(html, /<h1>Pricing<\/h1>/);
   });
 
   it("is on /judge and /redeem, with no link marked current", async () => {

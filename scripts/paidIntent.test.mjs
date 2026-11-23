@@ -65,7 +65,7 @@ describe("paid intent", () => {
     assert.equal(await recordPaidIntent({ STRIPE_SECRET_KEY: "sk_test_fake" }, redis.fetchImpl, "checkout"), false);
   });
 
-  it("the pricing page is plain HTML, states the same prices, and logs a view and a notify click", async () => {
+  it("the pricing page is plain HTML, states the check offer, and logs a view", async () => {
     const redis = memoryRedis();
     const saved = { ...process.env, fetch: globalThis.fetch };
     Object.assign(process.env, ENV);
@@ -76,18 +76,18 @@ describe("paid intent", () => {
       const page = await handlePricing(new Request("https://grillyour.ai/pricing"), { env: process.env, fetch: globalThis.fetch });
       const html = await page.text();
       assert.equal(page.status, 200);
-      assert.match(html, /\$9 a month/);
-      assert.match(html, /\$90 a year/);
-      assert.match(html, /Paid plans are off/);
-      assert.match(html, /value="Notify me"/);
+      assert.match(html, /You get 100 free checks a month/);
+      assert.match(html, /100 checks for \$5/);
+      assert.match(html, /Automatic add is optional and starts ticked/);
+      assert.match(html, /up to \$20 a month/);
+      assert.doesNotMatch(html, /Grill Pro|\$9|\$90|Paid plans are off|Notify me|subscription|founding member/);
       assert.equal(html.includes("<script"), false);
       assert.equal(redis.store.get(PAID_INTENT_KEYS.pricing), "1");
       assert.equal(redis.calls.some((call) => call.url.includes("api.stripe.com")), false);
 
       const click = await handlePricing(new Request("https://grillyour.ai/pricing", { method: "POST", body: "intent=notify" }), { env: process.env, fetch: globalThis.fetch });
-      assert.equal(click.status, 303);
-      assert.equal(click.headers.get("location"), "/notify");
-      assert.equal(redis.store.get(PAID_INTENT_KEYS.notify), "1");
+      assert.equal(click.status, 405);
+      assert.equal(redis.store.get(PAID_INTENT_KEYS.notify), undefined);
     } finally {
       globalThis.fetch = saved.fetch;
       for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
