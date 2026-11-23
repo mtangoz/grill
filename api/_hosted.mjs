@@ -2499,6 +2499,18 @@ async function identity(request, deps, { audience }) {
   return { payload: checked.payload, origin };
 }
 
+/** True when this browser already has a Grill page session. A public page uses it for the signed-in header. It does not start sign-in. */
+export async function hasPageSession(request, deps = {}) {
+  const env = deps.env ?? {};
+  if (!hostedEnabled(env)) return false;
+  try {
+    const who = await identity(request, { ...deps, env }, { audience: false });
+    return Boolean(who?.payload?.sub);
+  } catch {
+    return false;
+  }
+}
+
 async function clerkCookieIdentity(request, deps) {
   const origin = publicOrigin(request);
   const token = cookieValue(request.headers.get("cookie"), "__session");

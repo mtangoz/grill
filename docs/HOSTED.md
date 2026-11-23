@@ -157,7 +157,7 @@ Still Clerk-specific: Clerk issues the access tokens, and Clerk's API is used fo
 
 The first 100 accounts that get access are founding members. Access means a redeemed invite code, a place on the allowlist, or an approval from the waitlist. Open sign-up does not take a spot. Each email gets one number. Asking again does not take another. The store keeps a count and a one-way hash of the email. It does not keep a list of addresses.
 
-A founding member does not have to pay. Checkout and pricing say "You don't need to pay." The free-for-life tier is the same 100 free checks a month. The dollar safety cap stays. A paid plan does not apply to them, and the account is not marked as a paid subscription.
+A founding member does not have to pay for the old checkout. Checkout says "You don't need to pay." `/pricing` states the same check offer for everyone: 100 free checks a month, then a pack. The free-for-life tier is the same 100 free checks a month. The dollar safety cap stays. The account is not marked as a paid subscription.
 
 `/start` and `/redeem` say "First 100 users get Grill free for life, N spots left", or "All 100 founding spots are taken" when the count is 100. One spot left says "1 spot left". After a code works, and on the account page, the line is "Founding member #N of 100: Grill is free for you for life."
 

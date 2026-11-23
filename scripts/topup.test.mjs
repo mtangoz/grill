@@ -1,5 +1,5 @@
 // Prepaid check packs for hosted accounts. Off unless GRILL_TOPUPS=on.
-// The pack price is on the account page only. Chat text names no price, plan, or subscription.
+// The pack price is on the account page and /pricing. Chat text names no price, plan, or subscription.
 // Made-up keys and made-up Stripe ids. No live charge.
 import { createHmac, createSign, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";

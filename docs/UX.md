@@ -84,9 +84,9 @@ Each of those pages has a specific title, `lang="en"`, a viewport meta, and `noi
 
 Enforced by: test "gives every dead-end page a way back" in [scripts/pages.test.mjs](../scripts/pages.test.mjs).
 
-## Pricing, while paid plans are off
+## Pricing
 
-`/pricing` states the same prices as the rest of the site: $9 a month or $90 a year. The homepage does not offer Pro. Those offers live on `/pricing`. While paid plans are off, a view of that page, a view of `/checkout`, and a Notify me click are anonymous counts. The page runs no script. Nothing is charged. A signed-in checkout, once billing is on, puts the account id on the session so a later payment can be tied to that account. The prices do not change.
+`/pricing` states the live check offer. You get 100 free checks a month. They reset on the 1st. Unused free checks do not roll over. Checks are weighted: a usual grill is one check, and a heavier one counts as more than one. Extra checks are a pack on the account page, 100 for $5 unless the server's pack settings say otherwise. Unused checks from a pack carry over. Automatic add is optional and starts ticked, up to $20 a month, and you can turn it off. With it off, a card is not charged on its own. The page runs no script. A view is an anonymous count while subscription billing is off. A visitor who is already signed in sees the same header as the other signed-in pages. A signed-out visit does not. The homepage does not sell a pack.
 
 ## An invite code
 
@@ -100,7 +100,7 @@ Someone without an invite code can join a waitlist from `/start` or the invite w
 
 ## Founding members
 
-The first 100 people let in are founding members. `/start` and `/redeem` say "First 100 users get Grill free for life, N spots left", or "All 100 founding spots are taken" once those spots are gone. One spot left says "1 spot left". After a code is used, and on the account page, the line is "Founding member #N of 100: Grill is free for you for life." Pricing and checkout tell a founding member "You don't need to pay." A paid plan does not apply to them. `/pricing`, `/checkout` and `/redeem` run no script. `/start` has one script, and it only copies the starter prompt.
+The first 100 people let in are founding members. `/start` and `/redeem` say "First 100 users get Grill free for life, N spots left", or "All 100 founding spots are taken" once those spots are gone. One spot left says "1 spot left". After a code is used, and on the account page, the line is "Founding member #N of 100: Grill is free for you for life." Checkout tells a founding member "You don't need to pay." `/pricing` states the same check offer for everyone. `/pricing`, `/checkout` and `/redeem` run no script. `/start` has one script, and it only copies the starter prompt.
 
 ## A judge page, when the assistant cannot connect
 

@@ -112,7 +112,7 @@ describe("founding members", () => {
     assert.match(await full.text(), /All 100 founding spots are taken\./);
   });
 
-  it("tells a founding member they don't need to pay, and still states the price for everyone else", async () => {
+  it("states the same check offer for everyone, and checkout still tells a founding member they don't need to pay", async () => {
     const memory = createMemoryRedis();
     const redisUrl = "https://redis.example.test";
     const fetchImpl = async (url, init = {}) => {
@@ -126,10 +126,9 @@ describe("founding members", () => {
     };
     const anon = await handlePricing(new Request("https://grillyour.ai/pricing"), { env, fetch: fetchImpl });
     const anonHtml = await anon.text();
-    assert.match(anonHtml, /First 100 users get Grill free for life, 100 spots left\./);
-    assert.match(anonHtml, /A founding member does not pay that\./);
-    assert.match(anonHtml, /\$9 a month/);
-    assert.match(anonHtml, /value="Notify me"/);
+    assert.match(anonHtml, /You get 100 free checks a month/);
+    assert.match(anonHtml, /100 checks for \$5/);
+    assert.doesNotMatch(anonHtml, /founding member|\$9|Notify me|Grill Pro/);
     assert.equal(memory.command(["GET", PAID_INTENT_KEYS.pricing]), "1");
 
     await assignFoundingMember(async (args) => memory.command(args), "ada@example.com");
@@ -141,10 +140,8 @@ describe("founding members", () => {
       { env, fetch: fetchImpl },
     );
     const memberHtml = await member.text();
-    assert.match(memberHtml, /Founding member #1 of 100: Grill is free for you for life\./);
-    assert.match(memberHtml, /You don't need to pay\./);
-    assert.equal(memberHtml.includes("Notify me"), false);
-    assert.equal(memberHtml.includes("Get Pro"), false);
+    assert.match(memberHtml, /You get 100 free checks a month/);
+    assert.doesNotMatch(memberHtml, /You don't need to pay|Founding member|Get Pro/);
     assert.equal(memberHtml.includes("<script"), false);
     const click = await handlePricing(
       new Request("https://grillyour.ai/pricing", {
@@ -154,7 +151,7 @@ describe("founding members", () => {
       }),
       { env, fetch: fetchImpl },
     );
-    assert.equal(click.status, 303);
+    assert.equal(click.status, 405);
     assert.equal(memory.command(["GET", PAID_INTENT_KEYS.notify]), null);
 
     const saved = { ...process.env, fetch: globalThis.fetch };

@@ -680,7 +680,7 @@ export function personCapUsd(env = {}, account = null) {
   return capFromEnv(env.GRILL_INTERNAL_PERSON_CAP_USD, DEFAULT_INTERNAL_PERSON_CAP_USD);
 }
 
-/** What the person pays, in cents. GRILL_TOPUP_PRICE_CENTS overrides it. Shown on the account page only. */
+/** What the person pays, in cents. GRILL_TOPUP_PRICE_CENTS overrides it. Shown on the account page and /pricing. Not in chat. */
 export function topupPriceCents(env = {}) {
   return wholeIn(env.GRILL_TOPUP_PRICE_CENTS, 50, 100_000) ?? DEFAULT_TOPUP_PRICE_CENTS;
 }

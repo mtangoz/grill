@@ -1,6 +1,6 @@
 // Public copy must not state Grill's AI input costs: no judge-spend amount, no
-// "of AI time", and no per-check cent. Prices a person pays ($9 a month, $90 a
-// year) stay, and so does the early-tester line. The dollar caps in code stay.
+// "of AI time", and no per-check cent. The price a person pays for a pack stays,
+// and so does the early-tester line. The dollar caps in code stay.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -18,7 +18,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER = join(ROOT, "server/index.mjs");
 
 // Phrases Tony asked to take off customer-facing copy, and the same kind of
-// per-check or per-key dollar cost. A price such as "$9 a month" does not match.
+// per-check or per-key dollar cost. A pack price such as "$5" does not match.
 const FORBIDDEN = [
   [/\$\d+(?:\.\d+)? of judge spend/i, "a dollar amount of judge spend"],
   [/judge spend/i, "judge spend"],
@@ -183,10 +183,12 @@ describe("public copy states no AI input cost", () => {
 
   it("keeps the approved allowance wording, and keeps the prices a person pays", async () => {
     const terms = builtPages().find(([name]) => name === "terms/index.html")?.[1] || "";
-    assert.match(terms, new RegExp(STARTER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-    assert.match(terms, PRO);
-    assert.match(terms, /\$9 a month or \$90 a year/);
     assert.match(terms, /100 free checks a month/);
+    assert.match(terms, /100 checks for \$5/);
+    assert.match(terms, /starts ticked/);
+    assert.match(terms, /\$20 a month/);
+    const termsSrc = readFileSync(join(ROOT, "site/terms.html"), "utf8");
+    assert.doesNotMatch(termsSrc, /\$9 a month or \$90 a year|Grill Pro|\bsubscription\b/);
 
     const welcome = renderWelcome({ state: "issued", key: "sk-or-v1-test", limitUsd: 3 }, {});
     assert.match(welcome, PRO);
@@ -198,7 +200,8 @@ describe("public copy states no AI input cost", () => {
 
     const pricing = await handlePricing(new Request("https://grillyour.ai/pricing"), { env: ENV, fetch: () => Promise.reject(new Error("no network")) });
     const html = await pricing.text();
-    assert.match(html, /\$9 a month/);
-    assert.match(html, /\$90 a year/);
+    assert.match(html, /100 checks for \$5/);
+    assert.match(html, /up to \$20 a month/);
+    assert.doesNotMatch(html, /\$9|\$90|Grill Pro/);
   });
 });

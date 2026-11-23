@@ -64,8 +64,8 @@ describe("site/page.html", () => {
   it("keeps Pro checkout off the homepage", () => {
     assert.doesNotMatch(page, /id="pro"|Get Pro|checkout\?plan|Notify me|Get a starter key|\$4\.50 a month|\$9 a month/);
     const pricing = readFileSync(join(ROOT, "api/_pricing.mjs"), "utf8");
-    assert.match(pricing, /a month or/);
-    assert.match(pricing, /Notify me/);
+    assert.match(pricing, /free checks a month/);
+    assert.doesNotMatch(pricing, /Notify me|Grill Pro|\$9/);
   });
 
   it("leads with the tagline, then the choice staying with the person", () => {
@@ -91,7 +91,7 @@ describe("site/page.html", () => {
   it("says the website counts visits anonymously, and the tool's usage ping is opt-in", () => {
     const visits = "This website counts visits anonymously, with no cookies and nothing that identifies you.";
     const tool = "The installed tool can optionally send one anonymous usage ping to this site after the first successful grill, if you turn that on at install; off by default; never again; never decision words.";
-    const launch = "If you join the Pro launch list, we keep your email address, and only that, in Resend until Pro launches, and you can unsubscribe with one click.";
+    const launch = "If you join the list to be emailed when that offer is ready, we keep your email address, and only that, in Resend until that offer is ready, and you can unsubscribe with one click.";
     assert.ok(privacyPage.includes(visits));
     assert.ok(privacyPage.includes(tool));
     assert.ok(privacyPage.includes(launch));
@@ -198,15 +198,18 @@ describe("site/page.html", () => {
 describe("the terms page", () => {
   const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
 
-  it("says what the code does: the allowance, the prices, cancelling and refunds", () => {
-    assert.match(terms, /a one-time allowance of checks for one verified email and does not refill/);
-    assert.match(terms, /a generous monthly allowance of checks/);
-    assert.match(terms, /\$9 a month or \$90 a year/);
+  it("says what the code does: the free checks, the pack, and automatic add", () => {
+    assert.match(terms, /Checks are weighted: a usual grill is one check, and a heavier one counts as more than one/);
+    assert.match(terms, /100 checks for \$5/);
+    assert.match(terms, /Automatic add is optional and starts ticked/);
+    assert.match(terms, /The ceiling starts at \$20 a month/);
+    assert.match(terms, /No card is needed for the free checks/);
+    assert.match(terms, /We never put the words of a decision on a Stripe customer/);
+    assert.doesNotMatch(terms, /\$9 a month|\$90 a year|Grill Pro|\bsubscription\b|founding member/);
     assert.doesNotMatch(page, /Grill Pro is \$9 a month/);
-    assert.match(readFileSync(join(ROOT, "api/_pricing.mjs"), "utf8"), /a month or/);
-    assert.match(terms, /cancel anytime/);
-    assert.match(terms, /within 30 days of your first payment/);
-    assert.match(terms, /No card/);
+    const pricing = readFileSync(join(ROOT, "api/_pricing.mjs"), "utf8");
+    assert.match(pricing, /free checks a month/);
+    assert.doesNotMatch(pricing, /Notify me|Grill Pro|\$9 a month/);
     assert.match(terms, /mailto:support@grillyour\.ai/);
     assert.doesNotMatch(terms, /hello@/);
     assert.doesNotMatch(page, /hello@/);
@@ -944,7 +947,7 @@ describe("the privacy page", () => {
     assert.ok(privacyPage.includes(keys), "encryption-keys line");
     assert.match(privacyPage, /<h2>Using Grill in chat \(the connector\)<\/h2>/);
     assert.match(privacyPage, /The free tool has no account\. Grill keeps a grill from it only when you send that one\. Grill in chat keeps your account, a 15-minute encrypted copy of each grill that gets a verdict, and a log and counts of your use\. It keeps a record of a decision only if you say yes, encrypted, and you can delete it\./);
-    assert.match(privacyPage, /Apart from the 15-minute encrypted copy of each grill in chat and a grill you send after a reaction, we don't keep what you decide unless you choose to keep decision records \(Grill in chat\) or saved report copies \(Pro\), and you can delete them\./);
+    assert.match(privacyPage, /Apart from the 15-minute encrypted copy of each grill in chat and a grill you send after a reaction, we don't keep what you decide unless you choose to keep decision records \(Grill in chat\) or saved report copies on that managed-key account, and you can delete them\./);
   });
 });
 
