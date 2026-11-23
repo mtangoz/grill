@@ -208,10 +208,13 @@ import {
   sourceAppFromClient,
   allotGrill,
   allowanceLine,
+  autoChargeNote,
+  capPerson,
+  freeChecksFor,
   freeChecksKey,
   freeChecksOffer,
   freeMonthlyChecks,
-  userMonthlyCapUsd,
+  personCapUsd,
   toMicros,
   wwwAuthenticate,
 } from "../scripts/hostedCore.mjs";
@@ -1241,7 +1244,7 @@ async function ensureAccount(userId, email, deps, human) {
       env: deps.env,
       fetch: deps.fetch,
       name,
-      limit: userMonthlyCapUsd(deps.env),
+      limit: personCapUsd(deps.env, account),
       reset: "monthly",
     });
   } catch {
@@ -1297,7 +1300,7 @@ async function ensureMonthlyAllowance(account, deps) {
       usage = 0;
     }
   }
-  const cap = keyLimitWithTopup(deps.env, topup.budgetMicros / 1_000_000, topup.checks, usage);
+  const cap = keyLimitWithTopup(deps.env, topup.budgetMicros / 1_000_000, topup.checks, usage, personCapUsd(deps.env, account));
   if (!account.keyHash || (account.keyReset === "monthly" && Number(account.keyLimitUsd) === cap)) return;
   try {
     await setMonthlyLimit(account.keyHash, cap, { env: deps.env, fetch: deps.fetch });
@@ -1771,11 +1774,6 @@ async function recordsStillOn(account, deps) {
   }
 }
 
-/** The person the starter credit and the per-person cap belong to. */
-function capPerson(account) {
-  return account.human || account.email || account.id;
-}
-
 async function drawTopup(account, deps, paidMicros) {
   const key = topupBalanceKey(capPerson(account));
   const left = Number(await redis(deps, ["HINCRBY", key, "budget_micros", String(-paidMicros)]));
@@ -1799,10 +1797,10 @@ async function countSpend(account, deps, costUsd, { completed = false } = {}) {
   const allot = allotGrill({
     usedChecks: used,
     draw: completed ? checksForCost(costUsd, deps.env) : 0,
-    allowance: freeMonthlyChecks(deps.env),
+    allowance: freeChecksFor(deps.env, account),
     beforeMicros: before,
     chargeMicros: micros,
-    freeCapMicros: toMicros(userMonthlyCapUsd(deps.env)),
+    freeCapMicros: toMicros(personCapUsd(deps.env, account)),
     topups: topupsEnabled(deps.env),
   });
   if (allot.freeMicros > 0) {
@@ -1825,8 +1823,8 @@ async function refillPrepaid(account, deps) {
   const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
   const userMicros = Number(await redis(deps, ["GET", personSpendKey(capPerson(account), month)])) || 0;
   const freeUsed = Number(await redis(deps, ["GET", freeChecksKey(capPerson(account), month)])) || 0;
-  const dollarFull = userMicros >= toMicros(userMonthlyCapUsd(deps.env));
-  const checksFull = freeUsed >= freeMonthlyChecks(deps.env);
+  const dollarFull = userMicros >= toMicros(personCapUsd(deps.env, account));
+  const checksFull = freeUsed >= freeChecksFor(deps.env, account);
   if (!dollarFull && !checksFull) return "";
   let topup = await readTopup(account, deps);
   if (topup.checks > 0) return "";
@@ -1859,6 +1857,7 @@ async function capReached(account, deps) {
     origin: deps.origin,
     revenueMicros,
     freeChecksUsed,
+    account,
   });
 }
 
@@ -1884,6 +1883,7 @@ async function composeReport({ outcome, subject, sourceApp, author = "none", acc
         topupPresent: topup.present,
         topupChecks: topup.checks,
         topupBudgetMicros: topup.budgetMicros,
+        allowance: freeChecksFor(deps.env, account),
       }),
       isError: true,
     };
@@ -2020,6 +2020,7 @@ async function callGrill(args, account, payload, params, deps) {
           topupPresent: topup.present,
           topupChecks: topup.checks,
           topupBudgetMicros: topup.budgetMicros,
+          allowance: freeChecksFor(deps.env, account),
         }),
         true,
       );
@@ -3614,7 +3615,7 @@ function renderFooter(total, filtered) {
 const LOW_FREE_CHECKS = 10;
 
 async function freeChecksRemaining(account, deps) {
-  const cap = freeMonthlyChecks(deps.env);
+  const cap = freeChecksFor(deps.env, account);
   const month = isoMonth(typeof deps.now === "number" ? deps.now : Date.now());
   const used = Number(await redis(deps, ["GET", freeChecksKey(capPerson(account), month)])) || 0;
   return Math.max(0, cap - Math.max(0, Math.floor(used)));
@@ -3746,8 +3747,8 @@ function renderAccount(account, credit, extra = {}) {
   const keeping = account.records === "keep" ? "On" : account.records === "off" ? "Off" : "Not chosen yet";
   const field = extra.field || "";
   const status = extra.status ? `<p class="banner" role="status">${esc(extra.status)}</p>` : "";
-  const freeLeft = typeof extra.freeRemaining === "number" ? extra.freeRemaining : freeMonthlyChecks(extra.env);
-  const allowance = esc(allowanceLine(freeLeft, extra.env));
+  const freeLeft = typeof extra.freeRemaining === "number" ? extra.freeRemaining : freeChecksFor(extra.env, account);
+  const allowance = esc(allowanceLine(freeLeft, extra.env, account));
   const stopped = credit?.out ? `<p>${esc(OUT_OF_CREDIT)}</p>` : "";
   return appPage(
     "Your Grill account",
@@ -3823,7 +3824,7 @@ function renderTopup(extra) {
     ? `<form method="post" action="/account">${buyFields}${choice}<button type="submit">Add ${pack.checks} checks · ${esc(topupPriceLabel(pack.priceCents))}</button></form>`
     : `<p>Adding checks isn't ready on this server yet.</p>`;
   const lead = auto
-    ? `Prepaid checks left: ${checks}. Unused checks carry over. The free monthly allowance still resets on the 1st. A saved card is charged again only if automatic add is on.`
+    ? `Prepaid checks left: ${checks}. Unused checks carry over. The free monthly allowance still resets on the 1st. ${autoChargeNote(extra.env)}`
     : `Prepaid checks left: ${checks}. Unused checks carry over. The free monthly allowance still resets on the 1st. Nothing is charged later on its own.`;
   return `<section id="topup">
     <h2>More checks</h2>
