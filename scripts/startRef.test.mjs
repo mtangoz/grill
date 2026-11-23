@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { REF_MAX_AGE, START_VIEWS_KEY, countAccountRef, countsAsVisit, firstGrillRefKey, handleStart, normalizeRef, refFromCookie, renderStartPage, signupRefKey, startRefKey } from "../api/_start.mjs";
+import { REF_MAX_AGE, START_VIEWS_KEY, countAccountRef, countsAsVisit, firstGrillRefKey, handleStart, normalizeRef, refFromCookie, refSetAt, renderStartPage, signupRefKey, startRefKey } from "../api/_start.mjs";
 import { createMemoryRedis } from "./hostedCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -276,6 +276,35 @@ describe("the grill_ref cookie", () => {
     assert.deepEqual(kept.headers.getSetCookie(), []);
     const bad = await handleStart(new Request("https://grillyour.ai/start?ref=not%20a%20ref", { headers: { "user-agent": BROWSER } }), world());
     assert.equal(bad.headers.get("set-cookie"), null);
+  });
+
+  it("carries the second it was set, so a later sign-in can tell which came first", async () => {
+    const before = Math.floor(Date.now() / 1000);
+    const res = await handleStart(new Request("https://grillyour.ai/start?ref=askgrill", { headers: { "user-agent": BROWSER } }), world());
+    const header = res.headers.get("set-cookie");
+    assert.match(header, /^grill_ref=askgrill\.\d{10};/);
+    assert.equal(refFromCookie(header), "askgrill");
+    const at = refSetAt(header);
+    assert.ok(at >= before * 1000 && at <= Date.now(), String(at));
+    assert.equal(refSetAt("grill_ref=askgrill"), 0, "an older cookie has no time");
+    assert.equal(refSetAt("grill_ref=askgrill.notatime"), 0);
+    assert.equal(refFromCookie("grill_ref=askgrill.1795400000"), "askgrill");
+  });
+
+  it("lets a sign-up be counted again when its increment did not land", async () => {
+    const ctx = world();
+    let fail = true;
+    const flaky = async (args) => {
+      if (args[0] === "INCR" && fail) {
+        fail = false;
+        throw new Error("store down");
+      }
+      return ctx.redis(args);
+    };
+    const pat = { id: "g_pat", email: "pat@example.com", ref: "askgrill" };
+    await assert.rejects(countAccountRef(flaky, pat, ctx.env, "signup"));
+    assert.equal(await countAccountRef(flaky, pat, ctx.env, "signup"), true);
+    assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), "1");
   });
 
   it("counts a sign-up and a first grill once, and leaves an internal account out", async () => {

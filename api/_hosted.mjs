@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, setMonthlyLimit, WELCOME_HEADERS } from "./_pro.mjs";
 import { autoChoiceKey, autoChoiceRecord, chargeAutoTopup, startTopupCheckout, topupPriceLabel } from "./_topup.mjs";
 import { assignFoundingMember, foundingMemberLine, readFoundingNumber } from "./_founding.mjs";
-import { countAccountRef, normalizeRef, refFromCookie } from "./_start.mjs";
+import { countAccountRef, normalizeRef, refFromCookie, refOnceKey, refSetAt } from "./_start.mjs";
 import { waitlistFormHtml } from "./_waitlist.mjs";
 import { sendResendEmail } from "./_notify.mjs";
 import {
@@ -1184,20 +1184,18 @@ async function resolvePerson(sub, email, deps) {
   return id;
 }
 
-/** How long after a chat sign-in a first signed-in page can still bring the account its first-touch label. */
-const LATE_REF_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-
 /**
  * A chat app calls /mcp from its own servers, so an account a chat sign-in creates never sees the
- * browser's grill_ref. When that person first opens a signed-in page in the browser that carries
- * the label, within a week of the account being made, the label is saved then and the sign-up is
- * counted once. A grill already run counts as the first grill. Only the label is stored.
+ * browser's grill_ref. When that person later opens a signed-in page in a browser whose label was
+ * set before the account was made, the label is saved then and the sign-up is counted once. A grill
+ * already run counts as the first grill. A cookie with no time, or one set after the account was
+ * made, is not used. Only the label is stored.
  */
-async function adoptLateRef(account, ref, deps) {
+async function adoptLateRef(account, ref, refAt, deps) {
   const arrival = normalizeRef(ref);
   if (!arrival || normalizeRef(account.ref)) return false;
   const made = Date.parse(account.createdAt || "");
-  if (!Number.isFinite(made) || Date.now() - made > LATE_REF_WINDOW_MS) return false;
+  if (!Number.isFinite(made) || !(refAt > 0) || refAt > made) return false;
   account.ref = arrival;
   await saveAccount(account, deps);
   try {
@@ -1210,7 +1208,7 @@ async function adoptLateRef(account, ref, deps) {
   return true;
 }
 
-async function ensureAccount(userId, email, deps, human, ref = "") {
+async function ensureAccount(userId, email, deps, human, ref = "", refAt = 0) {
   const own = String(email || "").trim().toLowerCase();
   const capEmail = cleanEmail(human) || own;
   let account = await loadAccount(userId, deps);
@@ -1236,7 +1234,7 @@ async function ensureAccount(userId, email, deps, human, ref = "") {
     } catch {
       // A missed count is not a blocked sign-in.
     }
-  } else if (await adoptLateRef(account, ref, deps)) {
+  } else if (await adoptLateRef(account, ref, refAt, deps)) {
     // A chat sign-in made this account without the browser's label. Its first signed-in page brought it.
   }
   if (account.email !== own) {
@@ -3305,7 +3303,8 @@ async function pageUser(request, deps) {
   if (!gate.email) return { html: appPage("Verified email needed · Grill", "<h1>Grill needs a verified email on this account.</h1><p>Add one with your sign-in company, then come back.</p><p><a href=\"/\">Back to Grill</a></p>") };
   if (!gate.allowed) return { html: inviteOnlyPage(request) };
   const personId = await resolvePerson(visitor.sub, gate.email, deps);
-  const account = await ensureAccount(personId, gate.email, deps, gate.human, refFromCookie(request.headers.get("cookie")));
+  const cookies = request.headers.get("cookie");
+  const account = await ensureAccount(personId, gate.email, deps, gate.human, refFromCookie(cookies), refSetAt(cookies));
   return { account, email: gate.email, sub: visitor.sub };
 }
 
@@ -4211,6 +4210,7 @@ async function deleteAccount(account, deps, sub) {
   await redis(deps, ["DEL", disclosedKey(account.id)]);
   await redis(deps, ["DEL", outsideMarkKey(account.id)]);
   await redis(deps, ["DEL", autoChoiceKey(account.id)]);
+  for (const kind of ["signup", "grill"]) await redis(deps, ["DEL", refOnceKey(account.id, kind)]);
   await redis(deps, ["DEL", recordKeyRedisKey(account.id)]);
   await deleteFeedbackForAccount((command) => redis(deps, command), account.id);
   await calendarOff(account, deps);

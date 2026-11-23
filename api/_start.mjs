@@ -85,15 +85,32 @@ export function startRefKey(ref) {
   return safe ? `grill:metric:start_ref:${safe}` : "";
 }
 
-export function refFromCookie(header) {
+function rawRefCookie(header) {
   const parts = String(header || "").split(";");
   for (const part of parts) {
     const i = part.indexOf("=");
     if (i < 0) continue;
     if (part.slice(0, i).trim() !== REF_COOKIE) continue;
-    return normalizeRef(decodeURIComponent(part.slice(i + 1).trim()));
+    try {
+      return decodeURIComponent(part.slice(i + 1).trim());
+    } catch {
+      return "";
+    }
   }
   return "";
+}
+
+/** The label in grill_ref. The cookie is `label.seconds`; an older cookie is the label alone. */
+export function refFromCookie(header) {
+  return normalizeRef(rawRefCookie(header).split(".")[0]);
+}
+
+/** When grill_ref was set, in milliseconds, or 0 for an older cookie with no time. */
+export function refSetAt(header) {
+  const raw = rawRefCookie(header);
+  if (!refFromCookie(header)) return 0;
+  const match = /^[^.]+\.(\d{9,11})$/.exec(raw);
+  return match ? Number(match[1]) * 1000 : 0;
 }
 
 export function signupRefKey(ref) {
@@ -125,13 +142,19 @@ export async function countAccountRef(command, account, env, kind) {
   if (isInternalAccount(account, env)) return false;
   const won = await command(["SET", once, "1", "NX"]);
   if (won !== "OK") return false;
-  await command(["INCR", counter]);
+  try {
+    await command(["INCR", counter]);
+  } catch (error) {
+    // Let a later call count it.
+    await command(["DEL", once]).catch(() => {});
+    throw error;
+  }
   return true;
 }
 
 function refCookie(ref, request) {
   const secure = new URL(request.url).protocol === "https:" || request.headers.get("x-forwarded-proto") === "https";
-  const parts = [`${REF_COOKIE}=${encodeURIComponent(ref)}`, "HttpOnly", "SameSite=Lax", "Path=/", `Max-Age=${REF_MAX_AGE}`];
+  const parts = [`${REF_COOKIE}=${encodeURIComponent(ref)}.${Math.floor(Date.now() / 1000)}`, "HttpOnly", "SameSite=Lax", "Path=/", `Max-Age=${REF_MAX_AGE}`];
   if (secure) parts.push("Secure");
   return parts.join("; ");
 }
