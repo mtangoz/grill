@@ -326,6 +326,9 @@ describe("automatic add on the account page", () => {
     const html = await (await handleAccount(accountRequest("GET"), ctx)).text();
     assert.match(html, /Auto-add when I run out · Off/);
     stored.autoTopupChangedAt = started * 1000;
+    stored.autoTopupCheckoutAt = Date.now() + 50;
+    stored.autoTopupCheckoutSession = "cs_test_lateroptin";
+    stored.autoTopupCheckoutChoice = "1";
     await ctx.redis(["SET", `grill:hosted:acct:${stored.id}`, JSON.stringify(stored)]);
     const later = paidSession(account.id, { auto: "1", pi: "pi_lateroptin1" });
     later.id = "evt_lateroptin123";
@@ -383,7 +386,11 @@ describe("automatic add on the account page", () => {
     account.cardLast4 = "3333";
     account.autoTopup = false;
     account.autoTopupChangedAt = 1_700_000_000_400;
+    account.autoTopupCheckoutAt = 1_700_000_000_500;
+    account.autoTopupCheckoutSession = "cs_test_samesecond";
+    account.autoTopupCheckoutChoice = "1";
     await ctx.redis(["SET", `grill:hosted:acct:${account.id}`, JSON.stringify(account)]);
+    await ctx.redis(["SET", `grill:hosted:autoat:${account.id}`, "1700000000400:0"]);
     const event = paidSession(account.id, { auto: "1", pi: "pi_samesecond1" });
     event.id = "evt_samesecond12";
     event.data.object.id = "cs_test_samesecond";
@@ -393,6 +400,76 @@ describe("automatic add on the account page", () => {
     const stored = await storedAccount(ctx);
     assert.equal(stored.autoTopup, true);
     assert.equal(stored.stripePaymentMethodId, "pm_savedcard1");
+  });
+
+  it("keeps an off later in the same second as the checkout that started it", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    await handleAccount(accountRequest("GET"), ctx);
+    const account = await storedAccount(ctx);
+    account.stripePaymentMethodId = "pm_savedcard1";
+    account.cardLast4 = "4242";
+    account.autoTopupCheckoutAt = 1_700_000_000_100;
+    account.autoTopupCheckoutSession = "cs_test_laterinsecond";
+    account.autoTopupCheckoutChoice = "1";
+    account.autoTopupChangedAt = 1_700_000_000_800;
+    account.autoTopup = false;
+    await ctx.redis(["SET", `grill:hosted:acct:${account.id}`, JSON.stringify(account)]);
+    await ctx.redis(["SET", `grill:hosted:autoat:${account.id}`, "1700000000800:0"]);
+    const event = paidSession(account.id, { auto: "1", pi: "pi_laterinsecond" });
+    event.id = "evt_laterinsec12";
+    event.data.object.id = "cs_test_laterinsecond";
+    event.data.object.created = 1_700_000_000;
+    const result = await applyTopupEvent(event, { env: ctx.env, fetch: ctx.fetch, command: ctx.redis });
+    assert.equal(result.action, "credited");
+    const stored = await storedAccount(ctx);
+    assert.equal(stored.autoTopup, false);
+    assert.equal(stored.stripePaymentMethodId, "pm_savedcard1");
+  });
+
+  it("keeps an off that lands after the webhook has reread the account", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    await handleAccount(accountRequest("GET"), ctx);
+    const account = await storedAccount(ctx);
+    account.stripePaymentMethodId = "pm_savedcard1";
+    account.cardLast4 = "4242";
+    account.autoTopup = true;
+    account.autoTopupCheckoutAt = Date.now() - 500;
+    account.autoTopupCheckoutSession = "cs_test_afterread";
+    account.autoTopupCheckoutChoice = "1";
+    await ctx.redis(["SET", `grill:hosted:acct:${account.id}`, JSON.stringify(account)]);
+    resetHostedCaches();
+    let accountGets = 0;
+    let release;
+    let entered;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const startedRead = new Promise((resolve) => { entered = resolve; });
+    const inner = ctx.redis;
+    ctx.redis = async (args) => {
+      if (args[0] === "GET" && String(args[1]).startsWith("grill:hosted:acct:")) {
+        accountGets += 1;
+        if (accountGets === 2) {
+          const value = await inner(args);
+          entered();
+          await gate;
+          return value;
+        }
+      }
+      return inner(args);
+    };
+    const event = paidSession(account.id, { auto: "1", pi: "pi_afterread1" });
+    event.id = "evt_afterread123";
+    event.data.object.id = "cs_test_afterread";
+    event.data.object.created = Math.floor(Date.now() / 1000) - 30;
+    const pending = applyTopupEvent(event, { env: ctx.env, fetch: ctx.fetch, command: ctx.redis });
+    await startedRead;
+    const off = await handleAccount(accountRequest("POST", { body: "action=auto-topup&value=off", origin: "https://grillyour.ai" }), ctx);
+    assert.equal(off.status, 303);
+    release();
+    const result = await pending;
+    assert.equal(result.action, "credited");
+    assert.equal((await storedAccount(ctx)).autoTopup, false);
   });
 
   it("turns automatic add on and off, and only on when a card is saved", async () => {

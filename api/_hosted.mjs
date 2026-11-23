@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, setMonthlyLimit, WELCOME_HEADERS } from "./_pro.mjs";
-import { chargeAutoTopup, startTopupCheckout, topupPriceLabel } from "./_topup.mjs";
+import { autoChoiceKey, autoChoiceRecord, chargeAutoTopup, startTopupCheckout, topupPriceLabel } from "./_topup.mjs";
 import { assignFoundingMember, foundingMemberLine, readFoundingNumber } from "./_founding.mjs";
 import { refFromCookie } from "./_start.mjs";
 import { waitlistFormHtml } from "./_waitlist.mjs";
@@ -1121,6 +1121,9 @@ async function saveAccount(account, deps) {
   if (typeof account.cardLast4 === "string" && /^\d{4}$/.test(account.cardLast4)) copy.cardLast4 = account.cardLast4;
   if (account.autoTopup === true || account.autoTopup === false) copy.autoTopup = account.autoTopup;
   if (Number.isFinite(account.autoTopupChangedAt) && account.autoTopupChangedAt > 0) copy.autoTopupChangedAt = account.autoTopupChangedAt;
+  if (Number.isFinite(account.autoTopupCheckoutAt) && account.autoTopupCheckoutAt > 0) copy.autoTopupCheckoutAt = account.autoTopupCheckoutAt;
+  if (account.autoTopupCheckoutChoice === "1" || account.autoTopupCheckoutChoice === "0") copy.autoTopupCheckoutChoice = account.autoTopupCheckoutChoice;
+  if (typeof account.autoTopupCheckoutSession === "string" && account.autoTopupCheckoutSession.startsWith("cs_")) copy.autoTopupCheckoutSession = account.autoTopupCheckoutSession;
   if (account.autoTopupKeptCard === true) copy.autoTopupKeptCard = true;
   if (account.autoTopupCardMissed === true) copy.autoTopupCardMissed = true;
   if ([1000, 2000, 5000].includes(Number(account.autoTopupCeilingCents))) copy.autoTopupCeilingCents = Number(account.autoTopupCeilingCents);
@@ -4872,20 +4875,24 @@ export async function handleAccount(request, deps) {
       if (action === "auto-topup" && autoTopupEnabled(deps.env)) {
         const value = form.get("value");
         if (value === "off") {
+          const at = typeof deps.now === "number" ? deps.now : Date.now();
           session.account.autoTopup = false;
-          session.account.autoTopupChangedAt = typeof deps.now === "number" ? deps.now : Date.now();
+          session.account.autoTopupChangedAt = at;
           delete session.account.autoTopupCardMissed;
           delete session.account.autoTopupKeptCard;
           await saveAccount(session.account, deps);
+          await redis(deps, ["SET", autoChoiceKey(session.account.id), autoChoiceRecord(at, false)]);
           return done(`${back}?saved=auto-off`);
         }
         if (value === "on" && typeof session.account.stripePaymentMethodId === "string" && session.account.stripePaymentMethodId.startsWith("pm_")) {
+          const at = typeof deps.now === "number" ? deps.now : Date.now();
           session.account.autoTopup = true;
           session.account.autoTopupFailure = null;
-          session.account.autoTopupChangedAt = typeof deps.now === "number" ? deps.now : Date.now();
+          session.account.autoTopupChangedAt = at;
           delete session.account.autoTopupCardMissed;
           delete session.account.autoTopupKeptCard;
           await saveAccount(session.account, deps);
+          await redis(deps, ["SET", autoChoiceKey(session.account.id), autoChoiceRecord(at, true)]);
           return done(`${back}?saved=auto-on`);
         }
         return done(back);
@@ -4911,7 +4918,12 @@ export async function handleAccount(request, deps) {
             autoTopup: autoTopupEnabled(deps.env) && form.get("auto_topup") === "1",
           });
           await rememberOpenTopup(session.account, result.sessionId, (args) => redis(deps, args));
-          if (session.account.stripeCustomerId) await saveAccount(session.account, deps);
+          if (result.sessionId) {
+            session.account.autoTopupCheckoutAt = typeof deps.now === "number" ? deps.now : Date.now();
+            session.account.autoTopupCheckoutChoice = autoTopupEnabled(deps.env) && form.get("auto_topup") === "1" ? "1" : "0";
+            session.account.autoTopupCheckoutSession = result.sessionId;
+          }
+          if (result.sessionId || session.account.stripeCustomerId) await saveAccount(session.account, deps);
           if (result.state === "redirect") return rememberPage(seeOther(result.url), session.sub, deps);
           return done(`${back}?topup=unready`);
         } catch (error) {

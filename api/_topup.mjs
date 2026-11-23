@@ -272,8 +272,9 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
     if (!account.autoTopupCeilingCents) account.autoTopupCeilingCents = autoTopupCeilingCents(account);
     const sessionCreatedMs = Number(session.created) > 0 ? Number(session.created) * 1000 : 0;
     const changedAt = Number(account.autoTopupChangedAt) || 0;
-    // Stripe stamps the checkout to a whole second. An off in that same second does not block a checkout started after it.
-    const newerChoice = sessionCreatedMs > 0 && changedAt >= sessionCreatedMs + 1000;
+    const startedAt = account.autoTopupCheckoutSession === String(session.id || "") ? Number(account.autoTopupCheckoutAt) || 0 : 0;
+    // Our own millisecond stamp orders a toggle and a checkout inside one Stripe second. Without it, an explicit off in that second stands.
+    const newerChoice = startedAt > 0 ? changedAt > startedAt : sessionCreatedMs > 0 && changedAt >= sessionCreatedMs;
     const loadedChangedAt = changedAt;
     if (newerChoice) {
       // The person changed auto-add after this checkout started. That choice stands.
@@ -325,11 +326,40 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
       if (fresh.autoTopupKeptCard === true) account.autoTopupKeptCard = true;
       if (fresh.autoTopupCardMissed === true) account.autoTopupCardMissed = true;
     }
+    const adopt = (choice) => {
+      if (!choice) return false;
+      const afterCheckout = startedAt > 0 ? choice.at > startedAt : sessionCreatedMs > 0 && choice.at >= sessionCreatedMs;
+      if (!(choice.at > Number(account.autoTopupChangedAt || 0)) || !afterCheckout) return false;
+      account.autoTopup = choice.on;
+      account.autoTopupChangedAt = choice.at;
+      delete account.autoTopupKeptCard;
+      delete account.autoTopupCardMissed;
+      return true;
+    };
+    adopt(readAutoChoice(await redis(["GET", autoChoiceKey(accountId)])));
+    await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
+    if (adopt(readAutoChoice(await redis(["GET", autoChoiceKey(accountId)])))) {
+      await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
+    }
   }
-  await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
+  if (!autoTopupEnabled(env)) await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
   // After the balance write, so a page that sees this value is reading a committed credit.
   await redis(["SET", sessionKey, "credited", "EX", String(EVENT_TTL_SECONDS)]);
   return { action: "credited" };
+}
+
+export function autoChoiceKey(accountId) {
+  return `grill:hosted:autoat:${accountId}`;
+}
+
+export function autoChoiceRecord(at, on) {
+  return `${Math.floor(Number(at) || 0)}:${on ? "1" : "0"}`;
+}
+
+function readAutoChoice(raw) {
+  const match = /^(\d+):([01])$/.exec(String(raw || ""));
+  if (!match) return null;
+  return { at: Number(match[1]), on: match[2] === "1" };
 }
 
 export function isAutoTopupPayment(event) {
