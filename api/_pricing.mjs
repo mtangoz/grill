@@ -6,7 +6,7 @@ import { recordPaidIntent } from "./_paidIntent.mjs";
 import { hasPageSession } from "./_hosted.mjs";
 import { billingMode, esc, page } from "./_pro.mjs";
 import { topupPriceLabel } from "./_topup.mjs";
-import { DEFAULT_AUTO_TOPUP_CEILING_CENTS, freeMonthlyChecks, topupPack } from "../scripts/hostedCore.mjs";
+import { DEFAULT_AUTO_TOPUP_CEILING_CENTS, checksForCost, freeMonthlyChecks, topupPack } from "../scripts/hostedCore.mjs";
 
 const CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 const CSP_SIGNED_IN = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
@@ -28,12 +28,15 @@ function pricingPage(env, { signedIn = false } = {}) {
   const pack = topupPack(env);
   const price = topupPriceLabel(pack.priceCents);
   const ceiling = topupPriceLabel(DEFAULT_AUTO_TOPUP_CEILING_CENTS);
+  const usual = checksForCost(undefined, env);
+  const usualChecks = usual === 1 ? "1 check" : `${usual} checks`;
   return page(
     "Pricing · Grill",
     `<h1>Pricing</h1>
-<p>You get ${esc(String(free))} free checks a month. They reset on the 1st. Unused free checks do not roll over. Checks are weighted: a usual grill is one check, and a heavier one counts as more than one.</p>
-<p>Add ${esc(String(pack.checks))} checks for ${esc(price)} on the <a href="/account#checks">account page</a>. Unused checks from a pack carry over.</p>
-<p>Automatic add is optional and starts unticked. It adds another pack when you run out, up to ${esc(ceiling)} a month. You can turn it off on the account page. With it off, a card is not charged on its own.</p>
+<p>Free: ${esc(String(free))} checks a month. No card. Resets on the 1st.</p>
+<p>A usual grill uses ${esc(usualChecks)}. An unusually long one can use more. Your account page shows how many you have left.</p>
+<p>Need more? Add ${esc(String(pack.checks))} checks for ${esc(price)} on the <a href="/account#checks">account page</a>. Unused pack checks carry over.</p>
+<p>Automatic add is off unless you tick it. It adds another pack when you run out, up to ${esc(ceiling)} a month, and you can turn it off on the account page. Nothing is charged on its own when it is off.</p>
 <p><a href="/">Back to Grill</a></p>`,
     { nav: signedIn ? "other" : "" },
   );

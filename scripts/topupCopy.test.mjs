@@ -16,31 +16,32 @@ function prose(html) {
 
 function assertCurrentOffer(html) {
   assert.match(html, /<h1>Pricing<\/h1>/);
-  assert.match(html, /You get 100 free checks a month/);
-  assert.match(html, /They reset on the 1st/);
-  assert.match(html, /Unused free checks do not roll over/);
-  assert.match(html, /Checks are weighted: a usual grill is one check, and a heavier one counts as more than one/);
-  assert.match(html, /100 checks for \$5/);
-  assert.match(html, /Unused checks from a pack carry over/);
-  assert.match(html, /Automatic add is optional and starts unticked/);
+  assert.match(html, /Free: 100 checks a month\. No card\. Resets on the 1st\./);
+  assert.match(html, /A usual grill uses 1 check\. An unusually long one can use more\. Your account page shows how many you have left\./);
+  assert.match(html, /Need more\? Add 100 checks for \$5 on the <a href="\/account#checks">account page<\/a>\. Unused pack checks carry over\./);
+  assert.match(html, /Automatic add is off unless you tick it\./);
   assert.match(html, /up to \$20 a month/);
-  assert.match(html, /You can turn it off on the account page/);
-  assert.match(html, /With it off, a card is not charged on its own/);
+  assert.match(html, /you can turn it off on the account page/);
+  assert.match(html, /Nothing is charged on its own when it is off\./);
+  assert.doesNotMatch(html, /weighted/i);
+  assert.doesNotMatch(html, /never expire/i);
   assert.equal(html.includes("<script"), false);
   assert.doesNotMatch(prose(html), STALE);
   assert.doesNotMatch(prose(html), /\binternal\b/i);
 }
 
 describe("prepaid packs in the public terms and pricing", () => {
-  it("says extra checks are prepaid, weighted, and that automatic add starts unticked", () => {
+  it("says extra checks are prepaid, a usual grill is 1 check, and automatic add starts off", () => {
     const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
     const chat = terms.slice(terms.indexOf("<h2>Grill inside your chat</h2>"), terms.indexOf("<h2>Using Grill fairly</h2>"));
     assert.match(chat, /100 free checks a month/);
-    assert.match(chat, /Checks are weighted: a usual grill is one check, and a heavier one counts as more than one/);
+    assert.match(chat, /A usual grill uses 1 check\. An unusually long one can use more\./);
+    assert.doesNotMatch(chat, /weighted/i);
     assert.match(chat, /prepaid pack/);
     assert.match(chat, /100 checks for \$5/);
     assert.match(chat, /Unused checks from a pack carry over/);
-    assert.match(chat, /Automatic add is optional and starts unticked/);
+    assert.match(chat, /Automatic add is off unless you tick it/);
+    assert.match(chat, /Nothing is charged on its own when it is off/);
     assert.match(chat, /If automatic add is on, another pack is charged to your saved card when you run out, up to your monthly ceiling/);
     assert.match(chat, /The ceiling starts at \$20 a month/);
     assert.match(chat, /You can turn it off on your account page/);
@@ -72,8 +73,8 @@ describe("prepaid packs in the public terms and pricing", () => {
       fetch: () => Promise.reject(new Error("no network")),
     });
     const html = await res.text();
-    assert.match(html, /You get 40 free checks a month/);
-    assert.match(html, /40 checks for \$7\.50/);
+    assert.match(html, /Free: 40 checks a month\. No card\. Resets on the 1st\./);
+    assert.match(html, /Need more\? Add 40 checks for \$7\.50 on the /);
     assert.match(html, /up to \$20 a month/);
     assert.doesNotMatch(html, /100 checks for \$5|Nothing is charged automatically/);
     assert.doesNotMatch(prose(html), STALE);

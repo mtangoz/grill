@@ -130,7 +130,7 @@ describe("founding members", () => {
     };
     const anon = await handlePricing(new Request("https://grillyour.ai/pricing"), { env, fetch: fetchImpl });
     const anonHtml = await anon.text();
-    assert.match(anonHtml, /You get 100 free checks a month/);
+    assert.match(anonHtml, /Free: 100 checks a month\. No card\. Resets on the 1st\./);
     assert.match(anonHtml, /100 checks for \$5/);
     assert.doesNotMatch(anonHtml, /founding member|\$9|Notify me|Grill Pro/);
     assert.equal(memory.command(["GET", PAID_INTENT_KEYS.pricing]), "1");
@@ -144,7 +144,7 @@ describe("founding members", () => {
       { env, fetch: fetchImpl },
     );
     const memberHtml = await member.text();
-    assert.match(memberHtml, /You get 100 free checks a month/);
+    assert.match(memberHtml, /Free: 100 checks a month\. No card\. Resets on the 1st\./);
     assert.doesNotMatch(memberHtml, /You don't need to pay|Founding member|Get Pro/);
     assert.equal(memberHtml.includes("<script"), false);
     const click = await handlePricing(

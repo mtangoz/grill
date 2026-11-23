@@ -64,7 +64,8 @@ describe("site/page.html", () => {
   it("keeps Pro checkout off the homepage", () => {
     assert.doesNotMatch(page, /id="pro"|Get Pro|checkout\?plan|Notify me|Get a starter key|\$4\.50 a month|\$9 a month/);
     const pricing = readFileSync(join(ROOT, "api/_pricing.mjs"), "utf8");
-    assert.match(pricing, /free checks a month/);
+    assert.match(pricing, /checks a month/);
+    assert.doesNotMatch(pricing, /weighted/i);
     assert.doesNotMatch(pricing, /Notify me|Grill Pro|\$9/);
   });
 
@@ -223,16 +224,18 @@ describe("the terms page", () => {
   const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
 
   it("says what the code does: the free checks, the pack, and automatic add", () => {
-    assert.match(terms, /Checks are weighted: a usual grill is one check, and a heavier one counts as more than one/);
+    assert.match(terms, /A usual grill uses 1 check\. An unusually long one can use more\./);
+    assert.doesNotMatch(terms, /weighted/i);
     assert.match(terms, /100 checks for \$5/);
-    assert.match(terms, /Automatic add is optional and starts unticked/);
+    assert.match(terms, /Automatic add is off unless you tick it/);
     assert.match(terms, /The ceiling starts at \$20 a month/);
     assert.match(terms, /No card is needed for the free checks/);
     assert.match(terms, /We never put the words of a decision on a Stripe customer/);
     assert.doesNotMatch(terms, /\$9 a month|\$90 a year|Grill Pro|\bsubscription\b|founding member/);
     assert.doesNotMatch(page, /Grill Pro is \$9 a month/);
     const pricing = readFileSync(join(ROOT, "api/_pricing.mjs"), "utf8");
-    assert.match(pricing, /free checks a month/);
+    assert.match(pricing, /checks a month/);
+    assert.doesNotMatch(pricing, /weighted/i);
     assert.doesNotMatch(pricing, /Notify me|Grill Pro|\$9 a month/);
     assert.match(terms, /mailto:support@grillyour\.ai/);
     assert.doesNotMatch(terms, /hello@/);
