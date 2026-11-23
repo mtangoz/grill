@@ -300,6 +300,42 @@ describe("automatic add on the account page", () => {
     assert.match(second, /Auto-add when I run out · On/);
   });
 
+  it("does not let a late opted-in checkout turn auto-add back on", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    await handleAccount(accountRequest("GET"), ctx);
+    const account = await storedAccount(ctx);
+    account.stripePaymentMethodId = "pm_savedcard1";
+    account.cardLast4 = "4242";
+    account.autoTopup = true;
+    await ctx.redis(["SET", `grill:hosted:acct:${account.id}`, JSON.stringify(account)]);
+    resetHostedCaches();
+    const started = Math.floor(Date.now() / 1000) - 120;
+    const off = await handleAccount(accountRequest("POST", { body: "action=auto-topup&value=off", origin: "https://grillyour.ai" }), ctx);
+    assert.equal(off.status, 303);
+    const event = paidSession(account.id, { auto: "1", pi: "pi_staleoptin1" });
+    event.id = "evt_staleoptin123";
+    event.data.object.id = "cs_test_staleoptin";
+    event.data.object.created = started;
+    const result = await applyTopupEvent(event, { env: ctx.env, fetch: ctx.fetch, command: ctx.redis });
+    assert.equal(result.action, "credited");
+    const stored = await storedAccount(ctx);
+    assert.equal(stored.autoTopup, false);
+    assert.equal(stored.stripePaymentMethodId, "pm_savedcard1");
+    resetHostedCaches();
+    const html = await (await handleAccount(accountRequest("GET"), ctx)).text();
+    assert.match(html, /Auto-add when I run out · Off/);
+    stored.autoTopupChangedAt = started * 1000;
+    await ctx.redis(["SET", `grill:hosted:acct:${stored.id}`, JSON.stringify(stored)]);
+    const later = paidSession(account.id, { auto: "1", pi: "pi_lateroptin1" });
+    later.id = "evt_lateroptin123";
+    later.data.object.id = "cs_test_lateroptin";
+    later.data.object.created = Math.floor(Date.now() / 1000);
+    const enabled = await applyTopupEvent(later, { env: ctx.env, fetch: ctx.fetch, command: ctx.redis });
+    assert.equal(enabled.action, "credited");
+    assert.equal((await storedAccount(ctx)).autoTopup, true);
+  });
+
   it("turns automatic add on and off, and only on when a card is saved", async () => {
     resetHostedCaches();
     const ctx = world();

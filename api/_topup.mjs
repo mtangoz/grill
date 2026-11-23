@@ -270,7 +270,12 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
   if (autoTopupEnabled(env)) {
     const choice = session.metadata?.grill_auto_topup;
     if (!account.autoTopupCeilingCents) account.autoTopupCeilingCents = autoTopupCeilingCents(account);
-    if (choice === "1") {
+    const sessionCreatedMs = Number(session.created) > 0 ? Number(session.created) * 1000 : 0;
+    const changedAt = Number(account.autoTopupChangedAt) || 0;
+    const newerChoice = sessionCreatedMs > 0 && changedAt > sessionCreatedMs;
+    if (newerChoice) {
+      // The person changed auto-add after this checkout started. That choice stands.
+    } else if (choice === "1") {
       const wasOn = account.autoTopup === true;
       let method = "";
       try {

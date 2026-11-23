@@ -1120,6 +1120,9 @@ async function saveAccount(account, deps) {
   if (typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_")) copy.stripePaymentMethodId = account.stripePaymentMethodId;
   if (typeof account.cardLast4 === "string" && /^\d{4}$/.test(account.cardLast4)) copy.cardLast4 = account.cardLast4;
   if (account.autoTopup === true || account.autoTopup === false) copy.autoTopup = account.autoTopup;
+  if (Number.isFinite(account.autoTopupChangedAt) && account.autoTopupChangedAt > 0) copy.autoTopupChangedAt = account.autoTopupChangedAt;
+  if (account.autoTopupKeptCard === true) copy.autoTopupKeptCard = true;
+  if (account.autoTopupCardMissed === true) copy.autoTopupCardMissed = true;
   if ([1000, 2000, 5000].includes(Number(account.autoTopupCeilingCents))) copy.autoTopupCeilingCents = Number(account.autoTopupCeilingCents);
   if (account.autoTopupFailure && typeof account.autoTopupFailure.code === "string") copy.autoTopupFailure = { code: account.autoTopupFailure.code, at: account.autoTopupFailure.at || "" };
   // Absent means the Monday note is on. Only an explicit off is stored.
@@ -4870,12 +4873,18 @@ export async function handleAccount(request, deps) {
         const value = form.get("value");
         if (value === "off") {
           session.account.autoTopup = false;
+          session.account.autoTopupChangedAt = typeof deps.now === "number" ? deps.now : Date.now();
+          delete session.account.autoTopupCardMissed;
+          delete session.account.autoTopupKeptCard;
           await saveAccount(session.account, deps);
           return done(`${back}?saved=auto-off`);
         }
         if (value === "on" && typeof session.account.stripePaymentMethodId === "string" && session.account.stripePaymentMethodId.startsWith("pm_")) {
           session.account.autoTopup = true;
           session.account.autoTopupFailure = null;
+          session.account.autoTopupChangedAt = typeof deps.now === "number" ? deps.now : Date.now();
+          delete session.account.autoTopupCardMissed;
+          delete session.account.autoTopupKeptCard;
           await saveAccount(session.account, deps);
           return done(`${back}?saved=auto-on`);
         }
