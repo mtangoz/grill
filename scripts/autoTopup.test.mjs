@@ -18,6 +18,13 @@ import {
 } from "./hostedCore.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
 
+function cardMethodResponse(url, init) {
+  const u = String(url);
+  if (!u.includes("/v1/payment_methods/pm_") || (init.method || "GET") === "POST") return null;
+  const id = u.split("/").pop().split("?")[0];
+  return Response.json({ id, type: id.includes("link") ? "link" : "card" });
+}
+
 const RESOURCE = "https://mcp.example/mcp";
 const PRICE = "price_testpack1";
 const SECRET = "whsec_autotopup_test";
@@ -86,6 +93,8 @@ function world(extra = {}, stripeReply) {
       if (u.startsWith("https://api.stripe.com/v1/payment_intents/pi_") && (init.method || "GET") === "GET") {
         return Response.json({ id: u.split("/").pop(), payment_method: "pm_savedcard1", charges: { data: [{ payment_method_details: { card: { last4: "4242" } } }] } });
       }
+      const card = cardMethodResponse(u, init);
+      if (card) return card;
       return Response.json({ error: { message: "unexpected stripe call" } }, { status: 404 });
     }
     throw new Error(`unexpected fetch ${init.method || "GET"} ${u}`);
@@ -248,6 +257,8 @@ describe("automatic charges", () => {
     });
     let payments = 0;
     const ctx = world({}, async (url, init) => {
+      const card = cardMethodResponse(url, init);
+      if (card) return card;
       if (url.endsWith("/v1/payment_intents") && init.method === "POST") {
         payments += 1;
         if (payments === 1) await gate;
@@ -275,13 +286,62 @@ describe("automatic charges", () => {
     assert.equal(done.state, "credited");
     assert.equal(payments, 1);
     const charged = ctx.stripe.calls.find((call) => call.url.endsWith("/v1/payment_intents"));
+    assert.equal(charged.params.get("payment_method_types[0]"), "card");
+    assert.equal(charged.params.get("payment_method"), "pm_savedcard1");
+    assert.equal([...charged.params.values()].includes("link"), false);
     assert.match(charged.headers["Idempotency-Key"], new RegExp(`^grill-auto-${account.id}-${isoMonth()}-1$`));
     assert.equal(Number(await ctx.redis(["HGET", topupBalanceKey(account.email), "checks"])), 100);
     assert.equal(Number(await ctx.redis(["GET", autoTopupSpentKey(account.id, isoMonth())])), 500);
   });
 
+  it("still charges a saved card when the payment-method lookup is forbidden or unavailable", async () => {
+    for (const status of [403, 503]) {
+      const ctx = world({}, async (url, init) => {
+        if (String(url).includes("/v1/payment_methods/") && (init.method || "GET") !== "POST") {
+          return Response.json({ error: { code: "more_permissions_required" } }, { status });
+        }
+        if (url.endsWith("/v1/payment_intents") && init.method === "POST") {
+          return Response.json({
+            id: `pi_autolookup${status}`,
+            status: "succeeded",
+            amount: 500,
+            amount_received: 500,
+            currency: "usd",
+            payment_method: "pm_savedcard1",
+            charges: { data: [{ payment_method_details: { card: { last4: "4242" } } }] },
+          });
+        }
+        return Response.json({ error: { message: "unexpected" } }, { status: 404 });
+      });
+      const account = readyAccount(`g_accountlookup${status}`);
+      await ctx.redis(["SET", `grill:hosted:acct:${account.id}`, JSON.stringify(account)]);
+      const { chargeAutoTopup } = await import("../api/_topup.mjs");
+      const result = await chargeAutoTopup({ env: ctx.env, fetch: ctx.fetch, account, command: ctx.redis });
+      assert.equal(result.state, "credited", String(status));
+      const charged = ctx.stripe.calls.find((call) => call.url.endsWith("/v1/payment_intents"));
+      assert.equal(charged.params.get("payment_method_types[0]"), "card", String(status));
+      assert.equal([...charged.params.values()].includes("link"), false, String(status));
+    }
+  });
+
+  it("does not charge a Link payment method off-session", async () => {
+    const ctx = world();
+    const account = readyAccount();
+    account.stripePaymentMethodId = "pm_linkmethod1";
+    await ctx.redis(["SET", `grill:hosted:acct:${account.id}`, JSON.stringify(account)]);
+    const { chargeAutoTopup } = await import("../api/_topup.mjs");
+    const result = await chargeAutoTopup({ env: ctx.env, fetch: ctx.fetch, account, command: ctx.redis });
+    assert.equal(result.state, "no-card");
+    assert.equal(ctx.stripe.calls.some((call) => call.url.endsWith("/v1/payment_intents")), false);
+    const looked = ctx.stripe.calls.find((call) => call.url.includes("/v1/payment_methods/"));
+    assert.match(looked.url, /pm_linkmethod1$/);
+    assert.equal(Number(await ctx.redis(["HGET", topupBalanceKey(account.email), "checks"])) || 0, 0);
+  });
+
   it("turns automatic add off when the card is declined, and the webhook does not credit twice", async () => {
     const ctx = world({}, async (url, init) => {
+      const card = cardMethodResponse(url, init);
+      if (card) return card;
       if (url.endsWith("/v1/payment_intents") && init.method === "POST") {
         return Response.json({ error: { code: "card_declined", message: "Your card was declined." } }, { status: 402 });
       }
@@ -327,6 +387,8 @@ describe("automatic charges", () => {
   it("tells the chat the automatic add did not go through, with no price", async () => {
     const fake = await startFakeOpenRouter();
     const ctx = world({}, async (url, init) => {
+      const card = cardMethodResponse(url, init);
+      if (card) return card;
       if (url.endsWith("/v1/payment_intents") && init.method === "POST") {
         return Response.json({ error: { code: "authentication_required" } }, { status: 402 });
       }

@@ -24,6 +24,7 @@ import {
   topupBudgetUsd,
   freeMonthlyChecks,
   topupPack,
+  topupSessionKey,
   topupsEnabled,
   toMicros,
   userAllowanceUsedText,
@@ -99,7 +100,8 @@ function world(extra = {}) {
         return Response.json({ id: "cus_topuptester" });
       }
       if (u === "https://api.stripe.com/v1/checkout/sessions" && init.method === "POST") {
-        return Response.json({ url: "https://checkout.stripe.com/c/pay/cs_test_topup" });
+        stripe.checkoutCount = (stripe.checkoutCount || 0) + 1;
+        return Response.json({ id: `cs_test_topupsession${stripe.checkoutCount}`, url: "https://checkout.stripe.com/c/pay/cs_test_topup" });
       }
       return Response.json({ error: { message: "unexpected stripe call" } }, { status: 404 });
     }
@@ -331,6 +333,9 @@ describe("the account page sells a pack", () => {
     const session = ctx.stripe.calls.find((call) => call.url.endsWith("/v1/checkout/sessions"));
     assert.equal(session.params.get("mode"), "payment");
     assert.equal(session.params.get("line_items[0][price]"), PRICE);
+    assert.equal(session.params.get("payment_method_types[0]"), "card");
+    assert.equal(session.params.get("payment_method_types[1]"), null);
+    assert.equal([...session.params.values()].includes("link"), false);
     assert.equal(session.params.get("payment_intent_data[setup_future_usage]"), "off_session");
     assert.equal(session.params.get("metadata[grill_topup]"), "1");
     assert.match(session.params.get("success_url"), /\/account\?topup=ok$/);
@@ -346,6 +351,59 @@ describe("the account page sells a pack", () => {
     const second = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
     assert.equal(second.status, 303);
     assert.equal(ctx.stripe.calls.some((call) => call.url.endsWith("/v1/customers")), false);
+  });
+
+  it("says a cancelled payment charged nothing, and shows the balance after the first of two sessions is credited", async () => {
+    resetHostedCaches();
+    const ctx = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE });
+    const first = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
+    const second = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
+    assert.equal(first.status, 303);
+    assert.equal(second.status, 303);
+    const account = await storedAccount(ctx);
+    assert.deepEqual(account.topupOpenSessions, ["cs_test_topupsession1", "cs_test_topupsession2"]);
+    const cancel = await handleAccount(accountRequest("GET", { query: "?topup=cancel" }), ctx);
+    const cancelHtml = await cancel.text();
+    assert.match(cancelHtml, /Payment not completed\. Nothing was charged\./);
+    assert.doesNotMatch(cancelHtml, /Payment received/);
+    const early = await handleAccount(accountRequest("GET", { query: "?topup=ok" }), ctx);
+    const earlyHtml = await early.text();
+    assert.match(earlyHtml, /processing, refresh in a moment/);
+    assert.doesNotMatch(earlyHtml, /Payment received\. Prepaid checks left:/);
+    const credited = await applyTopupEvent(paidEvent(account.id, { id: "evt_topupfirstsess", session: "cs_test_topupsession1" }), {
+      env: ctx.env,
+      fetch: ctx.fetch,
+      command: ctx.redis,
+    });
+    assert.equal(credited.action, "credited");
+    assert.equal(await ctx.redis(["GET", topupSessionKey("cs_test_topupsession1")]), "credited");
+    assert.equal(await ctx.redis(["GET", topupSessionKey("cs_test_topupsession2")]), null);
+    const done = await handleAccount(accountRequest("GET", { query: "?topup=ok" }), ctx);
+    const doneHtml = await done.text();
+    assert.match(doneHtml, /Payment received\. Prepaid checks left: 100\./);
+    assert.doesNotMatch(doneHtml, /processing, refresh in a moment/);
+  });
+
+  it("says a second top-up is still processing when only the earlier session is credited", async () => {
+    resetHostedCaches();
+    const ctx = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE });
+    await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
+    const account = await storedAccount(ctx);
+    const credited = await applyTopupEvent(paidEvent(account.id, { id: "evt_topupfirstonly", session: "cs_test_topupsession1" }), {
+      env: ctx.env,
+      fetch: ctx.fetch,
+      command: ctx.redis,
+    });
+    assert.equal(credited.action, "credited");
+    const again = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
+    assert.equal(again.status, 303);
+    const stored = await storedAccount(ctx);
+    assert.deepEqual(stored.topupOpenSessions, ["cs_test_topupsession2"]);
+    const early = await handleAccount(accountRequest("GET", { query: "?topup=ok" }), ctx);
+    const html = await early.text();
+    assert.match(html, /processing, refresh in a moment/);
+    assert.doesNotMatch(html, /Payment received\. Prepaid checks left:/);
+    assert.match(html, /Prepaid checks left: 100/);
   });
 
   it("accepts a restricted key in the matching environment", async () => {

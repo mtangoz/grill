@@ -129,6 +129,7 @@ import {
   serviceRevenueKey,
   serviceSpendKey,
   topupBalanceKey,
+  topupSessionKey,
   autoTopupCeilingCents,
   autoTopupEnabled,
   autoTopupFailedText,
@@ -1120,6 +1121,8 @@ async function saveAccount(account, deps) {
   // Set when this sign-in spends a key minted for someone else. Deleting it must not revoke that key.
   if (account.capFrom) copy.capFrom = account.capFrom;
   if (typeof account.stripeCustomerId === "string" && account.stripeCustomerId.startsWith("cus_")) copy.stripeCustomerId = account.stripeCustomerId;
+  const openSessions = openTopupSessions(account);
+  if (openSessions.length) copy.topupOpenSessions = openSessions;
   if (typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_")) copy.stripePaymentMethodId = account.stripePaymentMethodId;
   if (typeof account.cardLast4 === "string" && /^\d{4}$/.test(account.cardLast4)) copy.cardLast4 = account.cardLast4;
   if (account.autoTopup === true || account.autoTopup === false) copy.autoTopup = account.autoTopup;
@@ -4537,11 +4540,35 @@ export async function handleDecisions(request, deps) {
 }
 
 const TOPUP_NOTES = {
-  ok: "Payment received. The checks show here once it is confirmed.",
-  cancel: "No payment was made.",
   unready: "Adding checks isn't ready just now. Try again in a minute.",
   failed: "The payment page did not open. Nothing was charged. Try again in a minute.",
 };
+
+const TOPUP_SESSION_RE = /^cs_(?:test|live)_[A-Za-z0-9]{8,200}$/;
+
+function openTopupSessions(account) {
+  const raw = Array.isArray(account?.topupOpenSessions) ? account.topupOpenSessions : [];
+  return raw.filter((id) => typeof id === "string" && TOPUP_SESSION_RE.test(id)).slice(-5);
+}
+
+async function rememberOpenTopup(account, sessionId, read) {
+  if (!TOPUP_SESSION_RE.test(String(sessionId || ""))) return;
+  const pending = [];
+  for (const id of openTopupSessions(account)) {
+    if (id === sessionId) continue;
+    const marked = await read(["GET", topupSessionKey(id)]);
+    if (marked !== "credited") pending.push(id);
+  }
+  account.topupOpenSessions = [...pending, sessionId].slice(-5);
+}
+
+function topupReturnNote(query, { checks = 0, credited = false } = {}) {
+  if (query === "cancel") return "Payment not completed. Nothing was charged.";
+  if (query !== "ok") return "";
+  if (!credited) return "Payment received. It's processing, refresh in a moment.";
+  const left = Math.max(0, Math.floor(Number(checks) || 0));
+  return `Payment received. Prepaid checks left: ${left}.`;
+}
 
 const ACCOUNT_NOTICES = {
   missed: "That did not go through. Try the button again.",
@@ -4652,6 +4679,7 @@ export async function handleAccount(request, deps) {
             origin: publicOrigin(request),
             autoTopup: autoTopupEnabled(deps.env) && form.get("auto_topup") === "1",
           });
+          await rememberOpenTopup(session.account, result.sessionId, (args) => redis(deps, args));
           if (session.account.stripeCustomerId) await saveAccount(session.account, deps);
           if (result.state === "redirect") return rememberPage(seeOther(result.url), session.sub, deps);
           return done(`${back}?topup=unready`);
@@ -4670,11 +4698,22 @@ export async function handleAccount(request, deps) {
     const founding = await foundingNumber(session.account.email, deps);
     const topupQuery = pageUrl(request).searchParams.get("topup") || "";
     const notice = ACCOUNT_NOTICES[pageUrl(request).searchParams.get("notice") || ""] || "";
-    const topupNote = TOPUP_NOTES[topupQuery] || "";
+    let credited = false;
+    if (topupQuery === "ok") {
+      for (const id of openTopupSessions(session.account)) {
+        const marked = await redis(deps, ["GET", topupSessionKey(id)]);
+        if (marked === "credited") {
+          credited = true;
+          break;
+        }
+      }
+    }
+    const prepaid = topupsEnabled(deps.env) ? await readTopup(session.account, deps) : { checks: 0 };
+    const topupNote = topupReturnNote(topupQuery, { checks: prepaid.checks, credited }) || TOPUP_NOTES[topupQuery] || "";
     const topup = topupsEnabled(deps.env)
       ? {
           pack: topupPack(deps.env),
-          checks: (await readTopup(session.account, deps)).checks,
+          checks: prepaid.checks,
           note: topupNote,
           auto: autoTopupEnabled(deps.env) ? await autoTopupView(session.account, deps) : null,
         }
