@@ -391,11 +391,13 @@ describe("the welcome page", () => {
     }
   });
 
-  it("is never cached, never leaks the link as a referrer, and only posts to itself", () => {
+  it("is never cached, never leaks the link as a referrer, and posts only to this site or Stripe Checkout", () => {
     assert.equal(WELCOME_HEADERS["Cache-Control"], "no-store");
     assert.equal(WELCOME_HEADERS["Referrer-Policy"], "no-referrer");
-    assert.match(WELCOME_HEADERS["Content-Security-Policy"], /form-action 'self'/);
-    assert.match(WELCOME_HEADERS["Content-Security-Policy"], /frame-ancestors 'none'/);
+    const csp = WELCOME_HEADERS["Content-Security-Policy"];
+    const formAction = csp.split(";").map((part) => part.trim()).find((part) => part.startsWith("form-action "));
+    assert.deepEqual(formAction.slice("form-action ".length).split(/\s+/), ["'self'", "https://checkout.stripe.com"]);
+    assert.match(csp, /frame-ancestors 'none'/);
     assert.deepEqual([statusFor("issued"), statusFor("unpaid"), statusFor("expired"), statusFor("invalid"), statusFor("error")], [200, 402, 410, 400, 503]);
   });
 });

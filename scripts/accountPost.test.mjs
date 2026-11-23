@@ -666,3 +666,23 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.equal(ctx.memory.command(["GET", freeChecksKey("tester@example.com", isoMonth())]), null);
   });
 });
+
+describe("account checkout form action", { concurrency: false }, () => {
+  beforeEach(() => resetHostedCaches());
+
+  it("lets the Add checks form follow Stripe Checkout and no other site", async () => {
+    const ctx = world();
+    const res = await handleAccount(new Request(accountUrl(), safariInit("GET", clerkCookies())), ctx);
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /<form method="post" action="\/account">[\s\S]*Add 100 checks · \$5/);
+    const csp = res.headers.get("content-security-policy");
+    const formAction = csp.split(";").map((part) => part.trim()).find((part) => part.startsWith("form-action "));
+    assert.ok(formAction, csp);
+    assert.deepEqual(formAction.slice("form-action ".length).split(/\s+/), ["'self'", "https://checkout.stripe.com"]);
+    assert.equal(
+      csp,
+      "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'self' https://checkout.stripe.com; frame-ancestors 'none'",
+    );
+  });
+});

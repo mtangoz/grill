@@ -586,3 +586,20 @@ describe("redis and stripe stores", () => {
     assert.equal((await store.getById("acct_wh")).activeHash, null);
   });
 });
+
+describe("pro page content security policy", () => {
+  it("lets a form follow Stripe Checkout and no other site", async () => {
+    const res = await handlePro(new Request("https://grillyour.ai/pro"), deps(memoryStore(), () => {
+      throw new Error("no fetch");
+    }));
+    assert.equal(res.status, 200);
+    const csp = res.headers.get("content-security-policy");
+    const formAction = csp.split(";").map((part) => part.trim()).find((part) => part.startsWith("form-action "));
+    assert.ok(formAction, csp);
+    assert.deepEqual(formAction.slice("form-action ".length).split(/\s+/), ["'self'", "https://checkout.stripe.com"]);
+    assert.equal(
+      csp,
+      "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'self' https://checkout.stripe.com; frame-ancestors 'none'",
+    );
+  });
+});
