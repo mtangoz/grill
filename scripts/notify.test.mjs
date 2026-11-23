@@ -303,7 +303,8 @@ describe("the launch email", () => {
     assert.match(text, /The free tool stays free and account-free/);
     assert.match(text, /Pro is opt-in/);
     assert.match(text, /https:\/\/github\.com\/mtangoz\/grill\/blob\/main\/docs\/PRIVACY\.md#the-pro-launch-list/);
-    assert.match(text, /Try it: https:\/\/grillyour\.ai\/pro/);
+    assert.match(text, /Try it: https:\/\/grillyour\.ai\/start\/\?ref=notify/);
+    assert.doesNotMatch(text, /https:\/\/grillyour\.ai\/pro\b/);
     assert.match(text, /This is the only email this list gets/);
     assert.match(text, /Grill, made by Hold/);
     assert.match(text, /support@grillyour\.ai/);

@@ -603,3 +603,24 @@ describe("pro page content security policy", () => {
     );
   });
 });
+
+describe("an unconfigured account page", () => {
+  it("redirects /pro to /start until the account is configured, and keeps the page when it is", async () => {
+    const bare = { env: {}, fetch: () => { throw new Error("no fetch"); } };
+    for (const method of ["GET", "POST"]) {
+      const res = await handlePro(new Request("https://grillyour.ai/pro", { method }), bare);
+      assert.equal(res.status, 308, method);
+      assert.equal(res.headers.get("location"), "/start", method);
+      assert.equal(res.headers.get("cache-control"), "no-store", method);
+      assert.equal(await res.text(), "", method);
+    }
+    const ready = await handlePro(
+      new Request("https://grillyour.ai/pro"),
+      deps(memoryStore(), () => {
+        throw new Error("no fetch");
+      }),
+    );
+    assert.equal(ready.status, 200);
+    assert.equal(ready.headers.get("location"), null);
+  });
+});
