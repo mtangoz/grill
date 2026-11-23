@@ -490,6 +490,11 @@ describe("the endpoints", () => {
           dest: "/api/hosted?__route=redeem",
         },
         {
+          src: "^/pricing/$",
+          status: 308,
+          headers: { Location: "/pricing" },
+        },
+        {
           src: "^/\\.well-known/openai-apps-challenge$",
           dest: "/.well-known/openai-apps-challenge",
           check: true,

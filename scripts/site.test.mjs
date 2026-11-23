@@ -1432,6 +1432,26 @@ describe("anyone can sign up", () => {
     assert.equal(new RegExp(notFound.src).test("/redeem"), false, "/redeem stays off the markdown 404");
   });
 
+  it("redirects /pricing/ to /pricing with 308, and leaves /pricing on the function", () => {
+    const config = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8"));
+    const errorAt = config.routes.findIndex((row) => row.handle === "error");
+    const route = config.routes.find((row) => row.src === "^/pricing/$");
+    assert.ok(route, "a route redirects /pricing/");
+    assert.ok(errorAt > config.routes.indexOf(route), "the redirect runs before the error phase");
+    assert.equal(route.status, 308);
+    assert.equal(route.headers?.Location, "/pricing");
+    assert.equal(route.dest, undefined);
+    assert.equal(route.has, undefined);
+    const pattern = new RegExp(route.src);
+    assert.equal(pattern.test("/pricing/"), true);
+    assert.equal(pattern.test("/pricing"), false);
+    assert.equal(pattern.test("/pricing/extra"), false);
+    assert.equal(pattern.test("/start/"), false);
+    const pricing = config.rewrites.find((rule) => rule.source === "/pricing");
+    assert.equal(pricing.destination, "/api/hosted?__route=pricing");
+    assert.equal(config.rewrites.filter((rule) => rule.source === "/pricing/").length, 0);
+  });
+
   it("does not let the /start markdown twin contradict the live spots count", async () => {
     build();
     const md = readFileSync(join(ROOT, "_site/start/index.md"), "utf8");
