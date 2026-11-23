@@ -4928,6 +4928,10 @@ export async function handleAccount(request, deps) {
       keptCard = "Auto-add stays on the card already saved. This payment did not save a new card.";
       delete session.account.autoTopupKeptCard;
       await saveAccount(session.account, deps);
+    } else if (!notice && !saved && session.account.autoTopupCardMissed === true) {
+      keptCard = "Auto-add is still off. This payment did not save a card. Tick auto-add on the next pack to turn it on.";
+      delete session.account.autoTopupCardMissed;
+      await saveAccount(session.account, deps);
     }
     const owned = topupQuery === "ok" && TOPUP_SESSION_RE.test(sessionId) && openTopupSessions(session.account).includes(sessionId);
     const credited = owned && (await redis(deps, ["GET", topupSessionKey(sessionId)])) === "credited";

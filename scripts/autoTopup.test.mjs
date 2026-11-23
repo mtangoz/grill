@@ -223,6 +223,7 @@ describe("automatic add on the account page", () => {
     assert.equal(stored.stripePaymentMethodId, undefined);
     resetHostedCaches();
     const html = await (await handleAccount(accountRequest("GET"), ctx)).text();
+    assert.match(html, /Auto-add is still off\. This payment did not save a card\. Tick auto-add on the next pack to turn it on/);
     assert.match(html, /Auto-add with this pack/);
     assert.doesNotMatch(html, /Auto-add when I run out · On/);
     assert.match(html, /<input type="checkbox" name="auto_topup" value="1">/);
@@ -258,8 +259,10 @@ describe("automatic add on the account page", () => {
     assert.equal(stored.stripePaymentMethodId, "pm_oldcard111");
     resetHostedCaches();
     const html = await (await handleAccount(accountRequest("GET"), ctx)).text();
+    assert.match(html, /Auto-add is still off\. This payment did not save a card\. Tick auto-add on the next pack to turn it on/);
     assert.doesNotMatch(html, /Auto-add when I run out · On/);
     assert.match(html, /Auto-add when I run out · Off/);
+    assert.match(html, /<input type="checkbox" name="auto_topup" value="1">/);
   });
 
   it("keeps an already-on auto-add on the old card when this checkout's card cannot be read, and says so once", async () => {

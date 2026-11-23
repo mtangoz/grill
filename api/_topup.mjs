@@ -286,12 +286,17 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
       if (method.startsWith("pm_")) {
         account.autoTopup = true;
         delete account.autoTopupKeptCard;
+        delete account.autoTopupCardMissed;
       } else if (wasOn && typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_")) {
         account.autoTopupKeptCard = true;
+        delete account.autoTopupCardMissed;
+      } else if (!wasOn) {
+        account.autoTopupCardMissed = true;
       }
     } else if (choice === "0") {
       account.autoTopup = false;
       delete account.autoTopupKeptCard;
+      delete account.autoTopupCardMissed;
     }
   }
   await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
