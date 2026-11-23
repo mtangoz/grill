@@ -591,7 +591,7 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.match(box, /type="checkbox" name="auto_topup" value="1" checked/);
     assert.match(box, /Automatically add another 100 checks \(\$2\.50\)/);
     assert.match(html, /<a href="\/account#checks">Add checks<\/a>/);
-    assert.match(html, /<a href="\/account">Account<\/a>/);
+    assert.match(html, /<a href="\/account" aria-current="page">Account<\/a>/);
     assert.match(html, /id="low-checks"/);
     assert.match(html, /No prepaid checks left\./);
     assert.doesNotMatch(html, /\bPro\b|subscription/i);

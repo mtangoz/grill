@@ -436,13 +436,43 @@ const STYLE = `
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 1rem 0; }
   :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }`;
 
-export function page(title, inner) {
+/** Pitchfork from site/brand/favicon-32.png. Inlined so the signed-in pages keep img-src data:. */
+const PITCHFORK =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAHLUExURRgWFRcVFBkXFhcWFBMREBUTEhYUEzEvLhgXFSgmJCUjIhMSEBQSESclI767tyUkIhYVFAYFA4uJhX98eQYFBC4tKx8dHBoYFwwKCU5MSv//+kxKRw0MCg8ODMrHw725tgwLCgwLCVlXVUJAPg4MCwsJCVFPTf/9+E1LShEPDru5tQ0MC1tZV//8+ERCQQ0LCgsKCVBOTP/++U1LSRAPDby5tVpYVkRBQA0LC1tZVkRCQP/9+by5thAPDsvIxL26txEQDhAODf/89wsJCP//+0lHRQAAAMjFwbi2slhWVP/++hIQDy0rKfPv68nGwnZ0cXh1c9vY1NTQzXVzcXd1ctPPy+nm4iQiIV1bWeLf2/f07/Xy7u/s6PDt6fby7t3Z1VNRThsZGCwqKCEgHs3KxsG+uh4dGxkYFhUUExIREAgHBbu4tAQDAhMSEQ8NDL26thoZFwoJBwoJCA4NCxgVFRQTEgcGBbm2swQCAX57eNHNyuzo5Onl4c/MyHNwbgUEA66sqKKgnUA+PD89PK6rqKCemwQDAZ+dmZmWk6iloZCOijk3NeXi3qqno7Ctqt/b1y8tKxEQDxcWFTQyMZWSj5CNiy4sKhoXFgUDAvfMDQQAAAABYktHRACIBR1IAAAAB3RJTUUH6goLAyE5N2YuVgAAAZ5JREFUOMtjYIABRgYmEMHAyMzAxMiABTAysAAxKyuUgUWejZ2Ng4WTi5uBmZ0VmwoeXj5+AUEhYRFWUT4xVkx5cQlJKWkZWTl5BUUlKWUVcUwFqmrqGgqaclraEjq6evpYFBgYGhnrm8iZykiYqZtb4FGgL2GpboVdgTVIgY0MUAFWEyQM1SVteezsHRwtnbAqcFZzcXVzc/dwc/P0MsfiSCZvH18//4DAoOCQ0LBwHibMkBTXjoiMio6JjYuKT1ARxxbWTAqJSckpqWk+HDLYYouZgTE9IzPLLzsnly2dEcjFooCZIT1PLt+ggIERmwJGoDAjh4qcTWE6IyMOE4DiKnKmRenMuExgZiaggBGkwAaigBGbAgGoFSCVOByJMAGXL4rlbJxBJpTgcCRTnpypszgubzIzMpeWuZdXsOF0ZLpEZVV1TW0d0AzsCgrqGxqbmltacxKxuQEoltjW3uHm1tlVgUsBk0l3T29f/4SJHNgUTCphZkxXmTxl6rQ8Jqy+AKpgYJyumTPDG5RaJjFgAZOAEcqUmAiUZ0bSDwDk9U+6pn3KnAAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0xMC0xMVQwMzozMzozMiswMDowMOTL+uAAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMTAtMTFUMDM6MzM6MzIrMDA6MDCVlkJcAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTEwLTExVDAzOjMzOjU3KzAwOjAwVtRFowAAAABJRU5ErkJggg==";
+
+/** Sticky bar for a signed-in page. `nav` is "account", "decisions", or "other". */
+const HEADER_STYLE = `
+  body.app { padding: 0; }
+  body.app main { padding: 0.2rem max(16px, env(safe-area-inset-right)) 3.5rem max(16px, env(safe-area-inset-left)); }
+  body.app h1 { margin-top: 1.15rem; }
+  .site-header { position: sticky; top: 0; z-index: 2; background: var(--paper); display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: nowrap; box-sizing: border-box; margin: 0; padding: env(safe-area-inset-top) max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left)); border-bottom: 1px solid var(--rule); min-height: calc(44px + env(safe-area-inset-top)); }
+  .site-header .mark { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; flex: 0 0 auto; }
+  .site-header .mark img { width: 24px; height: 24px; border-radius: 5px; display: block; }
+  .site-header nav { display: flex; flex-wrap: nowrap; align-items: center; gap: 0; min-width: 0; }
+  .site-header nav a { font-weight: 650; text-decoration: none; white-space: nowrap; min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 0 8px; box-sizing: border-box; }
+  .site-header nav a[aria-current="page"] { text-decoration: underline; text-underline-offset: 4px; }
+  @media (max-width: 390px) {
+    .site-header { gap: 4px; padding-right: max(8px, env(safe-area-inset-right)); padding-left: max(8px, env(safe-area-inset-left)); }
+    .site-header .mark { gap: 4px; font-size: 1rem; }
+    .site-header .mark img { width: 22px; height: 22px; }
+    .site-header nav a { padding: 0 5px; font-size: 0.82rem; }
+  }`;
+
+function signedInHeader(nav) {
+  const item = (href, label, key) => `<a href="${href}"${nav === key ? ' aria-current="page"' : ""}>${label}</a>`;
+  return `<header class="site-header"><a class="mark" href="/"><img src="${PITCHFORK}" alt="" width="24" height="24">grill</a><nav aria-label="Account">${item("/decisions", "Your grills", "decisions")} ${item("/account#checks", "Add checks", "checks")} ${item("/account", "Account", "account")}</nav></header>`;
+}
+
+export function page(title, inner, { nav = "" } = {}) {
+  const viewport = nav ? "width=device-width, initial-scale=1, viewport-fit=cover" : "width=device-width, initial-scale=1";
+  const style = nav ? STYLE + HEADER_STYLE : STYLE;
+  const shell = nav
+    ? `<body class="app">${signedInHeader(nav)}<main>\n${inner}\n</main></body>`
+    : `<body><main><a class="mark" href="https://grillyour.ai/">grill</a>\n${inner}\n</main></body>`;
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex"><title>${esc(title)}</title><style>${STYLE}</style></head>
-<body><main><a class="mark" href="https://grillyour.ai/">grill</a>
-${inner}
-</main></body></html>`;
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="${viewport}">
+<meta name="robots" content="noindex"><title>${esc(title)}</title><style>${style}</style></head>
+${shell}</html>`;
 }
 
 /**

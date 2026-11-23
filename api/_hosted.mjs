@@ -3179,6 +3179,11 @@ function terminal(title, inner) {
   return page(title, `${inner}<p><a href="/">Back to Grill</a></p>`);
 }
 
+/** A signed-in page. `nav` marks Your grills ("decisions") or Account ("account"). */
+function appPage(title, inner, nav = "other") {
+  return page(title, inner, { nav });
+}
+
 function signInMissed(request, deps) {
   const again = signInUrl(deps.env, returnTo(request));
   const link = again ? `<p><a href="${esc(again)}">Try sign-in again</a></p>` : "";
@@ -3221,7 +3226,7 @@ async function pageVisitor(request, deps) {
   const user = await clerkUser(who.payload.sub, deps);
   if (!user) return { missing: true };
   const email = verifiedEmail(user);
-  if (!email) return { html: terminal("Verified email needed · Grill", "<h1>Grill needs a verified email on this account.</h1><p>Add one with your sign-in company, then come back.</p>") };
+  if (!email) return { html: appPage("Verified email needed · Grill", "<h1>Grill needs a verified email on this account.</h1><p>Add one with your sign-in company, then come back.</p><p><a href=\"/\">Back to Grill</a></p>") };
   return { user, email, sub: who.payload.sub };
 }
 
@@ -3229,7 +3234,7 @@ async function pageUser(request, deps) {
   const visitor = await pageVisitor(request, deps);
   if (visitor.redirect || visitor.missing || visitor.html || !visitor.user) return visitor;
   const gate = await admit(visitor.user, deps, visitor.sub);
-  if (!gate.email) return { html: terminal("Verified email needed · Grill", "<h1>Grill needs a verified email on this account.</h1><p>Add one with your sign-in company, then come back.</p>") };
+  if (!gate.email) return { html: appPage("Verified email needed · Grill", "<h1>Grill needs a verified email on this account.</h1><p>Add one with your sign-in company, then come back.</p><p><a href=\"/\">Back to Grill</a></p>") };
   if (!gate.allowed) return { html: inviteOnlyPage(request) };
   const personId = await resolvePerson(visitor.sub, gate.email, deps);
   const account = await ensureAccount(personId, gate.email, deps, gate.human);
@@ -3238,7 +3243,7 @@ async function pageUser(request, deps) {
 
 function inviteOnlyPage(request) {
   const ref = refFromCookie(request?.headers?.get("cookie"));
-  return terminal(
+  return appPage(
     "Invite only · Grill",
     `<h1>Grill in chat is invite-only for now.</h1>
     <p>You hit the invite wall. This email isn't on the list yet.</p>
@@ -3247,7 +3252,8 @@ function inviteOnlyPage(request) {
     <h2>No invite code?</h2>
     <p>Join the waitlist. Nothing is emailed, and joining does not let you in. Once you are let in, the free option works in your own AI chat.</p>
     ${waitlistFormHtml({ ref })}
-    <p>To ask for an invite, write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p>`,
+    <p>To ask for an invite, write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p>
+    <p><a href="/">Back to Grill</a></p>`,
   );
 }
 
@@ -3470,7 +3476,7 @@ function renderDecision(row, byId, extra = {}) {
   ]
     .filter(Boolean)
     .join(" ");
-  return page(
+  return appPage(
     `${row.title || "Untitled"} · Grill`,
     `${NARROW}
     <style>
@@ -3505,6 +3511,7 @@ function renderDecision(row, byId, extra = {}) {
     ${reviewForm(row)}
     ${sharing}
     <p class="row">${shareLink}<a class="button" href="/decisions?confirm=delete&amp;id=${esc(id)}">Delete this record</a>${chainLink}</p>`,
+    "decisions",
   );
 }
 
@@ -3595,18 +3602,12 @@ const LIST_STYLE = `<style>
     @media (max-width: 390px) {
       .decision .record-title, .decision .meta { overflow-wrap: break-word; }
     }
-    nav.signed-in { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; margin: 0.6rem 0 0.2rem; }
-    nav.signed-in a { font-weight: 650; text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
     </style>`;
 
 function renderFooter(total, filtered) {
   if (!total) return `<p class="small footer"><a href="/account">Account</a></p>`;
   const remove = filtered ? "" : ` · <a href="/decisions?confirm=delete-all">Delete all</a>`;
   return `<p class="small footer"><a href="/decisions?export=text">Export</a> · <a href="/decisions?export=json">JSON</a>${remove} · <a href="/account">Account</a></p>`;
-}
-
-function signedInNav() {
-  return `<nav class="signed-in" aria-label="Account"><a href="/decisions">Your grills</a> <a href="/account#checks">Add checks</a> <a href="/account">Account</a></nav>`;
 }
 
 /** Under this many free checks, or with no prepaid checks, the page points at Add checks. */
@@ -3652,10 +3653,9 @@ function renderDecisions(account, rows, _credit, habits, extra = {}) {
   const waiting = keeping && !narrowed ? renderWaiting(habits?.waiting || 0) : "";
   const empty = shown.length ? "" : narrowed ? `<p>${esc(emptyInView(type, source))}</p>` : waiting ? "" : EMPTY_DECISIONS;
   const how = shown.length < 3 && !(narrowed && !shown.length) ? `<p class="small">${LOOKBACK_HOW}</p>` : "";
-  return page(
+  return appPage(
     "Your grills",
     `${LIST_STYLE}
-    ${signedInNav()}
     <h1>Your grills</h1>
     ${extra.low || ""}
     ${renderImpact(shown, type, source)}
@@ -3678,12 +3678,13 @@ function renderDecisions(account, rows, _credit, habits, extra = {}) {
     </form>
     ${renderCalendar("/decisions", extra.calendar, extra.freshUrl || "")}
     </details>`,
+    "decisions",
   );
 }
 
 /** The confirm page. The preview is the same HTML the public page will show. */
 function renderShareConfirm(recordId, snapshot) {
-  return page(
+  return appPage(
     "Share this verdict? · Grill",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Share this verdict?</h1>
@@ -3695,6 +3696,7 @@ function renderShareConfirm(recordId, snapshot) {
       <button type="submit" name="confirm" value="share">Share verdict</button>
     </form>
     <p><a href="/decisions">Don't share</a></p>`,
+    "decisions",
   );
 }
 
@@ -3709,7 +3711,7 @@ function renderDeleteOneConfirm(row, chainCount) {
   const detail = chain
     ? `This removes ${chainCount} record${chainCount === 1 ? "" : "s"} in this chain, including “${esc(row.title || "Untitled")}”.`
     : `This removes “${esc(row.title || "Untitled")}”.`;
-  return page(
+  return appPage(
     `${what}? · Grill`,
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>${what}?</h1>
@@ -3720,12 +3722,13 @@ function renderDeleteOneConfirm(row, chainCount) {
       <button type="submit" name="confirm" value="delete">${what}</button>
     </form>
     <p><a href="/decisions">Keep it</a></p>`,
+    "decisions",
   );
 }
 
 /** A page the person has to read. The confirm value is the button they press, not a hidden field. */
 function renderDeleteAllConfirm() {
-  return page(
+  return appPage(
     "Delete all records? · Grill",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Delete all records?</h1>
@@ -3735,6 +3738,7 @@ function renderDeleteAllConfirm() {
       <button type="submit" name="confirm" value="delete">Delete all records</button>
     </form>
     <p><a href="/decisions">Keep them</a></p>`,
+    "decisions",
   );
 }
 
@@ -3745,17 +3749,14 @@ function renderAccount(account, credit, extra = {}) {
   const freeLeft = typeof extra.freeRemaining === "number" ? extra.freeRemaining : freeMonthlyChecks(extra.env);
   const allowance = esc(allowanceLine(freeLeft, extra.env));
   const stopped = credit?.out ? `<p>${esc(OUT_OF_CREDIT)}</p>` : "";
-  return page(
+  return appPage(
     "Your Grill account",
     `<style>
     @media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}
-    nav.signed-in { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; margin: 0.6rem 0 0.2rem; }
-    nav.signed-in a { font-weight: 650; text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
     #checks { border: 1px solid var(--rule); border-radius: 12px; padding: 2px 16px 14px; margin: 0.4rem 0 1.4rem; }
     #checks > h2 { margin-top: 0.85rem; }
     #topup button { font-size: 1.08rem; padding: 12px 22px; }
     </style>
-    ${signedInNav()}
     <h1>Your account</h1>
     ${status}
     ${extra.low || ""}
@@ -3782,6 +3783,7 @@ function renderAccount(account, credit, extra = {}) {
     ${renderImpactEmail(account, field)}
     <p><a class="button" href="/account?confirm=delete">Delete this account</a></p>
     <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
+    "account",
   );
 }
 
@@ -3889,7 +3891,7 @@ const OUTCOME_LABELS = { held: "Held up", no: "Didn't", mixed: "Mixed" };
 function renderOutcomeConfirm(row, value) {
   const label = OUTCOME_LABELS[value];
   if (!label) return "";
-  return page(
+  return appPage(
     "Record this look-back? · Grill",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Record this look-back?</h1>
@@ -3903,11 +3905,12 @@ function renderOutcomeConfirm(row, value) {
       <button type="submit" name="confirm" value="record">${label}</button>
     </form>
     <p><a href="/decisions">Your grills</a></p>`,
+    "decisions",
   );
 }
 
 function renderDeleteAccountConfirm(field = "") {
-  return page(
+  return appPage(
     "Delete this account? · Grill",
     `<style>@media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}</style>
     <h1>Delete this account?</h1>
@@ -3918,6 +3921,7 @@ function renderDeleteAccountConfirm(field = "") {
       <button type="submit" name="confirm" value="delete">Delete this account</button>
     </form>
     <p><a href="/account">Keep this account</a></p>`,
+    "account",
   );
 }
 
@@ -4048,7 +4052,7 @@ async function grantStillListed(hash, deps) {
 function renderRedeemed(env, { number = null, spots = "" } = {}) {
   const member = number ? `<p>${esc(foundingMemberLine(number))}</p>` : "";
   const offer = spots ? `<p>${esc(spots)}</p>` : "";
-  return page(
+  return appPage(
     "You're in · Grill",
     `${REDEEM_NARROW}
     <h1>You're in.</h1>
@@ -4063,17 +4067,18 @@ function renderRedeemed(env, { number = null, spots = "" } = {}) {
 }
 
 function renderInviteOff() {
-  return terminal(
+  return appPage(
     "Invite codes aren't on · Grill",
     `<h1>Invite codes aren't on.</h1>
-    <p>There isn't an invite code to enter right now. To ask for an invite, write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p>`,
+    <p>There isn't an invite code to enter right now. To ask for an invite, write to <a href="mailto:support@grillyour.ai">support@grillyour.ai</a>.</p>
+    <p><a href="/">Back to Grill</a></p>`,
   );
 }
 
 function renderRedeemForm(error, spots = "", env = {}) {
   const note = REDEEM_ERRORS[error] ? `<p><strong>${REDEEM_ERRORS[error]}</strong></p>` : "";
   const offer = spots ? `<p>${esc(spots)}</p>` : "";
-  return page(
+  return appPage(
     "Enter an invite code · Grill",
     `${REDEEM_NARROW}
     <h1>Enter an invite code</h1>
@@ -4091,7 +4096,7 @@ function renderRedeemForm(error, spots = "", env = {}) {
 
 function renderRedeemConfirm(code, spots = "", env = {}) {
   const offer = spots ? `<p>${esc(spots)}</p>` : "";
-  return page(
+  return appPage(
     "Use this invite code? · Grill",
     `${REDEEM_NARROW}
     <h1>Use this invite code?</h1>
@@ -4266,7 +4271,7 @@ function renderJudge({ packet, tooLong, askRecords, verdict, note, hint }) {
     <p class="small">${recordsNoteHtml()}</p>
     <div class="row"><button type="submit" name="keep" value="yes">Yes</button> <button type="submit" name="keep" value="no">No</button></div>`
     : `<p class="row"><button type="submit">Grill this</button></p>`;
-  return page(
+  return appPage(
     "Grill this decision · Grill",
     `<h1>Grill this decision</h1>
     <p>This uses the same outside judge as Grill in chat. Nothing is sent until you press the button.</p>
