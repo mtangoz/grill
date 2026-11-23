@@ -5,9 +5,7 @@
   </div>
 
   <h1>Connect Grill to your AI.</h1>
-  <p id="founding-spots" class="note">First 100 users get Grill free for life, 100 spots left.</p>
-  <p class="note">Each account gets 100 free checks a month, reset on the 1st.</p>
-  <p class="note">When Grill is connected, most apps show a Grill tool call when it runs. If yours shows none and the answer still claims to be Grill's, Grill may not have run.</p>
+  <p class="note" id="free-line">Free: 100 checks a month. No card.</p>
 
   <fieldset class="picker" id="tool-picker">
     <legend class="ask-q">Pick your AI</legend>
@@ -23,11 +21,10 @@
     <label class="choice" for="pick-other">Other AI</label>
 
     <div class="tool-panel for-chatgpt" id="chatgpt-steps">
-      <p class="note">Use it on chatgpt.com, in the same account or workspace where you added it. Pick @Grill so ChatGPT actually calls it. The phone app can't run custom connectors yet.</p>
-      <p class="note">If ChatGPT answers "as Grill" without showing a Grill tool call, it hasn't really grilled anything.</p>
+      <p class="note">Works on chatgpt.com on a computer (the phone app can't add connectors yet). <button class="button copy" type="button" id="copy-chatgpt-link" data-copy="https://grillyour.ai/start/#chatgpt-steps">Copy link</button></p>
       <ol class="steps">
         <li>On <a href="https://chatgpt.com/">chatgpt.com</a>: Plugins → + → Add custom MCP server.</li>
-        <li>Name: <code>Grill</code>. Server URL: <code>https://grillyour.ai/mcp</code>. Authentication: OAuth.</li>
+        <li>Name: <code>Grill</code>. Server URL: <code>https://grillyour.ai/mcp</code> <button class="button copy" type="button" data-copy="https://grillyour.ai/mcp">Copy</button>. Authentication: OAuth.</li>
         <li>Tick I understand and want to continue, then Create, then Install.</li>
         <li>Sign in with your email. We send you a code (check spam).</li>
       </ol>
@@ -36,18 +33,18 @@
     <div class="tool-panel for-claude" id="claude-steps">
       <p class="note">Works on the web, the desktop app and the phone app. The free plan allows only one custom connector. On a Team plan, an owner adds Grill, then each person signs in to Grill themselves.</p>
       <p><a href="https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=Grill&amp;connectorUrl=https%3A%2F%2Fgrillyour.ai%2Fmcp">Add Grill to Claude</a></p>
-      <p class="note">Link didn't open? Customize → Connectors → Add custom connector, then paste <code>https://grillyour.ai/mcp</code>.</p>
+      <p class="note">Link didn't open? Customize → Connectors → Add custom connector, then paste <code>https://grillyour.ai/mcp</code>. <button class="button copy" type="button" data-copy="https://grillyour.ai/mcp">Copy</button></p>
     </div>
 
     <div class="tool-panel for-grok" id="grok-steps">
       <p class="note">Works on the desktop app and the phone app. Premium, Super and Ultra on The X Subscription include it. Check your X plan includes Grok Bot.</p>
-      <p>Tell the bot <code>Add this MCP server: https://grillyour.ai/mcp</code>, then sign in when asked.</p>
+      <p>Tell the bot <code>Add this MCP server: https://grillyour.ai/mcp</code>, then sign in when asked. <button class="button copy" type="button" data-copy="https://grillyour.ai/mcp">Copy</button></p>
     </div>
 
     <div class="tool-panel for-cursor" id="cursor-steps">
       <p class="note">In Cursor, a desktop connection and a Cloud Agent connection are separate sign-ins.</p>
       <p><a href="https://cursor.com/en/install-mcp?name=Grill&amp;config=eyJ1cmwiOiJodHRwczovL2dyaWxseW91ci5haS9tY3AifQ==">Add Grill to Cursor</a> · <a href="https://insiders.vscode.dev/redirect/mcp/install?name=Grill&amp;config=%7B%22name%22%3A%22Grill%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fgrillyour.ai%2Fmcp%22%7D">Add Grill to VS Code</a></p>
-      <p>Or add it by hand. Name: <code>Grill</code>. Type: Streamable HTTP (HTTP in VS Code). URL: <code>https://grillyour.ai/mcp</code>. Leave the token and header fields empty, then Save. Grill asks you to sign in the first time you use it.</p>
+      <p>Or add it by hand. Name: <code>Grill</code>. Type: Streamable HTTP (HTTP in VS Code). URL: <code>https://grillyour.ai/mcp</code>. Leave the token and header fields empty, then Save. Grill asks you to sign in the first time you use it. <button class="button copy" type="button" data-copy="https://grillyour.ai/mcp">Copy</button></p>
       <p>Sign in with your email. We send you a code (check spam). No key.</p>
       <p class="note">Copilot in VS Code uses the same server.</p>
       <p class="note">Or use your own key. Once: <code>npx -y grillyour --set-key</code>. Paste your key, Enter, then Ctrl-D. Then add a server named <code>grill</code> that runs:</p>
@@ -59,10 +56,14 @@
       <p class="note">Copilot, DeepSeek, Gemini, Muse, Grok and more. Copy and paste. No install, no key.</p>
       <p class="note">To connect Grill in Microsoft 365 Copilot, an admin has to add it first. Copy and paste works without that. Consumer Copilot's documented connectors don't include custom servers, so use copy and paste.</p>
       <ol class="steps">
-        <li>Copy <a href="https://github.com/mtangoz/grill/blob/main/prompts/grill.md">the Grill prompt</a> into the assistant you think with, and say what you're deciding.</li>
+        <li>Paste <a href="https://github.com/mtangoz/grill/blob/main/prompts/grill.md">the Grill prompt</a> into the assistant you think with first. A “Grill this” line does nothing until that prompt is in the chat.</li>
+        <li>Then paste the example below into that same chat, and say what you're deciding.</li>
         <li>It writes the decision up with you, then gives you a prompt for the judge.</li>
         <li>Paste that into an assistant from a different company, then paste the answer back.</li>
       </ol>
+      <p class="note">Then paste this in that same chat.</p>
+      <p id="other-example">Grill this: ChatGPT says I should move our launch up two weeks to beat a competitor. Should I tell my boss we can do it?</p>
+      <p><button class="button" type="button" id="copy-other-example">Copy</button></p>
       <p class="note">ChatGPT into Claude, Gemini or Grok. Copilot into Gemini, because Copilot can run OpenAI, Anthropic or xAI models. DeepSeek into Claude, ChatGPT, Gemini or Grok. Gemini into Claude, ChatGPT or Grok. Grok into Claude, ChatGPT or Gemini. Muse into Claude, ChatGPT or Gemini.</p>
     </div>
 
@@ -70,6 +71,7 @@
       <p class="note">Paste this in a new chat.</p>
       <p id="starter-prompt">Grill this: ChatGPT says I should move our launch up two weeks to beat a competitor. Should I tell my boss we can do it?</p>
       <p><button class="button" type="button" id="copy-starter">Copy</button></p>
+      <p class="note" id="tool-call-check">You'll see a Grill tool call in the chat when it runs. No tool call means Grill didn't run.</p>
       <p class="note">Or let your AI make the plan, and have Grill check it before you see it.</p>
       <p id="starter-plan">Make a plan to hit our launch date, grill it until it's solid, and show me what Grill changed.</p>
       <p><button class="button" type="button" id="copy-starter-plan">Copy</button></p>
@@ -84,19 +86,54 @@
 </main>
 <script>
 (function () {
+  function fallbackCopy(value) {
+    var area = document.createElement("textarea");
+    area.value = value;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.top = "0";
+    area.style.left = "0";
+    area.style.width = "1px";
+    area.style.height = "1px";
+    area.style.fontSize = "16px";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.focus();
+    area.select();
+    area.setSelectionRange(0, area.value.length);
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+    document.body.removeChild(area);
+    if (!ok) throw new Error("copy failed");
+  }
+  function copyText(value) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(value).catch(function () { fallbackCopy(value); });
+    }
+    return Promise.resolve().then(function () { fallbackCopy(value); });
+  }
   function wire(button, prompt) {
     if (!button || !prompt) return;
     button.addEventListener("click", function () {
       var value = prompt.textContent.trim();
-      function done() { button.textContent = "Copied"; }
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(value).then(done, function () { done(); });
-      } else {
-        done();
-      }
+      copyText(value).then(function () { button.textContent = "Copied"; }, function () { button.textContent = "Copy"; });
     });
   }
   wire(document.getElementById("copy-starter"), document.getElementById("starter-prompt"));
   wire(document.getElementById("copy-starter-plan"), document.getElementById("starter-plan"));
+  wire(document.getElementById("copy-other-example"), document.getElementById("other-example"));
+  var nodes = document.querySelectorAll("[data-copy]");
+  for (var i = 0; i < nodes.length; i++) {
+    (function (button) {
+      button.addEventListener("click", function () {
+        copyText(button.getAttribute("data-copy") || "").then(function () { button.textContent = "Copied"; }, function () { button.textContent = "Copy"; });
+      });
+    })(nodes[i]);
+  }
+  var hash = location.hash;
+  if (hash === "#chatgpt" || hash === "#chatgpt-steps") {
+    var tool = document.querySelector("#tool-picker input[type=radio]");
+    if (tool) tool.checked = true;
+  }
 })();
 </script>

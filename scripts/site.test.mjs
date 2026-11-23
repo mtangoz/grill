@@ -767,8 +767,11 @@ describe("the /start page", () => {
     }
     assert.ok(start.indexOf('id="pick-other"') < start.indexOf('id="chatgpt-steps"'), "every chip comes before the panels");
     const chatgpt = section(start, "chatgpt-steps", "claude-steps");
-    assert.match(chatgpt, /Use it on chatgpt\.com, in the same account or workspace where you added it\. Pick @Grill so ChatGPT actually calls it\. The phone app can't run custom connectors yet\./);
-    assert.match(chatgpt, /If ChatGPT answers "as Grill" without showing a Grill tool call, it hasn't really grilled anything\./);
+    assert.match(chatgpt, /Works on chatgpt\.com on a computer \(the phone app can't add connectors yet\)\./);
+    assert.match(chatgpt, /id="copy-chatgpt-link"/);
+    assert.match(chatgpt, /data-copy="https:\/\/grillyour\.ai\/start\/#chatgpt-steps"/);
+    assert.match(chatgpt, /data-copy="https:\/\/grillyour\.ai\/mcp"/);
+    assert.doesNotMatch(chatgpt, /If ChatGPT answers "as Grill"/);
     assert.doesNotMatch(chatgpt, /works in the phone app|iOS app|Custom plugins can't be added/);
     assert.match(chatgpt, /https:\/\/chatgpt\.com\//);
     assert.equal((chatgpt.match(/<li>/g) ?? []).length, 4, "ChatGPT is four lines");
@@ -822,14 +825,21 @@ describe("the /start page", () => {
     const other = section(start, "other-steps", "try-grill");
     assert.match(other, /Copilot, DeepSeek, Gemini, Muse, Grok and more\. Copy and paste\. No install, no key\./);
     assert.ok(other.includes(PROMPT_LINK), "the paste prompt");
-    assert.match(other, /into the assistant you think with, and say what you're deciding/);
+    assert.match(other, /Paste <a href="https:\/\/github\.com\/mtangoz\/grill\/blob\/main\/prompts\/grill\.md">the Grill prompt<\/a> into the assistant you think with first\./);
+    assert.match(other, /A “Grill this” line does nothing until that prompt is in the chat\./);
+    assert.match(other, /id="other-example"/);
     assert.match(other, /gives you a prompt for the judge/);
     assert.match(other, /Paste that into an assistant from a different company, then paste the answer back/);
     assert.match(other, /ChatGPT into Claude, Gemini or Grok\. Copilot into Gemini, because Copilot can run OpenAI, Anthropic or xAI models\. DeepSeek into Claude, ChatGPT, Gemini or Grok\. Gemini into Claude, ChatGPT or Grok\. Grok into Claude, ChatGPT or Gemini\. Muse into Claude, ChatGPT or Gemini\./);
     assert.match(other, /To connect Grill in Microsoft 365 Copilot, an admin has to add it first\. Copy and paste works without that\. Consumer Copilot's documented connectors don't include custom servers, so use copy and paste\./);
     assert.doesNotMatch(other, /Copilot into (Claude|ChatGPT|Grok)/);
     assert.doesNotMatch(other, /grillyour\.ai\/mcp|custom connector|Keep Activity|Connected Apps|Add a custom app|Should work|coming soon|Meta AI|RNdHSHmWCRJO40vd|US only|personal Google/i);
-    assert.match(start, /When Grill is connected, most apps show a Grill tool call when it runs\. If yours shows none and the answer still claims to be Grill's, Grill may not have run\./);
+    assert.match(start, /Free: 100 checks a month\. No card\./);
+    assert.doesNotMatch(start, /free for life|spots left|founding spots/i);
+    assert.ok(start.indexOf('id="free-line"') < start.indexOf('id="tool-picker"'), "the free line comes before the tabs");
+    assert.match(start, /You'll see a Grill tool call in the chat when it runs\. No tool call means Grill didn't run\./);
+    assert.ok(start.indexOf('id="starter-prompt"') < start.indexOf('id="tool-call-check"'), "the tool-call line follows the example");
+    assert.doesNotMatch(start, /When Grill is connected, most apps show a Grill tool call/);
     assert.doesNotMatch(start, /Grill doesn't (see|keep)|Grill does not (see|keep) grills/i);
     assert.ok(start.includes(`<p id="starter-prompt">${STARTER}</p>`), "starter prompt");
     const starter = start.match(/<p id="starter-prompt">([^<]*)<\/p>/)?.[1] ?? "";
@@ -852,6 +862,8 @@ describe("the /start page", () => {
     assert.equal(scripts.length, 1);
     const script = start.match(/<script>([\s\S]*)<\/script>/)?.[1] ?? "";
     assert.match(script, /getElementById\("copy-starter"\)/);
+    assert.match(script, /navigator\.clipboard/);
+    assert.match(script, /execCommand\("copy"\)/);
     assert.doesNotMatch(script, /grillTrack|cookie|localStorage|pick-/);
     const log = readFileSync(join(ROOT, "MERGE-LOG.md"), "utf8");
     assert.match(log, /2026-11-07/);
@@ -870,8 +882,8 @@ describe("the /start page", () => {
     assert.match(ux, /Grok Bot shows the one line that adds `https:\/\/grillyour\.ai\/mcp`/);
     assert.match(ux, /Cursor and VS Code show the hosted connector at `https:\/\/grillyour\.ai\/mcp`, then the npx setup for your own key/);
     assert.match(ux, /Other AI shows the copy-and-paste steps for Copilot, DeepSeek, Gemini, Muse, Grok and more/);
-    assert.match(ux, /Then one prompt to copy\. Its only script copies that prompt/);
-    assert.match(ux, /and if yours shows none and the answer still claims to be Grill's, Grill may not have run\./);
+    assert.match(ux, /Then one prompt to copy\. Its only script copies that prompt, the server URL, and the ChatGPT tab link, with a clipboard fallback\./);
+    assert.match(ux, /You'll see a Grill tool call in the chat when it runs\. No tool call means Grill didn't run\./);
   });
 
   it("does not say Gemini or Muse are testing now, still being tested, or coming soon", () => {
@@ -939,7 +951,9 @@ describe("the /start page", () => {
     execFileSync(process.execPath, [join(ROOT, "scripts/build-site.mjs")], { stdio: "pipe" });
     const built = readFileSync(join(ROOT, "_site/start/index.html"), "utf8");
     assert.match(built, /<title>Start using Grill<\/title>/);
-    assert.match(built, /When Grill is connected, most apps show a Grill tool call when it runs\. If yours shows none and the answer still claims to be Grill's, Grill may not have run\./);
+    assert.match(built, /You'll see a Grill tool call in the chat when it runs\. No tool call means Grill didn't run\./);
+    assert.match(built, /Free: 100 checks a month\. No card\./);
+    assert.doesNotMatch(built, /free for life|spots left/i);
     assert.match(built, /<link rel="canonical" href="https:\/\/grillyour\.ai\/start\/">/);
     assert.match(built, /<meta name="description" content="Pick your AI, then connect Grill and paste one message\.">/);
     assert.match(built, /--paper:/);
@@ -1477,18 +1491,15 @@ describe("anyone can sign up", () => {
     assert.equal(config.rewrites.filter((rule) => rule.source === "/pricing/").length, 0);
   });
 
-  it("does not let the /start markdown twin contradict the live spots count", async () => {
+  it("does not advertise founding spots on /start or its markdown twin", async () => {
     build();
     const md = readFileSync(join(ROOT, "_site/start/index.md"), "utf8");
-    const { foundingSpotsLine } = await import("../api/_founding.mjs");
     const { renderStartPage } = await import("../api/_start.mjs");
-    const live = renderStartPage(foundingSpotsLine(2));
-    assert.match(live, /First 100 users get Grill free for life, 98 spots left\./);
-    assert.match(md, /First 100 users get Grill free for life\./);
-    assert.equal(md.match(/First 100 users get Grill free for life, \d+ spots? left/), null);
-    assert.equal(md.includes("100 spots left"), false);
-    assert.equal(md.includes("98 spots left"), false);
-    assert.doesNotMatch(md, /All 100 founding spots are taken/);
+    const live = renderStartPage();
+    assert.match(live, /Free: 100 checks a month\. No card\./);
+    assert.match(md, /Free: 100 checks a month\. No card\./);
+    assert.doesNotMatch(live, /free for life|spots left|founding spots/i);
+    assert.doesNotMatch(md, /free for life|spots left|founding spots/i);
   });
 });
 

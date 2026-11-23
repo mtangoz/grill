@@ -105,6 +105,10 @@
   #pick-grok:checked ~ .for-either,
   #pick-cursor:checked ~ .for-either,
   #pick-other:checked ~ .for-either { display: block; }
+  #chatgpt-steps:target,
+  #chatgpt-steps:target ~ .for-either { display: block; }
+  #pick-other:checked ~ #try-grill { display: none; }
+  button.copy { min-height: 44px; margin: 0 0 0 6px; padding: 8px 14px; vertical-align: middle; }
   button.button { border: 0; cursor: pointer; font-family: var(--sans); }
   [hidden] { display: none !important; }
 

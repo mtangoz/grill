@@ -159,7 +159,7 @@ The first 100 accounts that get access are founding members. Access means a rede
 
 A founding member does not have to pay for the old checkout. Checkout says "You don't need to pay." `/pricing` states the same check offer for everyone: 100 free checks a month, then a pack. The free-for-life tier is the same 100 free checks a month. The dollar safety cap stays. The account is not marked as a paid subscription.
 
-`/start` and `/redeem` say "First 100 users get Grill free for life, N spots left", or "All 100 founding spots are taken" when the count is 100. One spot left says "1 spot left". After a code works, and on the account page, the line is "Founding member #N of 100: Grill is free for you for life."
+`/start` and `/redeem` do not advertise founding spots. After a code works, and on the account page, someone who already has a number still sees "Founding member #N of 100: Grill is free for you for life."
 
 People already let in are numbered by first access. First access is the earliest time on record: the account's `createdAt` (the first sign-in), or the waitlist row's `approvedAt` when they were approved before they had an account. Someone with no time sorts after those with one, then by email. The same email keeps the earliest time. Tony's own accounts are left out. The operator passes those addresses to the backfill. They are not stored in the repository. An allowlist email that has never signed in gets a number the next time they are admitted. An invite-code grant is only a hash, so it cannot be turned back into an email.
 

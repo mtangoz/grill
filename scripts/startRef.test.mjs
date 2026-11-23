@@ -42,7 +42,9 @@ describe("start attribution", () => {
     assert.equal(res.status, 200);
     assert.equal(res.headers.get("location"), null);
     const html = await res.text();
-    assert.match(html, /First 100 users get Grill free for life, 100 spots left\./);
+    assert.match(html, /Free: 100 checks a month\. No card\./);
+    assert.doesNotMatch(html, /free for life|spots left/i);
+    assert.equal(res.headers.get("content-security-policy"), null);
     assert.match(html, /id="copy-starter"/);
     assert.match(html, /id="starter-prompt"/);
     assert.equal(html.includes("askgrill"), false);
@@ -65,7 +67,9 @@ describe("start attribution", () => {
     const bad = await handleStart(new Request("https://grillyour.ai/start?ref=not%20a%20ref"), ctx);
     assert.equal(bad.status, 200);
     assert.equal(bad.headers.get("location"), null);
-    assert.match(await bad.text(), /First 100 users get Grill free for life, 100 spots left\./);
+    const badHtml = await bad.text();
+    assert.match(badHtml, /Free: 100 checks a month\. No card\./);
+    assert.doesNotMatch(badHtml, /free for life|spots left/i);
     assert.equal(bad.headers.get("set-cookie"), null);
     assert.equal(ctx.memory.command(["GET", startRefKey("askgrill")]), null);
     assert.equal(ctx.memory.command(["GET", START_VIEWS_KEY]), "1");
@@ -91,7 +95,10 @@ describe("start attribution", () => {
     assert.ok(route, "a route serves /start before the HTML file");
     const start = readFileSync(join(ROOT, "site/start.html"), "utf8");
     assert.match(start, /id="copy-starter"/);
-    assert.match(start, /First 100 users get Grill free for life, 100 spots left\./);
+    assert.match(start, /Free: 100 checks a month\. No card\./);
+    assert.doesNotMatch(start, /free for life|spots left/i);
+    assert.match(start, /navigator\.clipboard/);
+    assert.match(start, /execCommand\("copy"\)/);
     const STARTER = "Grill this: ChatGPT says I should move our launch up two weeks to beat a competitor. Should I tell my boss we can do it?";
     assert.ok(start.includes(STARTER), "starter prompt");
     assert.match(STARTER, /^Grill this:/);

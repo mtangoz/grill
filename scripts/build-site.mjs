@@ -667,12 +667,7 @@ for (const p of publicPages) {
   const rel = p.url.slice(SITE_URL.length);
   const html = builtText.get(join(OUT, rel, "index.html"));
   if (html === undefined) throw new Error(`no page was built for ${p.url}, so it cannot get a Markdown twin`);
-  let md = htmlToMarkdown(html);
-  // /start HTML replaces this sentence with the live count. The twin is built once,
-  // so a number here would disagree with the page. Keep the sentence, drop the count.
-  if (rel === "start/") {
-    md = md.replace(/First 100 users get Grill free for life, \d+ spots? left\./g, "First 100 users get Grill free for life.");
-  }
+  const md = htmlToMarkdown(html);
   writeBuilt(join(OUT, rel, "index.md"), md);
 }
 // Same words as the homepage, for an agent that sends Accept: text/markdown. vercel.json
