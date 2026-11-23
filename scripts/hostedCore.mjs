@@ -7,6 +7,7 @@ import { addDays, confidenceValue, isoDate, lookBackPrompt, parseDecided, parseO
 import { CHALLENGE_KINDS, OWN_PLAN_RULE, SCOPE_GUARD, SESSION_TALLY_RULE, SOLID_LOOP_RULE, VERDICTS, clientCompanyHint } from "./judgeCore.mjs";
 import { INDEPENDENCE_NOT_VERIFIED, INDEPENDENCE_RELAY, buildGrillTools, groundedAuthor } from "../server/index.mjs";
 import { FEEDBACK_KEEP_DAYS, FEEDBACK_POINTER } from "./feedbackCore.mjs";
+import { internalEmails } from "./outsideLoopCore.mjs";
 
 export { SCOPE_GUARD };
 
@@ -542,6 +543,10 @@ export const TESTER_MONTHLY_USD = 5;
 export const DEFAULT_USER_MONTHLY_CAP_USD = TESTER_MONTHLY_USD;
 /** Free checks each UTC month. Same units as a prepaid pack. GRILL_FREE_CHECKS overrides it. */
 export const DEFAULT_FREE_CHECKS = 100;
+/** Free checks each UTC month for an address on GRILL_INTERNAL_EMAILS. */
+export const DEFAULT_INTERNAL_FREE_CHECKS = 2000;
+/** Per-person dollar safety cap, in dollars, for an address on that same list. Not shown. */
+export const DEFAULT_INTERNAL_PERSON_CAP_USD = 50;
 export const CAP_COUNTER_TTL_SECONDS = 40 * 24 * 60 * 60;
 
 // Each says what happened and when it starts again. With top-ups off, neither offers a way
@@ -560,6 +565,12 @@ export function topupsEnabled(env = {}) {
 /** Off-session pack charges. Off unless this is exactly `on`. The account checkbox still defaults to on. */
 export function autoTopupEnabled(env = {}) {
   return String(env.GRILL_AUTO_TOPUP ?? "").trim() === "on";
+}
+
+/** What pricing and the account page say about a later pack charge. Depends on the flag above. */
+export function autoChargeNote(env = {}) {
+  if (!autoTopupEnabled(env)) return "Nothing is charged automatically.";
+  return "If automatic add is on, another pack is charged to your saved card when you run out, up to your monthly ceiling. You can turn it off on your account page.";
 }
 
 export const AUTO_TOPUP_CEILINGS_CENTS = Object.freeze([1000, 2000, 5000]);
@@ -610,6 +621,65 @@ export function freeMonthlyChecks(env = {}) {
   return wholeIn(env.GRILL_FREE_CHECKS, 0, 100_000) ?? DEFAULT_FREE_CHECKS;
 }
 
+/** The person the per-person cap and the free-check counter are keyed to. */
+export function capPerson(account) {
+  return account.human || account.email || account.id;
+}
+
+/**
+ * Account ids on GRILL_INTERNAL_EMAILS. Emails stay with internalEmails, so the
+ * outside counters and this allowance read the same addresses. "on" and "none"
+ * are not ids. The cap is keyed by id only when the account has no email.
+ */
+function listedAccountIds(env = {}) {
+  const raw = typeof env?.GRILL_INTERNAL_EMAILS === "string" ? env.GRILL_INTERNAL_EMAILS : "";
+  const ids = new Set();
+  for (const part of raw.split(/[,\n]/)) {
+    const token = part.trim().toLowerCase();
+    if (!token || token.includes("@") || token === "on" || token === "none") continue;
+    ids.add(token);
+  }
+  return ids;
+}
+
+/**
+ * Whether this account gets the higher allowance. The list is GRILL_INTERNAL_EMAILS,
+ * read by the same function the outside counters use. A match is the cap person's
+ * email or the account's own email, compared in lower case. An account id matches
+ * when that id is what the cap is keyed by.
+ */
+export function isInternalAccount(account, env = {}) {
+  if (!account || typeof account !== "object") return false;
+  const list = internalEmails(env);
+  const person = String(capPerson(account) || "").trim().toLowerCase();
+  const own = String(account.email || "").trim().toLowerCase();
+  if (list) {
+    if (person.includes("@") && list.has(person)) return true;
+    if (own.includes("@") && list.has(own)) return true;
+  }
+  const ids = listedAccountIds(env);
+  if (!ids.size) return false;
+  const id = String(account.id || "").trim().toLowerCase();
+  if (id && ids.has(id)) return true;
+  if (person && !person.includes("@") && ids.has(person)) return true;
+  return false;
+}
+
+/** Free checks for one account. GRILL_INTERNAL_FREE_CHECKS overrides the higher default. */
+export function internalFreeChecks(env = {}) {
+  return wholeIn(env.GRILL_INTERNAL_FREE_CHECKS, 0, 100_000) ?? DEFAULT_INTERNAL_FREE_CHECKS;
+}
+
+export function freeChecksFor(env = {}, account = null) {
+  return isInternalAccount(account, env) ? internalFreeChecks(env) : freeMonthlyChecks(env);
+}
+
+/** Dollar safety cap for one account. The service-wide cap is separate and still applies. */
+export function personCapUsd(env = {}, account = null) {
+  if (!isInternalAccount(account, env)) return userMonthlyCapUsd(env);
+  return capFromEnv(env.GRILL_INTERNAL_PERSON_CAP_USD, DEFAULT_INTERNAL_PERSON_CAP_USD);
+}
+
 /** What the person pays, in cents. GRILL_TOPUP_PRICE_CENTS overrides it. Shown on the account page only. */
 export function topupPriceCents(env = {}) {
   return wholeIn(env.GRILL_TOPUP_PRICE_CENTS, 50, 100_000) ?? DEFAULT_TOPUP_PRICE_CENTS;
@@ -651,8 +721,8 @@ export function accountPageUrl(origin = "") {
 }
 
 /** The in-chat stop when this month's free checks are used up and top-ups are on. No price. */
-export function userAllowanceUsedText(origin = "", env = {}) {
-  const n = freeMonthlyChecks(env);
+export function userAllowanceUsedText(origin = "", env = {}, allowance) {
+  const n = allowance == null ? freeMonthlyChecks(env) : Math.max(0, Math.floor(Number(allowance) || 0));
   return `You've used this month's ${n} free checks, so this one didn't run. It resets next month on the 1st at 00:00 UTC. Add checks at ${accountPageUrl(origin)}.`;
 }
 
@@ -665,11 +735,11 @@ export function topupExhaustedText(origin = "") {
  * The router key has nothing left. With top-ups off that is the monthly limit.
  * With top-ups on, a balance that was bought and is now empty is the prepaid stop.
  */
-export function keyAllowanceText({ env = {}, origin = "", topupPresent = false, topupChecks = 0, topupBudgetMicros = 0 } = {}) {
+export function keyAllowanceText({ env = {}, origin = "", topupPresent = false, topupChecks = 0, topupBudgetMicros = 0, allowance } = {}) {
   if (!topupsEnabled(env)) return OUT_OF_CREDIT;
   const checks = Math.max(0, Number(topupChecks) || 0);
   if (topupPresent && !(checks > 0)) return topupExhaustedText(origin);
-  return userAllowanceUsedText(origin, env);
+  return userAllowanceUsedText(origin, env, allowance);
 }
 
 /** The OpenRouter key for a hosted account stays finite. */
@@ -681,8 +751,8 @@ export const MAX_HOSTED_KEY_LIMIT_USD = 200;
  * long grill. Never above MAX_HOSTED_KEY_LIMIT_USD. `usageUsd` keeps the limit above this
  * month's use so the router does not stop a grill the prepaid balance still covers.
  */
-export function keyLimitWithTopup(env = {}, budgetUsd = 0, checks = 0, usageUsd = 0) {
-  const free = userMonthlyCapUsd(env);
+export function keyLimitWithTopup(env = {}, budgetUsd = 0, checks = 0, usageUsd = 0, freeUsd) {
+  const free = freeUsd == null || !Number.isFinite(Number(freeUsd)) ? userMonthlyCapUsd(env) : Math.round(Number(freeUsd) * 100) / 100;
   if (!topupsEnabled(env)) return free;
   const unit = checkUnitUsd(env);
   const count = Math.max(0, Number(checks) || 0);
@@ -789,9 +859,10 @@ export function freeChecksOffer(env = {}) {
 }
 
 /** The allowance line /account shows. A count of checks, not a dollar amount. */
-export function allowanceLine(remainingChecks, env = {}) {
+export function allowanceLine(remainingChecks, env = {}, account = null) {
   const left = Math.max(0, Math.floor(Number(remainingChecks) || 0));
-  return `${freeChecksOffer(env).replace(/\.$/, "")}. ${left} left this month.`;
+  const offer = `Free: ${freeChecksFor(env, account)} checks a month, resets on the 1st`;
+  return `${offer}. ${left} left this month.`;
 }
 
 /** "2026-10" in UTC. */
@@ -1039,20 +1110,21 @@ export function checksLine(count) {
  * month's counters. A grill is allowed while the spend so far is under the cap, so
  * one grill can finish a little over; the next one is stopped.
  */
-export function capBlock({ serviceMicros = 0, userMicros = 0, env = {}, topupChecks = 0, topupBudgetMicros = 0, topupPresent = false, origin = "", revenueMicros = 0, freeChecksUsed = 0 } = {}) {
+export function capBlock({ serviceMicros = 0, userMicros = 0, env = {}, topupChecks = 0, topupBudgetMicros = 0, topupPresent = false, origin = "", revenueMicros = 0, freeChecksUsed = 0, account = null } = {}) {
   const revenue = Math.max(0, Math.floor(Number(revenueMicros) || 0));
   const serviceFull = (Number(serviceMicros) || 0) >= toMicros(monthlyCapUsd(env)) + revenue;
   const spend = Number(userMicros) || 0;
-  const free = toMicros(userMonthlyCapUsd(env));
+  const free = toMicros(personCapUsd(env, account));
   const checks = Math.max(0, Number(topupChecks) || 0);
-  const checksFull = Math.max(0, Math.floor(Number(freeChecksUsed) || 0)) >= freeMonthlyChecks(env);
+  const allowance = freeChecksFor(env, account);
+  const checksFull = Math.max(0, Math.floor(Number(freeChecksUsed) || 0)) >= allowance;
   // A prepaid check balance is not stopped by the free checks or either dollar cap.
   if (topupsEnabled(env) && checks > 0) return null;
   if (serviceFull) return { text: SERVICE_CAP_TEXT, which: "service" };
   if (spend >= free || checksFull) {
     if (!topupsEnabled(env)) return { text: USER_CAP_TEXT, which: "user" };
     if (topupPresent) return { text: topupExhaustedText(origin), which: "topup" };
-    return { text: userAllowanceUsedText(origin, env), which: "user" };
+    return { text: userAllowanceUsedText(origin, env, allowance), which: "user" };
   }
   return null;
 }

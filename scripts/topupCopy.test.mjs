@@ -16,7 +16,7 @@ describe("prepaid packs in the public terms and pricing", () => {
     assert.match(chat, /100 free checks a month/);
     assert.match(chat, /prepaid pack/);
     assert.match(chat, /Unused checks from a pack carry over/);
-    assert.match(chat, /Grill does not charge a card on its own/);
+    assert.match(chat, /If automatic add is on, another pack is charged to your saved card when you run out, up to your monthly ceiling\. You can turn it off on your account page\./);
     assert.match(chat, /Nothing is charged to you/);
     assert.doesNotMatch(chat, /overage|automatically charged|metered/i);
     const privacy = readFileSync(join(ROOT, "site/privacy.html"), "utf8");
@@ -34,5 +34,19 @@ describe("prepaid packs in the public terms and pricing", () => {
     assert.match(html, /Nothing is charged automatically/);
     assert.match(html, /\$9 a month/);
     assert.match(html, /You get 100 free checks a month/);
+    assert.doesNotMatch(html, /another pack is charged to your saved card/);
+  });
+
+  it("says a saved card can be charged when automatic add is on", async () => {
+    const res = await handlePricing(new Request("https://grillyour.ai/pricing"), {
+      env: { GRILL_AUTO_TOPUP: "on" },
+      fetch: () => Promise.reject(new Error("no network")),
+    });
+    const html = await res.text();
+    assert.equal(res.status, 200);
+    assert.match(html, /If automatic add is on, another pack is charged to your saved card when you run out, up to your monthly ceiling\. You can turn it off on your account page\./);
+    assert.doesNotMatch(html, /Nothing is charged automatically/);
+    assert.match(html, /You get 100 free checks a month/);
+    assert.doesNotMatch(html, /\binternal\b/i);
   });
 });
