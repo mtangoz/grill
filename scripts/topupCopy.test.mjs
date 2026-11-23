@@ -22,7 +22,7 @@ function assertCurrentOffer(html) {
   assert.match(html, /Checks are weighted: a usual grill is one check, and a heavier one counts as more than one/);
   assert.match(html, /100 checks for \$5/);
   assert.match(html, /Unused checks from a pack carry over/);
-  assert.match(html, /Automatic add is optional and starts ticked/);
+  assert.match(html, /Automatic add is optional and starts unticked/);
   assert.match(html, /up to \$20 a month/);
   assert.match(html, /You can turn it off on the account page/);
   assert.match(html, /With it off, a card is not charged on its own/);
@@ -32,7 +32,7 @@ function assertCurrentOffer(html) {
 }
 
 describe("prepaid packs in the public terms and pricing", () => {
-  it("says extra checks are prepaid, weighted, and that automatic add starts ticked", () => {
+  it("says extra checks are prepaid, weighted, and that automatic add starts unticked", () => {
     const terms = readFileSync(join(ROOT, "site/terms.html"), "utf8");
     const chat = terms.slice(terms.indexOf("<h2>Grill inside your chat</h2>"), terms.indexOf("<h2>Using Grill fairly</h2>"));
     assert.match(chat, /100 free checks a month/);
@@ -40,7 +40,7 @@ describe("prepaid packs in the public terms and pricing", () => {
     assert.match(chat, /prepaid pack/);
     assert.match(chat, /100 checks for \$5/);
     assert.match(chat, /Unused checks from a pack carry over/);
-    assert.match(chat, /Automatic add is optional and starts ticked/);
+    assert.match(chat, /Automatic add is optional and starts unticked/);
     assert.match(chat, /If automatic add is on, another pack is charged to your saved card when you run out, up to your monthly ceiling/);
     assert.match(chat, /The ceiling starts at \$20 a month/);
     assert.match(chat, /You can turn it off on your account page/);

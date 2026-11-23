@@ -562,7 +562,7 @@ export function topupsEnabled(env = {}) {
   return String(env.GRILL_TOPUPS ?? "").trim() === "on";
 }
 
-/** Off-session pack charges. Off unless this is exactly `on`. The account checkbox still defaults to on. */
+/** Off-session pack charges. Off unless this is exactly `on`. The account checkbox defaults to off. */
 export function autoTopupEnabled(env = {}) {
   return String(env.GRILL_AUTO_TOPUP ?? "").trim() === "on";
 }

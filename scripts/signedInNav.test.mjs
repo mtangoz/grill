@@ -1,8 +1,8 @@
 // The signed-in header is one component on every server-rendered page that already
-// has a session: the pitchfork and wordmark go home, and Your grills, Add checks,
-// and Account stay on that row. /pricing uses it when the visitor is already
-// signed in, and stays the public page otherwise. The homepage is a static file
-// with no session, so it is not in this list.
+// has a session: the pitchfork and wordmark go home, and Your grills and Account
+// stay on that row. Add checks is not a header link. /pricing uses it when the
+// visitor is already signed in, and stays the public page otherwise. The homepage
+// is a static file with no session, so it is not in this list.
 import { createHash, createSign, randomBytes } from "node:crypto";
 import { before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -74,7 +74,7 @@ function headerOf(html) {
   return html.match(/<header class="site-header">[\s\S]*?<\/header>/)?.[0] || "";
 }
 
-/** Logo home, the three links, the current page, and the sticky phone bar. */
+/** Logo home, Your grills, Account, the current page, and the sticky phone bar. */
 function assertSharedNav(html, { current, below } = {}) {
   const header = headerOf(html);
   assert.ok(header, "a shared site header");
@@ -82,7 +82,8 @@ function assertSharedNav(html, { current, below } = {}) {
   assert.match(header, /<a class="mark" href="\/"><img [^>]*alt=""[^>]*width="24"[^>]*>grill<\/a>/);
   assert.match(header, /<nav aria-label="Account">/);
   assert.match(header, /<a href="\/decisions"(?: aria-current="page")?>Your grills<\/a>/);
-  assert.match(header, /<a href="\/account#checks">Add checks<\/a>/);
+  assert.doesNotMatch(header, /Add checks|account#checks/);
+  assert.equal((header.match(/<nav aria-label="Account">([\s\S]*?)<\/nav>/)?.[1].match(/<a /g) || []).length, 2);
   assert.match(header, /<a href="\/account"(?: aria-current="page")?>Account<\/a>/);
   if (current === "decisions") assert.match(header, /<a href="\/decisions" aria-current="page">Your grills<\/a>/);
   if (current === "account") assert.match(header, /<a href="\/account" aria-current="page">Account<\/a>/);

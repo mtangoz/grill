@@ -289,9 +289,10 @@ describe("weekly impact email batch", () => {
       await decide(ctx, fake, "Hire the contractor", Date.parse("2026-11-12T12:00:00Z"));
       const account = await handleAccount(new Request("https://grillyour.ai/account", { headers: { cookie: cookie() } }), { ...ctx, now: MONDAY });
       const html = await account.text();
-      assert.match(html, /Weekly email: On/);
+      assert.match(html, /<span class="setting-name">Weekly email<\/span> <span class="state" data-state="on">On<\/span>/);
       assert.match(html, /name="action" value="impact-email"/);
       assert.match(html, /Turn off weekly email/);
+      assert.doesNotMatch(html, /Turn on weekly email/);
       assert.doesNotMatch(html, /<script/);
       const off = await handleAccount(
         new Request("https://grillyour.ai/account", {

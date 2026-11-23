@@ -136,7 +136,7 @@ function paidSession(accountId, { auto = "1", pi = "pi_checkoutpack1" } = {}) {
 }
 
 describe("automatic add on the account page", () => {
-  it("shows a ticked checkbox and the pack price from config", async () => {
+  it("leaves the pack checkbox unticked while automatic add is off", async () => {
     resetHostedCaches();
     const ctx = world();
     const html = await (await handleAccount(accountRequest("GET"), ctx)).text();
@@ -144,13 +144,20 @@ describe("automatic add on the account page", () => {
     const records = html.indexOf('name="action" value="records"');
     assert.ok(checks > 0 && checks < records, "the checks box, including automatic add, sits above records");
     const box = html.slice(checks, records);
-    assert.match(box, /type="checkbox" name="auto_topup" value="1" checked/);
+    const checkbox = html.match(/<input type="checkbox" name="auto_topup"[^>]*>/)?.[0] || "";
+    assert.equal(checkbox, '<input type="checkbox" name="auto_topup" value="1">');
     assert.match(box, /Add 100 checks · \$5/);
-    assert.match(html, /type="checkbox" name="auto_topup" value="1" checked/);
+    assert.match(html, /Auto-add with this pack/);
+    const consentAt = html.indexOf("Automatically add another 100 checks ($5) when I run out, up to $20 a month.");
+    const buttonAt = html.indexOf("Add 100 checks · $5");
+    const ceilingAt = html.indexOf('<details class="ceiling"');
+    assert.ok(consentAt > 0 && consentAt < buttonAt && buttonAt < ceilingAt);
     assert.match(html, /Automatically add another 100 checks \(\$5\) when I run out, up to \$20 a month\. You can turn this off anytime on this page\./);
     assert.doesNotMatch(html, /\bPro\b|subscription/i);
-    assert.match(html, /Automatic add: Off/);
+    assert.match(html, /Auto-add when I run out · Off/);
+    assert.match(html, /aria-pressed="false"/);
     assert.match(html, /Buy a pack to save a card/);
+    assert.equal(html.includes('<details class="ceiling" open'), false);
   });
 
   it("passes an untick as opt-out metadata and a tick as opt-in", async () => {
@@ -200,16 +207,20 @@ describe("automatic add on the account page", () => {
     const on = await handleAccount(accountRequest("POST", { body: "action=auto-topup&value=on", origin: "https://grillyour.ai" }), ctx);
     assert.equal(on.status, 303);
     let html = await (await handleAccount(accountRequest("GET"), ctx)).text();
-    assert.match(html, /Automatic add: On/);
+    assert.match(html, /Auto-add when I run out · On/);
+    assert.equal(html.match(/<input type="checkbox" name="auto_topup"[^>]*>/)?.[0], '<input type="checkbox" name="auto_topup" value="1" checked>');
+    assert.match(html, /aria-pressed="true"/);
+    assert.match(html, /<details class="ceiling" open>/);
     assert.match(html, /Card ending 4242/);
-    assert.match(html, />Turn off</);
+    assert.match(html, /name="value" value="off"[^>]*>Auto-add when I run out · On</);
     await handleAccount(accountRequest("POST", { body: "action=auto-ceiling&value=1000", origin: "https://grillyour.ai" }), ctx);
     html = await (await handleAccount(accountRequest("GET"), ctx)).text();
     assert.match(html, /Up to \$10 a month/);
     await handleAccount(accountRequest("POST", { body: "action=auto-topup&value=off", origin: "https://grillyour.ai" }), ctx);
     html = await (await handleAccount(accountRequest("GET"), ctx)).text();
-    assert.match(html, /Automatic add: Off/);
-    assert.match(html, />Turn on</);
+    assert.match(html, /Auto-add when I run out · Off/);
+    assert.equal(html.match(/<input type="checkbox" name="auto_topup"[^>]*>/)?.[0], '<input type="checkbox" name="auto_topup" value="1">');
+    assert.match(html, /name="value" value="on"[^>]*>Auto-add when I run out · Off</);
     const noCard = await storedAccount(ctx);
     delete noCard.stripePaymentMethodId;
     noCard.autoTopup = false;
