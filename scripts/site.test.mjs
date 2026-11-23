@@ -201,7 +201,7 @@ describe("the terms page", () => {
   it("says what the code does: the free checks, the pack, and automatic add", () => {
     assert.match(terms, /Checks are weighted: a usual grill is one check, and a heavier one counts as more than one/);
     assert.match(terms, /100 checks for \$5/);
-    assert.match(terms, /Automatic add is optional and starts ticked/);
+    assert.match(terms, /Automatic add is optional and starts unticked/);
     assert.match(terms, /The ceiling starts at \$20 a month/);
     assert.match(terms, /No card is needed for the free checks/);
     assert.match(terms, /We never put the words of a decision on a Stripe customer/);

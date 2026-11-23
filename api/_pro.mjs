@@ -443,7 +443,7 @@ const PITCHFORK =
 /** Sticky bar for a signed-in page. `nav` is "account", "decisions", or "other". */
 const HEADER_STYLE = `
   body.app { padding: 0; }
-  body.app main { padding: 0.2rem max(16px, env(safe-area-inset-right)) 3.5rem max(16px, env(safe-area-inset-left)); }
+  body.app main { padding: 0.2rem max(16px, env(safe-area-inset-right)) calc(3.5rem + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
   body.app h1 { margin-top: 1.15rem; }
   .site-header { position: sticky; top: 0; z-index: 2; background: var(--paper); display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: nowrap; box-sizing: border-box; margin: 0; padding: env(safe-area-inset-top) max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left)); border-bottom: 1px solid var(--rule); min-height: calc(44px + env(safe-area-inset-top)); }
   .site-header .mark { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; flex: 0 0 auto; }
@@ -460,7 +460,7 @@ const HEADER_STYLE = `
 
 function signedInHeader(nav) {
   const item = (href, label, key) => `<a href="${href}"${nav === key ? ' aria-current="page"' : ""}>${label}</a>`;
-  return `<header class="site-header"><a class="mark" href="/"><img src="${PITCHFORK}" alt="" width="24" height="24">grill</a><nav aria-label="Account">${item("/decisions", "Your grills", "decisions")} ${item("/account#checks", "Add checks", "checks")} ${item("/account", "Account", "account")}</nav></header>`;
+  return `<header class="site-header"><a class="mark" href="/"><img src="${PITCHFORK}" alt="" width="24" height="24">grill</a><nav aria-label="Account">${item("/decisions", "Your grills", "decisions")} ${item("/account", "Account", "account")}</nav></header>`;
 }
 
 export function page(title, inner, { nav = "" } = {}) {

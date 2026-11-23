@@ -3762,48 +3762,148 @@ function renderDeleteAllConfirm() {
   );
 }
 
+const ACCOUNT_STYLE = `<style>
+    @media (max-width: 40rem) {
+      button, .button { width: 100%; box-sizing: border-box; text-align: center; }
+      a.button.danger { width: auto; }
+    }
+    #checks { margin: 0.15rem 0 1.5rem; }
+    .balance { margin: 0.15rem 0 0; color: var(--muted); }
+    .balance .num { display: block; font-size: 3.4rem; line-height: 0.95; letter-spacing: -0.04em; font-weight: 650; color: var(--ink); }
+    .buy { margin: 1rem 0 0.4rem; }
+    label.pack-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 0.75rem; min-height: 44px; font-weight: 650; color: var(--ink); }
+    label.pack-option input { appearance: none; width: 44px; height: 26px; min-height: 26px; margin: 0; flex: 0 0 auto; border-radius: 999px; background: var(--rule); position: relative; }
+    label.pack-option input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: var(--paper); }
+    label.pack-option input:checked { background: var(--ink); }
+    label.pack-option input:checked::after { left: 20px; }
+    button.switch, p.switch { position: relative; display: flex; align-items: center; width: 100%; min-height: 44px; margin: 0.75rem 0 0.35rem; padding: 10px 68px 10px 14px; box-sizing: border-box; border: 1px solid var(--rule); border-radius: 12px; background: transparent; color: var(--ink); font: 650 0.98rem var(--sans); text-align: left; }
+    button.switch::after, p.switch::after { content: ""; position: absolute; right: 12px; top: 50%; width: 44px; height: 26px; margin-top: -13px; border-radius: 999px; background: var(--rule); }
+    button.switch::before, p.switch::before { content: ""; position: absolute; right: 32px; top: 50%; width: 22px; height: 22px; margin-top: -11px; border-radius: 50%; background: var(--paper); z-index: 1; }
+    button.switch[aria-pressed="true"] { border-color: var(--ink); }
+    button.switch[aria-pressed="true"]::after { background: var(--ink); }
+    button.switch[aria-pressed="true"]::before { right: 14px; }
+    .setting { border-top: 1px solid var(--rule); padding: 0.7rem 0 0.35rem; }
+    .setting-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+    .setting-name { flex: 1 1 8rem; font-weight: 650; color: var(--ink); }
+    .state { flex: 0 0 auto; font-weight: 700; color: var(--quiet); }
+    .state[data-state="on"] { color: var(--ink); }
+    .setting-row button { flex: 1 1 100%; }
+    @media (min-width: 40.01rem) { .setting-row button { flex: 0 0 auto; width: auto; } }
+    #settings > h2 { margin-bottom: 0.2rem; }
+    details summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--ink); }
+    details.quiet { margin-top: 0.4rem; }
+    details.quiet summary { color: var(--quiet); font-weight: 500; }
+    a.button.danger { background: transparent; color: #8d3b32; border: 1px solid #e4b8b2; font-weight: 550; box-shadow: none; }
+    .delete-account { margin-top: 1.75rem; }
+    @media (prefers-color-scheme: dark) {
+      a.button.danger { color: #f0b4aa; border-color: #6a3a34; }
+    }
+    </style>`;
+
+function checksLeftCount(freeLeft, prepaid) {
+  return Math.max(0, Math.floor(Number(freeLeft) || 0)) + Math.max(0, Math.floor(Number(prepaid) || 0));
+}
+
+function settingRow(name, state, stateKey, control) {
+  return `<div class="setting-row"><span class="setting-name">${name}</span> <span class="state" data-state="${stateKey}">${state}</span> ${control}</div>`;
+}
+
 function renderAccount(account, credit, extra = {}) {
-  const keeping = account.records === "keep" ? "On" : account.records === "off" ? "Off" : "Not chosen yet";
   const field = extra.field || "";
   const status = extra.status ? `<p class="banner" role="status">${esc(extra.status)}</p>` : "";
   const freeLeft = typeof extra.freeRemaining === "number" ? extra.freeRemaining : freeChecksFor(extra.env, account);
+  const prepaid = Math.max(0, Math.floor(Number(extra.topup?.checks) || 0));
+  const left = checksLeftCount(freeLeft, prepaid);
+  const noun = left === 1 ? "check" : "checks";
   const allowance = esc(allowanceLine(freeLeft, extra.env, account));
   const stopped = credit?.out ? `<p>${esc(OUT_OF_CREDIT)}</p>` : "";
   return appPage(
     "Your Grill account",
-    `<style>
-    @media (max-width: 40rem){button,.button{width:100%;box-sizing:border-box;text-align:center}}
-    #checks { border: 1px solid var(--rule); border-radius: 12px; padding: 2px 16px 14px; margin: 0.4rem 0 1.4rem; }
-    #checks > h2 { margin-top: 0.85rem; }
-    #topup button { font-size: 1.08rem; padding: 12px 22px; }
-    </style>
+    `${ACCOUNT_STYLE}
     <h1>Your account</h1>
     ${status}
     ${extra.low || ""}
     <section id="checks">
-      <h2>Checks</h2>
-      <p>${allowance}</p>
+      <p class="balance"><span class="num">${left}</span> ${noun} left</p>
+      <p class="small">Resets on the 1st.</p>
       ${stopped}
       ${renderTopup(extra)}
+      ${renderHowChecks(extra, allowance)}
     </section>
-    ${extra.founding ? `<p>${esc(foundingMemberLine(extra.founding))}</p>` : ""}
-    <p>${esc(account.email)}</p>
-    <p>Records: ${esc(keeping)}.</p>
-    <p>Grill holds a model-router key for you. It is not shown here. The write-up you approve passes through Grill's server in memory and is not stored.</p>
-    <form method="post" action="/account" class="row">
-      ${field}
-      <input type="hidden" name="action" value="records">
-      <button type="submit" name="value" value="keep">Keep my decision records</button>
-      <button type="submit" name="value" value="off">Don't keep records</button>
-    </form>
-    <p class="small">${esc(RECORDS_OFF_NOTE)}</p>
-    <p><a href="/decisions">Your grills</a></p>
-    ${renderCalendar("/account", extra.calendar, extra.freshUrl || "", field)}
-    ${renderImpactEmail(account, field)}
-    <p><a class="button" href="/account?confirm=delete">Delete this account</a></p>
+    <section id="settings">
+      <h2>Settings</h2>
+      ${renderRecordsSetting(account, field)}
+      ${renderAccountCalendar(extra.calendar, extra.freshUrl || "", field)}
+      ${renderImpactEmail(account, field)}
+    </section>
+    ${renderAccountDetails(account, extra)}
+    <p class="delete-account"><a class="button danger" href="/account?confirm=delete">Delete this account</a></p>
     <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
     "account",
   );
+}
+
+function renderAccountDetails(account, extra) {
+  const founding = extra.founding ? `<p>${esc(foundingMemberLine(extra.founding))}</p>` : "";
+  return `<details class="quiet" id="account-details">
+    <summary>Account details</summary>
+    ${founding}
+    <p>${esc(account.email)}</p>
+    <p>Grill holds a model-router key for you. It is not shown here. The write-up you approve passes through Grill's server in memory and is not stored.</p>
+    <p><a href="/decisions">Your grills</a></p>
+  </details>`;
+}
+
+function renderRecordsSetting(account, field) {
+  const mode = account.records === "keep" ? "on" : account.records === "off" ? "off" : "unset";
+  const label = mode === "on" ? "On" : mode === "off" ? "Off" : "Not chosen";
+  const flip = mode === "on"
+    ? `<button type="submit" name="value" value="off">Turn records off</button>`
+    : `<button type="submit" name="value" value="keep">Turn records on</button>`;
+  const chooseOff = mode === "unset"
+    ? `<form method="post" action="/account">${field}<input type="hidden" name="action" value="records"><button type="submit" name="value" value="off">Don't keep records</button></form>`
+    : "";
+  return `<section class="setting" id="records">
+    <form method="post" action="/account">${field}<input type="hidden" name="action" value="records">${settingRow("Decision records", label, mode, flip)}</form>
+    <details>
+      <summary>About decision records</summary>
+      ${chooseOff}
+      <p class="small">${esc(RECORDS_OFF_NOTE)}</p>
+    </details>
+  </section>`;
+}
+
+/** Calendar on /account: one row that flips, and the link tools folded away. /decisions keeps renderCalendar. */
+function renderAccountCalendar(calendar, freshUrl, field) {
+  const on = Boolean(calendar?.on);
+  const flip = on
+    ? `<button type="submit" name="value" value="off">Turn calendar off</button>`
+    : `<button type="submit" name="value" value="on">Turn calendar on</button>`;
+  const form = (value, label) =>
+    `<form method="post" action="/account">${field}<input type="hidden" name="action" value="calendar"><button type="submit" name="value" value="${value}">${label}</button></form>`;
+  let detail;
+  if (!on) {
+    detail = `<p>Switch it on to get a private link your calendar app can subscribe to. Each saved decision shows up on its look-back date as "Grill look-back due", with no title unless you add titles. Your calendar company fetches the link to show it.</p>`;
+  } else {
+    const webcal = String(freshUrl || "").replace(/^https?:/, "webcal:");
+    const fresh = freshUrl
+      ? `<p><strong>Copy this link now. It is shown only once.</strong></p>
+      <p><input readonly style="width:100%;box-sizing:border-box" value="${esc(freshUrl)}" aria-label="Calendar link"></p>
+      <p class="row"><a class="button" href="${esc(webcal)}">Open in my calendar app</a> <a class="button" href="${GOOGLE_CALENDAR_SUBSCRIBE}?cid=${encodeURIComponent(webcal)}">Add to Google Calendar</a></p>
+      <p class="small">In another calendar, choose "subscribe" or "add from URL" and paste the link. Anyone with the link can see your look-back dates${calendar.titles ? " and titles" : ""}.</p>`
+      : `<p>On. The link was shown when you made it. Lost it? Get a new link; the old one stops working.</p>`;
+    const titles = calendar.titles ? form("titles-off", "Hide titles") : form("titles-on", "Show titles");
+    detail = `${fresh}
+      <p>Titles in the calendar: ${calendar.titles ? "on" : "off"}.</p>
+      <div class="row">${titles} ${form("reset", "Get a new link")}</div>`;
+  }
+  return `<section class="setting" id="calendar">
+    <form method="post" action="/account">${field}<input type="hidden" name="action" value="calendar">${settingRow("Calendar look-back reminders", on ? "On" : "Off", on ? "on" : "off", flip)}</form>
+    <details${freshUrl ? " open" : ""}>
+      <summary>About calendar reminders</summary>
+      ${detail}
+    </details>
+  </section>`;
 }
 
 async function autoTopupView(account, deps) {
@@ -3830,44 +3930,60 @@ function renderTopup(extra) {
   const topup = extra.topup;
   if (!topup) return "";
   const pack = topup.pack;
-  const checks = Math.max(0, Math.floor(Number(topup.checks) || 0));
   const field = extra.field || "";
   const auto = topup.auto;
-  const buyFields = `${field}<input type="hidden" name="action" value="topup">`;
+  const price = esc(topupPriceLabel(pack.priceCents));
   const choice = auto
-    ? `<label class="choice"><input type="checkbox" name="auto_topup" value="1" checked> Automatically add another ${pack.checks} checks (${esc(topupPriceLabel(pack.priceCents))}) when I run out, up to ${esc(topupPriceLabel(auto.ceilingCents))} a month. You can turn this off anytime on this page.</label>`
+    ? `<label class="pack-option"><span>Auto-add with this pack</span><input type="checkbox" name="auto_topup" value="1"${auto.on ? " checked" : ""}></label>`
     : "";
   const buy = pack.priceId
-    ? `<form method="post" action="/account">${buyFields}${choice}<button type="submit">Add ${pack.checks} checks · ${esc(topupPriceLabel(pack.priceCents))}</button></form>`
+    ? `<form method="post" action="/account" class="buy">${field}<input type="hidden" name="action" value="topup">${choice}<button type="submit" class="primary">Add ${pack.checks} checks · ${price}</button></form>`
     : `<p>Adding checks isn't ready on this server yet.</p>`;
-  const lead = auto
-    ? `Prepaid checks left: ${checks}. Unused checks carry over. The free monthly allowance still resets on the 1st. ${autoChargeNote(extra.env)}`
-    : `Prepaid checks left: ${checks}. Unused checks carry over. The free monthly allowance still resets on the 1st. Nothing is charged later on its own.`;
-  return `<section id="topup">
-    <h2>More checks</h2>
-    <p>${lead}</p>
-    ${auto ? renderAutoTopup(auto, field) : ""}
-    ${buy}
-    <p class="small">One payment. A card you use can be saved for the next pack.</p>
-  </section>`;
+  return `${buy}${auto ? renderAutoTopup(auto, field, pack) : ""}`;
 }
 
-function renderAutoTopup(auto, field) {
+function renderHowChecks(extra, allowance) {
+  const topup = extra.topup;
+  if (!topup) {
+    return `<details class="how"><summary>How checks work</summary><p>${allowance}</p></details>`;
+  }
+  const checks = Math.max(0, Math.floor(Number(topup.checks) || 0));
+  const lead = topup.auto
+    ? `Prepaid checks left: ${checks}. Unused checks carry over. The free monthly allowance still resets on the 1st. ${autoChargeNote(extra.env)}`
+    : `Prepaid checks left: ${checks}. Unused checks carry over. The free monthly allowance still resets on the 1st. Nothing is charged later on its own.`;
+  return `<details class="how">
+    <summary>How checks work</summary>
+    <p>${allowance}</p>
+    <p>${esc(lead)}</p>
+    <p class="small">One payment. A card you use can be saved for the next pack.</p>
+  </details>`;
+}
+
+function renderAutoTopup(auto, field, pack) {
   const state = auto.on ? "On" : "Off";
+  const pressed = auto.on ? "true" : "false";
   const card = auto.last4 ? ` Card ending ${esc(auto.last4)}.` : "";
-  const why = !auto.on && auto.failure ? ` ${esc(autoFailureSentence(auto.failure))}` : "";
-  const needCard = !auto.on && !auto.hasCard ? " Buy a pack to save a card, then you can turn this on." : "";
-  const toggle = auto.on
-    ? `<form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-topup"><button type="submit" name="value" value="off">Turn off</button></form>`
+  const why = !auto.on && auto.failure ? `<p>${esc(autoFailureSentence(auto.failure))}</p>` : "";
+  const needCard = !auto.on && !auto.hasCard ? `<p class="small">Buy a pack to save a card, then you can turn this on.</p>` : "";
+  const label = `Auto-add when I run out · ${state}`;
+  const control = auto.on
+    ? `<form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-topup"><button type="submit" class="switch" name="value" value="off" aria-pressed="true" data-state="on">${label}</button></form>`
     : auto.hasCard
-      ? `<form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-topup"><button type="submit" name="value" value="on">Turn on</button></form>`
-      : "";
+      ? `<form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-topup"><button type="submit" class="switch" name="value" value="on" aria-pressed="false" data-state="off">${label}</button></form>`
+      : `<p class="switch" aria-pressed="${pressed}" data-state="off">${label}</p>`;
+  const explain = `Automatically add another ${pack.checks} checks (${topupPriceLabel(pack.priceCents)}) when I run out, up to ${topupPriceLabel(auto.ceilingCents)} a month. You can turn this off anytime on this page.`;
   const options = [1000, 2000, 5000]
     .map((cents) => `<option value="${cents}"${cents === auto.ceilingCents ? " selected" : ""}>${esc(topupPriceLabel(cents))}</option>`)
     .join("");
-  return `<p>Automatic add: ${state}. Up to ${esc(topupPriceLabel(auto.ceilingCents))} a month. Spent this month: ${esc(topupPriceLabel(auto.spentCents))}.${card}${why}${needCard}</p>
-    ${toggle}
-    <form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-ceiling"><label class="choice">Monthly ceiling <select name="value">${options}</select></label> <button type="submit">Save</button></form>`;
+  return `${control}
+    ${why}
+    ${needCard}
+    <details class="ceiling"${auto.on ? " open" : ""}>
+      <summary>Monthly ceiling</summary>
+      <p>${esc(explain)}</p>
+      <p>Up to ${esc(topupPriceLabel(auto.ceilingCents))} a month. Spent this month: ${esc(topupPriceLabel(auto.spentCents))}.${card}</p>
+      <form method="post" action="/account">${field}<input type="hidden" name="action" value="auto-ceiling"><label class="choice">Monthly ceiling <select name="value">${options}</select></label> <button type="submit">Save</button></form>
+    </details>`;
 }
 
 function renderImpactEmail(account, field = "") {
@@ -3875,13 +3991,15 @@ function renderImpactEmail(account, field = "") {
   const button = on
     ? `<button type="submit" name="value" value="off">Turn off weekly email</button>`
     : `<button type="submit" name="value" value="on">Turn on weekly email</button>`;
-  const state = on
-    ? "Weekly email: On. A Monday note when a grill changed your call, or a look-back comes due. A quiet week sends nothing."
-    : "Weekly email: Off.";
-  return `<section id="weekly-email">
-    <h2>Weekly email</h2>
-    <p>${state}</p>
-    <form method="post" action="/account">${field}<input type="hidden" name="action" value="impact-email">${button}</form>
+  const detail = on
+    ? `<p>A Monday note when a grill changed your call, or a look-back comes due. A quiet week sends nothing.</p>`
+    : `<p>The Monday note stays off until you turn it on.</p>`;
+  return `<section class="setting" id="weekly-email">
+    <form method="post" action="/account">${field}<input type="hidden" name="action" value="impact-email">${settingRow("Weekly email", on ? "On" : "Off", on ? "on" : "off", button)}</form>
+    <details>
+      <summary>About the Monday note</summary>
+      ${detail}
+    </details>
   </section>`;
 }
 

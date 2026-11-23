@@ -185,7 +185,7 @@ describe("public copy states no AI input cost", () => {
     const terms = builtPages().find(([name]) => name === "terms/index.html")?.[1] || "";
     assert.match(terms, /100 free checks a month/);
     assert.match(terms, /100 checks for \$5/);
-    assert.match(terms, /starts ticked/);
+    assert.match(terms, /starts unticked/);
     assert.match(terms, /\$20 a month/);
     const termsSrc = readFileSync(join(ROOT, "site/terms.html"), "utf8");
     assert.doesNotMatch(termsSrc, /\$9 a month or \$90 a year|Grill Pro|\bsubscription\b/);

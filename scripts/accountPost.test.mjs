@@ -169,7 +169,8 @@ describe("Safari account form posts", { concurrency: false }, () => {
     const signedIn = clerkCookies();
     const markerOnly = `__client_uat=${Math.floor(Date.now() / 1000)}`;
     let html = await openAccount(ctx, signedIn);
-    assert.match(html, /Keep my decision records/);
+    assert.match(html, /<span class="setting-name">Decision records<\/span> <span class="state" data-state="unset">Not chosen<\/span>/);
+    assert.match(html, /Turn records on/);
     assert.match(html, /Add 100 checks · \$5/);
     for (const form of formsIn(html)) {
       assert.ok(form.fields.page, `form ${form.action} ${form.buttons.map((b) => b.label).join(", ")} embeds a page token`);
@@ -201,23 +202,28 @@ describe("Safari account form posts", { concurrency: false }, () => {
       return html;
     }
 
-    await pressAndRead("Keep my decision records", signedIn);
-    assert.match(html, /Records: On/);
+    await pressAndRead("Turn records on", signedIn);
+    assert.match(html, /<span class="setting-name">Decision records<\/span> <span class="state" data-state="on">On<\/span>/);
+    assert.match(html, /Turn records off/);
+    assert.doesNotMatch(html, /Turn records on|Don't keep records/);
     assert.equal(storedAccount(ctx).records, "keep");
 
-    await pressAndRead("Don't keep records", markerOnly);
-    assert.match(html, /Records: Off/);
+    await pressAndRead("Turn records off", markerOnly);
+    assert.match(html, /<span class="setting-name">Decision records<\/span> <span class="state" data-state="off">Off<\/span>/);
+    assert.match(html, /Turn records on/);
+    assert.doesNotMatch(html, /Turn records off/);
     assert.equal(storedAccount(ctx).records, "off");
 
     await pressAndRead("Turn off weekly email", signedIn);
-    assert.match(html, /Weekly email: Off/);
+    assert.match(html, /<span class="setting-name">Weekly email<\/span> <span class="state" data-state="off">Off<\/span>/);
     assert.equal(storedAccount(ctx).impactEmail, false);
 
     await pressAndRead("Turn on weekly email", markerOnly);
-    assert.match(html, /Weekly email: On/);
+    assert.match(html, /<span class="setting-name">Weekly email<\/span> <span class="state" data-state="on">On<\/span>/);
     assert.equal(storedAccount(ctx).impactEmail, undefined);
 
-    await pressAndRead("Get a calendar link", signedIn);
+    await pressAndRead("Turn calendar on", signedIn);
+    assert.match(html, /<span class="setting-name">Calendar look-back reminders<\/span> <span class="state" data-state="on">On<\/span>/);
     assert.match(html, /shown only once/);
     assert.match(html, /Titles in the calendar: off/);
 
@@ -232,8 +238,9 @@ describe("Safari account form posts", { concurrency: false }, () => {
     assert.match(html, /shown only once/);
     assert.notEqual(html, beforeReset);
 
-    await pressAndRead("Turn off", signedIn);
-    assert.match(html, /Get a calendar link/);
+    await pressAndRead("Turn calendar off", signedIn);
+    assert.match(html, /<span class="setting-name">Calendar look-back reminders<\/span> <span class="state" data-state="off">Off<\/span>/);
+    assert.match(html, /Turn calendar on/);
 
     const bought = await press("Add 100 checks · $5", { cookie: markerOnly });
     assert.equal(bought.res.status, 303);
@@ -572,33 +579,44 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.equal(storedAccount(ctx).records, "keep");
   });
 
-  it("puts Checks above records, with the configured price, and links Add checks from both pages", async () => {
+  it("leads with checks left, one pack button, and no Add checks item in the header", async () => {
     const ctx = world();
     ctx.env.GRILL_TOPUP_PRICE_CENTS = "250";
     ctx.env.GRILL_AUTO_TOPUP = "on";
     const cookie = clerkCookies();
     const html = await openAccount(ctx, cookie);
+    const header = html.match(/<header class="site-header">[\s\S]*?<\/header>/)?.[0] || "";
+    assert.doesNotMatch(header, /Add checks|account#checks/);
+    assert.match(header, /<a href="\/decisions">Your grills<\/a>/);
+    assert.match(header, /<a href="\/account" aria-current="page">Account<\/a>/);
     const checksAt = html.indexOf('id="checks"');
     const recordsAt = html.indexOf('name="action" value="records"');
-    assert.ok(checksAt > 0 && checksAt < recordsAt, "checks box sits above the records form");
-    assert.ok(html.indexOf('href="/account#checks"') < html.indexOf("<h1>"));
+    assert.ok(checksAt > 0 && checksAt < recordsAt, "checks sit above the records form");
+    assert.equal(html.includes('href="/account#checks"'), false);
     const box = html.slice(checksAt, recordsAt);
-    assert.match(box, /<h2>Checks<\/h2>/);
+    assert.match(box, /<span class="num">100<\/span>/);
+    assert.match(box, /Resets on the 1st\./);
     assert.match(box, /Free: 100 checks a month, resets on the 1st\./);
     assert.match(box, /left this month/);
     assert.match(box, /Prepaid checks left: 0/);
     assert.match(box, /Add 100 checks · \$2\.50/);
-    assert.match(box, /type="checkbox" name="auto_topup" value="1" checked/);
+    assert.equal(box.match(/<input type="checkbox" name="auto_topup"[^>]*>/)?.[0], '<input type="checkbox" name="auto_topup" value="1">');
+    assert.match(box, /Auto-add with this pack/);
+    assert.match(box, /Auto-add when I run out · Off/);
+    assert.match(box, /<summary>How checks work<\/summary>/);
+    assert.equal(box.includes('<details class="how" open'), false);
+    assert.match(box, /<details class="ceiling">/);
+    assert.equal(box.includes('<details class="ceiling" open'), false);
     assert.match(box, /Automatically add another 100 checks \(\$2\.50\)/);
-    assert.match(html, /<a href="\/account#checks">Add checks<\/a>/);
-    assert.match(html, /<a href="\/account" aria-current="page">Account<\/a>/);
     assert.equal(html.includes('id="low-checks"'), false);
     assert.doesNotMatch(html, /No prepaid checks left\./);
-    assert.doesNotMatch(html, /\bPro\b|subscription/i);
+    assert.doesNotMatch(html, /\bPro\b|subscription|\$5 of use/);
 
     const decisions = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx)).text();
-    assert.match(decisions, /<a href="\/account#checks">Add checks<\/a>/);
+    const decisionsHeader = decisions.match(/<header class="site-header">[\s\S]*?<\/header>/)?.[0] || "";
+    assert.doesNotMatch(decisionsHeader, /Add checks|account#checks/);
     assert.match(decisions, /<a href="\/account">Account<\/a>/);
+    assert.equal(decisions.includes('href="/account#checks"'), false);
     assert.equal(decisions.includes('id="low-checks"'), false);
     assert.doesNotMatch(decisions, /No prepaid checks left\./);
     assert.doesNotMatch(decisions, /of use each month|left this month|checks this month|judge spend|\bPro\b|subscription/i);
@@ -621,6 +639,7 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.equal(coveredHtml.includes('id="low-checks"'), false, "prepaid checks still cover a low free allowance");
     assert.match(coveredHtml, /Prepaid checks left: 8/);
     assert.match(coveredHtml, /5 left this month/);
+    assert.match(coveredHtml, /<span class="num">13<\/span>/);
 
     const freeGone = world();
     freeGone.memory.command(["SET", freeChecksKey("tester@example.com", isoMonth()), "100"]);
@@ -634,6 +653,7 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.match(account, /The free allowance is nearly used up, and there are no prepaid checks\./);
     assert.match(account, /<a href="\/account#checks">Add checks<\/a>/);
     assert.match(account, /5 left this month/);
+    assert.match(account, /<span class="num">5<\/span>/);
     assert.doesNotMatch(account, /No prepaid checks left\./);
     const decisions = await (await decisionsOf(low)).text();
     assert.match(decisions, /id="low-checks"/);
@@ -647,6 +667,7 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.match(empty, /id="low-checks"/);
     assert.match(empty, /No checks left\./);
     assert.match(empty, /0 left this month/);
+    assert.match(empty, /<span class="num">0<\/span>/);
     assert.match(await (await decisionsOf(out)).text(), /No checks left\./);
   });
 
@@ -675,7 +696,7 @@ describe("account checkout form action", { concurrency: false }, () => {
     const res = await handleAccount(new Request(accountUrl(), safariInit("GET", clerkCookies())), ctx);
     assert.equal(res.status, 200);
     const html = await res.text();
-    assert.match(html, /<form method="post" action="\/account">[\s\S]*Add 100 checks · \$5/);
+    assert.match(html, /<form method="post" action="\/account"[^>]*>[\s\S]*Add 100 checks · \$5/);
     const csp = res.headers.get("content-security-policy");
     const formAction = csp.split(";").map((part) => part.trim()).find((part) => part.startsWith("form-action "));
     assert.ok(formAction, csp);

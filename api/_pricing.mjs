@@ -33,7 +33,7 @@ function pricingPage(env, { signedIn = false } = {}) {
     `<h1>Pricing</h1>
 <p>You get ${esc(String(free))} free checks a month. They reset on the 1st. Unused free checks do not roll over. Checks are weighted: a usual grill is one check, and a heavier one counts as more than one.</p>
 <p>Add ${esc(String(pack.checks))} checks for ${esc(price)} on the <a href="/account#checks">account page</a>. Unused checks from a pack carry over.</p>
-<p>Automatic add is optional and starts ticked. It adds another pack when you run out, up to ${esc(ceiling)} a month. You can turn it off on the account page. With it off, a card is not charged on its own.</p>
+<p>Automatic add is optional and starts unticked. It adds another pack when you run out, up to ${esc(ceiling)} a month. You can turn it off on the account page. With it off, a card is not charged on its own.</p>
 <p><a href="/">Back to Grill</a></p>`,
     { nav: signedIn ? "other" : "" },
   );

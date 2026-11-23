@@ -78,7 +78,7 @@ describe("paid intent", () => {
       assert.equal(page.status, 200);
       assert.match(html, /You get 100 free checks a month/);
       assert.match(html, /100 checks for \$5/);
-      assert.match(html, /Automatic add is optional and starts ticked/);
+      assert.match(html, /Automatic add is optional and starts unticked/);
       assert.match(html, /up to \$20 a month/);
       assert.doesNotMatch(html, /Grill Pro|\$9|\$90|Paid plans are off|Notify me|subscription|founding member/);
       assert.equal(html.includes("<script"), false);
