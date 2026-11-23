@@ -3784,7 +3784,10 @@ const ACCOUNT_STYLE = `<style>
     .balance .num { display: block; font-size: 3.4rem; line-height: 0.95; letter-spacing: -0.04em; font-weight: 650; color: var(--ink); }
     .buy { margin: 1rem 0 0.4rem; }
     label.pack-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 0.75rem; min-height: 44px; font-weight: 650; color: var(--ink); }
-    .pack-switch { display: inline-flex; align-items: center; gap: 8px; }
+    .pack-switch { display: inline-flex; align-items: center; gap: 8px; flex-direction: row-reverse; }
+    .pack-switch .when-on { display: none; }
+    .pack-switch input:checked ~ .when-off { display: none; }
+    .pack-switch input:checked ~ .when-on { display: inline; }
     label.pack-option input { appearance: none; width: 44px; height: 26px; min-height: 26px; margin: 0; flex: 0 0 auto; border-radius: 999px; background: var(--switch-off); box-shadow: inset 0 0 0 1px var(--switch-off); position: relative; }
     label.pack-option input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: var(--paper); }
     label.pack-option input:checked { background: var(--ink); }
@@ -3926,7 +3929,7 @@ async function autoTopupView(account, deps) {
   const spent = Number(await redis(deps, ["GET", autoTopupSpentKey(account.id, month)])) || 0;
   const hasCard = typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_");
   return {
-    on: account.autoTopup === true && hasCard,
+    on: account.autoTopup === true,
     hasCard,
     ceilingCents: autoTopupCeilingCents(account),
     spentCents: Math.max(0, spent),
@@ -3956,7 +3959,7 @@ function renderTopup(extra, { account = null, freeLeft = 0, prepaid = 0 } = {}) 
     : "";
   const opted = Boolean(auto?.on);
   const choice = auto
-    ? `<label class="pack-option"><span>Auto-add with this pack</span> <span class="pack-switch"><span class="state" data-state="${opted ? "on" : "off"}">${opted ? "On" : "Off"}</span><input type="checkbox" name="auto_topup" value="1"${opted ? " checked" : ""}></span></label>`
+    ? `<label class="pack-option"><span>Auto-add with this pack</span> <span class="pack-switch"><input type="checkbox" name="auto_topup" value="1"${opted ? " checked" : ""}><span class="state when-off" data-state="off">Off</span><span class="state when-on" data-state="on">On</span></span></label>`
     : "";
   const form = pack.priceId
     ? `<form method="post" action="/account" class="buy">${field}<input type="hidden" name="action" value="topup">${consent}${choice}<button type="submit" class="primary">Add ${pack.checks} checks · ${price}</button></form>`
@@ -3966,7 +3969,7 @@ function renderTopup(extra, { account = null, freeLeft = 0, prepaid = 0 } = {}) 
   const buy = !pack.priceId || urgent
     ? form
     : `<details class="more-checks"><summary>Need more than ${allowance} a month? Add ${pack.checks} checks for ${price} ▸</summary>${form}</details>`;
-  return `${buy}${auto?.hasCard ? renderAutoTopup(auto, field) : ""}`;
+  return `${buy}${auto && (auto.hasCard || auto.on) ? renderAutoTopup(auto, field) : ""}`;
 }
 
 function renderHowChecks(extra, allowance) {

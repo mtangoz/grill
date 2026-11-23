@@ -629,7 +629,8 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.match(box, /Prepaid checks left: 0/);
     assert.match(box, /Add 100 checks · \$2\.50/);
     assert.equal(box.match(/<input type="checkbox" name="auto_topup"[^>]*>/)?.[0], '<input type="checkbox" name="auto_topup" value="1">');
-    assert.match(box, /Auto-add with this pack<\/span> <span class="pack-switch"><span class="state" data-state="off">Off<\/span>/);
+    assert.match(box, /Auto-add with this pack<\/span> <span class="pack-switch"><input type="checkbox" name="auto_topup" value="1"><span class="state when-off" data-state="off">Off<\/span><span class="state when-on" data-state="on">On<\/span>/);
+    assert.match(html, /\.pack-switch input:checked ~ \.when-off \{ display: none; \}/);
     assert.doesNotMatch(box, /Auto-add when I run out/);
     assert.match(box, /<summary>How checks work<\/summary>/);
     assert.equal(box.includes('<details class="how" open'), false);

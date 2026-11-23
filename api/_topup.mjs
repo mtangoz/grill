@@ -269,15 +269,18 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
   }
   if (autoTopupEnabled(env)) {
     const choice = session.metadata?.grill_auto_topup;
-    if (choice === "1" || choice === "0") account.autoTopup = choice === "1";
     if (!account.autoTopupCeilingCents) account.autoTopupCeilingCents = autoTopupCeilingCents(account);
     if (choice === "1") {
       try {
         const { stripe } = proClients(env, fetchImpl);
         rememberCard(account, await loadPaymentIntent(stripe, session.payment_intent));
       } catch {
-        // The pack is already paid. A missing card can be saved on the next ticked pack.
+        // The pack is already paid. Auto-add stays off unless a card is actually saved.
       }
+      const saved = typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_");
+      account.autoTopup = saved;
+    } else if (choice === "0") {
+      account.autoTopup = false;
     }
   }
   await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
