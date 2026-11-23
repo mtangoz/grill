@@ -76,9 +76,9 @@ describe("paid intent", () => {
       const page = await handlePricing(new Request("https://grillyour.ai/pricing"), { env: process.env, fetch: globalThis.fetch });
       const html = await page.text();
       assert.equal(page.status, 200);
-      assert.match(html, /You get 100 free checks a month/);
-      assert.match(html, /100 checks for \$5/);
-      assert.match(html, /Automatic add is optional and starts unticked/);
+      assert.match(html, /Free: 100 checks a month\. No card\. Resets on the 1st\./);
+      assert.match(html, /Need more\? Add 100 checks for \$5 /);
+      assert.match(html, /Automatic add is off unless you tick it/);
       assert.match(html, /up to \$20 a month/);
       assert.doesNotMatch(html, /Grill Pro|\$9|\$90|Paid plans are off|Notify me|subscription|founding member/);
       assert.equal(html.includes("<script"), false);

@@ -86,7 +86,7 @@ Enforced by: test "gives every dead-end page a way back" in [scripts/pages.test.
 
 ## Pricing
 
-`/pricing` states the live check offer. You get 100 free checks a month. They reset on the 1st. Unused free checks do not roll over. Checks are weighted: a usual grill is one check, and a heavier one counts as more than one. Extra checks are a pack on the account page, 100 for $5 unless the server's pack settings say otherwise. Unused checks from a pack carry over. Automatic add is optional and starts unticked, up to $20 a month, and you can turn it on. With it off, a card is not charged on its own. The page runs no script. A view is an anonymous count while subscription billing is off. A visitor who is already signed in sees the same header as the other signed-in pages. A signed-out visit does not. The homepage does not sell a pack.
+`/pricing` states the live check offer. Free: 100 checks a month. No card. Resets on the 1st. A usual grill uses 1 check. An unusually long one can use more. The account page shows how many are left. Extra checks are a pack on the account page, 100 for $5 unless the server's pack settings say otherwise. Unused pack checks carry over. Automatic add is off unless you tick it, up to $20 a month, and you can turn it off on the account page. Nothing is charged on its own when it is off. The page runs no script. A view is an anonymous count while subscription billing is off. A visitor who is already signed in sees the same header as the other signed-in pages. A signed-out visit does not. The homepage does not sell a pack.
 
 ## An invite code
 
