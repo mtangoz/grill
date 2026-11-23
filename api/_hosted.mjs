@@ -155,9 +155,9 @@ import {
   LOOKBACK_HOW,
   challengeKindList,
   impactLines,
-  outcomeLine,
   outcomeNoteText,
   scorecardLine,
+  firstLookbackLine,
   DECISION_SOURCES,
   DECISION_TYPES,
   decryptString,
@@ -3305,16 +3305,19 @@ function chainNote(row, byId) {
   return parts.join(" ");
 }
 
-/** One headline, one quiet detail line, the learning line under that, then up to three examples. */
-function renderImpact(rows, type, source) {
+/** One headline, then either the first look-back or the counts, then up to three examples. */
+function renderImpact(rows, type, source, now) {
   const lines = impactLines(rows);
   if (!lines.length) return "";
-  const detail = lines.length > 1 ? `\n    <p class="small">${esc(lines.slice(1).join(" "))}</p>` : "";
-  const learningLine = scorecardLine(rows, { type, source });
+  const counted = decisionTakeaways(rows, { now }).looked >= 1;
+  const detail = counted && lines.length > 1 ? `\n    <p class="small">${esc(lines.slice(1).join(" "))}</p>` : "";
+  const learningLine = counted ? scorecardLine(rows, { type, source }) : "";
   const learning = learningLine ? `\n    <p class="small">${esc(learningLine)}</p>` : "";
+  const waiting = counted ? "" : firstLookbackLine(rows);
+  const instead = waiting ? `\n    <p class="small">${esc(waiting)}</p>` : "";
   return `<section id="impact">
     <h2>What Grill changed</h2>
-    <p class="scorecard">${esc(lines[0])}</p>${detail}${learning}${changeExamples(rows)}
+    <p class="scorecard">${esc(lines[0])}</p>${detail}${instead}${learning}${changeExamples(rows)}
   </section>`;
 }
 
@@ -3355,18 +3358,26 @@ export function changeExamples(rows) {
   return `\n    <ul class="changes">${examples}</ul>`;
 }
 
+/** The verdict as a person reads it. An empty or unknown verdict stays "No verdict". */
+function saidVerdict(raw) {
+  const text = String(raw || "").trim();
+  if (!text || text.toLowerCase() === "unknown") return "";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 /** One compact row. Share, delete and export live on the record, not here. */
-function renderListRow(row, byId, now, { type = "", source = "" } = {}) {
+function renderListRow(row, _byId, _now, { type = "", source = "" } = {}) {
   const href = listHref({ id: row.id, type, source });
   const parsed = parseRecords(row.block || "")[0] || {};
   const choice = parseDecided(parsed.decided || row.decided || "").text || "Not logged";
-  const verdict = String(row.verdict || parsed.verdict || "").trim();
-  const verdictBit = verdict && verdict.toLowerCase() !== "unknown" ? `<strong>${esc(verdict)}</strong>` : "No verdict";
-  const outcome = outcomeLine(row, now) || "Not yet";
+  const verdict = saidVerdict(row.verdict || parsed.verdict);
+  const verdictBit = verdict ? `<strong>${esc(verdict)}</strong>` : "No verdict";
+  const day = formatDay(String(row.review || parsed.review || "").trim());
+  const when = day ? ` · Look back ${esc(day)}` : "";
   const title = String(row.title || parsed.title || "").replace(/\s+/g, " ").trim() || "Untitled";
   return `<li class="decision">
       <a class="record-title" href="${esc(href)}">${esc(title)}</a>
-      <p class="meta">Chose: ${esc(choice)} · ${verdictBit} · ${esc(outcome)}</p>
+      <p class="meta">Grill said: ${verdictBit} · You chose: ${esc(choice)}${when}</p>
     </li>`;
 }
 
@@ -3614,7 +3625,8 @@ const LIST_STYLE = `<style>
     .decision .record-title { display: block; margin: 0; font-size: 1.02rem; overflow-wrap: break-word; }
     .decision .meta { margin: 0.15rem 0 0; color: var(--quiet); font-size: 0.9rem; }
     .footer { margin-top: 1.5rem; }
-    .settings summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+    .settings summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; list-style: none; }
+    .settings summary::-webkit-details-marker { display: none; }
     .outcomes { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; margin: 0.35rem 0 0; }
     .outcomes button { min-height: 44px; }
     @media (max-width: 40rem) {
@@ -3625,10 +3637,15 @@ const LIST_STYLE = `<style>
     }
     </style>`;
 
-function renderFooter(total, filtered) {
-  if (!total) return `<p class="small footer"><a href="/account">Account</a></p>`;
+function renderAccountLink() {
+  return `<p class="small footer"><a href="/account">Account</a></p>`;
+}
+
+/** Export, JSON and Delete all. Delete all stays off a filtered list, which is not the whole set. */
+function renderExportLinks(total, filtered) {
+  if (!total) return "";
   const remove = filtered ? "" : ` · <a href="/decisions?confirm=delete-all">Delete all</a>`;
-  return `<p class="small footer"><a href="/decisions?export=text">Export</a> · <a href="/decisions?export=json">JSON</a>${remove} · <a href="/account">Account</a></p>`;
+  return `<p class="small"><a href="/decisions?export=text">Export</a> · <a href="/decisions?export=json">JSON</a>${remove}</p>`;
 }
 
 /** Fewer than this many free checks left, and no prepaid checks, and the page points at Add checks. */
@@ -3678,7 +3695,7 @@ function renderDecisions(account, rows, _credit, habits, extra = {}) {
     `${LIST_STYLE}
     <h1>Your grills</h1>
     ${extra.low || ""}
-    ${renderImpact(shown, type, source)}
+    ${renderImpact(shown, type, source, now)}
     ${renderDueAction(shown, byId, now, query)}
     ${waiting}
     ${filterRow(linked, type, source)}
@@ -3687,9 +3704,10 @@ function renderDecisions(account, rows, _credit, habits, extra = {}) {
     ${empty}
     ${how}
     ${renderNudge(shown, { waiting: waiting ? 0 : habits?.waiting || 0, now, type, source })}
-    ${renderFooter(linked.length, narrowed)}
+    ${renderAccountLink()}
     <details class="settings">
-    <summary>Settings</summary>
+    <summary>Settings ▸</summary>
+    ${renderExportLinks(linked.length, narrowed)}
     <p>Records are ${keeping ? "on" : account.records === "off" ? "off" : "not chosen yet"}. Turning this off leaves the ones already here until you delete them. ${esc(RECORDS_OFF_DELETES_WAITING)}</p>
     <form method="post" action="/decisions" class="row">
       <input type="hidden" name="action" value="records">

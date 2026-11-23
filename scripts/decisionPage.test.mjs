@@ -26,6 +26,7 @@ import {
   impactDetailLine,
   impactLines,
   scorecardLine,
+  firstLookbackLine,
   LOOKBACK_LIST_MAX,
   PENDING_KEEP_DAYS,
   WAITING_GRILL_HOW,
@@ -245,6 +246,21 @@ describe("the list reads as a loop, not an archive", () => {
     assert.equal(scorecardLine(three, { type: "work" }), "Work · 3 decisions · 100% looked back · verdict held up in 2 of 3");
     const two = [held("shaky", "no"), held("solid", "yes"), open];
     assert.equal(scorecardLine(two), "3 decisions · 67% looked back");
+  });
+
+  it("names the earliest look-back until one is recorded, and stays quiet with nothing saved", () => {
+    assert.equal(firstLookbackLine([]), "");
+    assert.equal(firstLookbackLine(null), "");
+    const soon = row({ review: "2026-11-25" });
+    const later = row({ review: "2026-12-01" });
+    assert.equal(firstLookbackLine([later, soon, later]), "3 decisions. Your first look-back is on 25 Nov: we'll ask how it turned out.");
+    assert.equal(firstLookbackLine([soon]), "1 decision. Your first look-back is on 25 Nov: we'll ask how it turned out.");
+    assert.equal(firstLookbackLine([{ review: "", block: "version: 1\ndate: 2026-01-01\ntitle: T\nverdict: shaky" }, { review: "" }, { review: "nope" }]), "3 decisions.");
+    assert.equal(firstLookbackLine([{ review: "not-a-date", block: "" }]), "1 decision.");
+    assert.equal(
+      firstLookbackLine([{ block: "version: 1\ndate: 2026-01-01\ntitle: T\nverdict: shaky\nreview: 2026-11-25" }]),
+      "1 decision. Your first look-back is on 25 Nov: we'll ask how it turned out.",
+    );
   });
 });
 
@@ -468,15 +484,38 @@ describe("the Your grills list row", () => {
     const impactStart = html.indexOf('<section id="impact">');
     const impactEnd = html.indexOf("</section>", impactStart);
     const impact = html.slice(impactStart, impactEnd);
-    assert.match(impact, /2 unknown \(impact not confirmed\) · 1 called out \(not a confirmed change\) · 1 flagged \(not proof\)/);
-    assert.match(impact, /3 decisions · 0% looked back/);
-    assert.ok(impact.indexOf("2 unknown") < impact.indexOf("3 decisions · 0% looked back"), "the learning line is under the impact count");
-    assert.equal((html.match(/3 decisions · 0% looked back/g) || []).length, 1);
+    assert.match(impact, /3 decisions\. Your first look-back is on 1 Dec: we(?:'|&#39;)ll ask how it turned out\./);
+    assert.doesNotMatch(impact, /unknown \(impact not confirmed\)|flagged \(not proof\)|0% looked back/);
+    assert.match(html, /Grill said: <strong>Shaky<\/strong> · You chose: Not logged · Look back 1 Dec/);
     assert.ok(html.includes(`>${title}</a>`));
     assert.equal(html.includes(">Held up<"), false, "outcome taps stay on the record, not the list");
-    const empty = renderDecisionsForTest({ records: "keep" }, [], { now: Date.parse("2026-11-08T12:00:00Z") });
+    assert.match(html, /<summary>Settings ▸<\/summary>/);
+    const settings = html.slice(html.indexOf('<details class="settings">'), html.indexOf("</details>"));
+    assert.match(settings, />Export</);
+    assert.match(settings, />JSON</);
+    assert.match(settings, />Delete all</);
+    const now = Date.parse("2026-11-08T12:00:00Z");
+    const empty = renderDecisionsForTest({ records: "keep" }, [], { now });
     assert.equal(empty.includes("What Grill changed"), false);
     assert.equal(empty.includes("looked back"), false);
+    assert.equal(empty.includes(">Export<"), false);
+    assert.equal(empty.includes("Delete all"), false);
+    assert.doesNotMatch(empty, /0 decisions/);
+    const undated = renderDecisionsForTest({ records: "keep" }, [{ id: "u", title: "Untitled call", verdict: "solid", block: "version: 1\ndate: 2026-10-01\ntitle: Untitled call\nverdict: solid" }], { now });
+    assert.match(undated, /1 decision\./);
+    assert.doesNotMatch(undated, /Your first look-back is on/);
+    assert.match(undated, /Grill said: <strong>Solid<\/strong> · You chose: Not logged/);
+    assert.doesNotMatch(undated, /Look back \d/);
+    const looked = rows.map((row, index) =>
+      index === 0 ? { ...row, review: "2026-10-01", lookback: { happened: "came_true: no\nhappened: It missed.", at: "2026-10-02T00:00:00.000Z" } } : row,
+    );
+    const after = renderDecisionsForTest({ records: "keep" }, looked, { now });
+    const afterStart = after.indexOf('<section id="impact">');
+    const afterImpact = after.slice(afterStart, after.indexOf("</section>", afterStart));
+    assert.match(afterImpact, /2 unknown \(impact not confirmed\) · 1 called out \(not a confirmed change\) · 1 flagged \(not proof\)/);
+    assert.match(afterImpact, /3 decisions · 33% looked back/);
+    assert.ok(afterImpact.indexOf("2 unknown") < afterImpact.indexOf("3 decisions · 33% looked back"), "the learning line is under the impact count");
+    assert.doesNotMatch(after, /Your first look-back is on/);
   });
 });
 
