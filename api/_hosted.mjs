@@ -2518,6 +2518,7 @@ async function clerkCookieIdentity(request, deps) {
 // same exchange Clerk's own server SDK does (format "nonce").
 const PAGE_COOKIE = "__Host-grill_page";
 const FLASH_COOKIE = "__Host-grill_flash";
+const SAVED_COOKIE = "__Host-grill_saved";
 const FLASH_SECONDS = 120;
 const HANDSHAKE_STATE_COOKIE = "__Host-grill_hs";
 const HANDSHAKE_MARK = "__grill_hs";
@@ -2575,6 +2576,11 @@ function rememberPage(response, sub, deps) {
 /** The new calendar link, carried to the next GET and then forgotten. Not stored on the server. */
 function flashCookieHeader(value, maxAge = FLASH_SECONDS) {
   return `${FLASH_COOKIE}=${value ? encodeURIComponent(value) : ""}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+}
+
+/** A one-time saved line. The calendar-link notice is an event, so a reload of the same address does not announce it again. */
+function savedNoticeCookie(value, maxAge = FLASH_SECONDS) {
+  return `${SAVED_COOKIE}=${value ? encodeURIComponent(value) : ""}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
 }
 
 function readFlashLink(request) {
@@ -3274,9 +3280,10 @@ function html(status, body) {
   return new Response(body, { status, headers: WELCOME_HEADERS });
 }
 
-function htmlPage(body, { clearFlash = false } = {}) {
+function htmlPage(body, { clearFlash = false, clearSaved = false } = {}) {
   const res = html(200, body);
   if (clearFlash) res.headers.append("Set-Cookie", flashCookieHeader("", 0));
+  if (clearSaved) res.headers.append("Set-Cookie", savedNoticeCookie("", 0));
   return res;
 }
 
@@ -3777,7 +3784,7 @@ const ACCOUNT_STYLE = `<style>
     @media (prefers-color-scheme: dark) { :root { --help:#c8c0b6; } }
     @media (max-width: 40rem) {
       button, .button { width: 100%; box-sizing: border-box; text-align: center; }
-      a.button.danger { width: auto; }
+      #delete-account a.danger { width: auto; }
     }
     #checks { margin: 0.15rem 0 1.5rem; }
     .balance { margin: 0.15rem 0 0; color: var(--muted); }
@@ -3811,10 +3818,12 @@ const ACCOUNT_STYLE = `<style>
     details.quiet { margin-top: 0.4rem; }
     details.quiet summary { font-weight: 650; }
     details.more-checks summary { color: var(--ink); font-size: 1rem; font-weight: 550; letter-spacing: 0; text-transform: none; }
-    a.button.danger { background: transparent; color: #8d3b32; border: 1px solid #e4b8b2; font-weight: 550; box-shadow: none; }
-    .delete-account { margin-top: 1.75rem; }
+    #delete-account { margin: 2.6rem 0 0; padding-top: 1.2rem; border-top: 1px solid var(--rule); }
+    #delete-account summary { list-style: none; color: #8d3b32; font-weight: 650; }
+    #delete-account summary::-webkit-details-marker { display: none; }
+    #delete-account a.danger { color: #8d3b32; font-weight: 650; }
     @media (prefers-color-scheme: dark) {
-      a.button.danger { color: #f0b4aa; border-color: #6a3a34; }
+      #delete-account summary, #delete-account a.danger { color: #f0b4aa; }
     }
     </style>`;
 
@@ -3855,8 +3864,11 @@ function renderAccount(account, credit, extra = {}) {
       ${renderImpactEmail(account, field)}
     </section>
     ${renderAccountDetails(account, extra)}
-    <p class="delete-account"><a class="button danger" href="/account?confirm=delete">Delete this account</a></p>
-    <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
+    <details id="delete-account">
+      <summary>Delete account ▸</summary>
+      <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>
+      <p><a class="danger" href="/account?confirm=delete">Delete this account</a></p>
+    </details>`,
     "account",
   );
 }
@@ -4773,7 +4785,8 @@ function savedMatches(code, account, calendar) {
   return Boolean(checks[code]);
 }
 
-function savedAccountNotice(code, account, calendar) {
+function savedAccountNotice(code, account, calendar, flashCode = "") {
+  if (code === "calendar-link" && flashCode !== "calendar-link") return "";
   if (!savedMatches(code, account, calendar)) return "";
   return SAVED_NOTICES[code] || "";
 }
@@ -4822,6 +4835,7 @@ export async function handleAccount(request, deps) {
         if (!result.ok) return missed();
         const cookies = result.fresh ? [flashCookieHeader(calendarUrl(publicOrigin(request), result.fresh))] : [];
         const saved = { on: "calendar-on", off: "calendar-off", "titles-on": "calendar-titles-on", "titles-off": "calendar-titles-off", reset: "calendar-link" }[value];
+        if (saved === "calendar-link") cookies.push(savedNoticeCookie("calendar-link"));
         return done(saved ? `${back}?saved=${saved}` : back, cookies);
       }
       if (action === "records") {
@@ -4906,7 +4920,15 @@ export async function handleAccount(request, deps) {
     const topupQuery = pageUrl(request).searchParams.get("topup") || "";
     const sessionId = pageUrl(request).searchParams.get("session_id") || "";
     const notice = ACCOUNT_NOTICES[pageUrl(request).searchParams.get("notice") || ""] || "";
-    const saved = savedAccountNotice(pageUrl(request).searchParams.get("saved") || "", session.account, calendar);
+    const savedCode = pageUrl(request).searchParams.get("saved") || "";
+    const savedFlash = cookieValue(request.headers.get("cookie"), SAVED_COOKIE);
+    const saved = savedAccountNotice(savedCode, session.account, calendar, savedFlash);
+    let keptCard = "";
+    if (!notice && !saved && session.account.autoTopupKeptCard === true) {
+      keptCard = "Auto-add stays on the card already saved. This payment did not save a new card.";
+      delete session.account.autoTopupKeptCard;
+      await saveAccount(session.account, deps);
+    }
     const owned = topupQuery === "ok" && TOPUP_SESSION_RE.test(sessionId) && openTopupSessions(session.account).includes(sessionId);
     const credited = owned && (await redis(deps, ["GET", topupSessionKey(sessionId)])) === "credited";
     const prepaid = topupsEnabled(deps.env) ? await readTopup(session.account, deps) : { checks: 0 };
@@ -4918,11 +4940,11 @@ export async function handleAccount(request, deps) {
           auto: autoTopupEnabled(deps.env) ? await autoTopupView(session.account, deps) : null,
         }
       : null;
-    const status = notice || saved || topupNote;
+    const status = notice || saved || keptCard || topupNote;
     const freeRemaining = await freeChecksRemaining(session.account, deps);
     const low = checksNotice({ topups: Boolean(topup), freeRemaining, prepaid: topup?.checks ?? 0 });
     return rememberPage(
-      htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, topup, field, status, low, freeRemaining }), { clearFlash: Boolean(flashed) }),
+      htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, topup, field, status, low, freeRemaining }), { clearFlash: Boolean(flashed), clearSaved: savedFlash === "calendar-link" }),
       session.sub,
       deps,
     );

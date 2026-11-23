@@ -616,6 +616,36 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.match(right, /Saved\. Decision records are on/);
   });
 
+  it("announces a new calendar link once, then forgets that address", async () => {
+    const ctx = world();
+    const cookie = clerkCookies();
+    const html = await openAccount(ctx, cookie);
+    const headers = postHeaders(cookie, { origin: "https://grillyour.ai" });
+    const on = await handleAccount(
+      new Request(accountUrl(), { method: "POST", headers, body: `page=${encodeURIComponent(pageToken(html))}&action=calendar&value=on` }),
+      ctx,
+    );
+    assert.equal(on.status, 303);
+    const afterOn = await openAccount(ctx, cookie);
+    const reset = await handleAccount(
+      new Request(accountUrl(), { method: "POST", headers, body: `page=${encodeURIComponent(pageToken(afterOn))}&action=calendar&value=reset` }),
+      ctx,
+    );
+    assert.equal(reset.status, 303);
+    assert.match(reset.headers.get("location"), /[?&]saved=calendar-link$/);
+    const flash = reset.headers.getSetCookie().find((item) => item.startsWith("__Host-grill_saved=calendar-link"));
+    assert.ok(flash);
+    const first = await handleAccount(
+      new Request(accountUrl("/account?saved=calendar-link"), { headers: { cookie: `${cookie}; ${flash.split(";")[0]}` } }),
+      ctx,
+    );
+    const firstHtml = await first.text();
+    assert.match(firstHtml, /Saved\. A new calendar link is ready/);
+    assert.match(first.headers.getSetCookie().join("\n"), /__Host-grill_saved=;.*Max-Age=0/);
+    const again = await openAccount(ctx, cookie, "/account?saved=calendar-link");
+    assert.doesNotMatch(again, /A new calendar link is ready/);
+  });
+
   it("leads with checks left, one pack button, and no Add checks item in the header", async () => {
     const ctx = world();
     ctx.env.GRILL_TOPUP_PRICE_CENTS = "250";

@@ -262,6 +262,41 @@ describe("automatic add on the account page", () => {
     assert.match(html, /Auto-add when I run out · Off/);
   });
 
+  it("keeps an already-on auto-add on the old card when this checkout's card cannot be read, and says so once", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    await handleAccount(accountRequest("GET"), ctx);
+    const account = await storedAccount(ctx);
+    account.stripePaymentMethodId = "pm_oldcard222";
+    account.cardLast4 = "2222";
+    account.autoTopup = true;
+    await ctx.redis(["SET", `grill:hosted:acct:${account.id}`, JSON.stringify(account)]);
+    const failing = async (url, init) => {
+      if (String(url).includes("/v1/payment_intents/")) return Response.json({ error: { code: "api_error" } }, { status: 500 });
+      return ctx.fetch(url, init);
+    };
+    const event = paidSession(account.id, { auto: "1", pi: "pi_keptcard1" });
+    event.id = "evt_keptcard1234";
+    event.data.object.id = "cs_test_keptcard1";
+    const result = await applyTopupEvent(event, { env: ctx.env, fetch: failing, command: ctx.redis });
+    assert.equal(result.action, "credited");
+    const stored = await storedAccount(ctx);
+    assert.equal(stored.autoTopup, true);
+    assert.equal(stored.stripePaymentMethodId, "pm_oldcard222");
+    assert.equal(stored.autoTopupKeptCard, true);
+    resetHostedCaches();
+    const first = await handleAccount(accountRequest("GET"), ctx);
+    assert.match(await first.text(), /Auto-add stays on the card already saved\. This payment did not save a new card/);
+    resetHostedCaches();
+    const again = await storedAccount(ctx);
+    assert.equal(again.autoTopupKeptCard, undefined);
+    assert.equal(again.autoTopup, true);
+    assert.equal(again.stripePaymentMethodId, "pm_oldcard222");
+    const second = await (await handleAccount(accountRequest("GET"), ctx)).text();
+    assert.doesNotMatch(second, /This payment did not save a new card/);
+    assert.match(second, /Auto-add when I run out · On/);
+  });
+
   it("turns automatic add on and off, and only on when a card is saved", async () => {
     resetHostedCaches();
     const ctx = world();

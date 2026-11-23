@@ -271,6 +271,7 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
     const choice = session.metadata?.grill_auto_topup;
     if (!account.autoTopupCeilingCents) account.autoTopupCeilingCents = autoTopupCeilingCents(account);
     if (choice === "1") {
+      const wasOn = account.autoTopup === true;
       let method = "";
       try {
         const { stripe } = proClients(env, fetchImpl);
@@ -282,9 +283,15 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
       } catch {
         // The pack is already paid. A failed card read does not turn auto-add on.
       }
-      if (method.startsWith("pm_")) account.autoTopup = true;
+      if (method.startsWith("pm_")) {
+        account.autoTopup = true;
+        delete account.autoTopupKeptCard;
+      } else if (wasOn && typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_")) {
+        account.autoTopupKeptCard = true;
+      }
     } else if (choice === "0") {
       account.autoTopup = false;
+      delete account.autoTopupKeptCard;
     }
   }
   await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
