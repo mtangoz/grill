@@ -271,14 +271,18 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
     const choice = session.metadata?.grill_auto_topup;
     if (!account.autoTopupCeilingCents) account.autoTopupCeilingCents = autoTopupCeilingCents(account);
     if (choice === "1") {
+      let method = "";
       try {
         const { stripe } = proClients(env, fetchImpl);
-        rememberCard(account, await loadPaymentIntent(stripe, session.payment_intent));
+        const pi = await loadPaymentIntent(stripe, session.payment_intent);
+        if (pi) {
+          rememberCard(account, pi);
+          method = paymentMethodId(pi);
+        }
       } catch {
-        // The pack is already paid. Auto-add stays off unless a card is actually saved.
+        // The pack is already paid. A failed card read does not turn auto-add on.
       }
-      const saved = typeof account.stripePaymentMethodId === "string" && account.stripePaymentMethodId.startsWith("pm_");
-      account.autoTopup = saved;
+      if (method.startsWith("pm_")) account.autoTopup = true;
     } else if (choice === "0") {
       account.autoTopup = false;
     }

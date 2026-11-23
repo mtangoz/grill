@@ -219,7 +219,7 @@ describe("automatic add on the account page", () => {
     const result = await applyTopupEvent(event, { env: ctx.env, fetch: failing, command: ctx.redis });
     assert.equal(result.action, "credited");
     const stored = await storedAccount(ctx);
-    assert.equal(stored.autoTopup, false);
+    assert.notEqual(stored.autoTopup, true);
     assert.equal(stored.stripePaymentMethodId, undefined);
     resetHostedCaches();
     const html = await (await handleAccount(accountRequest("GET"), ctx)).text();
@@ -233,6 +233,33 @@ describe("automatic add on the account page", () => {
     const stuck = await (await handleAccount(accountRequest("GET"), ctx)).text();
     assert.match(stuck, /Auto-add when I run out · On/);
     assert.match(stuck, /name="value" value="off"[^>]*>Auto-add when I run out · On</);
+  });
+
+  it("does not turn auto-add on against an older card when this checkout's card cannot be read", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    await handleAccount(accountRequest("GET"), ctx);
+    const account = await storedAccount(ctx);
+    account.stripePaymentMethodId = "pm_oldcard111";
+    account.cardLast4 = "1111";
+    account.autoTopup = false;
+    await ctx.redis(["SET", `grill:hosted:acct:${account.id}`, JSON.stringify(account)]);
+    const failing = async (url, init) => {
+      if (String(url).includes("/v1/payment_intents/")) return Response.json({ error: { code: "api_error" } }, { status: 500 });
+      return ctx.fetch(url, init);
+    };
+    const event = paidSession(account.id, { auto: "1", pi: "pi_oldcardfail" });
+    event.id = "evt_oldcardfail1";
+    event.data.object.id = "cs_test_oldcardfail";
+    const result = await applyTopupEvent(event, { env: ctx.env, fetch: failing, command: ctx.redis });
+    assert.equal(result.action, "credited");
+    const stored = await storedAccount(ctx);
+    assert.equal(stored.autoTopup, false);
+    assert.equal(stored.stripePaymentMethodId, "pm_oldcard111");
+    resetHostedCaches();
+    const html = await (await handleAccount(accountRequest("GET"), ctx)).text();
+    assert.doesNotMatch(html, /Auto-add when I run out · On/);
+    assert.match(html, /Auto-add when I run out · Off/);
   });
 
   it("turns automatic add on and off, and only on when a card is saved", async () => {

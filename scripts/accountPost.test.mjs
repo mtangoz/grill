@@ -598,6 +598,24 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.equal(storedAccount(ctx).records, "keep");
   });
 
+  it("does not show a saved notice that disagrees with the account", async () => {
+    const ctx = world();
+    const cookie = clerkCookies();
+    const html = await openAccount(ctx, cookie);
+    const stale = await openAccount(ctx, cookie, "/account?saved=records-off");
+    assert.doesNotMatch(stale, /Saved\. Decision records are off/);
+    const kept = await handleAccount(
+      new Request(accountUrl(), { method: "POST", headers: postHeaders(cookie, { origin: "https://grillyour.ai" }), body: recordsBody(pageToken(html), "keep") }),
+      ctx,
+    );
+    assert.equal(kept.status, 303);
+    const wrong = await openAccount(ctx, cookie, "/account?saved=records-off");
+    assert.doesNotMatch(wrong, /Saved\. Decision records are off/);
+    assert.match(wrong, /data-state="on">On/);
+    const right = await openAccount(ctx, cookie, "/account?saved=records-on");
+    assert.match(right, /Saved\. Decision records are on/);
+  });
+
   it("leads with checks left, one pack button, and no Add checks item in the header", async () => {
     const ctx = world();
     ctx.env.GRILL_TOPUP_PRICE_CENTS = "250";

@@ -4752,7 +4752,29 @@ const SAVED_NOTICES = {
   "auto-off": "Saved. Auto-add is off.",
 };
 
-function savedAccountNotice(code) {
+function savedMatches(code, account, calendar) {
+  const ceiling = autoTopupCeilingCents(account);
+  const checks = {
+    "records-on": account?.records === "keep",
+    "records-off": account?.records === "off",
+    "email-on": account?.impactEmail !== false,
+    "email-off": account?.impactEmail === false,
+    "calendar-on": Boolean(calendar?.on),
+    "calendar-off": !calendar?.on,
+    "calendar-titles-on": Boolean(calendar?.on && calendar?.titles),
+    "calendar-titles-off": Boolean(calendar?.on && !calendar?.titles),
+    "calendar-link": Boolean(calendar?.on),
+    "ceiling-10": ceiling === 1000,
+    "ceiling-20": ceiling === 2000,
+    "ceiling-50": ceiling === 5000,
+    "auto-on": account?.autoTopup === true,
+    "auto-off": account?.autoTopup !== true,
+  };
+  return Boolean(checks[code]);
+}
+
+function savedAccountNotice(code, account, calendar) {
+  if (!savedMatches(code, account, calendar)) return "";
   return SAVED_NOTICES[code] || "";
 }
 
@@ -4884,7 +4906,7 @@ export async function handleAccount(request, deps) {
     const topupQuery = pageUrl(request).searchParams.get("topup") || "";
     const sessionId = pageUrl(request).searchParams.get("session_id") || "";
     const notice = ACCOUNT_NOTICES[pageUrl(request).searchParams.get("notice") || ""] || "";
-    const saved = savedAccountNotice(pageUrl(request).searchParams.get("saved") || "");
+    const saved = savedAccountNotice(pageUrl(request).searchParams.get("saved") || "", session.account, calendar);
     const owned = topupQuery === "ok" && TOPUP_SESSION_RE.test(sessionId) && openTopupSessions(session.account).includes(sessionId);
     const credited = owned && (await redis(deps, ["GET", topupSessionKey(sessionId)])) === "credited";
     const prepaid = topupsEnabled(deps.env) ? await readTopup(session.account, deps) : { checks: 0 };
