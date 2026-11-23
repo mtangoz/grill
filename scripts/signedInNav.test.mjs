@@ -152,7 +152,7 @@ describe("the shared signed-in header", { concurrency: false }, () => {
 
     const cancel = await open(handleAccount, ctx, "/account?topup=cancel");
     assertSharedNav(cancel, { current: "account" });
-    assert.match(cancel, /No payment was made/);
+    assert.match(cancel, /Payment not completed\. Nothing was charged\./);
 
     const remove = await open(handleAccount, ctx, "/account?confirm=delete");
     assertSharedNav(remove, { current: "account" });
