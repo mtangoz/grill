@@ -120,7 +120,7 @@ export async function startTopupCheckout({ env, fetch: fetchImpl, account, origi
     "line_items[0][quantity]": "1",
     "payment_method_types[0]": "card",
     "payment_intent_data[setup_future_usage]": "off_session",
-    success_url: `${home}/account?topup=ok`,
+    success_url: `${home}/account?topup=ok&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${home}/account?topup=cancel`,
     "metadata[grill_topup]": "1",
     "metadata[grill_account]": account.id,

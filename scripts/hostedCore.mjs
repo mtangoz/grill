@@ -949,7 +949,7 @@ export function completedGrill(parsed) {
   return VERDICTS.includes(verdict);
 }
 
-/** Completed checks for one account in a UTC month. This is the usage number. */
+/** Completed checks for one account in a UTC month. The daily and monthly stops read this. The account page does not. */
 export function monthlyCheckKey(accountId, month) {
   return `grill:hosted:checks:${accountId}:${month}`;
 }
@@ -1097,12 +1097,6 @@ export function runFingerprint(accountId, subject, env = {}) {
 
 export function runLockKey(accountId, fingerprint) {
   return `grill:hosted:run:${accountId}:${fingerprint}`;
-}
-
-/** What /account and /decisions show, and what a support lookup reads. */
-export function checksLine(count) {
-  const n = Math.max(0, Math.floor(Number(count) || 0));
-  return `${n} ${n === 1 ? "check" : "checks"} this month.`;
 }
 
 /**
