@@ -111,6 +111,11 @@
   h2 { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--quiet); margin: 0 0 0.9rem; }
   .note, .privacy, .pre { font-size: 0.98rem; color: var(--muted); max-width: 36rem; margin: 0 0 1rem; }
   .privacy, .pre { margin-bottom: 2.6rem; }
+  #privacy { margin-bottom: 0.55rem; }
+  .sample { max-width: 36rem; margin: 0 0 1.6rem; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 8px; }
+  .sample .label { margin: 0 0 0.4rem; font-size: 0.78rem; font-weight: 600; color: var(--quiet); }
+  .sample p { margin: 0; }
+  .where { font-size: 0.95rem; margin: 0 0 2.6rem; }
   .steps { padding-left: 1.25rem; margin: 0 0 2.6rem; max-width: 36rem; color: var(--muted); }
   .steps li { margin: 0.45rem 0; padding-left: 0.2rem; }
 
@@ -147,6 +152,7 @@
   @media (max-width: 560px) {
     main { padding-top: 1.6rem; }
     h1 { margin-top: 2.4rem; }
+    .cta .button { white-space: normal; }
     .facts { grid-template-columns: 1fr; gap: 12px; }
     .scale .labels span { font-size: 0.62rem; }
     .pairs td:first-child, .pairs th:first-child { width: 7.5rem; }
@@ -204,11 +210,17 @@
 
   <h1>Grill your AI before you send it to your boss.</h1>
   <p class="lede">Get the strongest case against your plan from a different AI, right in the chat you already use. Then you decide.</p>
-  <p class="cta"><a class="button" href="/start/?ref=home">Connect Grill (2 minutes)</a></p>
-  <p>100 free checks a month, resets on the 1st.</p>
+  <div class="sample">
+    <p class="label">Example (made up)</p>
+    <p>Shaky. It assumes the 30% saving survives handover and rework, and nothing in the memo checks that. Cheap test: ask the firm for a two-week paid pilot on one queue and compare cost per resolved ticket.</p>
+  </div>
+  <p class="cta"><a class="button" href="/start/?ref=home">Add Grill to ChatGPT or Claude</a></p>
+  <p class="note">Free: 100 checks a month. No card.</p>
   <p class="privacy" id="privacy"><a href="/terms">Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.</a></p>
+  <p class="where"><a href="/data-flow/">Where your decision goes →</a></p>
 
   <div class="footer">
     <span>Made at <a href="https://hold.quest">Hold</a></span>
+    <span><a href="/pricing">Pricing</a> · <a href="/demo/">Demo</a></span>
   </div>
 </main>

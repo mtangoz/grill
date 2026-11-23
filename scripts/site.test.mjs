@@ -25,7 +25,7 @@ describe("site/page.html", () => {
   });
 
   it("links /start, and the README keeps the other setup routes", () => {
-    assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Add Grill to ChatGPT or Claude<\/a>/);
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     for (const needle of ["releases/latest/download/grill.mcpb", "releases/latest/download/grill-skill.zip", "/plugin install grill@grill", "openrouter.ai/keys", "prompts/grill.md"]) {
       assert.ok(readme.includes(needle), `missing ${needle}`);
@@ -178,14 +178,38 @@ describe("site/page.html", () => {
     assert.match(readFileSync(join(ROOT, "README.md"), "utf8"), /about 2 minutes with a key, about 10 if you need one/);
   });
 
-  it("is one pitch, one sentence, one Connect Grill button, and the privacy line", () => {
+  it("is one pitch, one button, a made-up example, and the privacy line", () => {
     assert.equal((page.match(/<h1>/g) || []).length, 1);
     assert.equal((page.match(/<a class="button"/g) || []).length, 1);
-    assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Add Grill to ChatGPT or Claude<\/a>/);
     assert.match(page, /Grill only uses your decisions to give you a verdict and your later look-backs\. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us\./);
     assert.doesNotMatch(page, /id="how"|id="examples"|id="setup"|class="chat"|class="routes"/);
     assert.equal((page.match(/<script\b/gi) || []).length, 0);
     assert.doesNotMatch(page, /Settings → Connectors/);
+  });
+
+  it("shows a made-up verdict under the subhead, then the free line, the privacy line, and where the decision goes", () => {
+    const verdict = "Shaky. It assumes the 30% saving survives handover and rework, and nothing in the memo checks that. Cheap test: ask the firm for a two-week paid pilot on one queue and compare cost per resolved ticket.";
+    const demo = readFileSync(join(ROOT, "site/demo.html"), "utf8").replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
+    assert.ok(demo.includes(verdict), "the homepage verdict is the support-memo example on /demo");
+    assert.ok(page.includes(verdict));
+    assert.match(page, /Example \(made up\)/);
+    assert.match(page, /Free: 100 checks a month\. No card\./);
+    assert.match(page, /<a href="\/data-flow\/">Where your decision goes →<\/a>/);
+    assert.match(page, /href="\/pricing"/);
+    assert.match(page, /href="\/demo\/"/);
+    const lede = page.indexOf('class="lede"');
+    const example = page.indexOf("Example (made up)");
+    const button = page.indexOf(">Add Grill to ChatGPT or Claude<");
+    const free = page.indexOf("Free: 100 checks a month. No card.");
+    const privacy = page.indexOf('id="privacy"');
+    const where = page.indexOf('href="/data-flow/"');
+    assert.ok(lede !== -1 && lede < example && example < button && button < free && free < privacy && privacy < where);
+    assert.equal((page.match(/<a class="button"/g) || []).length, 1, "pricing and demo stay quiet links");
+    assert.doesNotMatch(page, /\b\d+\s+minutes?\b|a few clicks/i);
+    assert.doesNotMatch(page, /Grill doesn't (see|keep)|Grill does not (see|keep)/i);
+    const privacyLine = "Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.";
+    assert.ok(page.includes(`<a href="/terms">${privacyLine}</a>`));
   });
 
   it("defines its colours as tokens for light, dark-by-system and dark-by-choice", () => {
@@ -304,7 +328,7 @@ describe("the site build", () => {
     assert.match(head, /<meta name="theme-color" content="#f7f4ef" media="\(prefers-color-scheme: light\)">/);
     assert.match(head, /<meta name="theme-color" content="#161513" media="\(prefers-color-scheme: dark\)">/);
     assert.match(head, /--paper:/);
-    assert.match(rest, /<body>[\s\S]*<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(rest, /<body>[\s\S]*<a class="button" href="\/start\/\?ref=home"[^>]*>Add Grill to ChatGPT or Claude<\/a>/);
     const terms = readFileSync(join(ROOT, "_site/terms/index.html"), "utf8");
     assert.match(terms, /<title>Grill terms<\/title>/);
     assert.match(terms, /<link rel="canonical" href="https:\/\/grillyour\.ai\/terms\/">/);
@@ -870,7 +894,7 @@ describe("the /start page", () => {
   });
 
   it("the homepage button is the only way in, and the README keeps the other setups", () => {
-    assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Add Grill to ChatGPT or Claude<\/a>/);
     assert.equal((page.match(/<a class="button"/g) || []).length, 1);
     assert.doesNotMatch(page, /id="pro"|Get Pro|checkout\?plan|Notify me|Get a starter key/);
     assert.doesNotMatch(page, /Settings → Connectors/);
@@ -1063,8 +1087,9 @@ describe("the /demo page", () => {
     assert.doesNotMatch(readFileSync(join(ROOT, "README.md"), "utf8"), threeMadeUp);
   });
 
-  it("the README links /demo/, and the homepage does not list examples", () => {
-    assert.doesNotMatch(page, /href="\/demo\/"/);
+  it("the README links /demo/, and the homepage links it quietly", () => {
+    assert.match(page, /href="\/demo\/"/);
+    assert.equal((page.match(/<a class="button"/g) || []).length, 1);
     assert.match(readFileSync(join(ROOT, "README.md"), "utf8"), /https:\/\/grillyour\.ai\/demo\//);
   });
 });
@@ -1333,13 +1358,13 @@ describe("anyone can sign up", () => {
   };
 
   it("points the homepage Connect Grill button at /start", () => {
-    assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(page, /<a class="button" href="\/start\/\?ref=home"[^>]*>Add Grill to ChatGPT or Claude<\/a>/);
     assert.doesNotMatch(page, /Settings → Connectors/);
     build();
     const html = readFileSync(join(ROOT, "_site/index.html"), "utf8");
-    assert.match(html, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(html, /<a class="button" href="\/start\/\?ref=home"[^>]*>Add Grill to ChatGPT or Claude<\/a>/);
     const md = readFileSync(join(ROOT, "_site/index.md"), "utf8");
-    assert.match(md, /\[Connect Grill \(2 minutes\)\]\(https:\/\/grillyour\.ai\/start\/\)/);
+    assert.match(md, /\[Add Grill to ChatGPT or Claude\]\(https:\/\/grillyour\.ai\/start\/\)/);
   });
 
   it("points llms.txt at sign-up, not a waitlist", () => {
@@ -1488,7 +1513,11 @@ describe("markdown for agents", () => {
     const phrases = [
       "Grill your AI before you send it to your boss.",
       "Get the strongest case against your plan from a different AI, right in the chat you already use. Then you decide.",
-      "Connect Grill",
+      "Example (made up)",
+      "Shaky. It assumes the 30% saving survives handover and rework, and nothing in the memo checks that. Cheap test: ask the firm for a two-week paid pilot on one queue and compare cost per resolved ticket.",
+      "Add Grill to ChatGPT or Claude",
+      "Free: 100 checks a month. No card.",
+      "Where your decision goes",
       "Grill only uses your decisions to give you a verdict and your later look-backs. We don't read them, share them or use them for anything else, so we can't learn what's working unless you tell us.",
     ];
     for (const phrase of phrases) {
@@ -1510,7 +1539,7 @@ describe("markdown for agents", () => {
     ]) {
       assert.ok(md.includes(url), `markdown homepage should link ${url}`);
     }
-    assert.match(md, /\[Connect Grill \(2 minutes\)\]\(https:\/\/grillyour\.ai\/start\/\)/);
+    assert.match(md, /\[Add Grill to ChatGPT or Claude\]\(https:\/\/grillyour\.ai\/start\/\)/);
   });
 
   it("writes a markdown 404 that says the page is missing and links the agent files", () => {
@@ -1838,7 +1867,7 @@ describe("where saved grills are", () => {
     const header = html.match(/<div class="top">[\s\S]*?<\/div>/)?.[0] ?? "";
     assert.match(header, /<nav aria-label="Sections">[\s\S]*<a href="\/decisions">Your grills<\/a>[\s\S]*<\/nav>/);
     assert.equal((html.match(/<a class="button"/g) || []).length, 1);
-    assert.match(html, /<a class="button" href="\/start\/\?ref=home"[^>]*>Connect Grill \(2 minutes\)<\/a>/);
+    assert.match(html, /<a class="button" href="\/start\/\?ref=home"[^>]*>Add Grill to ChatGPT or Claude<\/a>/);
   });
 
   it("keeps Your grills on the about page for someone already using Grill", () => {
