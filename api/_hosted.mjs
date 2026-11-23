@@ -3765,7 +3765,7 @@ function renderDeleteAllConfirm() {
 const ACCOUNT_STYLE = `<style>
     @media (max-width: 40rem) {
       button, .button { width: 100%; box-sizing: border-box; text-align: center; }
-      a.button.danger { width: auto; }
+      #delete-account a.danger { width: auto; }
     }
     #checks { margin: 0.15rem 0 1.5rem; }
     .balance { margin: 0.15rem 0 0; color: var(--muted); }
@@ -3793,10 +3793,12 @@ const ACCOUNT_STYLE = `<style>
     details summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--ink); }
     details.quiet { margin-top: 0.4rem; }
     details.quiet summary { color: var(--quiet); font-weight: 500; }
-    a.button.danger { background: transparent; color: #8d3b32; border: 1px solid #e4b8b2; font-weight: 550; box-shadow: none; }
-    .delete-account { margin-top: 1.75rem; }
+    #delete-account { margin: 2.6rem 0 0; padding-top: 1.2rem; border-top: 1px solid var(--rule); }
+    #delete-account summary { list-style: none; color: #8d3b32; font-weight: 650; }
+    #delete-account summary::-webkit-details-marker { display: none; }
+    #delete-account a.danger { color: #8d3b32; font-weight: 650; }
     @media (prefers-color-scheme: dark) {
-      a.button.danger { color: #f0b4aa; border-color: #6a3a34; }
+      #delete-account summary, #delete-account a.danger { color: #f0b4aa; }
     }
     </style>`;
 
@@ -3837,8 +3839,11 @@ function renderAccount(account, credit, extra = {}) {
       ${renderImpactEmail(account, field)}
     </section>
     ${renderAccountDetails(account, extra)}
-    <p class="delete-account"><a class="button danger" href="/account?confirm=delete">Delete this account</a></p>
-    <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>`,
+    <details id="delete-account">
+      <summary>Delete account ▸</summary>
+      <p class="small">Deleting the account removes your records, switches off the model-router key, and deletes the sign-in.</p>
+      <p><a class="danger" href="/account?confirm=delete">Delete this account</a></p>
+    </details>`,
     "account",
   );
 }
