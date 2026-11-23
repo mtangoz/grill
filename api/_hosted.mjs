@@ -1184,6 +1184,32 @@ async function resolvePerson(sub, email, deps) {
   return id;
 }
 
+/** How long after a chat sign-in a first signed-in page can still bring the account its first-touch label. */
+const LATE_REF_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * A chat app calls /mcp from its own servers, so an account a chat sign-in creates never sees the
+ * browser's grill_ref. When that person first opens a signed-in page in the browser that carries
+ * the label, within a week of the account being made, the label is saved then and the sign-up is
+ * counted once. A grill already run counts as the first grill. Only the label is stored.
+ */
+async function adoptLateRef(account, ref, deps) {
+  const arrival = normalizeRef(ref);
+  if (!arrival || normalizeRef(account.ref)) return false;
+  const made = Date.parse(account.createdAt || "");
+  if (!Number.isFinite(made) || Date.now() - made > LATE_REF_WINDOW_MS) return false;
+  account.ref = arrival;
+  await saveAccount(account, deps);
+  try {
+    const command = (args) => redis(deps, args);
+    await countAccountRef(command, account, deps.env, "signup");
+    if (await redis(deps, ["LINDEX", spendLogKey(account.id), "0"])) await countAccountRef(command, account, deps.env, "grill");
+  } catch {
+    // A missed count is not a blocked sign-in.
+  }
+  return true;
+}
+
 async function ensureAccount(userId, email, deps, human, ref = "") {
   const own = String(email || "").trim().toLowerCase();
   const capEmail = cleanEmail(human) || own;
@@ -1210,7 +1236,10 @@ async function ensureAccount(userId, email, deps, human, ref = "") {
     } catch {
       // A missed count is not a blocked sign-in.
     }
-  } else if (account.email !== own) {
+  } else if (await adoptLateRef(account, ref, deps)) {
+    // A chat sign-in made this account without the browser's label. Its first signed-in page brought it.
+  }
+  if (account.email !== own) {
     // Move the email link with the account, so a reassigned old address can't link in.
     if (account.email) {
       const holder = await redis(deps, ["GET", personIndex(account.email)]);

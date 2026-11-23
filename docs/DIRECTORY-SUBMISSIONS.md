@@ -67,7 +67,7 @@ Each answer below is quoted word for word from [grillyour.ai/data-flow](https://
 > Grill tells your assistant to ask you once before keeping records. Grill's server does not check that it asked. It acts on the yes or no the assistant sends.
 
 **What is kept either way?**
-> Your account, with your email address. The time, cost and judge model of your last 400 grills.
+> Your account holds your email address and the label of the link you first arrived from (for example askgrill), used only to count which outreach brings users. The time, cost and judge model of your last 400 grills.
 
 **Does Grill send email?**
 > It is on unless you turn it off. It goes on a Monday when your account saved a decision that week or a look-back came due. It is sent through Resend.

@@ -828,6 +828,53 @@ describe("the decisions page layout", () => {
     assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:home"]), null);
   });
 
+  it("gives a chat-created account the first-touch ref on its first signed-in page, once", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const fake = await startFakeOpenRouter();
+    try {
+      // The chat app calls /mcp from its own servers, so the browser's grill_ref never reaches it.
+      await grillOnly(ctx, fake, "Hire contractor", FEB);
+      const keys = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1];
+      assert.equal(keys.length, 1);
+      const before = JSON.parse(ctx.memory.command(["GET", keys[0]]));
+      assert.equal(before.ref, undefined);
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), null);
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=askgrill") });
+      const stored = JSON.parse(ctx.memory.command(["GET", keys[0]]));
+      assert.equal(stored.ref, "askgrill");
+      assert.deepEqual(Object.keys(stored).filter((k) => !(k in before)), ["ref"], "only the label is added");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:first_grill_ref:askgrill"]), "1", "the grill it already ran is its first");
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=home") });
+      await grillOnly(ctx, fake, "Hire a second contractor", FEB);
+      assert.equal(JSON.parse(ctx.memory.command(["GET", keys[0]])).ref, "askgrill");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:first_grill_ref:askgrill"]), "1");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:home"]), null);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("does not give an older account a ref from a link it followed later", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const fake = await startFakeOpenRouter();
+    try {
+      await grillOnly(ctx, fake, "Hire contractor", FEB);
+      const key = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1][0];
+      const account = JSON.parse(ctx.memory.command(["GET", key]));
+      account.createdAt = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+      ctx.memory.command(["SET", key, JSON.stringify(account)]);
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=askgrill") });
+      assert.equal(JSON.parse(ctx.memory.command(["GET", key])).ref, undefined);
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), null);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("does not count a sign-up ref for an account on the internal list", async () => {
     resetHostedCaches();
     const ctx = world();
