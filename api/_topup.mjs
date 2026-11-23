@@ -272,7 +272,9 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
     if (!account.autoTopupCeilingCents) account.autoTopupCeilingCents = autoTopupCeilingCents(account);
     const sessionCreatedMs = Number(session.created) > 0 ? Number(session.created) * 1000 : 0;
     const changedAt = Number(account.autoTopupChangedAt) || 0;
-    const newerChoice = sessionCreatedMs > 0 && changedAt > sessionCreatedMs;
+    // Stripe stamps the checkout to a whole second. An off in that same second does not block a checkout started after it.
+    const newerChoice = sessionCreatedMs > 0 && changedAt >= sessionCreatedMs + 1000;
+    const loadedChangedAt = changedAt;
     if (newerChoice) {
       // The person changed auto-add after this checkout started. That choice stands.
     } else if (choice === "1") {
@@ -302,6 +304,26 @@ export async function applyTopupEvent(event, { env, fetch: fetchImpl, command })
       account.autoTopup = false;
       delete account.autoTopupKeptCard;
       delete account.autoTopupCardMissed;
+    }
+    const freshRaw = await redis(["GET", hostedAccountKey(accountId)]);
+    let fresh = null;
+    try {
+      fresh = JSON.parse(freshRaw);
+    } catch {
+      fresh = null;
+    }
+    if (fresh && Number(fresh.autoTopupChangedAt) > loadedChangedAt) {
+      if (fresh.autoTopup === true || fresh.autoTopup === false) account.autoTopup = fresh.autoTopup;
+      else delete account.autoTopup;
+      account.autoTopupChangedAt = fresh.autoTopupChangedAt;
+      if (typeof fresh.stripePaymentMethodId === "string") account.stripePaymentMethodId = fresh.stripePaymentMethodId;
+      else delete account.stripePaymentMethodId;
+      if (typeof fresh.cardLast4 === "string") account.cardLast4 = fresh.cardLast4;
+      else delete account.cardLast4;
+      delete account.autoTopupKeptCard;
+      delete account.autoTopupCardMissed;
+      if (fresh.autoTopupKeptCard === true) account.autoTopupKeptCard = true;
+      if (fresh.autoTopupCardMissed === true) account.autoTopupCardMissed = true;
     }
   }
   await redis(["SET", hostedAccountKey(accountId), JSON.stringify(account)]);
