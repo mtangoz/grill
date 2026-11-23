@@ -384,6 +384,28 @@ describe("the account page sells a pack", () => {
     assert.doesNotMatch(doneHtml, /processing, refresh in a moment/);
   });
 
+  it("says a second top-up is still processing when only the earlier session is credited", async () => {
+    resetHostedCaches();
+    const ctx = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE });
+    await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
+    const account = await storedAccount(ctx);
+    const credited = await applyTopupEvent(paidEvent(account.id, { id: "evt_topupfirstonly", session: "cs_test_topupsession1" }), {
+      env: ctx.env,
+      fetch: ctx.fetch,
+      command: ctx.redis,
+    });
+    assert.equal(credited.action, "credited");
+    const again = await handleAccount(accountRequest("POST", { body: "action=topup" }), ctx);
+    assert.equal(again.status, 303);
+    const stored = await storedAccount(ctx);
+    assert.deepEqual(stored.topupOpenSessions, ["cs_test_topupsession2"]);
+    const early = await handleAccount(accountRequest("GET", { query: "?topup=ok" }), ctx);
+    const html = await early.text();
+    assert.match(html, /processing, refresh in a moment/);
+    assert.doesNotMatch(html, /Payment received\. Prepaid checks left:/);
+    assert.match(html, /Prepaid checks left: 100/);
+  });
+
   it("accepts a restricted key in the matching environment", async () => {
     resetHostedCaches();
     const live = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE, VERCEL_ENV: "production", STRIPE_SECRET_KEY: "rk_live_restricted_made_up" });

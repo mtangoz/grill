@@ -4551,9 +4551,15 @@ function openTopupSessions(account) {
   return raw.filter((id) => typeof id === "string" && TOPUP_SESSION_RE.test(id)).slice(-5);
 }
 
-function rememberOpenTopup(account, sessionId) {
+async function rememberOpenTopup(account, sessionId, read) {
   if (!TOPUP_SESSION_RE.test(String(sessionId || ""))) return;
-  account.topupOpenSessions = [...openTopupSessions(account).filter((id) => id !== sessionId), sessionId].slice(-5);
+  const pending = [];
+  for (const id of openTopupSessions(account)) {
+    if (id === sessionId) continue;
+    const marked = await read(["GET", topupSessionKey(id)]);
+    if (marked !== "credited") pending.push(id);
+  }
+  account.topupOpenSessions = [...pending, sessionId].slice(-5);
 }
 
 function topupReturnNote(query, { checks = 0, credited = false } = {}) {
@@ -4673,7 +4679,7 @@ export async function handleAccount(request, deps) {
             origin: publicOrigin(request),
             autoTopup: autoTopupEnabled(deps.env) && form.get("auto_topup") === "1",
           });
-          rememberOpenTopup(session.account, result.sessionId);
+          await rememberOpenTopup(session.account, result.sessionId, (args) => redis(deps, args));
           if (session.account.stripeCustomerId) await saveAccount(session.account, deps);
           if (result.state === "redirect") return rememberPage(seeOther(result.url), session.sub, deps);
           return done(`${back}?topup=unready`);
