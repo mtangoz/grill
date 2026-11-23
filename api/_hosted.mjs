@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, setMonthlyLimit, WELCOME_HEADERS } from "./_pro.mjs";
 import { autoChoiceKey, autoChoiceRecord, chargeAutoTopup, startTopupCheckout, topupPriceLabel } from "./_topup.mjs";
 import { assignFoundingMember, foundingMemberLine, readFoundingNumber } from "./_founding.mjs";
-import { refFromCookie } from "./_start.mjs";
+import { countAccountRef, normalizeRef, refFromCookie } from "./_start.mjs";
 import { waitlistFormHtml } from "./_waitlist.mjs";
 import { sendResendEmail } from "./_notify.mjs";
 import {
@@ -573,6 +573,11 @@ async function countCompletedCheck(account, deps, runId, { sourceApp = "", spend
   await redis(deps, ["INCR", dayKey]);
   await redis(deps, ["EXPIRE", dayKey, String(2 * 24 * 60 * 60)]);
   await countFunnel(deps, FUNNEL_KEYS.grills);
+  try {
+    await countAccountRef((args) => redis(deps, args), account, deps.env, "grill");
+  } catch {
+    // A missed count is not a failed grill.
+  }
   await markEmailReturn(account, deps, "grill");
   await countOutsideGrill(account, deps, { sourceApp, spendRows });
 }
@@ -1130,6 +1135,8 @@ async function saveAccount(account, deps) {
   if (account.autoTopupFailure && typeof account.autoTopupFailure.code === "string") copy.autoTopupFailure = { code: account.autoTopupFailure.code, at: account.autoTopupFailure.at || "" };
   // Absent means the Monday note is on. Only an explicit off is stored.
   if (account.impactEmail === false) copy.impactEmail = false;
+  const arrival = normalizeRef(account.ref);
+  if (arrival) copy.ref = arrival;
   await redis(deps, ["SET", acctKey(account.id), JSON.stringify(copy)]);
 }
 
@@ -1177,7 +1184,7 @@ async function resolvePerson(sub, email, deps) {
   return id;
 }
 
-async function ensureAccount(userId, email, deps, human) {
+async function ensureAccount(userId, email, deps, human, ref = "") {
   const own = String(email || "").trim().toLowerCase();
   const capEmail = cleanEmail(human) || own;
   let account = await loadAccount(userId, deps);
@@ -1195,7 +1202,14 @@ async function ensureAccount(userId, email, deps, human) {
       spend: [],
       createdAt: new Date().toISOString(),
     };
+    const arrival = normalizeRef(ref);
+    if (arrival) account.ref = arrival;
     await saveAccount(account, deps);
+    try {
+      await countAccountRef((args) => redis(deps, args), account, deps.env, "signup");
+    } catch {
+      // A missed count is not a blocked sign-in.
+    }
   } else if (account.email !== own) {
     // Move the email link with the account, so a reassigned old address can't link in.
     if (account.email) {
@@ -3004,7 +3018,7 @@ export async function handleMcp(request, deps) {
       if (!gate.email) return rpcResponse(rpcId, toolText("Grill needs a verified email on this account before it can run.", true), request);
       if (!gate.allowed) return rpcResponse(rpcId, toolText(inviteOnlyText(publicOrigin(request)), true), request);
       const personId = await resolvePerson(who.payload.sub, gate.email, deps);
-      const account = await ensureAccount(personId, gate.email, deps, gate.human);
+      const account = await ensureAccount(personId, gate.email, deps, gate.human, refFromCookie(request.headers.get("cookie")));
       await countActive(account, deps);
       const name = msg.params?.name;
       const args = msg.params?.arguments ?? {};
@@ -3262,7 +3276,7 @@ async function pageUser(request, deps) {
   if (!gate.email) return { html: appPage("Verified email needed · Grill", "<h1>Grill needs a verified email on this account.</h1><p>Add one with your sign-in company, then come back.</p><p><a href=\"/\">Back to Grill</a></p>") };
   if (!gate.allowed) return { html: inviteOnlyPage(request) };
   const personId = await resolvePerson(visitor.sub, gate.email, deps);
-  const account = await ensureAccount(personId, gate.email, deps, gate.human);
+  const account = await ensureAccount(personId, gate.email, deps, gate.human, refFromCookie(request.headers.get("cookie")));
   return { account, email: gate.email, sub: visitor.sub };
 }
 

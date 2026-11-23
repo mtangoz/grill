@@ -61,9 +61,11 @@ describe("weekly metrics", () => {
     assert.equal(lines[5], "founding members: 7/100");
     assert.equal(lines[6], "start views: 9");
     assert.equal(lines[7], "start refs: home 5 · askgrill 2");
-    assert.equal(lines[8], "connect attempts: 4");
-    assert.equal(lines[9], "signed-in connects: 1");
-    assert.deepEqual(lines.slice(10, 16), ["grills: 11", "choices logged: 6", "look-backs set: 5", "look-backs done: 2", "email look-backs: 4", "email unsubscribes: 1"]);
+    assert.equal(lines[8], "signup refs: none");
+    assert.equal(lines[9], "first grills: none");
+    assert.equal(lines[10], "connect attempts: 4");
+    assert.equal(lines[11], "signed-in connects: 1");
+    assert.deepEqual(lines.slice(12, 18), ["grills: 11", "choices logged: 6", "look-backs set: 5", "look-backs done: 2", "email look-backs: 4", "email unsubscribes: 1"]);
     assert.equal(IMPACT_EMAIL_KEYS.lookbacks, IMPACT_LOOKBACKS_KEY);
     assert.equal(IMPACT_EMAIL_KEYS.unsubscribes, IMPACT_UNSUB_KEY);
     assert.equal(JSON.parse(lines.at(-1)).lookbacksDone, 2);
@@ -98,6 +100,8 @@ describe("weekly metrics", () => {
       "grill:metric:start_ref:notify": "2",
       "grill:metric:start_ref:data-flow": "4",
       "grill:metric:start_ref:how-we-test": "1",
+      "grill:metric:signup_ref:askgrill": "2",
+      "grill:metric:first_grill_ref:askgrill": "1",
       // A tag off the list is still not read: there is no SCAN.
       "grill:metric:start_ref:someone-else": "50",
       [INSTALL_PINGS_KEY]: "12",
@@ -111,7 +115,7 @@ describe("weekly metrics", () => {
       },
       now,
     );
-    assert.deepEqual(START_REF_LABELS, ["home", "askgrill", "hn", "smithery", "demo", "x", "readme", "notify", "data-flow", "how-we-test"]);
+    assert.deepEqual(START_REF_LABELS, ["home", "askgrill", "hn", "smithery", "demo", "x", "readme", "notify", "data-flow", "how-we-test", "team-pilot", "grilled-plan", "mcpso", "pulsemcp", "lobehub", "cursordir"]);
     assert.equal(INSTALL_PINGS_KEY, "grill:ping:unique");
     assert.equal(report.date, "2026-11-13");
     assert.equal(report.installPings, 12);
@@ -128,10 +132,14 @@ describe("weekly metrics", () => {
     // Start views and start refs keep their places. The two connect lines sit after them.
     assert.equal(lines[6], "start views: 40");
     assert.equal(lines[7], "start refs: home 9 · demo 3 · readme 6 · notify 2 · data-flow 4 · how-we-test 1");
-    assert.equal(lines[8], "connect attempts: 0");
-    assert.equal(lines[9], "signed-in connects: 0");
-    assert.equal(lines[10], "grills: 11");
-    assert.equal(lines[15], "email unsubscribes: 0");
+    assert.equal(lines[8], "signup refs: askgrill 2");
+    assert.equal(lines[9], "first grills: askgrill 1");
+    assert.deepEqual(seen.filter((args) => args[1] === "grill:metric:signup_ref:askgrill"), [["GET", "grill:metric:signup_ref:askgrill"]]);
+    assert.deepEqual(seen.filter((args) => args[1] === "grill:metric:first_grill_ref:askgrill"), [["GET", "grill:metric:first_grill_ref:askgrill"]]);
+    assert.equal(lines[10], "connect attempts: 0");
+    assert.equal(lines[11], "signed-in connects: 0");
+    assert.equal(lines[12], "grills: 11");
+    assert.equal(lines[17], "email unsubscribes: 0");
     // The new line sits after them, just above the JSON line.
     assert.equal(lines.at(-2), "opt-in install pings: 12");
     assert.equal(lines.indexOf("opt-in install pings: 12") > 13, true);

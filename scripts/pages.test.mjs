@@ -814,6 +814,28 @@ describe("the decisions page layout", () => {
     }
   });
 
+  it("stores the first-touch ref when the account is created, and does not count it twice", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=askgrill") });
+    const keys = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1];
+    assert.equal(keys.length, 1);
+    assert.equal(JSON.parse(ctx.memory.command(["GET", keys[0]])).ref, "askgrill");
+    assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1");
+    await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=home") });
+    assert.equal(JSON.parse(ctx.memory.command(["GET", keys[0]])).ref, "askgrill");
+    assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1");
+    assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:home"]), null);
+  });
+
+  it("does not count a sign-up ref for an account on the internal list", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    ctx.env.GRILL_INTERNAL_EMAILS = "invitee@example.com";
+    await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=askgrill") });
+    assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), null);
+  });
+
   it("says what to do when there are no records yet", async () => {
     resetHostedCaches();
     const ctx = world();

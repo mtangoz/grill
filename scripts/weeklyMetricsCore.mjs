@@ -32,7 +32,24 @@ export const START_VIEWS_KEY = "grill:metric:start_views";
 export const MCP_CONNECT_KEY = "grill:metric:mcp_connect";
 export const MCP_SIGNED_IN_KEY = "grill:metric:mcp_signed_in";
 /** Fixed channel labels for /start?ref=. No SCAN. Unknown tags stay unread. */
-export const START_REF_LABELS = Object.freeze(["home", "askgrill", "hn", "smithery", "demo", "x", "readme", "notify", "data-flow", "how-we-test"]);
+export const START_REF_LABELS = Object.freeze([
+  "home",
+  "askgrill",
+  "hn",
+  "smithery",
+  "demo",
+  "x",
+  "readme",
+  "notify",
+  "data-flow",
+  "how-we-test",
+  "team-pilot",
+  "grilled-plan",
+  "mcpso",
+  "pulsemcp",
+  "lobehub",
+  "cursordir",
+]);
 /**
  * Installed tools that opted in to the usage ping and sent one, once per install. A number only.
  * api/_ping.mjs adds to it only while GRILL_PING_PEPPER is set, so 0 can mean "not set".
@@ -60,8 +77,12 @@ export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch, 
   const command = redisCommand(env, fetchImpl);
   const n = async (key) => Number(await command(["GET", key])) || 0;
   const startRefs = {};
+  const signupRefs = {};
+  const firstGrillRefs = {};
   for (const label of START_REF_LABELS) {
     startRefs[label] = await n(`grill:metric:start_ref:${label}`);
+    signupRefs[label] = await n(`grill:metric:signup_ref:${label}`);
+    firstGrillRefs[label] = await n(`grill:metric:first_grill_ref:${label}`);
   }
   return {
     label: "Weekly metrics",
@@ -76,6 +97,8 @@ export async function readWeeklyMetrics(env = {}, fetchImpl = globalThis.fetch, 
     founding: await n(FOUNDING_COUNT_KEY),
     startViews: await n(START_VIEWS_KEY),
     startRefs,
+    signupRefs,
+    firstGrillRefs,
     connectAttempts: await n(MCP_CONNECT_KEY),
     signedInConnects: await n(MCP_SIGNED_IN_KEY),
     grills: await n(FUNNEL_KEYS.grills),
@@ -95,14 +118,19 @@ function foundingShown(report) {
   return Math.min(100, n);
 }
 
-/** Channel tags with a non-zero count, for the weekly line. */
-export function startRefLine(startRefs) {
+/** Channel tags with a non-zero count, for one weekly line. */
+export function labeledRefLine(title, counts) {
   const parts = [];
   for (const label of START_REF_LABELS) {
-    const n = Math.floor(Number(startRefs?.[label]) || 0);
+    const n = Math.floor(Number(counts?.[label]) || 0);
     if (n > 0) parts.push(`${label} ${n}`);
   }
-  return parts.length ? `start refs: ${parts.join(" · ")}` : "start refs: none";
+  return parts.length ? `${title}: ${parts.join(" · ")}` : `${title}: none`;
+}
+
+/** Channel tags with a non-zero count, for the weekly line. */
+export function startRefLine(startRefs) {
+  return labeledRefLine("start refs", startRefs);
 }
 
 /** The lines a person reads. The JSON line is the same numbers, for metrics.jsonl. */
@@ -116,6 +144,8 @@ export function weeklyMetricLines(report) {
     `founding members: ${foundingShown(report)}/100`,
     `start views: ${report.startViews ?? 0}`,
     startRefLine(report.startRefs),
+    labeledRefLine("signup refs", report.signupRefs),
+    labeledRefLine("first grills", report.firstGrillRefs),
     `connect attempts: ${report.connectAttempts ?? 0}`,
     `signed-in connects: ${report.signedInConnects ?? 0}`,
     `grills: ${report.grills ?? 0}`,
