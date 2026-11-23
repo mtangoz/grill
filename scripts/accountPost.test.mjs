@@ -5,7 +5,7 @@ import { createSign, randomBytes } from "node:crypto";
 import { before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { handleAccount, handleDecisions, resetHostedCaches } from "../api/_hosted.mjs";
-import { createMemoryRedis, freeChecksKey, isoMonth, topupBalanceKey } from "./hostedCore.mjs";
+import { createMemoryRedis, freeChecksKey, isoMonth, monthlyCheckKey, topupBalanceKey } from "./hostedCore.mjs";
 import { testSigningKey } from "./testSigningKey.mjs";
 
 const PRICE = "price_testpack1";
@@ -592,37 +592,77 @@ describe("Safari same-site posts and the checks box", { concurrency: false }, ()
     assert.match(box, /Automatically add another 100 checks \(\$2\.50\)/);
     assert.match(html, /<a href="\/account#checks">Add checks<\/a>/);
     assert.match(html, /<a href="\/account" aria-current="page">Account<\/a>/);
-    assert.match(html, /id="low-checks"/);
-    assert.match(html, /No prepaid checks left\./);
+    assert.equal(html.includes('id="low-checks"'), false);
+    assert.doesNotMatch(html, /No prepaid checks left\./);
     assert.doesNotMatch(html, /\bPro\b|subscription/i);
 
     const decisions = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx)).text();
     assert.match(decisions, /<a href="\/account#checks">Add checks<\/a>/);
     assert.match(decisions, /<a href="\/account">Account<\/a>/);
-    assert.match(decisions, /id="low-checks"/);
-    assert.match(decisions, /No prepaid checks left\./);
+    assert.equal(decisions.includes('id="low-checks"'), false);
+    assert.doesNotMatch(decisions, /No prepaid checks left\./);
     assert.doesNotMatch(decisions, /of use each month|left this month|checks this month|judge spend|\bPro\b|subscription/i);
   });
 
-  it("warns when fewer than 10 free checks are left, and stays quiet when checks remain", async () => {
-    const quiet = world();
-    quiet.memory.command(["HSET", topupBalanceKey("tester@example.com"), "checks", "8"]);
+  it("warns only when free checks are low and nothing is prepaid, or both are gone", async () => {
     const cookie = clerkCookies();
-    const fine = await openAccount(quiet, cookie);
-    assert.equal(fine.includes('id="low-checks"'), false);
-    assert.match(fine, /Prepaid checks left: 8/);
-    const fineDecisions = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), quiet)).text();
-    assert.equal(fineDecisions.includes('id="low-checks"'), false);
+    const decisionsOf = (ctx) => handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), ctx);
+
+    const plenty = world();
+    const plentyHtml = await openAccount(plenty, cookie);
+    assert.equal(plentyHtml.includes('id="low-checks"'), false);
+    assert.match(plentyHtml, /100 left this month/);
+    assert.equal((await (await decisionsOf(plenty)).text()).includes('id="low-checks"'), false);
+
+    const covered = world();
+    covered.memory.command(["SET", freeChecksKey("tester@example.com", isoMonth()), "95"]);
+    covered.memory.command(["HSET", topupBalanceKey("tester@example.com"), "checks", "8"]);
+    const coveredHtml = await openAccount(covered, cookie);
+    assert.equal(coveredHtml.includes('id="low-checks"'), false, "prepaid checks still cover a low free allowance");
+    assert.match(coveredHtml, /Prepaid checks left: 8/);
+    assert.match(coveredHtml, /5 left this month/);
+
+    const freeGone = world();
+    freeGone.memory.command(["SET", freeChecksKey("tester@example.com", isoMonth()), "100"]);
+    freeGone.memory.command(["HSET", topupBalanceKey("tester@example.com"), "checks", "3"]);
+    assert.equal((await openAccount(freeGone, cookie)).includes('id="low-checks"'), false);
 
     const low = world();
     low.memory.command(["SET", freeChecksKey("tester@example.com", isoMonth()), "95"]);
-    low.memory.command(["HSET", topupBalanceKey("tester@example.com"), "checks", "8"]);
     const account = await openAccount(low, cookie);
-    assert.match(account, /The free allowance is nearly used up\./);
+    assert.match(account, /id="low-checks"/);
+    assert.match(account, /The free allowance is nearly used up, and there are no prepaid checks\./);
     assert.match(account, /<a href="\/account#checks">Add checks<\/a>/);
     assert.match(account, /5 left this month/);
-    const decisions = await (await handleDecisions(new Request("https://grillyour.ai/decisions", { headers: { cookie } }), low)).text();
-    assert.match(decisions, /The free allowance is nearly used up\./);
+    assert.doesNotMatch(account, /No prepaid checks left\./);
+    const decisions = await (await decisionsOf(low)).text();
+    assert.match(decisions, /id="low-checks"/);
+    assert.ok(decisions.indexOf('id="low-checks"') > decisions.indexOf('<header class="site-header">'));
+    assert.match(decisions, /The free allowance is nearly used up, and there are no prepaid checks\./);
     assert.doesNotMatch(decisions, /of use each month|left this month|checks this month|\$0\.40/);
+
+    const out = world();
+    out.memory.command(["SET", freeChecksKey("tester@example.com", isoMonth()), "100"]);
+    const empty = await openAccount(out, cookie);
+    assert.match(empty, /id="low-checks"/);
+    assert.match(empty, /No checks left\./);
+    assert.match(empty, /0 left this month/);
+    assert.match(await (await decisionsOf(out)).text(), /No checks left\./);
+  });
+
+  it("shows free checks left and does not repeat the older monthly count", async () => {
+    const ctx = world();
+    const cookie = clerkCookies();
+    await openAccount(ctx, cookie);
+    const account = storedAccount(ctx);
+    ctx.memory.command(["SET", monthlyCheckKey(account.id, isoMonth()), "6"]);
+    assert.equal(ctx.memory.command(["GET", freeChecksKey("tester@example.com", isoMonth())]), null);
+    const html = await openAccount(ctx, cookie);
+    const checksAt = html.indexOf('id="checks"');
+    const box = html.slice(checksAt, html.indexOf('name="action" value="records"'));
+    assert.match(box, /100 left this month/);
+    assert.doesNotMatch(html, /checks this month/);
+    assert.doesNotMatch(html, /\b6 checks\b/);
+    assert.equal(ctx.memory.command(["GET", freeChecksKey("tester@example.com", isoMonth())]), null);
   });
 });

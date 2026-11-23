@@ -338,7 +338,7 @@ describe("the account page sells a pack", () => {
     assert.equal([...session.params.values()].includes("link"), false);
     assert.equal(session.params.get("payment_intent_data[setup_future_usage]"), "off_session");
     assert.equal(session.params.get("metadata[grill_topup]"), "1");
-    assert.match(session.params.get("success_url"), /\/account\?topup=ok$/);
+    assert.equal(session.params.get("success_url"), "https://grillyour.ai/account?topup=ok&session_id={CHECKOUT_SESSION_ID}");
     assert.equal(session.params.get("customer"), "cus_topuptester");
     resetHostedCaches();
     const priced = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE, GRILL_TOPUP_PRICE_CENTS: "250" });
@@ -365,11 +365,19 @@ describe("the account page sells a pack", () => {
     const cancel = await handleAccount(accountRequest("GET", { query: "?topup=cancel" }), ctx);
     const cancelHtml = await cancel.text();
     assert.match(cancelHtml, /Payment not completed\. Nothing was charged\./);
+    assert.equal((cancelHtml.match(/Payment not completed\. Nothing was charged\./g) || []).length, 1);
     assert.doesNotMatch(cancelHtml, /Payment received/);
-    const early = await handleAccount(accountRequest("GET", { query: "?topup=ok" }), ctx);
+    const bare = await handleAccount(accountRequest("GET", { query: "?topup=ok" }), ctx);
+    const bareHtml = await bare.text();
+    assert.match(bareHtml, /If you completed payment, your checks will appear shortly/);
+    assert.equal((bareHtml.match(/If you completed payment, your checks will appear shortly/g) || []).length, 1);
+    assert.doesNotMatch(bareHtml, /Payment received/);
+    const early = await handleAccount(accountRequest("GET", { query: "?topup=ok&session_id=cs_test_topupsession1" }), ctx);
     const earlyHtml = await early.text();
     assert.match(earlyHtml, /processing, refresh in a moment/);
+    assert.equal((earlyHtml.match(/Payment received/g) || []).length, 1);
     assert.doesNotMatch(earlyHtml, /Payment received\. Prepaid checks left:/);
+    assert.equal(earlyHtml.slice(earlyHtml.indexOf('id="checks"')).includes("Payment received"), false);
     const credited = await applyTopupEvent(paidEvent(account.id, { id: "evt_topupfirstsess", session: "cs_test_topupsession1" }), {
       env: ctx.env,
       fetch: ctx.fetch,
@@ -378,10 +386,16 @@ describe("the account page sells a pack", () => {
     assert.equal(credited.action, "credited");
     assert.equal(await ctx.redis(["GET", topupSessionKey("cs_test_topupsession1")]), "credited");
     assert.equal(await ctx.redis(["GET", topupSessionKey("cs_test_topupsession2")]), null);
-    const done = await handleAccount(accountRequest("GET", { query: "?topup=ok" }), ctx);
+    const done = await handleAccount(accountRequest("GET", { query: "?topup=ok&session_id=cs_test_topupsession1" }), ctx);
     const doneHtml = await done.text();
     assert.match(doneHtml, /Payment received\. Prepaid checks left: 100\./);
+    assert.equal((doneHtml.match(/Payment received/g) || []).length, 1);
+    assert.equal(doneHtml.slice(doneHtml.indexOf('id="checks"')).includes("Payment received"), false);
     assert.doesNotMatch(doneHtml, /processing, refresh in a moment/);
+    const other = await handleAccount(accountRequest("GET", { query: "?topup=ok&session_id=cs_test_notthisaccount" }), ctx);
+    const otherHtml = await other.text();
+    assert.match(otherHtml, /If you completed payment, your checks will appear shortly/);
+    assert.doesNotMatch(otherHtml, /Payment received/);
   });
 
   it("says a second top-up is still processing when only the earlier session is credited", async () => {
@@ -399,11 +413,12 @@ describe("the account page sells a pack", () => {
     assert.equal(again.status, 303);
     const stored = await storedAccount(ctx);
     assert.deepEqual(stored.topupOpenSessions, ["cs_test_topupsession2"]);
-    const early = await handleAccount(accountRequest("GET", { query: "?topup=ok" }), ctx);
+    const early = await handleAccount(accountRequest("GET", { query: "?topup=ok&session_id=cs_test_topupsession2" }), ctx);
     const html = await early.text();
     assert.match(html, /processing, refresh in a moment/);
     assert.doesNotMatch(html, /Payment received\. Prepaid checks left:/);
     assert.match(html, /Prepaid checks left: 100/);
+    assert.equal((html.match(/Payment received/g) || []).length, 1);
   });
 
   it("accepts a restricted key in the matching environment", async () => {
@@ -451,6 +466,49 @@ describe("the account page sells a pack", () => {
         assert.match(res.headers.get("location"), /topup=unready/, `${item.vercel} ${item.key}`);
         assert.equal(ctx.stripe.calls.length, 0, `${item.vercel} ${item.key}`);
       }
+    }
+  });
+
+  it("keeps the topup notice across sign-in", async () => {
+    resetHostedCaches();
+    const ctx = world({ GRILL_TOPUPS: "on", GRILL_TOPUP_PRICE_ID: PRICE });
+    const redirectBack = async (path) => {
+      const res = await handleAccount(new Request(`https://grillyour.ai${path}`), ctx);
+      assert.equal(res.status, 302, path);
+      return new URL(new URL(res.headers.get("location")).searchParams.get("redirect_url"));
+    };
+
+    const cancel = await redirectBack("/account?topup=cancel");
+    assert.equal(cancel.origin + cancel.pathname, "https://grillyour.ai/account");
+    assert.equal(cancel.searchParams.get("topup"), "cancel");
+    assert.equal(cancel.searchParams.get("from"), "signin");
+    assert.deepEqual([...cancel.searchParams.keys()].sort(), ["from", "topup"]);
+    const signedCancel = await handleAccount(new Request(cancel, { headers: { cookie: cookie() } }), ctx);
+    assert.match(await signedCancel.text(), /Payment not completed\. Nothing was charged\./);
+
+    const session = "cs_test_returnsession1";
+    const ok = await redirectBack(`/account?topup=ok&session_id=${session}`);
+    assert.equal(ok.searchParams.get("topup"), "ok");
+    assert.equal(ok.searchParams.get("session_id"), session);
+    assert.equal(ok.searchParams.get("from"), "signin");
+    const signedOk = await handleAccount(new Request(ok, { headers: { cookie: cookie() } }), ctx);
+    const signedOkHtml = await signedOk.text();
+    assert.match(signedOkHtml, /If you completed payment, your checks will appear shortly/);
+    assert.doesNotMatch(signedOkHtml, /Payment received/);
+
+    const junk = await redirectBack("/account?topup=ok&session_id=not-a-session&next=https://evil.example");
+    assert.equal(junk.searchParams.get("topup"), "ok");
+    assert.equal(junk.searchParams.get("session_id"), null);
+    assert.equal(junk.searchParams.get("next"), null);
+
+    const dropped = await redirectBack("/account?topup=please");
+    assert.equal(dropped.searchParams.get("topup"), null);
+    assert.equal(dropped.searchParams.get("from"), "signin");
+
+    for (const value of ["unready", "failed"]) {
+      const back = await redirectBack(`/account?topup=${value}`);
+      assert.equal(back.searchParams.get("topup"), value, value);
+      assert.equal(back.searchParams.get("from"), "signin", value);
     }
   });
 });

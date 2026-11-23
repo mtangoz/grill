@@ -140,19 +140,24 @@ async function plant(ctx) {
 describe("the shared signed-in header", { concurrency: false }, () => {
   beforeEach(() => resetHostedCaches());
 
-  it("is on account, top-up return, and delete-account, with Account current and the low-checks note underneath", async () => {
+  it("is on account, top-up return, and delete-account, with Account current", async () => {
     const ctx = world();
     const account = await open(handleAccount, ctx, "/account");
-    assertSharedNav(account, { current: "account", below: 'id="low-checks"' });
+    assertSharedNav(account, { current: "account" });
     assert.match(account, /id="checks"/);
+    assert.equal(account.includes('id="low-checks"'), false);
 
     const paid = await open(handleAccount, ctx, "/account?topup=ok");
-    assertSharedNav(paid, { current: "account", below: 'id="low-checks"' });
-    assert.match(paid, /Payment received/);
+    assertSharedNav(paid, { current: "account" });
+    assert.match(paid, /If you completed payment, your checks will appear shortly/);
+    assert.equal((paid.match(/If you completed payment, your checks will appear shortly/g) || []).length, 1);
+    assert.doesNotMatch(paid, /Payment received/);
+    assert.equal(paid.includes('id="low-checks"'), false);
 
     const cancel = await open(handleAccount, ctx, "/account?topup=cancel");
     assertSharedNav(cancel, { current: "account" });
     assert.match(cancel, /Payment not completed\. Nothing was charged\./);
+    assert.equal((cancel.match(/Payment not completed\. Nothing was charged\./g) || []).length, 1);
 
     const remove = await open(handleAccount, ctx, "/account?confirm=delete");
     assertSharedNav(remove, { current: "account" });
@@ -163,7 +168,8 @@ describe("the shared signed-in header", { concurrency: false }, () => {
     const ctx = world();
     const id = await plant(ctx);
     const list = await open(handleDecisions, ctx, "/decisions");
-    assertSharedNav(list, { current: "decisions", below: 'id="low-checks"' });
+    assertSharedNav(list, { current: "decisions" });
+    assert.equal(list.includes('id="low-checks"'), false);
     const settings = list.indexOf('<details class="settings">');
     assert.ok(settings > list.indexOf('<header class="site-header">'), "settings stay on the page, under the header");
 

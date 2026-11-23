@@ -137,7 +137,6 @@ import {
   topupPack,
   topupsEnabled,
   checkOnceKey,
-  checksLine,
   completedGrill,
   dailyCheckKey,
   monthlyCheckKey,
@@ -3163,6 +3162,15 @@ function returnTo(request) {
       back.searchParams.set("value", value);
     }
   }
+  // A checkout return has to survive sign-in, or the notice is gone when they come back.
+  if (url.pathname === "/account") {
+    const topup = url.searchParams.get("topup") || "";
+    if (topup === "ok" || topup === "cancel" || topup === "unready" || topup === "failed") {
+      back.searchParams.set("topup", topup);
+      const sessionId = url.searchParams.get("session_id") || "";
+      if (topup === "ok" && /^cs_(?:test|live)_[A-Za-z0-9]{8,200}$/.test(sessionId)) back.searchParams.set("session_id", sessionId);
+    }
+  }
   back.searchParams.set("from", "signin");
   return back.toString();
 }
@@ -3611,7 +3619,7 @@ function renderFooter(total, filtered) {
   return `<p class="small footer"><a href="/decisions?export=text">Export</a> · <a href="/decisions?export=json">JSON</a>${remove} · <a href="/account">Account</a></p>`;
 }
 
-/** Under this many free checks, or with no prepaid checks, the page points at Add checks. */
+/** Fewer than this many free checks left, and no prepaid checks, and the page points at Add checks. */
 const LOW_FREE_CHECKS = 10;
 
 async function freeChecksRemaining(account, deps) {
@@ -3623,14 +3631,13 @@ async function freeChecksRemaining(account, deps) {
 
 function checksNotice({ topups = false, freeRemaining = 0, prepaid = 0 } = {}) {
   if (!topups) return "";
-  const lowFree = Math.floor(Number(freeRemaining) || 0) < LOW_FREE_CHECKS;
-  const noPrepaid = Math.floor(Number(prepaid) || 0) <= 0;
-  if (!lowFree && !noPrepaid) return "";
-  const text = lowFree && noPrepaid
-    ? "The free allowance is nearly used up, and there are no prepaid checks."
-    : lowFree
-      ? "The free allowance is nearly used up."
-      : "No prepaid checks left.";
+  const free = Math.max(0, Math.floor(Number(freeRemaining) || 0));
+  const paid = Math.max(0, Math.floor(Number(prepaid) || 0));
+  // Prepaid checks still run a grill, so a low free allowance with a balance stays quiet.
+  if (paid > 0 || free >= LOW_FREE_CHECKS) return "";
+  const text = free <= 0
+    ? "No checks left."
+    : "The free allowance is nearly used up, and there are no prepaid checks.";
   return `<p class="banner" id="low-checks" role="status">${esc(text)} <a href="/account#checks">Add checks</a></p>`;
 }
 
@@ -3765,7 +3772,6 @@ function renderAccount(account, credit, extra = {}) {
       <h2>Checks</h2>
       <p>${allowance}</p>
       ${stopped}
-      <p>${esc(checksLine(extra.checks))}</p>
       ${renderTopup(extra)}
     </section>
     ${extra.founding ? `<p>${esc(foundingMemberLine(extra.founding))}</p>` : ""}
@@ -3813,7 +3819,6 @@ function renderTopup(extra) {
   if (!topup) return "";
   const pack = topup.pack;
   const checks = Math.max(0, Math.floor(Number(topup.checks) || 0));
-  const note = topup.note ? `<p>${esc(topup.note)}</p>` : "";
   const field = extra.field || "";
   const auto = topup.auto;
   const buyFields = `${field}<input type="hidden" name="action" value="topup">`;
@@ -3829,7 +3834,6 @@ function renderTopup(extra) {
   return `<section id="topup">
     <h2>More checks</h2>
     <p>${lead}</p>
-    ${note}
     ${auto ? renderAutoTopup(auto, field) : ""}
     ${buy}
     <p class="small">One payment. A card you use can be saved for the next pack.</p>
@@ -4520,7 +4524,6 @@ export async function handleDecisions(request, deps) {
     const rows = await loadRecords(session.account, deps);
     // Reading credit also moves an old one-off key onto the monthly safety cap.
     if (session.account.keyHash) await creditOf(session.account, deps);
-    const checks = await readMonthlyChecks(session.account, deps);
     const waiting = (await loadPendings(session.account, deps)).length;
     const now = typeof deps.now === "number" ? deps.now : Date.now();
     const habits = decisionHabits({ records: rows, waiting, now });
@@ -4536,7 +4539,7 @@ export async function handleDecisions(request, deps) {
     const topupOn = topupsEnabled(deps.env);
     const prepaid = topupOn ? (await readTopup(session.account, deps)).checks : 0;
     const low = checksNotice({ topups: topupOn, freeRemaining: await freeChecksRemaining(session.account, deps), prepaid });
-    return htmlPage(renderDecisions(session.account, rows, null, habits, { now, calendar, freshUrl: flashed, env: deps.env, shares, checks, type, source, low }), { clearFlash: Boolean(flashed) });
+    return htmlPage(renderDecisions(session.account, rows, null, habits, { now, calendar, freshUrl: flashed, env: deps.env, shares, type, source, low }), { clearFlash: Boolean(flashed) });
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);
@@ -4568,9 +4571,11 @@ async function rememberOpenTopup(account, sessionId, read) {
   account.topupOpenSessions = [...pending, sessionId].slice(-5);
 }
 
-function topupReturnNote(query, { checks = 0, credited = false } = {}) {
+function topupReturnNote(query, { checks = 0, owned = false, credited = false } = {}) {
   if (query === "cancel") return "Payment not completed. Nothing was charged.";
   if (query !== "ok") return "";
+  // A bare ?topup=ok is not proof of a payment. Only this account's checkout session is.
+  if (!owned) return "If you completed payment, your checks will appear shortly.";
   if (!credited) return "Payment received. It's processing, refresh in a moment.";
   const left = Math.max(0, Math.floor(Number(checks) || 0));
   return `Payment received. Prepaid checks left: ${left}.`;
@@ -4699,28 +4704,19 @@ export async function handleAccount(request, deps) {
     }
     const flashed = readFlashLink(request);
     const credit = session.account.keyHash ? await creditOf(session.account, deps) : { remaining: 0, out: false };
-    const checks = await readMonthlyChecks(session.account, deps);
     const calendar = await calendarState(session.account, deps);
     const founding = await foundingNumber(session.account.email, deps);
     const topupQuery = pageUrl(request).searchParams.get("topup") || "";
+    const sessionId = pageUrl(request).searchParams.get("session_id") || "";
     const notice = ACCOUNT_NOTICES[pageUrl(request).searchParams.get("notice") || ""] || "";
-    let credited = false;
-    if (topupQuery === "ok") {
-      for (const id of openTopupSessions(session.account)) {
-        const marked = await redis(deps, ["GET", topupSessionKey(id)]);
-        if (marked === "credited") {
-          credited = true;
-          break;
-        }
-      }
-    }
+    const owned = topupQuery === "ok" && TOPUP_SESSION_RE.test(sessionId) && openTopupSessions(session.account).includes(sessionId);
+    const credited = owned && (await redis(deps, ["GET", topupSessionKey(sessionId)])) === "credited";
     const prepaid = topupsEnabled(deps.env) ? await readTopup(session.account, deps) : { checks: 0 };
-    const topupNote = topupReturnNote(topupQuery, { checks: prepaid.checks, credited }) || TOPUP_NOTES[topupQuery] || "";
+    const topupNote = topupReturnNote(topupQuery, { checks: prepaid.checks, owned, credited }) || TOPUP_NOTES[topupQuery] || "";
     const topup = topupsEnabled(deps.env)
       ? {
           pack: topupPack(deps.env),
           checks: prepaid.checks,
-          note: topupNote,
           auto: autoTopupEnabled(deps.env) ? await autoTopupView(session.account, deps) : null,
         }
       : null;
@@ -4728,7 +4724,7 @@ export async function handleAccount(request, deps) {
     const freeRemaining = await freeChecksRemaining(session.account, deps);
     const low = checksNotice({ topups: Boolean(topup), freeRemaining, prepaid: topup?.checks ?? 0 });
     return rememberPage(
-      htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, checks, topup, field, status, low, freeRemaining }), { clearFlash: Boolean(flashed) }),
+      htmlPage(renderAccount(session.account, credit, { calendar, freshUrl: flashed, env: deps.env, founding, topup, field, status, low, freeRemaining }), { clearFlash: Boolean(flashed) }),
       session.sub,
       deps,
     );
