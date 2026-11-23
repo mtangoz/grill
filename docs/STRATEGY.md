@@ -103,7 +103,7 @@ This section sets no price and names no paid feature.
 
 - **Nothing is for sale today.** Pro billing is built and switched off (`GRILL_PRO_BILLING`).
 - **What the launch list was promised is live and free.** The launch list was told saved history and look-back reminders would come as an optional Pro plan. Both work today, free, with Grill in your chat.
-- **The free-for-life promises that are live:** every hosted account gets 100 free checks a month, reset on the 1st (the account page and the terms). /start says the first 100 users get Grill free for life (founding members). The installed tool is free on your own key and stays account-free. The decision-handling code stays open source under the MIT license, for good.
+- **The free promises that are live:** every hosted account gets 100 free checks a month, reset on the 1st (the account page and the terms). The public spots offer is closed. Someone who already has a founding number keeps Grill free for them. The installed tool is free on your own key and stays account-free. The decision-handling code stays open source under the MIT license, for good.
 - **So there is no defined paid product for one person.** The free allowance is 100 checks a month. Saved records and reminders are already free.
 - **The first thing that could be charged for** is a team record, or a record a third party relies on. There is no evidence yet that anyone would pay for either. The team pilot (recommendation 6) is how to find out.
 

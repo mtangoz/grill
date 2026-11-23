@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCappedKey, esc, page, readManagedKey, removeManagedKey, setMonthlyLimit, WELCOME_HEADERS } from "./_pro.mjs";
 import { chargeAutoTopup, startTopupCheckout, topupPriceLabel } from "./_topup.mjs";
-import { assignFoundingMember, foundingMemberLine, foundingSpotsLine, readFoundingCount, readFoundingNumber } from "./_founding.mjs";
+import { assignFoundingMember, foundingMemberLine, readFoundingNumber } from "./_founding.mjs";
 import { refFromCookie } from "./_start.mjs";
 import { waitlistFormHtml } from "./_waitlist.mjs";
 import { sendResendEmail } from "./_notify.mjs";
@@ -399,14 +399,6 @@ async function noteFounding(email, deps) {
     return await assignFoundingMember((args) => redis(deps, args), email);
   } catch {
     return { ok: false, reason: "store" };
-  }
-}
-
-async function foundingSpots(deps) {
-  try {
-    return foundingSpotsLine(await readFoundingCount((args) => redis(deps, args)));
-  } catch {
-    return foundingSpotsLine(0);
   }
 }
 
@@ -4185,16 +4177,14 @@ async function grantStillListed(hash, deps) {
   return storedInviteListed(redeemCommand(deps), hash);
 }
 
-function renderRedeemed(env, { number = null, spots = "" } = {}) {
+function renderRedeemed(env, { number = null } = {}) {
   const member = number ? `<p>${esc(foundingMemberLine(number))}</p>` : "";
-  const offer = spots ? `<p>${esc(spots)}</p>` : "";
   return appPage(
     "You're in · Grill",
     `${REDEEM_NARROW}
     <h1>You're in.</h1>
     <p>Early-tester access is on for this email.</p>
     ${member}
-    ${offer}
     <p>${esc(freeChecksOffer(env))}</p>
     <p>Next: <a href="/start">connect Grill to your AI</a>.</p>
     <p><a class="button" href="/decisions">Your grills</a></p>
@@ -4211,14 +4201,12 @@ function renderInviteOff() {
   );
 }
 
-function renderRedeemForm(error, spots = "", env = {}) {
+function renderRedeemForm(error, env = {}) {
   const note = REDEEM_ERRORS[error] ? `<p><strong>${REDEEM_ERRORS[error]}</strong></p>` : "";
-  const offer = spots ? `<p>${esc(spots)}</p>` : "";
   return appPage(
     "Enter an invite code · Grill",
     `${REDEEM_NARROW}
     <h1>Enter an invite code</h1>
-    ${offer}
     <p>Grill in chat is invite-only. A code lets you in as an early tester: free, ${esc(String(freeMonthlyChecks(env)))} checks a month, reset on the 1st.</p>
     ${note}
     <form method="post" action="/redeem">
@@ -4230,13 +4218,11 @@ function renderRedeemForm(error, spots = "", env = {}) {
   );
 }
 
-function renderRedeemConfirm(code, spots = "", env = {}) {
-  const offer = spots ? `<p>${esc(spots)}</p>` : "";
+function renderRedeemConfirm(code, env = {}) {
   return appPage(
     "Use this invite code? · Grill",
     `${REDEEM_NARROW}
     <h1>Use this invite code?</h1>
-    ${offer}
     <p>This gives you early-tester access: free, ${esc(String(freeMonthlyChecks(env)))} checks a month, reset on the 1st.</p>
     <p class="banner">${esc(code)}</p>
     <form method="post" action="/redeem">
@@ -4308,11 +4294,10 @@ export async function handleRedeem(request, deps) {
     if (visitor.missing) return html(200, terminal("Account deleted · Grill", "<h1>This account has been deleted.</h1>"));
     if (visitor.html) return html(200, visitor.html);
     const gate = await admit(visitor.user, deps, visitor.sub);
-    const spots = await foundingSpots(deps);
     if (gate.allowed) {
       if (request.method === "POST") return seeOther(`${publicOrigin(request)}/redeem?done=1`);
       const number = await foundingNumber(gate.human || gate.email, deps);
-      return htmlPage(renderRedeemed(deps.env, { number, spots }));
+      return htmlPage(renderRedeemed(deps.env, { number }));
     }
     if (!(await invitesOpen(deps))) return html(200, renderInviteOff());
     if (request.method === "POST") {
@@ -4322,15 +4307,15 @@ export async function handleRedeem(request, deps) {
         const result = await redeemInvite(visitor.email, typed, deps);
         if (result.ok) return seeOther(`${publicOrigin(request)}/redeem?done=1`);
         if (result.reason === "off") return html(200, renderInviteOff());
-        return html(200, renderRedeemForm(result.reason, spots, deps.env));
+        return html(200, renderRedeemForm(result.reason, deps.env));
       }
       const preview = await previewInvite(visitor.email, typed, deps);
       if (preview.already) return seeOther(`${publicOrigin(request)}/redeem?done=1`);
-      if (preview.confirm) return html(200, renderRedeemConfirm(preview.code, spots, deps.env));
+      if (preview.confirm) return html(200, renderRedeemConfirm(preview.code, deps.env));
       if (preview.reason === "off") return html(200, renderInviteOff());
-      return html(200, renderRedeemForm(preview.reason || "bad", spots, deps.env));
+      return html(200, renderRedeemForm(preview.reason || "bad", deps.env));
     }
-    return htmlPage(renderRedeemForm("", spots, deps.env));
+    return htmlPage(renderRedeemForm("", deps.env));
   } catch (error) {
     const code = error instanceof Coded ? error.code : "";
     if (code) logHosted(id, code);

@@ -92,24 +92,28 @@ describe("founding members", () => {
     assert.match(hosted, /Tony/);
     assert.match(hosted, /not stored in the repository/);
     const icp = readFileSync(join(ROOT, "docs/ICP.md"), "utf8");
-    assert.match(icp, /First 100 users get Grill free for life/);
+    assert.match(icp, /The public spots offer is closed/);
+    assert.match(icp, /Someone who already has a founding number keeps it/);
     const report = { paidIntentPricing: 0, paidIntentCheckout: 0, paidIntentNotify: 0, freeToPaid: 0, waitlist: 0, founding: 7 };
     assert.ok(weeklyMetricLines(report).includes("founding members: 7/100"));
     assert.ok(weeklyMetricLines({ ...report, founding: 140 }).includes("founding members: 100/100"));
     assert.equal(WEEKLY_KEY, FOUNDING_COUNT_KEY);
   });
 
-  it("shows the live spots on /start, including when they are gone", async () => {
+  it("does not advertise founding spots on /start, and a full count still does not", async () => {
     const { command } = commandFor();
     const open = await handleStart(new Request("https://grillyour.ai/start"), { redis: command });
     assert.equal(open.status, 200);
     const openHtml = await open.text();
-    assert.match(openHtml, /First 100 users get Grill free for life, 100 spots left\./);
+    assert.match(openHtml, /Free: 100 checks a month\. No card\./);
+    assert.doesNotMatch(openHtml, /free for life|spots left|founding spots/i);
     assert.match(openHtml, /Connect Grill to your AI/);
     assert.match(openHtml, /id="copy-starter"/);
     for (let i = 1; i <= FOUNDING_CAP; i += 1) await assignFoundingMember(command, `full${i}@example.com`);
     const full = await handleStart(new Request("https://grillyour.ai/start/"), { redis: command });
-    assert.match(await full.text(), /All 100 founding spots are taken\./);
+    const fullHtml = await full.text();
+    assert.match(fullHtml, /Free: 100 checks a month\. No card\./);
+    assert.doesNotMatch(fullHtml, /free for life|spots left|All 100 founding spots are taken/i);
   });
 
   it("states the same check offer for everyone, and checkout still tells a founding member they don't need to pay", async () => {

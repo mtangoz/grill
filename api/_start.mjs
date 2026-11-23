@@ -3,12 +3,11 @@
  * and any request that is not a GET get the page and are not counted.
  * The ref cookie is set only while sign-up is invite-only, where the waitlist form reads it.
  * With open sign-up nobody is sent to that form, so /start sets no cookie.
- * The page includes how many founding spots are left. The only script copies the starter prompt.
+ * The only script copies the starter prompts, the server URL, and the ChatGPT tab link.
  * An unknown or empty ref is not stored. A missing store still shows the page.
  */
 import { readFileSync } from "node:fs";
 import { redisCommand } from "./_account.mjs";
-import { foundingSpotsLine, readFoundingCount } from "./_founding.mjs";
 import { openSignup } from "../scripts/hostedCore.mjs";
 
 export const REF_COOKIE = "grill_ref";
@@ -135,34 +134,19 @@ function siteStyle() {
   return cachedStyle;
 }
 
-/** The start page, with the live spots sentence in place of the source paragraph. */
-export function renderStartPage(spots) {
+/** The start page. Public copy does not advertise founding spots. */
+export function renderStartPage() {
   const source = readFileSync(new URL("../site/start.html", import.meta.url), "utf8");
   const title = source.match(/<title>([^<]*)<\/title>/)?.[1] || "Start using Grill";
-  const line = `<p id="founding-spots" class="note">${esc(spots)}</p>`;
-  let body = source.replace(/<title>[^<]*<\/title>\s*/, "");
-  body = body.includes('id="founding-spots"')
-    ? body.replace(/<p id="founding-spots"[^>]*>[\s\S]*?<\/p>/, line)
-    : body.replace("</h1>", `</h1>\n  ${line}`);
+  const body = source.replace(/<title>[^<]*<\/title>\s*/, "");
   return `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${esc(title)}</title>\n${previewTags(title)}\n${siteStyle()}\n</head>\n<body>\n${body}\n</body>\n</html>\n`;
 }
 
-async function spotsFor(deps) {
-  try {
-    const command = await commandOf(deps);
-    if (!command) return foundingSpotsLine(0);
-    return foundingSpotsLine(await readFoundingCount(command));
-  } catch {
-    return foundingSpotsLine(0);
-  }
-}
-
 /**
- * Show /start with the founding spots that are left. A visit adds one to the view count and,
- * with a valid ?ref=, one to that source's count. A crawler, a link-preview fetch and a request
- * that is not a GET get the same page and add nothing.
- * The cookie carries the source for the waitlist form, so it is set only while sign-up is
- * invite-only. The only script copies the starter prompt.
+ * Show /start. A visit adds one to the view count and, with a valid ?ref=, one to that source's
+ * count. A crawler, a link-preview fetch and a request that is not a GET get the same page and
+ * add nothing. The cookie carries the source for the waitlist form, so it is set only while
+ * sign-up is invite-only. The only script copies text the person asks to copy.
  */
 export async function handleStart(request, deps) {
   const visit = countsAsVisit(request);
@@ -190,5 +174,5 @@ export async function handleStart(request, deps) {
     "X-Content-Type-Options": "nosniff",
   };
   if (ref && !openSignup(deps.env ?? {})) headers["Set-Cookie"] = refCookie(ref, request);
-  return new Response(renderStartPage(await spotsFor(deps)), { status: 200, headers });
+  return new Response(renderStartPage(), { status: 200, headers });
 }

@@ -154,7 +154,7 @@ describe("user-facing copy", () => {
     assert.match(readFileSync(join(ROOT, "site/page.html"), "utf8"), /Free: 100 checks a month\. No card\./);
     assert.match(readFileSync(join(ROOT, "site/terms.html"), "utf8"), /100 free checks a month/);
     assert.match(readFileSync(join(ROOT, "site/faq.html"), "utf8"), /100 free checks a month/);
-    assert.match(readFileSync(join(ROOT, "site/start.html"), "utf8"), /100 free checks a month/);
+    assert.match(readFileSync(join(ROOT, "site/start.html"), "utf8"), /Free: 100 checks a month\. No card\./);
     assert.match(readFileSync(join(ROOT, "README.md"), "utf8"), /100 free checks a month/);
   });
 });
