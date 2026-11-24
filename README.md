@@ -1,4 +1,5 @@
 # <img src="https://raw.githubusercontent.com/mtangoz/grill/main/site/brand/logo-256.png" alt="" width="40" height="40" align="top"> Grill: grill your AI before you send it to your boss
+[![mtangoz/grill MCP server](https://glama.ai/mcp/servers/mtangoz/grill/badges/score.svg)](https://glama.ai/mcp/servers/mtangoz/grill)
 
 **Hear the strongest case against your plan, then decide for yourself.**
 
