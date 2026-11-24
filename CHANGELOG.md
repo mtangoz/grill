@@ -10,6 +10,7 @@ Which channel each change reaches. **At merge and deploy:** Grill in your chat a
 
 ### At merge and deploy: Grill in your chat
 
+- The quality check (Jev) asks OpenRouter to use only TypeSafe's zero-retention endpoint for that model. OpenRouter now also lists a second TypeSafe endpoint for Jev that is not zero-retention, and an answer from either one reads as TypeSafe. If OpenRouter cannot use the zero-retention endpoint, the check says unavailable and the grill is unchanged. Grill does not send a check request without that restriction. The privacy page, /data-flow/, the data ledger, the README, and the extension and plugin setting say the same. The installed tool gets this at the next release.
 - A free or trial account still stops at 30 completed checks a UTC day. An account whose email has an active subscription in the Pro store stops at `GRILL_PRO_DAILY_LIMIT` instead (default 100; a value that is not a whole number stays 100; it never goes below 30). That store is read only after the day's 30th completed check. The stop says it resets at midnight UTC and how many hours are left. A free account is also told the monthly allowance resets on the 1st. A paid account is told how many of this month's 200 checks it has used. The monthly count and the dollar caps are unchanged.
 
 ### At merge: the plugin from git and the Docker image (at the next release: npm and the .mcpb)

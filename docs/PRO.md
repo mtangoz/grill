@@ -4,7 +4,7 @@ The installed free tool has no account, no sign-in and no server of its own. Gri
 
 ## Why Clerk
 
-The in-chat account needs a sign-in the chats already know how to open: OAuth, with an emailed code and a verified email. Google sign-in is off in production. Clerk does that. Grill does not store a password.
+The in-chat account needs a sign-in the chats already know how to open: OAuth, with an email code or Google, and a verified email. Clerk does that, and links a Google sign-in to the account with the same verified email. If you use Google, Google shares with Grill your name, email address and profile picture. Grill uses the verified email to identify your account. Chat apps you connect may receive your name and picture.
 
 The trade-off is a sign-in company. Clerk sees the email address and the sign-in. It does not see the write-up. Grill checks the token itself (signature, issuer, audience, expiry) and does not send the decision to Clerk. The one exception is a `/judge` link: if you have to sign in first, the address you come back to, with the decision in it, goes to Clerk.
 

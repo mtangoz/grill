@@ -83,7 +83,7 @@ Each answer below is quoted word for word from [grillyour.ai/data-flow](https://
 
 > The quality check. It sees the masked decision, your question, the verdict and the top five challenges, with no zero-retention flag on that request.
 
-> It runs sign-in with an emailed code, and keeps your email and the sign-in events.
+> It runs sign-in with an email code or with Google, and keeps your email and the sign-in events. If you use Google, Google shares with Grill your name, email address and profile picture. Grill uses the verified email to identify your account. Chat apps you connect may receive your name and picture.
 
 > It stores what Grill keeps. Records, drafts, the 15-minute copy and reactions are encrypted before they reach it. Your account, with your email address, and the counts are not.
 

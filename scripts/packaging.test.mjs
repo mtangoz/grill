@@ -421,6 +421,15 @@ function serverClosure() {
 }
 
 describe("Glama listing files", () => {
+  it("the README links back to its Glama listing with the score badge, directly under the title", () => {
+    const lines = readFileSync(join(ROOT, "README.md"), "utf8").split("\n");
+    assert.match(lines[0], /^# /, "line 1 is the title");
+    assert.equal(
+      lines[1],
+      "[![mtangoz/grill MCP server](https://glama.ai/mcp/servers/mtangoz/grill/badges/score.svg)](https://glama.ai/mcp/servers/mtangoz/grill)",
+    );
+  });
+
   it("glama.json names the maintainer who can claim the listing, and the image starts the server", async () => {
     const glama = json("glama.json");
     assert.equal(glama.$schema, "https://glama.ai/mcp/schemas/server.json");
