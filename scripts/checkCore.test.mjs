@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 
 import {
   buildCheckRequest,
+  checkRoutingIsZdrOnly,
+  JEV_ZDR_ENDPOINT,
   CHECK_MAX_CHALLENGES,
   CHECK_TIMEOUT_MS,
   CHECK_WRITE_UP_BUDGET,
@@ -56,11 +58,30 @@ const score = (s) => ({ type: "score", score: s, confidence: 0.7, probabilities:
 
 // ---------------------------------------------------------------------------
 describe("buildCheckRequest — the exact request shape", () => {
-  it("pins the model and sends exactly {model, state, questions}", () => {
+  it("pins the model and sends exactly {model, provider, state, questions}", () => {
     const req = buildCheckRequest({ subject: "the write-up", question: "q?", result: result(2) });
-    assert.deepEqual(Object.keys(req).sort(), ["model", "questions", "state"]);
+    assert.deepEqual(Object.keys(req).sort(), ["model", "provider", "questions", "state"]);
     assert.equal(req.model, "typesafe/jev-1.13");
     assert.equal(JEV_MODEL, "typesafe/jev-1.13");
+  });
+
+  // Issue #252: Jev now has a second TypeSafe endpoint ("typesafe") that is not zero-retention.
+  // Both answer as "TypeSafe", so the response check cannot tell them apart. The request itself
+  // must allow only the zero-retention endpoint.
+  it("routes only to Jev's zero-retention endpoint, on every request", () => {
+    assert.equal(JEV_ZDR_ENDPOINT, "typesafe/zdr");
+    for (const req of [buildCheckRequest(), buildCheckRequest({ subject: "s", question: "q", result: result(3) })]) {
+      assert.deepEqual(req.provider, { only: ["typesafe/zdr"] });
+      assert.equal(checkRoutingIsZdrOnly(req), true);
+    }
+  });
+
+  it("calls any other routing not zero-retention-only, so the caller sends nothing", () => {
+    const req = buildCheckRequest({ subject: "s", result: result(1) });
+    for (const provider of [undefined, null, {}, { only: [] }, { only: ["typesafe"] }, { only: ["typesafe/zdr", "typesafe"] }, { only: "typesafe/zdr" }, { order: ["typesafe/zdr"] }, { only: ["typesafe/zdr"], ignore: [] }]) {
+      assert.equal(checkRoutingIsZdrOnly({ ...req, provider }), false, JSON.stringify(provider));
+    }
+    assert.equal(checkRoutingIsZdrOnly(null), false);
   });
 
   it("puts the write-up, question, verdict and reason in state, and nothing else from the review", () => {

@@ -15,18 +15,38 @@
 // PRIVACY. This is a second flow of the user's write-up to a third party, so:
 //   - it is OFF unless asked for (`--check`, JUDGE_CHECK=1, or the extension's "Quality check
 //     with Jev" setting), and it only ever sees text judge.mjs has already masked;
-//   - it is pinned to one model, JEV_MODEL, whose only OpenRouter endpoint is TypeSafe's, and
-//     that endpoint is on OpenRouter's zero-data-retention list. The documented request body has
-//     no routing field, so the send cannot be steered; instead the RESPONSE is checked, and an
-//     answer served by anyone but TypeSafe is dropped unread (`readCheck`). The weekly upstream
-//     check (scripts/upstream-check.mjs) fails if the model ever leaves the zero-retention list;
+//   - it is pinned to one model, JEV_MODEL, and routed only to its zero-data-retention endpoint,
+//     JEV_ZDR_ENDPOINT, with `provider.only`. TypeSafe also serves Jev from a second endpoint that
+//     is not zero-retention, and both answer as "TypeSafe", so the response alone cannot show
+//     which one served it. judge.mjs sends nothing unless `checkRoutingIsZdrOnly` passes, and
+//     when OpenRouter cannot route to that endpoint it refuses, so the check is "unavailable".
+//     An answer served by anyone but TypeSafe is still dropped unread (`readCheck`). The weekly
+//     upstream check (scripts/upstream-check.mjs) fails if any Jev endpoint is not zero-retention;
 //   - the request carries the masked write-up, the question, the verdict and its reason, and
 //     five challenges at most, each cut to the fields the questions need. Nothing else.
 //
 // Zero dependencies. Node >= 20. ESM throughout.
 
-/** The one model the check may use. Pinned, never routed: see PRIVACY above. */
+/** The one model the check may use. Pinned: see PRIVACY above. */
 export const JEV_MODEL = "typesafe/jev-1.13";
+
+/**
+ * The one endpoint the check may reach: TypeSafe's zero-data-retention endpoint for JEV_MODEL,
+ * as tagged in GET /api/v1/models/typesafe/jev-1.13/endpoints and /api/v1/endpoints/zdr
+ * (checked 2026-11-24). The other endpoint, tagged "typesafe", is not zero-retention.
+ */
+export const JEV_ZDR_ENDPOINT = "typesafe/zdr";
+
+/**
+ * True only when a check request allows exactly one endpoint, JEV_ZDR_ENDPOINT, and sets no
+ * other routing field. judge.mjs sends nothing unless this is true.
+ */
+export function checkRoutingIsZdrOnly(request) {
+  const p = request && typeof request === "object" ? request.provider : null;
+  if (!p || typeof p !== "object" || Array.isArray(p)) return false;
+  const keys = Object.keys(p);
+  return keys.length === 1 && keys[0] === "only" && Array.isArray(p.only) && p.only.length === 1 && p.only[0] === JEV_ZDR_ENDPOINT;
+}
 
 /**
  * The provider an answer must name to be read. Jev's only OpenRouter endpoint is TypeSafe's, and
@@ -168,6 +188,7 @@ export function buildCheckRequest({ subject = "", question = "", result = null, 
 
   return {
     model: JEV_MODEL,
+    provider: { only: [JEV_ZDR_ENDPOINT] },
     state: {
       write_up: str(subject),
       question: asked,

@@ -729,6 +729,28 @@ describe("--check: the Jev quality check", () => {
     assert.doesNotMatch(r.stderr, /DEGRADED/);
   });
 
+  // Issue #252. The request allows only Jev's zero-retention endpoint. When OpenRouter cannot route
+  // there it refuses, and the check says unavailable: nothing goes to the retaining endpoint.
+  it("asks for the zero-retention endpoint only, and fails closed when OpenRouter cannot route there", async () => {
+    const ok = await startFakeOpenRouter();
+    const a = await grill(["--text", SUBJECT, "--check"], { fake: ok });
+    await ok.close();
+    assert.equal(a.code, 0, a.stderr);
+    assert.deepEqual(ok.seen.decisions[0].body.provider, { only: ["typesafe/zdr"] });
+
+    const refused = await startFakeOpenRouter({ decisions: () => ({ status: 404, text: "No allowed providers are available for the selected model." }) });
+    const r = await grill(["--text", SUBJECT, "--check"], { fake: refused });
+    await refused.close();
+    assert.equal(r.code, 0);
+    assert.equal(refused.seen.decisions.length, 1);
+    assert.deepEqual(refused.seen.decisions[0].body.provider, { only: ["typesafe/zdr"] });
+    assert.equal(r.result.verdict, "weak", "the grill is untouched");
+    assert.deepEqual(r.result.degraded, []);
+    assert.match(r.result.quality.unavailable, /returned 404/);
+    assert.match(r.report, /quality check unavailable/);
+    assert.doesNotMatch(r.report, /Falsifiers that name/);
+  });
+
   it("without --check, the decisions path is never hit and there is no Jev section", async () => {
     const fake = await startFakeOpenRouter();
     const r = await grill(["--text", SUBJECT], { fake });
