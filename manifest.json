@@ -85,7 +85,7 @@
     "jev_quality_check": {
       "type": "boolean",
       "title": "Quality check with Jev",
-      "description": "Score every grill with Jev, one fixed decision model at TypeSafe, reached through the same model router: are the falsifiers real tests, does the verdict fit the challenges? It sees the masked write-up, your question, the verdict and the top five challenges. Its request carries no zero-retention flag. Grill relies instead on TypeSafe being the only provider of that model on OpenRouter, a weekly check that it is on OpenRouter's zero-retention list, and reading an answer only if TypeSafe served it. About $0.0002 a grill. Say skip the check to skip it for one grill. Turn off to send the write-up to the judge only.",
+      "description": "Score every grill with Jev, one fixed decision model at TypeSafe, reached through the same model router: are the falsifiers real tests, does the verdict fit the challenges? It sees the masked write-up, your question, the verdict and the top five challenges. Its request asks OpenRouter to use only TypeSafe's zero-retention endpoint for that model; if it cannot, the check is unavailable. Grill reads an answer only if TypeSafe served it. About $0.0002 a grill. Say skip the check to skip it for one grill. Turn off to send the write-up to the judge only.",
       "default": true
     },
     "judge_model": {

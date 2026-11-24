@@ -100,7 +100,8 @@
  *
  * QUALITY CHECK (opt-in). With --check, once the judge has returned a usable verdict, ONE more
  * request goes to OpenRouter's decisions endpoint, pinned to `typesafe/jev-1.13` (Jev, from
- * TypeSafe, whose only endpoint is on OpenRouter's zero-data-retention list). It carries the
+ * TypeSafe) and routed only to its zero-data-retention endpoint (`provider.only:
+ * ["typesafe/zdr"]`). If OpenRouter cannot route there, nothing is served. It carries the
  * already-masked write-up, the question, the verdict and its reason, and the top five
  * challenges, and it asks whether the falsifiers are concrete, whether each challenge engages
  * with what the write-up argues, and whether the verdict fits the challenges' weight. An answer
@@ -113,8 +114,8 @@
  * configurable — there is no flag or environment variable that turns it off. A model with
  * no such endpoint fails that request. The default retries the Auto Router; an explicit
  * JUDGE_MODEL chain walks to its next link. Neither path drops the zero-retention
- * requirement. The quality check's documented request
- * body has no such field, so its guarantee is the pinned model instead (see QUALITY CHECK).
+ * requirement. The quality check's request allows only Jev's zero-retention endpoint, and
+ * is not sent without that restriction (see QUALITY CHECK).
  * Every request leaves through one function, to one of two OpenRouter URLs, and follows no
  * redirect. Each request sends `X-Title: Grill` and `HTTP-Referer` for https://grillyour.ai,
  * so OpenRouter can show aggregate usage counts for the app. The write-up still goes only
@@ -171,6 +172,7 @@ import {
 } from "./judgeCore.mjs";
 import {
   buildCheckRequest,
+  checkRoutingIsZdrOnly,
   CHECK_MAX_CHALLENGES,
   CHECK_TIMEOUT_MS,
   CHECK_WRITE_UP_BUDGET,
@@ -945,6 +947,10 @@ async function runQualityCheck(forResult) {
       result: forResult,
       extraQuestions: checkExtra,
     });
+    // Fail closed: the write-up goes only to Jev's zero-retention endpoint, or nowhere.
+    if (!checkRoutingIsZdrOnly(request)) {
+      return { unavailable: "not run: the request did not allow only Jev's zero-retention endpoint, so nothing was sent" };
+    }
     const r = await postJson(DECISIONS_URL, request, checkTimeoutMs);
     if (r.outcome !== "ok") return { unavailable: checkFailure(r) };
     const quality = readCheck(r.data);

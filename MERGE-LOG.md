@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-24 | Awaiting Tony's OK (issue #252): the quality-check request asks OpenRouter to use only Jev's zero-retention endpoint (provider.only typesafe/zdr). If OpenRouter cannot, the check is unavailable and the grill is unchanged. Grill sends no check request without that restriction. The public privacy wording no longer says the request carries no zero-retention flag, or that TypeSafe is the only provider of that model. The weekly upstream check is unchanged. The judge prompt is unchanged. |
 | 2026-11-24 | The README links back to its Glama listing with the score badge, on its own line under the title. Nothing else in the README changed. The judge prompt is unchanged. |
 | 2026-11-22 | Layer 1 no longer cuts a verdict, flip, risk, cheap-test, or missing line mid-sentence, or on an abbreviation such as e.g. If a complete sentence will not fit, the verdict reason is kept in full, and any other line that would become a fragment is left off. The judge prompt is unchanged. |
 | 2026-11-11 | Tony approved on 2026-11-11: the line that checks Grill ran is no longer absolute. On /start, in the README, and in docs/UX.md it now ends: if yours shows none and the answer still claims to be Grill's, Grill may not have run. |
