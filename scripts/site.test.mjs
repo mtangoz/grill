@@ -74,8 +74,9 @@ describe("site/page.html", () => {
     assert.match(page, /<h1>Grill your AI before you send it to your boss\.<\/h1>/);
     assert.doesNotMatch(page, /<h1>Get a second opinion before you decide\.<\/h1>/);
     assert.match(page, /<p class="lede">Get the strongest case against your plan from a different AI, right in the chat you already use\. Then you decide\.<\/p>/);
-    const line3 = readFileSync(join(ROOT, "README.md"), "utf8").split("\n")[2];
-    assert.equal(line3, "**Hear the strongest case against your plan, then decide for yourself.**");
+    // Line 2 is the Glama score badge, then a blank line, then the tagline.
+    const line4 = readFileSync(join(ROOT, "README.md"), "utf8").split("\n")[3];
+    assert.equal(line4, "**Hear the strongest case against your plan, then decide for yourself.**");
     const readme = readFileSync(join(ROOT, "README.md"), "utf8");
     assert.match(readme.split("\n")[0], /Grill: grill your AI before you send it to your boss/);
     assert.match(readme, /https:\/\/grillyour\.ai\/demo\//);
