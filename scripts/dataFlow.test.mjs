@@ -81,8 +81,8 @@ const PAGE_TEXT = [
   "A reaction. If you tell your assistant a grill helped or did not, Grill keeps the rating, your one-line reason, the verdict label, the judge model, the time and a one-way hash of your account ID, for 180 days, encrypted with a key Grill's operators hold. The decision is added only if you say yes to sending that grill.",
   "The counters. When a grill on your account first gets a verdict, when you grill again 20 hours or more later, when you first answer the records question, and when you save a choice or a look-back, Grill adds one to a counter. The counters hold whole numbers, each filed under a day (your first grill, your answer, your choice, or the day a look-back falls due) or under the name of the app. They hold no title, text, verdict or account ID. Accounts on Grill's own list of maintainer, test and reviewer addresses are not counted. With few accounts these numbers describe a handful of people, and Grill's operators can tell who.",
   "What goes with the counters. Nobody is counted while that list is not set. No job opens a kept record to make these counts, and deleting a record or the account does not lower one. A counted account has a few marks under its account ID: the time of its first grill with a verdict, a mark once it has been counted as coming back, and the day its first look-back is counted under. They are deleted with the account. A saved decision also holds the time of its first look-back answer and the day its look-back is counted under. The export shows them as lookback_first_at and lookback_counted_day. Two more keys each hold one day: the day counting began, and the last day Grill's server handled one of these events, from any account, while that list was set.",
-  "Kept either way. Your account, with your email address. The time, cost and judge model of your last 400 grills. Daily and monthly counts of your use, counts of active people made from one-way hashes, and Grill-wide counts of grills, choices and look-backs. Deleting your account removes your records, drafts, reactions, account and that list of grills. It does not lower any count, and your account ID stays in the Monday email lists until they expire.",
-  "Cookies. /start sets no cookie while sign-up is open. While sign-up is invite-only, a link with a source tag sets one cookie holding that tag for 30 days. Signing in sets sign-in cookies.",
+  "Kept either way. Your account holds your email address and the label of the link you first arrived from (for example askgrill), used only to count which outreach brings users. The time, cost and judge model of your last 400 grills. Daily and monthly counts of your use, counts of active people made from one-way hashes, and Grill-wide counts of grills, choices and look-backs. Deleting your account removes your records, drafts, reactions, account and that list of grills. It does not lower any count, and your account ID stays in the Monday email lists until they expire.",
+  "Cookies. A link with a source tag sets one cookie the first time, holding that label (for example askgrill) and the time it was set, for about 90 days. A later tag does not replace it. Grill stores that label on the account, used only to count which outreach brings users. Signing in sets sign-in cookies.",
   "Which company judges. The judge is from a different company than the one that wrote the plan, when Grill can tell which that is. Grill can tell when it recognises the app you connected from, or when your assistant names its company on the call. A company your assistant names replaces the one Grill recognised. In Cursor, or in an app Grill does not recognise, nobody is ruled out, and the verdict ends with a line that starts \"Independence not verified:\", such as \"Independence not verified: Grill couldn't tell which company's model wrote this, so no company was ruled out.\"",
   "The installed tool",
   "This is Grill in Claude Desktop, in Claude Code, or run with npx, on your own OpenRouter key.",
@@ -521,11 +521,12 @@ describe("the statements /data-flow/ must make", () => {
     assert.match(read("server/index.mjs"), /if \(model\) env\.JUDGE_MODEL = model;/);
   });
 
-  it("12: /start sets no cookie while sign-up is open, and signing in sets sign-in cookies", () => {
-    says(built, SECTIONS.chat, "/start sets no cookie while sign-up is open.", "a link with a source tag sets one cookie holding that tag for 30 days.", "Signing in sets sign-in cookies.");
+  it("12: a source tag sets one first-touch cookie, and signing in sets sign-in cookies", () => {
+    says(built, SECTIONS.chat, "A link with a source tag sets one cookie the first time", "for about 90 days", "A later tag does not replace it", "used only to count which outreach brings users", "Signing in sets sign-in cookies.");
     const start = read("api/_start.mjs");
-    assert.match(start, /if \(ref && !openSignup\(deps\.env \?\? \{\}\)\) headers\["Set-Cookie"\] = refCookie\(ref, request\);/);
-    assert.match(start, /^const REF_MAX_AGE = 30 \* 24 \* 60 \* 60;$/m);
+    assert.match(start, /const cookie = firstTouchCookie\(request\);/);
+    assert.match(start, /if \(cookie\) headers\["Set-Cookie"\] = cookie;/);
+    assert.match(start, /^export const REF_MAX_AGE = 90 \* 24 \* 60 \* 60;$/m);
   });
 
   it("13: the counters, worded as the ledger words them, and what goes with them", () => {

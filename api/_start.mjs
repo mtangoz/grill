@@ -1,17 +1,18 @@
 /**
  * Serve /start. Count a view, and record ?ref= as a counter. A crawler, a link-preview fetch
  * and any request that is not a GET get the page and are not counted.
- * The ref cookie is set only while sign-up is invite-only, where the waitlist form reads it.
- * With open sign-up nobody is sent to that form, so /start sets no cookie.
+ * The ref cookie is first-touch: a valid ?ref= is stored when the browser has none yet.
+ * A later ?ref= does not replace it. The waitlist form reads the same cookie.
  * The only script copies the starter prompts, the server URL, and the ChatGPT tab link.
  * An unknown or empty ref is not stored. A missing store still shows the page.
  */
 import { readFileSync } from "node:fs";
 import { redisCommand } from "./_account.mjs";
-import { openSignup } from "../scripts/hostedCore.mjs";
+import { isInternalAccount } from "../scripts/hostedCore.mjs";
 
 export const REF_COOKIE = "grill_ref";
-const REF_MAX_AGE = 30 * 24 * 60 * 60;
+/** About 90 days. A first-touch label should still be there after sign-in. */
+export const REF_MAX_AGE = 90 * 24 * 60 * 60;
 
 /** Every /start view by a browser, tagged or not. A number only. */
 export const START_VIEWS_KEY = "grill:metric:start_views";
@@ -84,22 +85,91 @@ export function startRefKey(ref) {
   return safe ? `grill:metric:start_ref:${safe}` : "";
 }
 
-export function refFromCookie(header) {
+function rawRefCookie(header) {
   const parts = String(header || "").split(";");
   for (const part of parts) {
     const i = part.indexOf("=");
     if (i < 0) continue;
     if (part.slice(0, i).trim() !== REF_COOKIE) continue;
-    return normalizeRef(decodeURIComponent(part.slice(i + 1).trim()));
+    try {
+      return decodeURIComponent(part.slice(i + 1).trim());
+    } catch {
+      return "";
+    }
   }
   return "";
 }
 
+/** The label in grill_ref. The cookie is `label.seconds`; an older cookie is the label alone. */
+export function refFromCookie(header) {
+  return normalizeRef(rawRefCookie(header).split(".")[0]);
+}
+
+/** When grill_ref was set, in milliseconds, or 0 for an older cookie with no time. */
+export function refSetAt(header) {
+  const raw = rawRefCookie(header);
+  if (!refFromCookie(header)) return 0;
+  const match = /^[^.]+\.(\d{9,11})$/.exec(raw);
+  return match ? Number(match[1]) * 1000 : 0;
+}
+
+export function signupRefKey(ref) {
+  const safe = normalizeRef(ref);
+  return safe ? `grill:metric:signup_ref:${safe}` : "";
+}
+
+export function firstGrillRefKey(ref) {
+  const safe = normalizeRef(ref);
+  return safe ? `grill:metric:first_grill_ref:${safe}` : "";
+}
+
+/** One mark per account, so a sign-up and a first grill are each counted once. */
+export function refOnceKey(accountId, kind) {
+  const id = String(accountId || "").trim();
+  if (!id || (kind !== "signup" && kind !== "grill")) return "";
+  return `grill:hosted:refmark:${id}:${kind}`;
+}
+
+/**
+ * Add one to this account's ref counter, once. An account on GRILL_INTERNAL_EMAILS
+ * is left out. A second call for the same account adds nothing.
+ */
+export async function countAccountRef(command, account, env, kind) {
+  const label = normalizeRef(account?.ref);
+  const counter = kind === "signup" ? signupRefKey(label) : kind === "grill" ? firstGrillRefKey(label) : "";
+  const once = refOnceKey(account?.id, kind);
+  if (!label || !counter || !once || typeof command !== "function") return false;
+  if (isInternalAccount(account, env)) return false;
+  const won = await command(["SET", once, "1", "NX"]);
+  if (won !== "OK") return false;
+  try {
+    await command(["INCR", counter]);
+  } catch (error) {
+    // Let a later call count it.
+    await command(["DEL", once]).catch(() => {});
+    throw error;
+  }
+  return true;
+}
+
 function refCookie(ref, request) {
   const secure = new URL(request.url).protocol === "https:" || request.headers.get("x-forwarded-proto") === "https";
-  const parts = [`${REF_COOKIE}=${encodeURIComponent(ref)}`, "HttpOnly", "SameSite=Lax", "Path=/", `Max-Age=${REF_MAX_AGE}`];
+  const parts = [`${REF_COOKIE}=${encodeURIComponent(ref)}.${Math.floor(Date.now() / 1000)}`, "HttpOnly", "SameSite=Lax", "Path=/", `Max-Age=${REF_MAX_AGE}`];
   if (secure) parts.push("Secure");
   return parts.join("; ");
+}
+
+/**
+ * Set-Cookie for a first-touch source, or "" when this request should not set one.
+ * A valid ?ref= is stored only when the browser does not already have grill_ref.
+ * A crawler, a request that is not a GET, and a bad label set nothing.
+ */
+export function firstTouchCookie(request) {
+  if (!countsAsVisit(request)) return "";
+  if (refFromCookie(request.headers.get("cookie"))) return "";
+  const ref = normalizeRef(new URL(request.url).searchParams.get("ref"));
+  if (!ref) return "";
+  return refCookie(ref, request);
 }
 
 async function commandOf(deps) {
@@ -145,8 +215,8 @@ export function renderStartPage() {
 /**
  * Show /start. A visit adds one to the view count and, with a valid ?ref=, one to that source's
  * count. A crawler, a link-preview fetch and a request that is not a GET get the same page and
- * add nothing. The cookie carries the source for the waitlist form, so it is set only while
- * sign-up is invite-only. The only script copies text the person asks to copy.
+ * add nothing. The cookie is first-touch: the first valid ?ref= is kept, and a later one is not.
+ * The only script copies text the person asks to copy.
  */
 export async function handleStart(request, deps) {
   const visit = countsAsVisit(request);
@@ -173,6 +243,7 @@ export async function handleStart(request, deps) {
     Vary: "Accept",
     "X-Content-Type-Options": "nosniff",
   };
-  if (ref && !openSignup(deps.env ?? {})) headers["Set-Cookie"] = refCookie(ref, request);
+  const cookie = firstTouchCookie(request);
+  if (cookie) headers["Set-Cookie"] = cookie;
   return new Response(renderStartPage(), { status: 200, headers });
 }

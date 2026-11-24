@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { START_VIEWS_KEY, countsAsVisit, handleStart, normalizeRef, refFromCookie, renderStartPage, startRefKey } from "../api/_start.mjs";
+import { REF_MAX_AGE, START_VIEWS_KEY, countAccountRef, countsAsVisit, firstGrillRefKey, handleStart, normalizeRef, refFromCookie, refSetAt, renderStartPage, signupRefKey, startRefKey } from "../api/_start.mjs";
 import { createMemoryRedis } from "./hostedCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -31,6 +31,9 @@ describe("start attribution", () => {
   it("accepts a short source and drops anything else", () => {
     assert.equal(normalizeRef(" askgrill "), "askgrill");
     assert.equal(normalizeRef("AskGrill"), "askgrill");
+    for (const tag of ["askgrill", "team-pilot", "grilled-plan", "mcpso", "pulsemcp", "lobehub", "cursordir", "notify"]) {
+      assert.equal(normalizeRef(tag), tag, tag);
+    }
     for (const bad of ["", "  ", "a b", "a@b.com", "https://evil.example", "x".repeat(41), "lead\naskgrill", null]) {
       assert.equal(normalizeRef(bad), "", JSON.stringify(bad));
     }
@@ -51,6 +54,10 @@ describe("start attribution", () => {
     assert.doesNotMatch(html, /grillTrack|posthog|phc_/i);
     assert.match(res.headers.get("set-cookie"), /grill_ref=askgrill/);
     assert.match(res.headers.get("set-cookie"), /HttpOnly/);
+    assert.match(res.headers.get("set-cookie"), /Secure/);
+    assert.match(res.headers.get("set-cookie"), /SameSite=Lax/);
+    assert.match(res.headers.get("set-cookie"), new RegExp(`Max-Age=${REF_MAX_AGE}`));
+    assert.equal(REF_MAX_AGE, 90 * 24 * 60 * 60);
     assert.equal(res.headers.get("set-cookie").includes("askgrill@"), false);
     assert.equal(ctx.memory.command(["GET", startRefKey("askgrill")]), "1");
     assert.equal(ctx.memory.command(["GET", START_VIEWS_KEY]), "1");
@@ -254,28 +261,82 @@ describe("what /start counts", () => {
 });
 
 describe("the grill_ref cookie", () => {
-  it("is set while sign-up is invite-only, and not when sign-up is open", async () => {
-    for (const env of [{}, { GRILL_OPEN_SIGNUP: "off" }, { GRILL_OPEN_SIGNUP: "ON" }]) {
-      const closed = await handleStart(new Request("https://grillyour.ai/start?ref=askgrill"), world(env));
-      assert.equal(refFromCookie(closed.headers.get("set-cookie")), "askgrill", JSON.stringify(env));
+  it("is a first touch, with sign-up open or not, and a later ref does not replace it", async () => {
+    for (const env of [{}, { GRILL_OPEN_SIGNUP: "off" }, { GRILL_OPEN_SIGNUP: "on" }, { GRILL_OPEN_SIGNUP: "ON" }]) {
+      const res = await handleStart(new Request("https://grillyour.ai/start?ref=askgrill", { headers: { "user-agent": BROWSER } }), world(env));
+      assert.equal(refFromCookie(res.headers.get("set-cookie")), "askgrill", JSON.stringify(env));
+      assert.match(res.headers.get("set-cookie"), /Secure/);
+      assert.match(res.headers.get("set-cookie"), /SameSite=Lax/);
     }
-    const ctx = world({ GRILL_OPEN_SIGNUP: "on" });
-    const open = await handleStart(new Request("https://grillyour.ai/start?ref=askgrill", { headers: { "user-agent": BROWSER } }), ctx);
-    assert.equal(open.status, 200);
-    assert.equal(open.headers.get("set-cookie"), null, "open sign-up: /start sets no cookie");
-    assert.deepEqual(open.headers.getSetCookie(), []);
-    // The source is still counted. Only the cookie is gone.
-    assert.equal(ctx.memory.command(["GET", startRefKey("askgrill")]), "1");
-    assert.equal(ctx.memory.command(["GET", START_VIEWS_KEY]), "1");
+    const kept = await handleStart(
+      new Request("https://grillyour.ai/start?ref=home", { headers: { cookie: "grill_ref=askgrill", "user-agent": BROWSER } }),
+      world({ GRILL_OPEN_SIGNUP: "on" }),
+    );
+    assert.equal(kept.headers.get("set-cookie"), null, "a later ref does not replace the first");
+    assert.deepEqual(kept.headers.getSetCookie(), []);
+    const bad = await handleStart(new Request("https://grillyour.ai/start?ref=not%20a%20ref", { headers: { "user-agent": BROWSER } }), world());
+    assert.equal(bad.headers.get("set-cookie"), null);
+  });
+
+  it("carries the second it was set, so a later sign-in can tell which came first", async () => {
+    const before = Math.floor(Date.now() / 1000);
+    const res = await handleStart(new Request("https://grillyour.ai/start?ref=askgrill", { headers: { "user-agent": BROWSER } }), world());
+    const header = res.headers.get("set-cookie");
+    assert.match(header, /^grill_ref=askgrill\.\d{10};/);
+    assert.equal(refFromCookie(header), "askgrill");
+    const at = refSetAt(header);
+    assert.ok(at >= before * 1000 && at <= Date.now(), String(at));
+    assert.equal(refSetAt("grill_ref=askgrill"), 0, "an older cookie has no time");
+    assert.equal(refSetAt("grill_ref=askgrill.notatime"), 0);
+    assert.equal(refFromCookie("grill_ref=askgrill.1795400000"), "askgrill");
+  });
+
+  it("lets a sign-up be counted again when its increment did not land", async () => {
+    const ctx = world();
+    let fail = true;
+    const flaky = async (args) => {
+      if (args[0] === "INCR" && fail) {
+        fail = false;
+        throw new Error("store down");
+      }
+      return ctx.redis(args);
+    };
+    const pat = { id: "g_pat", email: "pat@example.com", ref: "askgrill" };
+    await assert.rejects(countAccountRef(flaky, pat, ctx.env, "signup"));
+    assert.equal(await countAccountRef(flaky, pat, ctx.env, "signup"), true);
+    assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), "1");
+  });
+
+  it("counts a sign-up and a first grill once, and leaves an internal account out", async () => {
+    const ctx = world({ GRILL_INTERNAL_EMAILS: "owner@grill.example" });
+    const outside = { id: "g_pat", email: "pat@example.com", ref: "askgrill" };
+    assert.equal(await countAccountRef(ctx.redis, outside, ctx.env, "signup"), true);
+    assert.equal(await countAccountRef(ctx.redis, outside, ctx.env, "signup"), false);
+    assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), "1");
+    assert.equal(await countAccountRef(ctx.redis, outside, ctx.env, "grill"), true);
+    assert.equal(await countAccountRef(ctx.redis, outside, ctx.env, "grill"), false);
+    assert.equal(ctx.memory.command(["GET", firstGrillRefKey("askgrill")]), "1");
+    const inside = { id: "g_owner", email: "owner@grill.example", ref: "askgrill" };
+    assert.equal(await countAccountRef(ctx.redis, inside, ctx.env, "signup"), false);
+    assert.equal(await countAccountRef(ctx.redis, inside, ctx.env, "grill"), false);
+    const agent = { id: "g_bot", email: "bot@agents.example", human: "owner@grill.example", ref: "team-pilot" };
+    assert.equal(await countAccountRef(ctx.redis, agent, ctx.env, "signup"), false);
+    assert.equal(await countAccountRef(ctx.redis, { id: "g_none", email: "sam@example.com", ref: "" }, ctx.env, "signup"), false);
+    assert.equal(await countAccountRef(ctx.redis, { id: "g_bad", email: "sam@example.com", ref: "not a ref" }, ctx.env, "signup"), false);
+    assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), "1");
+    assert.equal(ctx.memory.command(["GET", signupRefKey("team-pilot")]), null);
   });
 
   it("is described in the data ledger the way the code behaves", () => {
     const ledger = readFileSync(join(ROOT, "docs/DATA-LEDGER.md"), "utf8");
     const row = ledger.split("\n").find((line) => line.startsWith("| `/start` source"));
     assert.ok(row, "the ledger has a /start row");
-    assert.match(row, /Only while sign-up is invite-only, a cookie on your browser \(`grill_ref`\)/);
-    assert.match(row, /With open sign-up, `\/start` sets no cookie\./);
+    assert.match(row, /A cookie on your browser \(`grill_ref`\) holds the label of the link you first arrived from/);
+    assert.match(row, /A later link does not replace it/);
+    assert.match(row, /about 90 days/);
+    assert.match(row, /used only to count which outreach brings users/);
     assert.match(row, /The user-agent is read only to tell those apart\. It is not stored and not logged\./);
+    assert.doesNotMatch(row, /sets no cookie/);
     assert.doesNotMatch(row, /count of every `\/start` load/);
   });
 });

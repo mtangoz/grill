@@ -42,7 +42,7 @@ The HTTP-Referer header lets OpenRouter count Grill usage in aggregate. It adds 
 
 Enforced by: [scripts/judge.mjs](../scripts/judge.mjs), test "that one fetch can reach only the two OpenRouter endpoints, or loopback in tests, and nothing else" in [scripts/privacy.test.mjs](../scripts/privacy.test.mjs).
 
-The website counts visits without cookies. It never counts the words of a decision. While sign-up is invite-only, a /start link with a source tag sets one cookie holding that tag for 30 days. Signing in sets sign-in cookies. The installed tool can optionally send anonymous usage metadata to this site if you turn that on at install; off by default; never decision words.
+The website counts visits without cookies. It never counts the words of a decision. A /start link with a source tag sets one cookie the first time, holding that label for about 90 days. A later tag does not replace it. Grill stores that label on the account, used only to count which outreach brings users. Signing in sets sign-in cookies. The installed tool can optionally send anonymous usage metadata to this site if you turn that on at install; off by default; never decision words.
 
 Enforced by: test "says the website counts visits anonymously, and the tool's usage ping is opt-in" in [scripts/site.test.mjs](../scripts/site.test.mjs).
 
