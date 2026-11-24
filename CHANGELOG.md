@@ -10,6 +10,7 @@ Which channel each change reaches. **At merge and deploy:** Grill in your chat a
 
 ### At merge and deploy: Grill in your chat
 
+- A serious challenge needs a concrete flaw quoted from the write-up that, as written, breaks the plan or makes a rejected option look as good or better. A what-if the write-up gives no reason to expect, or a risk it names and accepts with a check or a way back that works, is moderate, and the judge names the cheapest test. A verdict of "weak" still needs a serious challenge. The paste-route judge prompt says a serious challenge quotes a concrete flaw. The installed plugin from git and the Docker image get this at merge, and npm and the .mcpb at the next release. The weekly eval on 2026-11-23 rated 5 of 12 sound plans weak, above the allowed 0.34. This change needs the owner's OK before it merges.
 - A free or trial account still stops at 30 completed checks a UTC day. An account whose email has an active subscription in the Pro store stops at `GRILL_PRO_DAILY_LIMIT` instead (default 100; a value that is not a whole number stays 100; it never goes below 30). That store is read only after the day's 30th completed check. The stop says it resets at midnight UTC and how many hours are left. A free account is also told the monthly allowance resets on the 1st. A paid account is told how many of this month's 200 checks it has used. The monthly count and the dollar caps are unchanged.
 
 ### At merge: the plugin from git and the Docker image (at the next release: npm and the .mcpb)
