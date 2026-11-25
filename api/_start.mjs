@@ -6,9 +6,10 @@
  * The only script copies the starter prompts, the server URL, and the ChatGPT tab link.
  * An unknown or empty ref is not stored. A missing store still shows the page.
  */
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { redisCommand } from "./_account.mjs";
-import { COUNT_ONCE_SCRIPT, isInternalAccount } from "../scripts/hostedCore.mjs";
+import { COUNT_ONCE_SCRIPT, hostedAccountKey, isInternalAccount, keyFromEnv } from "../scripts/hostedCore.mjs";
 
 export const REF_COOKIE = "grill_ref";
 /** About 90 days. A first-touch label should still be there after sign-in. */
@@ -100,17 +101,48 @@ function rawRefCookie(header) {
   return "";
 }
 
-/** The label in grill_ref. The cookie is `label.seconds`; an older cookie is the label alone. */
+/** The label in grill_ref. The cookie is `label.seconds.signature`; an older cookie is `label` or `label.seconds`. */
 export function refFromCookie(header) {
   return normalizeRef(rawRefCookie(header).split(".")[0]);
 }
 
-/** When grill_ref was set, in milliseconds, or 0 for an older cookie with no time. */
-export function refSetAt(header) {
+/**
+ * The key that signs the cookie's time, derived from GRILL_RECORD_KEY, or null when it is unset.
+ * HttpOnly only keeps scripts out; a person can still edit the cookie, and the time decides
+ * whether a link came before an account. So the time counts only when this key signed it.
+ */
+function refCookieKey(env) {
+  const master = keyFromEnv(env, "GRILL_RECORD_KEY");
+  return master ? createHmac("sha256", master).update("grill-ref-cookie-v1").digest() : null;
+}
+
+function refSignature(key, label, seconds) {
+  return createHmac("sha256", key).update(`${label}.${seconds}`).digest("base64url").slice(0, 22);
+}
+
+/** The cookie value for a label set at `seconds`: signed when the key is set, `label.seconds` when not. */
+export function refCookieValue(label, seconds, env) {
+  const safe = normalizeRef(label);
+  if (!safe) return "";
+  const key = refCookieKey(env);
+  return key ? `${safe}.${seconds}.${refSignature(key, safe, seconds)}` : `${safe}.${seconds}`;
+}
+
+/**
+ * When grill_ref was set, in milliseconds, or 0 when that cannot be trusted: an older cookie with
+ * no time, a time with no signature or a wrong one, or no signing key on this server.
+ */
+export function refSetAt(header, env = {}) {
   const raw = rawRefCookie(header);
-  if (!refFromCookie(header)) return 0;
-  const match = /^[^.]+\.(\d{9,11})$/.exec(raw);
-  return match ? Number(match[1]) * 1000 : 0;
+  const label = refFromCookie(header);
+  if (!label) return 0;
+  const match = /^[^.]+\.(\d{9,11})\.([A-Za-z0-9_-]{22})$/.exec(raw);
+  const key = refCookieKey(env);
+  if (!match || !key) return 0;
+  const want = Buffer.from(refSignature(key, label, match[1]));
+  const got = Buffer.from(match[2]);
+  if (want.length !== got.length || !timingSafeEqual(want, got)) return 0;
+  return Number(match[1]) * 1000;
 }
 
 export function signupRefKey(ref) {
@@ -142,13 +174,15 @@ export async function countAccountRef(command, account, env, kind) {
   if (isInternalAccount(account, env)) return false;
   // The mark and the count are one atomic step. If this throws, either nothing ran (a later call
   // counts it) or it ran and only the reply was lost (a later call finds the mark and adds nothing).
-  const counted = await command(["EVAL", COUNT_ONCE_SCRIPT, 2, once, counter]);
+  // The script writes nothing once the account is gone, so a count racing a delete leaves no mark.
+  const counted = await command(["EVAL", COUNT_ONCE_SCRIPT, 3, once, counter, hostedAccountKey(account.id)]);
   return Number(counted) > 0;
 }
 
-function refCookie(ref, request) {
+function refCookie(ref, request, env) {
   const secure = new URL(request.url).protocol === "https:" || request.headers.get("x-forwarded-proto") === "https";
-  const parts = [`${REF_COOKIE}=${encodeURIComponent(ref)}.${Math.floor(Date.now() / 1000)}`, "HttpOnly", "SameSite=Lax", "Path=/", `Max-Age=${REF_MAX_AGE}`];
+  const value = refCookieValue(ref, Math.floor(Date.now() / 1000), env);
+  const parts = [`${REF_COOKIE}=${encodeURIComponent(value)}`, "HttpOnly", "SameSite=Lax", "Path=/", `Max-Age=${REF_MAX_AGE}`];
   if (secure) parts.push("Secure");
   return parts.join("; ");
 }
@@ -156,14 +190,19 @@ function refCookie(ref, request) {
 /**
  * Set-Cookie for a first-touch source, or "" when this request should not set one.
  * A valid ?ref= is stored only when the browser does not already have grill_ref.
+ * A browser whose grill_ref has no signed time (one set before times were signed) keeps its label
+ * and gets it back with a signed time from now, so a later account can still be credited to it.
+ * Nothing can show when that older cookie was really set, so an account made before this visit is not.
  * A crawler, a request that is not a GET, and a bad label set nothing.
  */
-export function firstTouchCookie(request) {
+export function firstTouchCookie(request, env = {}) {
   if (!countsAsVisit(request)) return "";
-  if (refFromCookie(request.headers.get("cookie"))) return "";
+  const header = request.headers.get("cookie");
+  const held = refFromCookie(header);
+  if (held) return refCookieKey(env) && !refSetAt(header, env) ? refCookie(held, request, env) : "";
   const ref = normalizeRef(new URL(request.url).searchParams.get("ref"));
   if (!ref) return "";
-  return refCookie(ref, request);
+  return refCookie(ref, request, env);
 }
 
 async function commandOf(deps) {
@@ -237,7 +276,7 @@ export async function handleStart(request, deps) {
     Vary: "Accept",
     "X-Content-Type-Options": "nosniff",
   };
-  const cookie = firstTouchCookie(request);
+  const cookie = firstTouchCookie(request, deps.env ?? {});
   if (cookie) headers["Set-Cookie"] = cookie;
   return new Response(renderStartPage(), { status: 200, headers });
 }

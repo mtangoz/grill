@@ -131,3 +131,18 @@ export function otherEndpointsNotZdr(slug, tag, endpointsJson, zdrJson) {
   const zdr = new Set((Array.isArray(zdrJson?.data) ? zdrJson.data : []).filter((z) => z?.model_id === slug).map(key));
   return endpoints.filter((e) => e?.tag !== tag && !zdr.has(key(e))).map((e) => `${e?.provider_name ?? "?"} (${e?.tag ?? "?"})`);
 }
+
+/**
+ * Until the Decisions endpoint's `provider.only` routing is confirmed live (checkCore.JEV_ONLY_VERIFIED_ON),
+ * a retaining endpoint for `slug` is a failure, not a note: if OpenRouter ignored the routing field,
+ * the masked write-up could reach it, and the reply would still name the same provider.
+ *
+ * @param {string} verifiedOn the confirmation date, or "" when not confirmed.
+ * @returns {string[]}
+ */
+export function checkRetainingEndpointsUnverified(slug, tag, endpointsJson, zdrJson, verifiedOn, consequence) {
+  if (typeof verifiedOn === "string" && verifiedOn.trim() !== "") return [];
+  return otherEndpointsNotZdr(slug, tag, endpointsJson, zdrJson).map(
+    (e) => `${slug}: endpoint ${e} is not zero-data-retention, and the check's provider.only routing on the decisions endpoint is not confirmed live — ${consequence}`,
+  );
+}

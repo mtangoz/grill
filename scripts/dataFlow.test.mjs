@@ -524,7 +524,7 @@ describe("the statements /data-flow/ must make", () => {
   it("12: a source tag sets one first-touch cookie, and signing in sets sign-in cookies", () => {
     says(built, SECTIONS.chat, "A link with a source tag sets one cookie the first time", "for about 90 days", "A later tag does not replace it", "used only to count which outreach brings users", "Signing in sets sign-in cookies.");
     const start = read("api/_start.mjs");
-    assert.match(start, /const cookie = firstTouchCookie\(request\);/);
+    assert.match(start, /const cookie = firstTouchCookie\(request, deps\.env \?\? \{\}\);/);
     assert.match(start, /if \(cookie\) headers\["Set-Cookie"\] = cookie;/);
     assert.match(start, /^export const REF_MAX_AGE = 90 \* 24 \* 60 \* 60;$/m);
   });
