@@ -970,6 +970,7 @@ describe("the decisions page layout", () => {
       };
       await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=home") });
       assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1", "a later page counted it");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:first_grill_ref:askgrill"]), "1", "and the grill it already ran, with no new grill");
       const afterCount = evals;
       await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader() });
       ctx.redis = plain;

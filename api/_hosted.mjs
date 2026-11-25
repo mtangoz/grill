@@ -1206,6 +1206,29 @@ function noteRefCountFailed() {
 }
 
 /**
+ * Count this account's sign-up, and its first grill when it has already run one. Each count has its
+ * own try, so a failed sign-up count does not skip the grill's. Once both land, this process stops
+ * asking for this account.
+ */
+async function countRefNow(account, deps) {
+  const command = (args) => redis(deps, args);
+  let done = true;
+  try {
+    await countAccountRef(command, account, deps.env, "signup");
+  } catch {
+    done = false;
+    noteRefCountFailed();
+  }
+  try {
+    if (await redis(deps, ["LINDEX", spendLogKey(account.id), "0"])) await countAccountRef(command, account, deps.env, "grill");
+  } catch {
+    done = false;
+    noteRefCountFailed();
+  }
+  if (done) refCountedCache.add(account.id);
+}
+
+/**
  * A chat app calls /mcp from its own servers, so an account a chat sign-in creates never sees the
  * browser's grill_ref. When that person later opens a signed-in page in a browser whose label was
  * set before the account was made, the label is saved then and the sign-up is counted once. A grill
@@ -1234,13 +1257,7 @@ async function adoptLateRef(account, ref, refAt, deps) {
     return false;
   }
   account.ref = arrival;
-  try {
-    const command = (args) => redis(deps, args);
-    await countAccountRef(command, account, deps.env, "signup");
-    if (await redis(deps, ["LINDEX", spendLogKey(account.id), "0"])) await countAccountRef(command, account, deps.env, "grill");
-  } catch {
-    noteRefCountFailed();
-  }
+  await countRefNow(account, deps);
   return true;
 }
 
@@ -1273,14 +1290,8 @@ async function ensureAccount(userId, email, deps, human, ref = "", refAt = 0) {
   } else if (await adoptLateRef(account, ref, refAt, deps)) {
     // A chat sign-in made this account without the browser's label. Its first signed-in page brought it.
   } else if (normalizeRef(account.ref) && !refCountedCache.has(account.id)) {
-    // A sign-up count that failed earlier is counted now. The once-mark makes this a no-op after,
-    // and this process then stops asking for this account.
-    try {
-      await countAccountRef((args) => redis(deps, args), account, deps.env, "signup");
-      refCountedCache.add(account.id);
-    } catch {
-      noteRefCountFailed();
-    }
+    // A count that failed earlier is counted now. The once-marks make this a no-op after.
+    await countRefNow(account, deps);
   }
   if (account.email !== own) {
     // Move the email link with the account, so a reassigned old address can't link in.

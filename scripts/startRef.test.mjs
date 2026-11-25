@@ -326,6 +326,19 @@ describe("the grill_ref cookie", () => {
     assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), "1");
   });
 
+  // Grill CI on #260: a script does not roll back a write made before an error. The increment runs
+  // first, so when it fails nothing is marked and a later call can still count the account.
+  it("leaves no mark when the increment fails, so a later call still counts", async () => {
+    const ctx = world();
+    ctx.memory.command(["SET", signupRefKey("askgrill"), "not a number"]);
+    const pat = { id: "g_pat", email: "pat@example.com", ref: "askgrill" };
+    await assert.rejects(countAccountRef(ctx.redis, pat, ctx.env, "signup"));
+    assert.equal(ctx.memory.command(["GET", "grill:hosted:refmark:g_pat:signup"]), null, "no mark after a failed increment");
+    ctx.memory.command(["SET", signupRefKey("askgrill"), "4"]);
+    assert.equal(await countAccountRef(ctx.redis, pat, ctx.env, "signup"), true);
+    assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), "5");
+  });
+
   it("counts a sign-up and a first grill once, and leaves an internal account out", async () => {
     const ctx = world({ GRILL_INTERNAL_EMAILS: "owner@grill.example" });
     const outside = { id: "g_pat", email: "pat@example.com", ref: "askgrill" };
