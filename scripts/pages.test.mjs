@@ -902,6 +902,41 @@ describe("the decisions page layout", () => {
     }
   });
 
+  // Grill CI on #258: an account deleted while adoption is between reading it and writing the
+  // label must not leave a label key behind, and must not count a sign-up.
+  it("leaves no label behind when the account is deleted mid-adoption", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const fake = await startFakeOpenRouter();
+    try {
+      const clicked = `grill_ref=askgrill.${Math.floor(Date.now() / 1000) - 3600}`;
+      await grillOnly(ctx, fake, "Hire contractor", FEB);
+      const key = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1][0];
+      const id = key.split(":").pop();
+      const plain = ctx.redis;
+      let deleted = false;
+      ctx.redis = async (args) => {
+        // Pause adoption just before it writes the label, and delete the account in full first.
+        if (!deleted && args[0] === "SET" && args[1] === `grill:hosted:ref:${id}`) {
+          deleted = true;
+          const gone = await handleAccount(
+            new Request("https://grillyour.ai/account", { method: "POST", headers: { cookie: cookieHeader(), "content-type": "application/x-www-form-urlencoded" }, body: "action=delete-account&confirm=delete" }),
+            { ...ctx, redis: plain, now: FEB },
+          );
+          assert.equal(gone.status, 303);
+        }
+        return plain(args);
+      };
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(clicked) }).catch(() => {});
+      ctx.redis = plain;
+      assert.equal(deleted, true, "the deletion was staged mid-adoption");
+      assert.equal(ctx.memory.command(["GET", `grill:hosted:ref:${id}`]), null, "no label outlives the account");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), null, "no sign-up is counted for a deleted account");
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("does not credit a link clicked after the chat made the account, or a cookie with no time", async () => {
     resetHostedCaches();
     const ctx = world();

@@ -1216,6 +1216,12 @@ async function adoptLateRef(account, ref, refAt, deps) {
     if (kept) account.ref = kept;
     return false;
   }
+  // Deletion removes the account before this key. If the account is gone now, the delete ran
+  // while this was in flight and may already have swept the key, so take the label back out.
+  if (!(await redis(deps, ["GET", acctKey(account.id)]))) {
+    await redis(deps, ["DEL", lateRefKey(account.id)]);
+    return false;
+  }
   account.ref = arrival;
   try {
     const command = (args) => redis(deps, args);
