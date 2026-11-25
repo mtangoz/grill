@@ -50,6 +50,8 @@ export const JEV_ZDR_ENDPOINT = "typesafe/zdr";
  * Empty means not confirmed. While it is empty, the weekly upstream check fails if any endpoint
  * serving JEV_MODEL retains data. Docs read 2026-11-25 (OpenRouter API reference, "Decisions")
  * lists `provider` but documents no sub-field behaviour, and no live test has been run.
+ * The live test is `OPENROUTER_API_KEY=... node scripts/jev-routing-probe.mjs` (fictional write-up
+ * only; see jevProbeCore.mjs), then the activity-log check it prints.
  */
 export const JEV_ONLY_VERIFIED_ON = "";
 
