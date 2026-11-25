@@ -643,6 +643,17 @@ function listedAccountIds(env = {}) {
 }
 
 /**
+ * Set a once-mark and add one to a counter, atomically: the counter goes up only when the mark was
+ * not already set. One script, so a call that never ran can be retried, and one whose reply was
+ * lost after it ran cannot count twice. The increment runs before the mark is set: a script does
+ * not roll back a write made before an error, so a failed increment leaves no mark and a later
+ * call can still count. KEYS[1] is the mark, KEYS[2] the counter. Returns the new count, or 0
+ * when the mark was already set.
+ */
+export const COUNT_ONCE_SCRIPT =
+  "if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end local n = redis.call('INCR', KEYS[2]) redis.call('SET', KEYS[1], '1') return n";
+
+/**
  * Whether this account gets the higher allowance. The list is GRILL_INTERNAL_EMAILS,
  * read by the same function the outside counters use. A match is the cap person's
  * email or the account's own email, compared in lower case. An account id matches
@@ -2147,6 +2158,22 @@ export function createMemoryRedis() {
       const key = args[1] === undefined ? "" : String(args[1]);
       if (key) live(key);
       switch (op) {
+        case "EVAL": {
+          // Only the one script Grill sends. Anything else is a test bug, not a silent no-op.
+          if (args[1] !== COUNT_ONCE_SCRIPT || String(args[2]) !== "2") throw new Error("memory redis: unsupported EVAL script");
+          const [mark, counter] = [String(args[3]), String(args[4])];
+          live(mark);
+          live(counter);
+          // Mirrors the script step by step: EXISTS the mark, INCR (which errors on a counter that
+          // is not an integer, as Redis does, before anything is written), then SET the mark.
+          if (strings.has(mark)) return 0;
+          const was = strings.has(counter) ? strings.get(counter) : "0";
+          if (!/^-?\d+$/.test(was)) throw new Error("ERR value is not an integer or out of range");
+          const next = Number(was) + 1;
+          strings.set(counter, String(next));
+          strings.set(mark, "1");
+          return next;
+        }
         case "GET":
           return strings.has(key) ? strings.get(key) : null;
         case "SET": {

@@ -256,6 +256,8 @@ const VERSION = "0.2.0";
 const jwksCache = new Map();
 const userCache = new Map();
 const creditCache = new Map();
+// Accounts whose sign-up ref count is known done in this process, so a later page skips the retry.
+const refCountedCache = new Set();
 // Clerk's authorization-server documents, keyed by the upstream URL. Public metadata only.
 const authMetadataCache = new Map();
 // Company named on initialize, kept per sign-in subject and, under it, per client: the token's
@@ -274,6 +276,7 @@ export function resetHostedCaches() {
   jwksCache.clear();
   userCache.clear();
   creditCache.clear();
+  refCountedCache.clear();
   authMetadataCache.clear();
   clientHintBySub.clear();
   outsideLiveNoted = false;
@@ -585,6 +588,7 @@ async function countCompletedCheck(account, deps, runId, { sourceApp = "", spend
     await countAccountRef((args) => redis(deps, args), account, deps.env, "grill");
   } catch {
     // A missed count is not a failed grill.
+    noteRefCountFailed();
   }
   await markEmailReturn(account, deps, "grill");
   await countOutsideGrill(account, deps, { sourceApp, spendRows });
@@ -1196,6 +1200,34 @@ async function resolvePerson(sub, email, deps) {
   return id;
 }
 
+/** A ref count that failed never blocks a sign-in, but it is logged, so a store that refuses it shows. No account details. */
+function noteRefCountFailed() {
+  console.error("[grill-hosted] ref count failed");
+}
+
+/**
+ * Count this account's sign-up, and its first grill when it has already run one. Each count has its
+ * own try, so a failed sign-up count does not skip the grill's. Once both land, this process stops
+ * asking for this account.
+ */
+async function countRefNow(account, deps) {
+  const command = (args) => redis(deps, args);
+  let done = true;
+  try {
+    await countAccountRef(command, account, deps.env, "signup");
+  } catch {
+    done = false;
+    noteRefCountFailed();
+  }
+  try {
+    if (await redis(deps, ["LINDEX", spendLogKey(account.id), "0"])) await countAccountRef(command, account, deps.env, "grill");
+  } catch {
+    done = false;
+    noteRefCountFailed();
+  }
+  if (done) refCountedCache.add(account.id);
+}
+
 /**
  * A chat app calls /mcp from its own servers, so an account a chat sign-in creates never sees the
  * browser's grill_ref. When that person later opens a signed-in page in a browser whose label was
@@ -1207,7 +1239,9 @@ async function adoptLateRef(account, ref, refAt, deps) {
   const arrival = normalizeRef(ref);
   if (!arrival || normalizeRef(account.ref)) return false;
   const made = Date.parse(account.createdAt || "");
-  if (!Number.isFinite(made) || !(refAt > 0) || refAt > made) return false;
+  // The cookie keeps whole seconds, so a link from the account's own second may have come after it.
+  // Credit only a cookie from an earlier second.
+  if (!Number.isFinite(made) || !(refAt > 0) || refAt >= Math.floor(made / 1000) * 1000) return false;
   // Only the label is written, in its own key, and only once. The account is not saved here, so a
   // change another request saves meanwhile is kept. The request that loses the NX counts nothing.
   const won = await redis(deps, ["SET", lateRefKey(account.id), arrival, "NX"]);
@@ -1223,13 +1257,7 @@ async function adoptLateRef(account, ref, refAt, deps) {
     return false;
   }
   account.ref = arrival;
-  try {
-    const command = (args) => redis(deps, args);
-    await countAccountRef(command, account, deps.env, "signup");
-    if (await redis(deps, ["LINDEX", spendLogKey(account.id), "0"])) await countAccountRef(command, account, deps.env, "grill");
-  } catch {
-    // A missed count is not a blocked sign-in.
-  }
+  await countRefNow(account, deps);
   return true;
 }
 
@@ -1257,10 +1285,13 @@ async function ensureAccount(userId, email, deps, human, ref = "", refAt = 0) {
     try {
       await countAccountRef((args) => redis(deps, args), account, deps.env, "signup");
     } catch {
-      // A missed count is not a blocked sign-in.
+      noteRefCountFailed();
     }
   } else if (await adoptLateRef(account, ref, refAt, deps)) {
     // A chat sign-in made this account without the browser's label. Its first signed-in page brought it.
+  } else if (normalizeRef(account.ref) && !refCountedCache.has(account.id)) {
+    // A count that failed earlier is counted now. The once-marks make this a no-op after.
+    await countRefNow(account, deps);
   }
   if (account.email !== own) {
     // Move the email link with the account, so a reassigned old address can't link in.

@@ -937,6 +937,72 @@ describe("the decisions page layout", () => {
     }
   });
 
+  // Grill CI on #250: a sign-up count that failed was never retried, because a later visit found
+  // the label already stored and skipped adoption. Every signed-in page now retries it, once.
+  it("counts a chat-made sign-up on a later page when the first count failed", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const fake = await startFakeOpenRouter();
+    try {
+      const clicked = `grill_ref=askgrill.${Math.floor(Date.now() / 1000) - 3600}`;
+      await grillOnly(ctx, fake, "Hire contractor", FEB);
+      const plain = ctx.redis;
+      let down = true;
+      ctx.redis = async (args) => {
+        if (down && /^EVAL/i.test(String(args[0]))) throw new Error("store down");
+        return plain(args);
+      };
+      const logged = [];
+      const realError = console.error;
+      console.error = (...line) => logged.push(line.join(" "));
+      try {
+        await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(clicked) });
+      } finally {
+        console.error = realError;
+      }
+      assert.ok(logged.includes("[grill-hosted] ref count failed"), "a refused count is logged, not swallowed");
+      down = false;
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), null, "the first count failed");
+      let evals = 0;
+      ctx.redis = async (args) => {
+        if (/^EVAL/i.test(String(args[0]))) evals += 1;
+        return plain(args);
+      };
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=home") });
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1", "a later page counted it");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:first_grill_ref:askgrill"]), "1", "and the grill it already ran, with no new grill");
+      const afterCount = evals;
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader() });
+      ctx.redis = plain;
+      assert.equal(evals, afterCount, "once counted, later pages send no count at all");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1", "and only once");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  // Grill CI on #250: the cookie keeps whole seconds, so a link clicked after the account was made,
+  // in the same second, read as before it. A cookie from the account's own second is not credited.
+  it("does not credit a link from the same second the account was made", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const fake = await startFakeOpenRouter();
+    try {
+      await grillOnly(ctx, fake, "Hire contractor", FEB);
+      const key = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1][0];
+      const made = Date.parse(JSON.parse(ctx.memory.command(["GET", key])).createdAt);
+      const sameSecond = `grill_ref=askgrill.${Math.floor(made / 1000)}`;
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(sameSecond) });
+      assert.equal(ctx.memory.command(["GET", `grill:hosted:ref:${key.split(":").pop()}`]), null);
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), null);
+      const earlier = `grill_ref=askgrill.${Math.floor(made / 1000) - 1}`;
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(earlier) });
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1", "the second before still counts");
+    } finally {
+      await fake.close();
+    }
+  });
+
   it("does not credit a link clicked after the chat made the account, or a cookie with no time", async () => {
     resetHostedCaches();
     const ctx = world();
