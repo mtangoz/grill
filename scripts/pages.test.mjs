@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAccount, handleCalendar, handleDecisions, handleMcp, resetHostedCaches } from "../api/_hosted.mjs";
+import { refCookieValue } from "../api/_start.mjs";
 import { startFakeOpenRouter } from "./fixtures/fake-openrouter.mjs";
 import { CLAUDE_WEB_REDIRECT, createMemoryRedis, DELETE_ALL_ALSO_WAITING, FUNNEL_KEYS, RECORDS_OFF_DELETES_WAITING, RECORDS_OFF_NOTE, WAITING_GRILL_HOW } from "./hostedCore.mjs";
 import { OUTSIDE_KEYS, hashCounts, hashFields } from "./outsideLoopCore.mjs";
@@ -834,7 +835,7 @@ describe("the decisions page layout", () => {
     const fake = await startFakeOpenRouter();
     try {
       // The link was clicked an hour before the chat sign-in.
-      const clicked = `grill_ref=askgrill.${Math.floor(Date.now() / 1000) - 3600}`;
+      const clicked = `grill_ref=${refCookieValue("askgrill", Math.floor(Date.now() / 1000) - 3600, ctx.env)}`;
       // The chat app calls /mcp from its own servers, so the browser's grill_ref never reaches it.
       await grillOnly(ctx, fake, "Hire contractor", FEB);
       const keys = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1];
@@ -867,7 +868,7 @@ describe("the decisions page layout", () => {
     const ctx = world();
     const fake = await startFakeOpenRouter();
     try {
-      const clicked = `grill_ref=askgrill.${Math.floor(Date.now() / 1000) - 3600}`;
+      const clicked = `grill_ref=${refCookieValue("askgrill", Math.floor(Date.now() / 1000) - 3600, ctx.env)}`;
       await grillOnly(ctx, fake, "Hire contractor", FEB);
       const key = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1][0];
       const id = key.split(":").pop();
@@ -909,7 +910,7 @@ describe("the decisions page layout", () => {
     const ctx = world();
     const fake = await startFakeOpenRouter();
     try {
-      const clicked = `grill_ref=askgrill.${Math.floor(Date.now() / 1000) - 3600}`;
+      const clicked = `grill_ref=${refCookieValue("askgrill", Math.floor(Date.now() / 1000) - 3600, ctx.env)}`;
       await grillOnly(ctx, fake, "Hire contractor", FEB);
       const key = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1][0];
       const id = key.split(":").pop();
@@ -944,7 +945,7 @@ describe("the decisions page layout", () => {
     const ctx = world();
     const fake = await startFakeOpenRouter();
     try {
-      const clicked = `grill_ref=askgrill.${Math.floor(Date.now() / 1000) - 3600}`;
+      const clicked = `grill_ref=${refCookieValue("askgrill", Math.floor(Date.now() / 1000) - 3600, ctx.env)}`;
       await grillOnly(ctx, fake, "Hire contractor", FEB);
       const plain = ctx.redis;
       let down = true;
@@ -981,6 +982,86 @@ describe("the decisions page layout", () => {
     }
   });
 
+  /** Make the account's only run look like one that never finished: a spend row with no done mark, and no completed-grill count. */
+  function unfinishedRunOnly(ctx, id) {
+    ctx.memory.command(["DEL", `grill:hosted:spendlog:${id}`]);
+    ctx.memory.command(["RPUSH", `grill:hosted:spendlog:${id}`, JSON.stringify({ at: new Date(FEB).toISOString(), costUsd: 0.01, model: "x" })]);
+    for (const k of ctx.memory.command(["SCAN", "0", "MATCH", `*${id}*`])[1]) {
+      if (/check|month/i.test(k) && !k.includes("spendlog") && !k.includes(":acct:")) ctx.memory.command(["DEL", k]);
+    }
+  }
+
+  // Code review on #260: a spend row is pushed for every run, so a non-empty spend log is no proof
+  // that a grill finished.
+  it("does not count a first grill for a late ref when the only run never finished", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const fake = await startFakeOpenRouter();
+    try {
+      await grillOnly(ctx, fake, "Hire contractor", FEB);
+      const key = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1][0];
+      const id = key.split(":").pop();
+      unfinishedRunOnly(ctx, id);
+      const clicked = `grill_ref=${refCookieValue("askgrill", Math.floor(Date.now() / 1000) - 3600, ctx.env)}`;
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(clicked) });
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:first_grill_ref:askgrill"]), null, "no grill finished");
+      assert.equal(ctx.memory.command(["GET", `grill:hosted:refmark:${id}:grill`]), null);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  // Code review on #260: once the sign-up landed, a first-grill count that failed later was never
+  // retried by this process, because the account was already marked done.
+  it("retries a first-grill count that failed after the sign-up was counted", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const fake = await startFakeOpenRouter();
+    try {
+      await grillOnly(ctx, fake, "Hire contractor", FEB);
+      const key = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1][0];
+      const id = key.split(":").pop();
+      unfinishedRunOnly(ctx, id);
+      const clicked = `grill_ref=${refCookieValue("askgrill", Math.floor(Date.now() / 1000) - 3600, ctx.env)}`;
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(clicked) });
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1");
+      const plain = ctx.redis;
+      ctx.redis = async (args) => {
+        if (/^EVAL/i.test(String(args[0]))) throw new Error("store down");
+        return plain(args);
+      };
+      const realError = console.error;
+      console.error = () => {};
+      try {
+        await grillOnly(ctx, fake, "Hire a second contractor", FEB);
+      } finally {
+        console.error = realError;
+        ctx.redis = plain;
+      }
+      assert.equal(ctx.memory.command(["GET", "grill:metric:first_grill_ref:askgrill"]), null, "the count failed");
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader() });
+      assert.equal(ctx.memory.command(["GET", "grill:metric:first_grill_ref:askgrill"]), "1", "the next page in the same process counted it");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("does not credit a hand-written time on the cookie", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const fake = await startFakeOpenRouter();
+    try {
+      await grillOnly(ctx, fake, "Hire contractor", FEB);
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=hn.1000000000") });
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:hn"]), null);
+      assert.equal(ctx.memory.command(["GET", "grill:metric:first_grill_ref:hn"]), null);
+    } finally {
+      await fake.close();
+    }
+  });
+
   // Grill CI on #250: the cookie keeps whole seconds, so a link clicked after the account was made,
   // in the same second, read as before it. A cookie from the account's own second is not credited.
   it("does not credit a link from the same second the account was made", async () => {
@@ -991,11 +1072,11 @@ describe("the decisions page layout", () => {
       await grillOnly(ctx, fake, "Hire contractor", FEB);
       const key = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1][0];
       const made = Date.parse(JSON.parse(ctx.memory.command(["GET", key])).createdAt);
-      const sameSecond = `grill_ref=askgrill.${Math.floor(made / 1000)}`;
+      const sameSecond = `grill_ref=${refCookieValue("askgrill", Math.floor(made / 1000), ctx.env)}`;
       await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(sameSecond) });
       assert.equal(ctx.memory.command(["GET", `grill:hosted:ref:${key.split(":").pop()}`]), null);
       assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), null);
-      const earlier = `grill_ref=askgrill.${Math.floor(made / 1000) - 1}`;
+      const earlier = `grill_ref=${refCookieValue("askgrill", Math.floor(made / 1000) - 1, ctx.env)}`;
       await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(earlier) });
       assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1", "the second before still counts");
     } finally {
@@ -1010,7 +1091,7 @@ describe("the decisions page layout", () => {
     try {
       await grillOnly(ctx, fake, "Hire contractor", FEB);
       const key = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1][0];
-      const later = `grill_ref=askgrill.${Math.floor(Date.now() / 1000) + 60}`;
+      const later = `grill_ref=${refCookieValue("askgrill", Math.floor(Date.now() / 1000) + 60, ctx.env)}`;
       await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(later) });
       await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=askgrill") });
       assert.equal(JSON.parse(ctx.memory.command(["GET", key])).ref, undefined);

@@ -647,11 +647,14 @@ function listedAccountIds(env = {}) {
  * not already set. One script, so a call that never ran can be retried, and one whose reply was
  * lost after it ran cannot count twice. The increment runs before the mark is set: a script does
  * not roll back a write made before an error, so a failed increment leaves no mark and a later
- * call can still count. KEYS[1] is the mark, KEYS[2] the counter. Returns the new count, or 0
- * when the mark was already set.
+ * call can still count. KEYS[1] is the mark, KEYS[2] the counter, KEYS[3] the account the mark
+ * belongs to. With no account (deleted, or deleted while this call was in flight) nothing is
+ * written: account deletion removes the account before its marks, so a mark can never be left
+ * behind with no TTL after the account is gone. Returns the new count, or 0 when the mark was
+ * already set or the account is gone.
  */
 export const COUNT_ONCE_SCRIPT =
-  "if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end local n = redis.call('INCR', KEYS[2]) redis.call('SET', KEYS[1], '1') return n";
+  "if redis.call('EXISTS', KEYS[3]) == 0 then return 0 end if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end local n = redis.call('INCR', KEYS[2]) redis.call('SET', KEYS[1], '1') return n";
 
 /**
  * Whether this account gets the higher allowance. The list is GRILL_INTERNAL_EMAILS,
@@ -2160,12 +2163,15 @@ export function createMemoryRedis() {
       switch (op) {
         case "EVAL": {
           // Only the one script Grill sends. Anything else is a test bug, not a silent no-op.
-          if (args[1] !== COUNT_ONCE_SCRIPT || String(args[2]) !== "2") throw new Error("memory redis: unsupported EVAL script");
-          const [mark, counter] = [String(args[3]), String(args[4])];
+          if (args[1] !== COUNT_ONCE_SCRIPT || String(args[2]) !== "3") throw new Error("memory redis: unsupported EVAL script");
+          const [mark, counter, owner] = [String(args[3]), String(args[4]), String(args[5])];
           live(mark);
           live(counter);
-          // Mirrors the script step by step: EXISTS the mark, INCR (which errors on a counter that
-          // is not an integer, as Redis does, before anything is written), then SET the mark.
+          live(owner);
+          // Mirrors the script step by step: EXISTS the account, EXISTS the mark, INCR (which errors
+          // on a counter that is not an integer, as Redis does, before anything is written), then
+          // SET the mark.
+          if (!strings.has(owner)) return 0;
           if (strings.has(mark)) return 0;
           const was = strings.has(counter) ? strings.get(counter) : "0";
           if (!/^-?\d+$/.test(was)) throw new Error("ERR value is not an integer or out of range");
@@ -2176,6 +2182,14 @@ export function createMemoryRedis() {
         }
         case "GET":
           return strings.has(key) ? strings.get(key) : null;
+        case "EXISTS": {
+          let n = 0;
+          for (const k of args.slice(1).map(String)) {
+            live(k);
+            if (strings.has(k) || sets.has(k) || zsets.has(k) || lists.has(k) || hashes.has(k)) n += 1;
+          }
+          return n;
+        }
         case "SET": {
           const nx = args.some((value, index) => index > 2 && String(value).toUpperCase() === "NX");
           if (nx && strings.has(key)) return null;

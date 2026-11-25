@@ -10,7 +10,9 @@
  * It also checks the quality check's pinned endpoint (checkCore.JEV_ZDR_ENDPOINT for
  * checkCore.JEV_MODEL). That request asks OpenRouter for that endpoint only and fails closed, so
  * the check fails if the endpoint is no longer served or leaves the zero-data-retention list.
- * Other endpoints for the model that retain data are printed, not failed.
+ * Until checkCore.JEV_ONLY_VERIFIED_ON records a live confirmation that the decisions endpoint
+ * honours that routing, any other endpoint for the model that retains data also fails the check.
+ * Once confirmed, those are printed, not failed.
  *
  * NETWORK IS FINE HERE. Unlike judge.mjs and eval.mjs, this script is never shipped to users
  * and never runs on their behalf — it is a maintainer/CI tool that talks to OpenRouter's own
@@ -29,9 +31,9 @@
  *   1   at least one problem was found, or either endpoint could not be fetched or parsed.
  */
 
-import { JEV_MODEL, JEV_ZDR_ENDPOINT } from "./checkCore.mjs";
+import { JEV_MODEL, JEV_ONLY_VERIFIED_ON, JEV_ZDR_ENDPOINT } from "./checkCore.mjs";
 import { DEFAULT_CHAIN } from "./judgeCore.mjs";
-import { checkChain, checkPinnedEndpointZdr, otherEndpointsNotZdr } from "./upstreamCore.mjs";
+import { checkChain, checkPinnedEndpointZdr, checkRetainingEndpointsUnverified, otherEndpointsNotZdr } from "./upstreamCore.mjs";
 
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
 const ZDR_URL = "https://openrouter.ai/api/v1/endpoints/zdr";
@@ -80,12 +82,20 @@ const problems = [
     zdr,
     "the opt-in quality check asks for that endpoint only, so every check would now say unavailable. Re-pin it to a zero-retention endpoint or turn the check off",
   ),
+  ...checkRetainingEndpointsUnverified(
+    JEV_MODEL,
+    JEV_ZDR_ENDPOINT,
+    jevEndpoints,
+    zdr,
+    JEV_ONLY_VERIFIED_ON,
+    "confirm live that OpenRouter's decisions endpoint honours provider.only and set checkCore.JEV_ONLY_VERIFIED_ON, or turn the check off",
+  ),
 ];
 const retaining = otherEndpointsNotZdr(JEV_MODEL, JEV_ZDR_ENDPOINT, jevEndpoints, zdr);
 
 console.log(`[upstream-check] chain: ${chain}`);
 console.log(`[upstream-check] quality check model: ${JEV_MODEL}, pinned to ${JEV_ZDR_ENDPOINT}`);
-if (retaining.length) console.log(`[upstream-check] note: not zero-retention, and not used by the check: ${retaining.join(", ")}`);
+if (retaining.length && JEV_ONLY_VERIFIED_ON) console.log(`[upstream-check] note: not zero-retention, and not used by the check: ${retaining.join(", ")}`);
 if (problems.length === 0) {
   console.log(
     `[upstream-check] OK — every concrete model in the chain is cataloged and has ZDR coverage, and ${JEV_MODEL}'s pinned endpoint ${JEV_ZDR_ENDPOINT} is on the ZDR list.`,

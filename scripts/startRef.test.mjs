@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { REF_MAX_AGE, START_VIEWS_KEY, countAccountRef, countsAsVisit, firstGrillRefKey, handleStart, normalizeRef, refFromCookie, refSetAt, renderStartPage, signupRefKey, startRefKey } from "../api/_start.mjs";
+import { REF_MAX_AGE, START_VIEWS_KEY, countAccountRef, countsAsVisit, firstGrillRefKey, firstTouchCookie, handleStart, normalizeRef, refCookieValue, refFromCookie, refSetAt, renderStartPage, signupRefKey, startRefKey } from "../api/_start.mjs";
+import { hostedAccountKey } from "./hostedCore.mjs";
 import { createMemoryRedis } from "./hostedCore.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -24,6 +25,13 @@ function world(env = {}) {
     commands,
   };
 }
+
+/** The counts only run for an account that exists, so the unit tests file one first. */
+function seed(ctx, ...ids) {
+  for (const id of ids) ctx.memory.command(["SET", hostedAccountKey(id), "{}"]);
+}
+
+const REF_KEY_ENV = { GRILL_RECORD_KEY: Buffer.alloc(32, 7).toString("base64") };
 
 const BROWSER = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 
@@ -280,15 +288,41 @@ describe("the grill_ref cookie", () => {
 
   it("carries the second it was set, so a later sign-in can tell which came first", async () => {
     const before = Math.floor(Date.now() / 1000);
-    const res = await handleStart(new Request("https://grillyour.ai/start?ref=askgrill", { headers: { "user-agent": BROWSER } }), world());
+    const res = await handleStart(new Request("https://grillyour.ai/start?ref=askgrill", { headers: { "user-agent": BROWSER } }), world(REF_KEY_ENV));
     const header = res.headers.get("set-cookie");
-    assert.match(header, /^grill_ref=askgrill\.\d{10};/);
+    assert.match(header, /^grill_ref=askgrill\.\d{10}\.[A-Za-z0-9_-]{22};/);
     assert.equal(refFromCookie(header), "askgrill");
-    const at = refSetAt(header);
+    const at = refSetAt(header, REF_KEY_ENV);
     assert.ok(at >= before * 1000 && at <= Date.now(), String(at));
-    assert.equal(refSetAt("grill_ref=askgrill"), 0, "an older cookie has no time");
-    assert.equal(refSetAt("grill_ref=askgrill.notatime"), 0);
+    assert.equal(refSetAt(header, {}), 0, "no signing key on the server: the time is not trusted");
+    assert.equal(refSetAt("grill_ref=askgrill", REF_KEY_ENV), 0, "an older cookie has no time");
+    assert.equal(refSetAt("grill_ref=askgrill.notatime", REF_KEY_ENV), 0);
     assert.equal(refFromCookie("grill_ref=askgrill.1795400000"), "askgrill");
+  });
+
+  // Code review on #260: the time decides whether a link came before an account, and HttpOnly does
+  // not stop a person editing the cookie.
+  it("does not trust a time the person wrote in by hand", () => {
+    assert.equal(refSetAt("grill_ref=hn.1000000000", REF_KEY_ENV), 0, "an unsigned time");
+    const signed = refCookieValue("hn", 1795400000, REF_KEY_ENV);
+    assert.equal(refSetAt(`grill_ref=${signed}`, REF_KEY_ENV), 1795400000 * 1000);
+    const [, , sig] = signed.split(".");
+    assert.equal(refSetAt(`grill_ref=hn.1000000000.${sig}`, REF_KEY_ENV), 0, "an earlier time under the old signature");
+    assert.equal(refSetAt(`grill_ref=askgrill.1795400000.${sig}`, REF_KEY_ENV), 0, "another label under the signature");
+  });
+
+  // Code review on #260: a browser that got grill_ref before times were signed could never get one.
+  it("gives an older cookie a signed time from now, keeping its label", () => {
+    const visit = (cookie, url = "https://grillyour.ai/start") => new Request(url, { headers: { cookie, "user-agent": BROWSER } });
+    const before = Math.floor(Date.now() / 1000);
+    for (const old of ["grill_ref=hn", "grill_ref=hn.1795400000"]) {
+      const header = firstTouchCookie(visit(old, "https://grillyour.ai/start?ref=home"), REF_KEY_ENV);
+      assert.equal(refFromCookie(header), "hn", "the first label is kept, not the new ?ref=");
+      assert.ok(refSetAt(header, REF_KEY_ENV) >= before * 1000);
+    }
+    const signed = `grill_ref=${refCookieValue("hn", before - 60, REF_KEY_ENV)}`;
+    assert.equal(firstTouchCookie(visit(signed, "https://grillyour.ai/start?ref=home"), REF_KEY_ENV), "", "a signed cookie is left alone");
+    assert.equal(firstTouchCookie(visit("grill_ref=hn"), {}), "", "with no signing key there is nothing to upgrade to");
   });
 
   // The mark and the increment are one atomic script, so a call that failed before it ran can be
@@ -304,6 +338,7 @@ describe("the grill_ref cookie", () => {
       return ctx.redis(args);
     };
     const pat = { id: "g_pat", email: "pat@example.com", ref: "askgrill" };
+    seed(ctx, "g_pat");
     await assert.rejects(countAccountRef(flaky, pat, ctx.env, "signup"));
     assert.equal(await countAccountRef(flaky, pat, ctx.env, "signup"), true);
     assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), "1");
@@ -321,6 +356,7 @@ describe("the grill_ref cookie", () => {
       return out;
     };
     const pat = { id: "g_pat", email: "pat@example.com", ref: "askgrill" };
+    seed(ctx, "g_pat");
     await assert.rejects(countAccountRef(lossy, pat, ctx.env, "signup"));
     assert.equal(await countAccountRef(lossy, pat, ctx.env, "signup"), false, "the retry sees it was already counted");
     assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), "1");
@@ -332,6 +368,7 @@ describe("the grill_ref cookie", () => {
     const ctx = world();
     ctx.memory.command(["SET", signupRefKey("askgrill"), "not a number"]);
     const pat = { id: "g_pat", email: "pat@example.com", ref: "askgrill" };
+    seed(ctx, "g_pat");
     await assert.rejects(countAccountRef(ctx.redis, pat, ctx.env, "signup"));
     assert.equal(ctx.memory.command(["GET", "grill:hosted:refmark:g_pat:signup"]), null, "no mark after a failed increment");
     ctx.memory.command(["SET", signupRefKey("askgrill"), "4"]);
@@ -342,6 +379,7 @@ describe("the grill_ref cookie", () => {
   it("counts a sign-up and a first grill once, and leaves an internal account out", async () => {
     const ctx = world({ GRILL_INTERNAL_EMAILS: "owner@grill.example" });
     const outside = { id: "g_pat", email: "pat@example.com", ref: "askgrill" };
+    seed(ctx, "g_pat", "g_owner", "g_bot", "g_none", "g_bad");
     assert.equal(await countAccountRef(ctx.redis, outside, ctx.env, "signup"), true);
     assert.equal(await countAccountRef(ctx.redis, outside, ctx.env, "signup"), false);
     assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), "1");
@@ -357,6 +395,17 @@ describe("the grill_ref cookie", () => {
     assert.equal(await countAccountRef(ctx.redis, { id: "g_bad", email: "sam@example.com", ref: "not a ref" }, ctx.env, "signup"), false);
     assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), "1");
     assert.equal(ctx.memory.command(["GET", signupRefKey("team-pilot")]), null);
+  });
+
+  // Code review on #260: a count racing account deletion must not leave a mark with no TTL behind.
+  it("writes no mark and counts nothing once the account is gone", async () => {
+    const ctx = world();
+    const pat = { id: "g_pat", email: "pat@example.com", ref: "askgrill" };
+    assert.equal(await countAccountRef(ctx.redis, pat, ctx.env, "signup"), false);
+    assert.equal(await countAccountRef(ctx.redis, pat, ctx.env, "grill"), false);
+    assert.equal(ctx.memory.command(["GET", "grill:hosted:refmark:g_pat:signup"]), null);
+    assert.equal(ctx.memory.command(["GET", "grill:hosted:refmark:g_pat:grill"]), null);
+    assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), null);
   });
 
   it("is described in the data ledger the way the code behaves", () => {

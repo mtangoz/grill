@@ -22,7 +22,12 @@
 //     when OpenRouter cannot route to that endpoint it refuses, so the check is "unavailable".
 //     An answer served by anyone but TypeSafe is still dropped unread (`readCheck`). The weekly
 //     upstream check (scripts/upstream-check.mjs) fails if that endpoint is no longer served or
-//     leaves the zero-retention list;
+//     leaves the zero-retention list. OpenRouter's Decisions reference lists `provider` (with
+//     `order`, `only`, `ignore`, `options`) as a request field, but does not say `only` takes an
+//     endpoint tag such as "typesafe/zdr", and a reply names only the provider, so nothing here
+//     can prove the routing held. `checkRoutingIsZdrOnly` checks the body Grill built, not where
+//     OpenRouter sent it. Until JEV_ONLY_VERIFIED_ON records a live confirmation, the weekly check
+//     also fails while any Jev endpoint retains data;
 //   - the request carries the masked write-up, the question, the verdict and its reason, and
 //     five challenges at most, each cut to the fields the questions need. Nothing else.
 //
@@ -39,6 +44,16 @@ export const JEV_MODEL = "typesafe/jev-1.13";
 export const JEV_ZDR_ENDPOINT = "typesafe/zdr";
 
 /**
+ * The day someone confirmed, live, that OpenRouter's Decisions endpoint honours
+ * `provider.only: [JEV_ZDR_ENDPOINT]` (for example: a request pinned to a tag that does not exist
+ * is refused, and one pinned to JEV_ZDR_ENDPOINT shows that endpoint in OpenRouter's activity log).
+ * Empty means not confirmed. While it is empty, the weekly upstream check fails if any endpoint
+ * serving JEV_MODEL retains data. Docs read 2026-11-25 (OpenRouter API reference, "Decisions")
+ * lists `provider` but documents no sub-field behaviour, and no live test has been run.
+ */
+export const JEV_ONLY_VERIFIED_ON = "";
+
+/**
  * True only when a check request allows exactly one endpoint, JEV_ZDR_ENDPOINT, and sets no
  * other routing field. judge.mjs sends nothing unless this is true.
  */
@@ -50,10 +65,12 @@ export function checkRoutingIsZdrOnly(request) {
 }
 
 /**
- * The provider an answer must name to be read. Jev's only OpenRouter endpoint is TypeSafe's, and
- * it is on the zero-data-retention list (checked against /api/v1/endpoints/zdr on 2026-09-26;
- * scripts/upstream-check.mjs re-checks it weekly). Compared exactly: a spelling this file has
- * not seen is treated as someone else, because the safe way to be wrong here is "unavailable".
+ * The provider an answer must name to be read. TypeSafe serves Jev from two OpenRouter endpoints,
+ * "typesafe/zdr" (zero-retention) and "typesafe" (retains data), and both answer as "TypeSafe",
+ * so this name check cannot tell them apart. `provider.only` (JEV_ZDR_ENDPOINT) is what does the
+ * routing; this only drops an answer from any other provider. Compared exactly: a spelling this
+ * file has not seen is treated as someone else, because the safe way to be wrong here is
+ * "unavailable".
  */
 export const JEV_PROVIDER = "TypeSafe";
 

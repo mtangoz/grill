@@ -153,6 +153,25 @@ describe("checkPinnedEndpointZdr: the endpoint the quality check is pinned to", 
     assert.equal(checkPinnedEndpointZdr(JEV_MODEL, JEV_ZDR_ENDPOINT, {}, zdr, "x").length, 1);
   });
 
+  it("fails on a retaining endpoint while the routing is not confirmed live, and only notes it once it is", async () => {
+    const { checkRetainingEndpointsUnverified } = await import("./upstreamCore.mjs");
+    const problems = checkRetainingEndpointsUnverified(JEV_MODEL, JEV_ZDR_ENDPOINT, live, zdr, "", "x");
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /TypeSafe \(typesafe\)/);
+    assert.match(problems[0], /not confirmed live/);
+    assert.deepEqual(checkRetainingEndpointsUnverified(JEV_MODEL, JEV_ZDR_ENDPOINT, live, zdr, "2026-12-01", "x"), []);
+    const onlyZdr = { data: { endpoints: [{ provider_name: "TypeSafe", tag: "typesafe/zdr" }] } };
+    assert.deepEqual(checkRetainingEndpointsUnverified(JEV_MODEL, JEV_ZDR_ENDPOINT, onlyZdr, zdr, "", "x"), []);
+  });
+
+  it("the routing is not marked confirmed without a live test", async () => {
+    const { JEV_ONLY_VERIFIED_ON } = await import("./checkCore.mjs");
+    const { readFileSync } = await import("node:fs");
+    const script = readFileSync(new URL("./upstream-check.mjs", import.meta.url), "utf8");
+    assert.match(script, /checkRetainingEndpointsUnverified\(/);
+    assert.equal(typeof JEV_ONLY_VERIFIED_ON, "string");
+  });
+
   it("the weekly script checks the pinned endpoint, not every endpoint", async () => {
     const { readFileSync } = await import("node:fs");
     const script = readFileSync(new URL("./upstream-check.mjs", import.meta.url), "utf8");

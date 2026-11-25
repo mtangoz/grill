@@ -256,8 +256,10 @@ const VERSION = "0.2.0";
 const jwksCache = new Map();
 const userCache = new Map();
 const creditCache = new Map();
-// Accounts whose sign-up ref count is known done in this process, so a later page skips the retry.
-const refCountedCache = new Set();
+// Accounts whose ref counts this process has settled, and until when: for good once both once-marks
+// are known set, or for REF_RECHECK_MS when the sign-up is counted and no grill has completed yet.
+const refCountedCache = new Map();
+const REF_RECHECK_MS = 10 * 60 * 1000;
 // Clerk's authorization-server documents, keyed by the upstream URL. Public metadata only.
 const authMetadataCache = new Map();
 // Company named on initialize, kept per sign-in subject and, under it, per client: the token's
@@ -585,9 +587,11 @@ async function countCompletedCheck(account, deps, runId, { sourceApp = "", spend
   await redis(deps, ["EXPIRE", dayKey, String(2 * 24 * 60 * 60)]);
   await countFunnel(deps, FUNNEL_KEYS.grills);
   try {
+    await withLateRef(account, deps);
     await countAccountRef((args) => redis(deps, args), account, deps.env, "grill");
   } catch {
-    // A missed count is not a failed grill.
+    // A missed count is not a failed grill. A later signed-in page tries again.
+    refCountedCache.delete(account.id);
     noteRefCountFailed();
   }
   await markEmailReturn(account, deps, "grill");
@@ -1105,11 +1109,44 @@ async function loadAccount(id, deps) {
     const cipher = await redis(deps, ["GET", recordKeyRedisKey(id)]);
     if (typeof cipher === "string" && cipher) account.recordKeyCipher = cipher;
   }
-  if (!normalizeRef(account.ref)) {
-    const late = normalizeRef(await redis(deps, ["GET", lateRefKey(id)]));
-    if (late) account.ref = late;
-  }
   return account;
+}
+
+/**
+ * Fill account.ref from the late-ref key when the account has none. Only the two paths that count
+ * by ref read it (a signed-in page and a completed grill), so an ordinary load pays no extra GET.
+ */
+async function withLateRef(account, deps) {
+  if (!account || normalizeRef(account.ref)) return account;
+  const late = normalizeRef(await redis(deps, ["GET", lateRefKey(account.id)]));
+  if (late) account.ref = late;
+  return account;
+}
+
+/**
+ * Whether this account has finished a grill. A spend row is pushed for every run, finished or not,
+ * so only a row marked done counts; this month's and last month's completed-grill counters cover
+ * rows written before rows carried that mark. An account whose only finished grill is older than
+ * that, with no marked row, reads as having none: its first grill is not counted. That undercount
+ * is accepted on purpose, because a first-grill count needs proof, and an unmarked row is none.
+ */
+async function hasCompletedGrill(account, deps) {
+  const rows = (await redis(deps, ["LRANGE", spendLogKey(account.id), "0", "-1"])) || [];
+  for (const raw of rows) {
+    try {
+      if (JSON.parse(raw)?.done === true) return true;
+    } catch {
+      // A row that is not JSON proves nothing.
+    }
+  }
+  const now = nowOf(deps);
+  const lastMonth = new Date(now);
+  lastMonth.setUTCDate(1);
+  lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1);
+  for (const month of [isoMonth(now), isoMonth(lastMonth.getTime())]) {
+    if (Number(await redis(deps, ["GET", monthlyCheckKey(account.id, month)])) > 0) return true;
+  }
+  return false;
 }
 
 async function saveAccount(account, deps) {
@@ -1206,26 +1243,49 @@ function noteRefCountFailed() {
 }
 
 /**
- * Count this account's sign-up, and its first grill when it has already run one. Each count has its
- * own try, so a failed sign-up count does not skip the grill's. Once both land, this process stops
- * asking for this account.
+ * Count this account's sign-up, and its first grill when it has completed one. Each count has its
+ * own try, so a failed sign-up count does not skip the grill's. When both marks are set, this
+ * process stops asking for this account. When only the sign-up is settled and no grill has
+ * completed, it asks again after REF_RECHECK_MS, so a first-grill count that failed is retried.
  */
 async function countRefNow(account, deps) {
   const command = (args) => redis(deps, args);
-  let done = true;
+  const now = nowOf(deps);
+  try {
+    // One round trip when both counts already landed, as they have for most returning accounts.
+    const marks = await redis(deps, ["EXISTS", refOnceKey(account.id, "signup"), refOnceKey(account.id, "grill")]);
+    if (Number(marks) === 2) {
+      refCountedCache.set(account.id, Infinity);
+      return;
+    }
+  } catch {
+    // Fall through to the counts, which say for themselves whether the store is up.
+  }
+  let signed = true;
   try {
     await countAccountRef(command, account, deps.env, "signup");
   } catch {
-    done = false;
+    signed = false;
     noteRefCountFailed();
   }
+  let grilled = "unknown";
   try {
-    if (await redis(deps, ["LINDEX", spendLogKey(account.id), "0"])) await countAccountRef(command, account, deps.env, "grill");
+    if (await hasCompletedGrill(account, deps)) {
+      await countAccountRef(command, account, deps.env, "grill");
+      grilled = "counted";
+    } else {
+      grilled = "none";
+    }
   } catch {
-    done = false;
     noteRefCountFailed();
   }
-  if (done) refCountedCache.add(account.id);
+  if (!signed || grilled === "unknown") return;
+  refCountedCache.set(account.id, grilled === "counted" ? Infinity : now + REF_RECHECK_MS);
+}
+
+function refCountSettled(account, deps) {
+  const until = refCountedCache.get(account.id);
+  return until !== undefined && nowOf(deps) < until;
 }
 
 /**
@@ -1264,7 +1324,7 @@ async function adoptLateRef(account, ref, refAt, deps) {
 async function ensureAccount(userId, email, deps, human, ref = "", refAt = 0) {
   const own = String(email || "").trim().toLowerCase();
   const capEmail = cleanEmail(human) || own;
-  let account = await loadAccount(userId, deps);
+  let account = await withLateRef(await loadAccount(userId, deps), deps);
   if (!account) {
     account = {
       id: userId,
@@ -1289,7 +1349,7 @@ async function ensureAccount(userId, email, deps, human, ref = "", refAt = 0) {
     }
   } else if (await adoptLateRef(account, ref, refAt, deps)) {
     // A chat sign-in made this account without the browser's label. Its first signed-in page brought it.
-  } else if (normalizeRef(account.ref) && !refCountedCache.has(account.id)) {
+  } else if (normalizeRef(account.ref) && !refCountSettled(account, deps)) {
     // A count that failed earlier is counted now. The once-marks make this a no-op after.
     await countRefNow(account, deps);
   }
@@ -2024,9 +2084,12 @@ async function composeReport({ outcome, subject, sourceApp, author = "none", acc
   const verdict = thin ? "quick take" : plainVerdict(parsed?.verdict);
   // Atomic appends and counters only. The account record itself is not rewritten
   // here, so a grill finishing in the background can't undo another one's changes.
-  const spendRows = Number(await redis(deps, ["RPUSH", spendLogKey(account.id), JSON.stringify({ at: new Date().toISOString(), costUsd: cost, model })])) || 0;
-  await redis(deps, ["LTRIM", spendLogKey(account.id), String(-SPEND_LOG_MAX), "-1"]);
   const done = completedGrill(parsed);
+  // `done` marks a run that finished, so the late-ref path can tell a first grill from a failed run.
+  const row = { at: new Date().toISOString(), costUsd: cost, model };
+  if (done) row.done = true;
+  const spendRows = Number(await redis(deps, ["RPUSH", spendLogKey(account.id), JSON.stringify(row)])) || 0;
+  await redis(deps, ["LTRIM", spendLogKey(account.id), String(-SPEND_LOG_MAX), "-1"]);
   const split = await countSpend(account, deps, cost, { completed: done });
   if (done) {
     await countCompletedCheck(account, deps, runId, { sourceApp, spendRows });
@@ -3360,7 +3423,7 @@ async function pageUser(request, deps) {
   if (!gate.allowed) return { html: inviteOnlyPage(request) };
   const personId = await resolvePerson(visitor.sub, gate.email, deps);
   const cookies = request.headers.get("cookie");
-  const account = await ensureAccount(personId, gate.email, deps, gate.human, refFromCookie(cookies), refSetAt(cookies));
+  const account = await ensureAccount(personId, gate.email, deps, gate.human, refFromCookie(cookies), refSetAt(cookies, deps.env));
   return { account, email: gate.email, sub: visitor.sub };
 }
 
