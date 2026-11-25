@@ -117,25 +117,47 @@ describe("checkZdrListed — the quality check's pinned model", () => {
   });
 });
 
-describe("checkAllEndpointsZdr: every endpoint, not just one", async () => {
-  const { checkAllEndpointsZdr } = await import("./upstreamCore.mjs");
-  const { readFileSync } = await import("node:fs");
-  const here = new URL(".", import.meta.url).pathname;
-  const endpoints = JSON.parse(readFileSync(`${here}fixtures/upstream/jev-endpoints-sample.json`, "utf8"));
-  const zdrRow = { model_id: "typesafe/jev-1.13", provider_name: "TypeSafe", tag: "typesafe" };
+// Issue #257. Since #256 the quality check asks OpenRouter for only its zero-retention endpoint, so
+// a second, retaining endpoint is no longer a failure on its own. What matters is that the pinned
+// endpoint is still served and still on the ZDR list. Live shape, 2026-11-24: two TypeSafe endpoints,
+// tagged "typesafe" (retaining) and "typesafe/zdr".
+describe("checkPinnedEndpointZdr: the endpoint the quality check is pinned to", async () => {
+  const { checkPinnedEndpointZdr, otherEndpointsNotZdr } = await import("./upstreamCore.mjs");
+  const { JEV_MODEL, JEV_ZDR_ENDPOINT } = await import("./checkCore.mjs");
+  const live = {
+    data: { endpoints: [{ provider_name: "TypeSafe", tag: "typesafe" }, { provider_name: "TypeSafe", tag: "typesafe/zdr" }] },
+  };
+  const zdr = { data: [{ model_id: JEV_MODEL, provider_name: "TypeSafe", tag: "typesafe/zdr" }] };
 
-  it("passes when the model's only endpoint is on the ZDR list (the live shape, 2026-09-26)", () => {
-    assert.deepEqual(checkAllEndpointsZdr("typesafe/jev-1.13", endpoints, { data: [zdrRow] }, "x"), []);
+  it("passes the live shape: a retaining endpoint is listed, but the pinned one is served and on the ZDR list", () => {
+    assert.deepEqual(checkPinnedEndpointZdr(JEV_MODEL, JEV_ZDR_ENDPOINT, live, zdr, "x"), []);
+    assert.deepEqual(otherEndpointsNotZdr(JEV_MODEL, JEV_ZDR_ENDPOINT, live, zdr), ["TypeSafe (typesafe)"]);
   });
 
-  it("flags a second endpoint from the same provider that is not zero-retention", () => {
-    const two = { data: { ...endpoints.data, endpoints: [...endpoints.data.endpoints, { provider_name: "TypeSafe", tag: "typesafe/retaining" }] } };
-    const problems = checkAllEndpointsZdr("typesafe/jev-1.13", two, { data: [zdrRow] }, "x");
+  it("fails when the pinned endpoint leaves the ZDR list", () => {
+    const off = { data: [{ model_id: JEV_MODEL, provider_name: "TypeSafe", tag: "typesafe" }] };
+    const problems = checkPinnedEndpointZdr(JEV_MODEL, JEV_ZDR_ENDPOINT, live, off, "x");
     assert.equal(problems.length, 1);
-    assert.match(problems[0], /typesafe\/retaining/);
+    assert.match(problems[0], /typesafe\/zdr/);
+    assert.match(problems[0], /not on the zero-data-retention list/);
   });
 
-  it("flags an unreadable endpoint list instead of passing silently", () => {
-    assert.equal(checkAllEndpointsZdr("typesafe/jev-1.13", {}, { data: [zdrRow] }, "x").length, 1);
+  it("fails when the pinned endpoint is no longer served", () => {
+    const gone = { data: { endpoints: [{ provider_name: "TypeSafe", tag: "typesafe" }] } };
+    const problems = checkPinnedEndpointZdr(JEV_MODEL, JEV_ZDR_ENDPOINT, gone, zdr, "x");
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /no longer serves/);
+  });
+
+  it("fails on an unreadable endpoint list instead of passing silently", () => {
+    assert.equal(checkPinnedEndpointZdr(JEV_MODEL, JEV_ZDR_ENDPOINT, {}, zdr, "x").length, 1);
+  });
+
+  it("the weekly script checks the pinned endpoint, not every endpoint", async () => {
+    const { readFileSync } = await import("node:fs");
+    const script = readFileSync(new URL("./upstream-check.mjs", import.meta.url), "utf8");
+    assert.match(script, /checkPinnedEndpointZdr\(/);
+    assert.doesNotMatch(script, /checkAllEndpointsZdr\(/);
+    assert.doesNotMatch(script, /carries no routing field/);
   });
 });
