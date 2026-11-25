@@ -142,7 +142,7 @@ export async function countAccountRef(command, account, env, kind) {
   if (isInternalAccount(account, env)) return false;
   // The mark and the count are one atomic step. If this throws, either nothing ran (a later call
   // counts it) or it ran and only the reply was lost (a later call finds the mark and adds nothing).
-  const counted = await command(["EVAL", COUNT_ONCE_SCRIPT, "2", once, counter]);
+  const counted = await command(["EVAL", COUNT_ONCE_SCRIPT, 2, once, counter]);
   return Number(counted) > 0;
 }
 

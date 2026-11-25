@@ -256,6 +256,8 @@ const VERSION = "0.2.0";
 const jwksCache = new Map();
 const userCache = new Map();
 const creditCache = new Map();
+// Accounts whose sign-up ref count is known done in this process, so a later page skips the retry.
+const refCountedCache = new Set();
 // Clerk's authorization-server documents, keyed by the upstream URL. Public metadata only.
 const authMetadataCache = new Map();
 // Company named on initialize, kept per sign-in subject and, under it, per client: the token's
@@ -274,6 +276,7 @@ export function resetHostedCaches() {
   jwksCache.clear();
   userCache.clear();
   creditCache.clear();
+  refCountedCache.clear();
   authMetadataCache.clear();
   clientHintBySub.clear();
   outsideLiveNoted = false;
@@ -585,6 +588,7 @@ async function countCompletedCheck(account, deps, runId, { sourceApp = "", spend
     await countAccountRef((args) => redis(deps, args), account, deps.env, "grill");
   } catch {
     // A missed count is not a failed grill.
+    noteRefCountFailed();
   }
   await markEmailReturn(account, deps, "grill");
   await countOutsideGrill(account, deps, { sourceApp, spendRows });
@@ -1196,6 +1200,11 @@ async function resolvePerson(sub, email, deps) {
   return id;
 }
 
+/** A ref count that failed never blocks a sign-in, but it is logged, so a store that refuses it shows. No account details. */
+function noteRefCountFailed() {
+  console.error("[grill-hosted] ref count failed");
+}
+
 /**
  * A chat app calls /mcp from its own servers, so an account a chat sign-in creates never sees the
  * browser's grill_ref. When that person later opens a signed-in page in a browser whose label was
@@ -1230,7 +1239,7 @@ async function adoptLateRef(account, ref, refAt, deps) {
     await countAccountRef(command, account, deps.env, "signup");
     if (await redis(deps, ["LINDEX", spendLogKey(account.id), "0"])) await countAccountRef(command, account, deps.env, "grill");
   } catch {
-    // A missed count is not a blocked sign-in.
+    noteRefCountFailed();
   }
   return true;
 }
@@ -1259,16 +1268,18 @@ async function ensureAccount(userId, email, deps, human, ref = "", refAt = 0) {
     try {
       await countAccountRef((args) => redis(deps, args), account, deps.env, "signup");
     } catch {
-      // A missed count is not a blocked sign-in.
+      noteRefCountFailed();
     }
   } else if (await adoptLateRef(account, ref, refAt, deps)) {
     // A chat sign-in made this account without the browser's label. Its first signed-in page brought it.
-  } else if (normalizeRef(account.ref)) {
-    // A sign-up count that failed earlier is counted now. The once-mark makes this a no-op after.
+  } else if (normalizeRef(account.ref) && !refCountedCache.has(account.id)) {
+    // A sign-up count that failed earlier is counted now. The once-mark makes this a no-op after,
+    // and this process then stops asking for this account.
     try {
       await countAccountRef((args) => redis(deps, args), account, deps.env, "signup");
+      refCountedCache.add(account.id);
     } catch {
-      // A missed count is not a blocked sign-in.
+      noteRefCountFailed();
     }
   }
   if (account.email !== own) {

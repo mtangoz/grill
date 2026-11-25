@@ -952,13 +952,28 @@ describe("the decisions page layout", () => {
         if (down && /^EVAL/i.test(String(args[0]))) throw new Error("store down");
         return plain(args);
       };
-      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(clicked) });
+      const logged = [];
+      const realError = console.error;
+      console.error = (...line) => logged.push(line.join(" "));
+      try {
+        await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(clicked) });
+      } finally {
+        console.error = realError;
+      }
+      assert.ok(logged.includes("[grill-hosted] ref count failed"), "a refused count is logged, not swallowed");
       down = false;
       assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), null, "the first count failed");
+      let evals = 0;
+      ctx.redis = async (args) => {
+        if (/^EVAL/i.test(String(args[0]))) evals += 1;
+        return plain(args);
+      };
       await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=home") });
-      ctx.redis = plain;
       assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1", "a later page counted it");
+      const afterCount = evals;
       await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader() });
+      ctx.redis = plain;
+      assert.equal(evals, afterCount, "once counted, later pages send no count at all");
       assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1", "and only once");
     } finally {
       await fake.close();
