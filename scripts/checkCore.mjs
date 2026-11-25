@@ -21,7 +21,8 @@
 //     which one served it. judge.mjs sends nothing unless `checkRoutingIsZdrOnly` passes, and
 //     when OpenRouter cannot route to that endpoint it refuses, so the check is "unavailable".
 //     An answer served by anyone but TypeSafe is still dropped unread (`readCheck`). The weekly
-//     upstream check (scripts/upstream-check.mjs) fails if any Jev endpoint is not zero-retention;
+//     upstream check (scripts/upstream-check.mjs) fails if that endpoint is no longer served or
+//     leaves the zero-retention list;
 //   - the request carries the masked write-up, the question, the verdict and its reason, and
 //     five challenges at most, each cut to the fields the questions need. Nothing else.
 //
