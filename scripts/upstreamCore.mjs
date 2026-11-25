@@ -97,27 +97,37 @@ export function checkZdrListed(slug, zdrJson, consequence) {
 }
 
 /**
- * Does EVERY endpoint serving `slug` have a zero-data-retention listing? checkZdrListed only proves
- * one does. The Decisions API takes no routing field for zero retention, and the runtime check can
- * only see a provider's NAME, so a second, retaining endpoint from the same provider would pass it.
- * This weekly check is what catches that: each (provider, tag) pair from the model's endpoint list
- * must appear among the ZDR rows for the same model.
+ * Is the one endpoint the quality check is pinned to still served, and still zero-retention?
+ * The check asks OpenRouter for that endpoint only (`provider.only`, see checkCore.JEV_ZDR_ENDPOINT)
+ * and fails closed when it cannot be used, so another endpoint that retains data is not a failure
+ * here. otherEndpointsNotZdr lists those for the log. A reply names only the provider, which every
+ * endpoint shares, so this weekly listing is what shows the pin still points somewhere safe.
  *
  * @param {string} slug e.g. "typesafe/jev-1.13".
+ * @param {string} tag the pinned endpoint's tag, e.g. "typesafe/zdr".
  * @param {{data?: {endpoints?: Array<{provider_name?: string, tag?: string}>}}} endpointsJson
  *   parsed body of GET /api/v1/models/<slug>/endpoints.
  * @param {{data?: Array<{model_id?: string, provider_name?: string, tag?: string}>}} zdrJson
  * @param {string} consequence what breaks, for the problem sentence.
  * @returns {string[]}
  */
-export function checkAllEndpointsZdr(slug, endpointsJson, zdrJson, consequence) {
+export function checkPinnedEndpointZdr(slug, tag, endpointsJson, zdrJson, consequence) {
   const endpoints = Array.isArray(endpointsJson?.data?.endpoints) ? endpointsJson.data.endpoints : null;
   if (!endpoints || endpoints.length === 0) {
     return [`${slug}: its endpoint list could not be read (GET /api/v1/models/${slug}/endpoints) — ${consequence}`];
   }
+  if (!endpoints.some((e) => e?.tag === tag)) {
+    return [`${slug}: OpenRouter no longer serves the pinned endpoint ${tag} — ${consequence}`];
+  }
+  const listed = (Array.isArray(zdrJson?.data) ? zdrJson.data : []).some((z) => z?.model_id === slug && z?.tag === tag);
+  if (!listed) return [`${slug}: the pinned endpoint ${tag} is not on the zero-data-retention list (GET /api/v1/endpoints/zdr) — ${consequence}`];
+  return [];
+}
+
+/** Endpoints serving `slug`, other than the pinned one, that are not on the ZDR list. For the log only. */
+export function otherEndpointsNotZdr(slug, tag, endpointsJson, zdrJson) {
+  const endpoints = Array.isArray(endpointsJson?.data?.endpoints) ? endpointsJson.data.endpoints : [];
   const key = (e) => `${e?.provider_name ?? ""}|${e?.tag ?? ""}`;
   const zdr = new Set((Array.isArray(zdrJson?.data) ? zdrJson.data : []).filter((z) => z?.model_id === slug).map(key));
-  return endpoints
-    .filter((e) => !zdr.has(key(e)))
-    .map((e) => `${slug}: endpoint ${e?.provider_name ?? "?"} (${e?.tag ?? "?"}) is not zero-data-retention — ${consequence}`);
+  return endpoints.filter((e) => e?.tag !== tag && !zdr.has(key(e))).map((e) => `${e?.provider_name ?? "?"} (${e?.tag ?? "?"})`);
 }

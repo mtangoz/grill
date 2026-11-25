@@ -7,10 +7,10 @@
  * override judge.mjs itself honours) against both. See upstreamCore.mjs for exactly what
  * "checked" means and why a router slug like `openrouter/auto` is skipped.
  *
- * It also checks that the opt-in quality check's pinned model (checkCore.JEV_MODEL) is still on
- * the zero-data-retention list. That request carries no routing field, so the model's own
- * listing is its privacy promise: if it drops off, every check would keep sending masked
- * write-ups to an endpoint that no longer promises not to keep them.
+ * It also checks the quality check's pinned endpoint (checkCore.JEV_ZDR_ENDPOINT for
+ * checkCore.JEV_MODEL). That request asks OpenRouter for that endpoint only and fails closed, so
+ * the check fails if the endpoint is no longer served or leaves the zero-data-retention list.
+ * Other endpoints for the model that retain data are printed, not failed.
  *
  * NETWORK IS FINE HERE. Unlike judge.mjs and eval.mjs, this script is never shipped to users
  * and never runs on their behalf — it is a maintainer/CI tool that talks to OpenRouter's own
@@ -29,9 +29,9 @@
  *   1   at least one problem was found, or either endpoint could not be fetched or parsed.
  */
 
-import { JEV_MODEL } from "./checkCore.mjs";
+import { JEV_MODEL, JEV_ZDR_ENDPOINT } from "./checkCore.mjs";
 import { DEFAULT_CHAIN } from "./judgeCore.mjs";
-import { checkChain, checkZdrListed, checkAllEndpointsZdr } from "./upstreamCore.mjs";
+import { checkChain, checkPinnedEndpointZdr, otherEndpointsNotZdr } from "./upstreamCore.mjs";
 
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
 const ZDR_URL = "https://openrouter.ai/api/v1/endpoints/zdr";
@@ -72,25 +72,23 @@ const [models, zdr, jevEndpoints] = await Promise.all([
 ]);
 
 const problems = [
-  ...checkAllEndpointsZdr(
+  ...checkChain(chain, models, zdr),
+  ...checkPinnedEndpointZdr(
     JEV_MODEL,
+    JEV_ZDR_ENDPOINT,
     jevEndpoints,
     zdr,
-    "the opt-in quality check could reach a retaining endpoint; turn it off in the docs until this is fixed",
-  ),
-  ...checkChain(chain, models, zdr),
-  ...checkZdrListed(
-    JEV_MODEL,
-    zdr,
-    "the opt-in quality check is pinned to it and carries no routing field, so every check would send masked write-ups to an endpoint that no longer promises zero retention. Turn the check off or re-pin it",
+    "the opt-in quality check asks for that endpoint only, so every check would now say unavailable. Re-pin it to a zero-retention endpoint or turn the check off",
   ),
 ];
+const retaining = otherEndpointsNotZdr(JEV_MODEL, JEV_ZDR_ENDPOINT, jevEndpoints, zdr);
 
 console.log(`[upstream-check] chain: ${chain}`);
-console.log(`[upstream-check] quality check model: ${JEV_MODEL}`);
+console.log(`[upstream-check] quality check model: ${JEV_MODEL}, pinned to ${JEV_ZDR_ENDPOINT}`);
+if (retaining.length) console.log(`[upstream-check] note: not zero-retention, and not used by the check: ${retaining.join(", ")}`);
 if (problems.length === 0) {
   console.log(
-    `[upstream-check] OK — every concrete model in the chain is cataloged and has ZDR coverage, and ${JEV_MODEL} is on the ZDR list.`,
+    `[upstream-check] OK — every concrete model in the chain is cataloged and has ZDR coverage, and ${JEV_MODEL}'s pinned endpoint ${JEV_ZDR_ENDPOINT} is on the ZDR list.`,
   );
   process.exit(0);
 }
