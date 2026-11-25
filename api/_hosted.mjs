@@ -1126,7 +1126,9 @@ async function withLateRef(account, deps) {
 /**
  * Whether this account has finished a grill. A spend row is pushed for every run, finished or not,
  * so only a row marked done counts; this month's and last month's completed-grill counters cover
- * rows written before rows carried that mark.
+ * rows written before rows carried that mark. An account whose only finished grill is older than
+ * that, with no marked row, reads as having none: its first grill is not counted. That undercount
+ * is accepted on purpose, because a first-grill count needs proof, and an unmarked row is none.
  */
 async function hasCompletedGrill(account, deps) {
   const rows = (await redis(deps, ["LRANGE", spendLogKey(account.id), "0", "-1"])) || [];
