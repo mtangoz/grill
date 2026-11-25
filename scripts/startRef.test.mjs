@@ -291,11 +291,13 @@ describe("the grill_ref cookie", () => {
     assert.equal(refFromCookie("grill_ref=askgrill.1795400000"), "askgrill");
   });
 
-  it("lets a sign-up be counted again when its increment did not land", async () => {
+  // The mark and the increment are one atomic script, so a call that failed before it ran can be
+  // retried, and one whose reply was lost after it ran cannot count twice (Grill CI on #250).
+  it("lets a sign-up be counted again when the store refused the count", async () => {
     const ctx = world();
     let fail = true;
     const flaky = async (args) => {
-      if (args[0] === "INCR" && fail) {
+      if (fail) {
         fail = false;
         throw new Error("store down");
       }
@@ -304,6 +306,23 @@ describe("the grill_ref cookie", () => {
     const pat = { id: "g_pat", email: "pat@example.com", ref: "askgrill" };
     await assert.rejects(countAccountRef(flaky, pat, ctx.env, "signup"));
     assert.equal(await countAccountRef(flaky, pat, ctx.env, "signup"), true);
+    assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), "1");
+  });
+
+  it("does not count twice when the count landed but its reply was lost", async () => {
+    const ctx = world();
+    let lose = true;
+    const lossy = async (args) => {
+      const out = await ctx.redis(args);
+      if (lose && /^EVAL/i.test(String(args[0]))) {
+        lose = false;
+        throw new Error("reply lost after the store applied it");
+      }
+      return out;
+    };
+    const pat = { id: "g_pat", email: "pat@example.com", ref: "askgrill" };
+    await assert.rejects(countAccountRef(lossy, pat, ctx.env, "signup"));
+    assert.equal(await countAccountRef(lossy, pat, ctx.env, "signup"), false, "the retry sees it was already counted");
     assert.equal(ctx.memory.command(["GET", signupRefKey("askgrill")]), "1");
   });
 

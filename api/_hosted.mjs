@@ -1207,7 +1207,9 @@ async function adoptLateRef(account, ref, refAt, deps) {
   const arrival = normalizeRef(ref);
   if (!arrival || normalizeRef(account.ref)) return false;
   const made = Date.parse(account.createdAt || "");
-  if (!Number.isFinite(made) || !(refAt > 0) || refAt > made) return false;
+  // The cookie keeps whole seconds, so a link from the account's own second may have come after it.
+  // Credit only a cookie from an earlier second.
+  if (!Number.isFinite(made) || !(refAt > 0) || refAt >= Math.floor(made / 1000) * 1000) return false;
   // Only the label is written, in its own key, and only once. The account is not saved here, so a
   // change another request saves meanwhile is kept. The request that loses the NX counts nothing.
   const won = await redis(deps, ["SET", lateRefKey(account.id), arrival, "NX"]);
@@ -1261,6 +1263,13 @@ async function ensureAccount(userId, email, deps, human, ref = "", refAt = 0) {
     }
   } else if (await adoptLateRef(account, ref, refAt, deps)) {
     // A chat sign-in made this account without the browser's label. Its first signed-in page brought it.
+  } else if (normalizeRef(account.ref)) {
+    // A sign-up count that failed earlier is counted now. The once-mark makes this a no-op after.
+    try {
+      await countAccountRef((args) => redis(deps, args), account, deps.env, "signup");
+    } catch {
+      // A missed count is not a blocked sign-in.
+    }
   }
   if (account.email !== own) {
     // Move the email link with the account, so a reassigned old address can't link in.

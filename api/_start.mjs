@@ -8,7 +8,7 @@
  */
 import { readFileSync } from "node:fs";
 import { redisCommand } from "./_account.mjs";
-import { isInternalAccount } from "../scripts/hostedCore.mjs";
+import { COUNT_ONCE_SCRIPT, isInternalAccount } from "../scripts/hostedCore.mjs";
 
 export const REF_COOKIE = "grill_ref";
 /** About 90 days. A first-touch label should still be there after sign-in. */
@@ -140,16 +140,10 @@ export async function countAccountRef(command, account, env, kind) {
   const once = refOnceKey(account?.id, kind);
   if (!label || !counter || !once || typeof command !== "function") return false;
   if (isInternalAccount(account, env)) return false;
-  const won = await command(["SET", once, "1", "NX"]);
-  if (won !== "OK") return false;
-  try {
-    await command(["INCR", counter]);
-  } catch (error) {
-    // Let a later call count it.
-    await command(["DEL", once]).catch(() => {});
-    throw error;
-  }
-  return true;
+  // The mark and the count are one atomic step. If this throws, either nothing ran (a later call
+  // counts it) or it ran and only the reply was lost (a later call finds the mark and adds nothing).
+  const counted = await command(["EVAL", COUNT_ONCE_SCRIPT, "2", once, counter]);
+  return Number(counted) > 0;
 }
 
 function refCookie(ref, request) {

@@ -643,6 +643,15 @@ function listedAccountIds(env = {}) {
 }
 
 /**
+ * Set a once-mark and add one to a counter, atomically: the counter goes up only when the mark was
+ * not already set. One script, so a call that never ran can be retried, and one whose reply was
+ * lost after it ran cannot count twice. KEYS[1] is the mark, KEYS[2] the counter. Returns the new
+ * count, or 0 when the mark was already set.
+ */
+export const COUNT_ONCE_SCRIPT =
+  "if redis.call('SET', KEYS[1], '1', 'NX') then return redis.call('INCR', KEYS[2]) end return 0";
+
+/**
  * Whether this account gets the higher allowance. The list is GRILL_INTERNAL_EMAILS,
  * read by the same function the outside counters use. A match is the cap person's
  * email or the account's own email, compared in lower case. An account id matches
@@ -2147,6 +2156,18 @@ export function createMemoryRedis() {
       const key = args[1] === undefined ? "" : String(args[1]);
       if (key) live(key);
       switch (op) {
+        case "EVAL": {
+          // Only the one script Grill sends. Anything else is a test bug, not a silent no-op.
+          if (args[1] !== COUNT_ONCE_SCRIPT || String(args[2]) !== "2") throw new Error("memory redis: unsupported EVAL script");
+          const [mark, counter] = [String(args[3]), String(args[4])];
+          live(mark);
+          live(counter);
+          if (strings.has(mark)) return 0;
+          strings.set(mark, "1");
+          const next = (Number(strings.get(counter)) || 0) + 1;
+          strings.set(counter, String(next));
+          return next;
+        }
         case "GET":
           return strings.has(key) ? strings.get(key) : null;
         case "SET": {

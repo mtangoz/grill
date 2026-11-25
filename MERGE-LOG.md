@@ -2,6 +2,7 @@
 
 | Date | Change |
 | --- | --- |
+| 2026-11-25 | Sign-up and first-grill counts per link label are a single atomic step in the store, so a count whose reply was lost cannot be added twice, and one that never ran is counted on a later signed-in page. A link from the same second the account was made is not credited. Fixes the counting findings Grill CI raised on #250. The judge prompt is unchanged. |
 | 2026-11-25 | A label a chat-made account gets later, on its first signed-in page, is kept in its own key with SET NX. Adding it no longer rewrites the account, so a change another request saves at the same moment is kept. Only the request that writes the label counts the sign-up. The key is deleted with the account. Fixes the lost-update race Grill CI found on #250. The judge prompt is unchanged. |
 | 2026-11-24 | Awaiting Tony's OK (issue #252): the quality-check request asks OpenRouter to use only Jev's zero-retention endpoint (provider.only typesafe/zdr). If OpenRouter cannot, the check is unavailable and the grill is unchanged. Grill sends no check request without that restriction. The public privacy wording no longer says the request carries no zero-retention flag, or that TypeSafe is the only provider of that model. The weekly upstream check is unchanged. The judge prompt is unchanged. |
 | 2026-11-24 | The README links back to its Glama listing with the score badge, on its own line under the title. Nothing else in the README changed. The judge prompt is unchanged. |
