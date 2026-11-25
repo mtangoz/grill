@@ -843,17 +843,60 @@ describe("the decisions page layout", () => {
       assert.equal(before.ref, undefined);
       assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), null);
       await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(clicked) });
-      const stored = JSON.parse(ctx.memory.command(["GET", keys[0]]));
-      assert.equal(stored.ref, "askgrill");
-      assert.deepEqual(Object.keys(stored).filter((k) => !(k in before)), ["ref"], "only the label is added");
+      const id = keys[0].split(":").pop();
+      assert.equal(ctx.memory.command(["GET", `grill:hosted:ref:${id}`]), "askgrill", "only the label is stored, in its own key");
+      assert.deepEqual(JSON.parse(ctx.memory.command(["GET", keys[0]])), before, "the account itself is not rewritten");
       assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1");
       assert.equal(ctx.memory.command(["GET", "grill:metric:first_grill_ref:askgrill"]), "1", "the grill it already ran is its first");
       await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=home") });
       await grillOnly(ctx, fake, "Hire a second contractor", FEB);
-      assert.equal(JSON.parse(ctx.memory.command(["GET", keys[0]])).ref, "askgrill");
+      assert.equal(ctx.memory.command(["GET", `grill:hosted:ref:${id}`]), "askgrill");
       assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1");
       assert.equal(ctx.memory.command(["GET", "grill:metric:first_grill_ref:askgrill"]), "1");
       assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:home"]), null);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  // Grill CI on #250 found a lost-update race: late adoption loaded the whole account and saved it
+  // back with a plain SET, so a change another request saved in between was overwritten. The label
+  // now goes in its own key with SET NX, and the account itself is not rewritten.
+  it("keeps a change another request saves while the late ref is adopted", async () => {
+    resetHostedCaches();
+    const ctx = world();
+    const fake = await startFakeOpenRouter();
+    try {
+      const clicked = `grill_ref=askgrill.${Math.floor(Date.now() / 1000) - 3600}`;
+      await grillOnly(ctx, fake, "Hire contractor", FEB);
+      const key = ctx.memory.command(["SCAN", "0", "MATCH", "grill:hosted:acct:*"])[1][0];
+      const id = key.split(":").pop();
+      const plain = ctx.redis;
+      let raced = false;
+      ctx.redis = async (args) => {
+        const out = await plain(args);
+        // Right after this request reads the account, another request turns the Monday email off.
+        if (!raced && args[0] === "GET" && args[1] === key) {
+          raced = true;
+          const other = JSON.parse(ctx.memory.command(["GET", key]));
+          other.impactEmail = false;
+          ctx.memory.command(["SET", key, JSON.stringify(other)]);
+        }
+        return out;
+      };
+      await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(clicked) });
+      ctx.redis = plain;
+      assert.equal(raced, true, "the race was staged");
+      assert.equal(JSON.parse(ctx.memory.command(["GET", key])).impactEmail, false, "the other request's change survives");
+      assert.equal(ctx.memory.command(["GET", `grill:hosted:ref:${id}`]), "askgrill");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), "1");
+      assert.equal(ctx.memory.command(["GET", "grill:metric:first_grill_ref:askgrill"]), "1");
+      const gone = await handleAccount(
+        new Request("https://grillyour.ai/account", { method: "POST", headers: { cookie: cookieHeader(), "content-type": "application/x-www-form-urlencoded" }, body: "action=delete-account&confirm=delete" }),
+        { ...ctx, now: FEB },
+      );
+      assert.equal(gone.status, 303);
+      assert.equal(ctx.memory.command(["GET", `grill:hosted:ref:${id}`]), null, "the label goes with the account");
     } finally {
       await fake.close();
     }
@@ -870,6 +913,7 @@ describe("the decisions page layout", () => {
       await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader(later) });
       await getPage(ctx, "/decisions", { now: FEB, cookie: cookieHeader("grill_ref=askgrill") });
       assert.equal(JSON.parse(ctx.memory.command(["GET", key])).ref, undefined);
+      assert.equal(ctx.memory.command(["GET", `grill:hosted:ref:${key.split(":").pop()}`]), null);
       assert.equal(ctx.memory.command(["GET", "grill:metric:signup_ref:askgrill"]), null);
       assert.equal(ctx.memory.command(["GET", "grill:metric:first_grill_ref:askgrill"]), null);
     } finally {

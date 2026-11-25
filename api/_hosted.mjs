@@ -475,6 +475,14 @@ function outsideMarkKey(userId) {
 function recordKeyRedisKey(userId) {
   return `grill:hosted:rkey:${userId}`;
 }
+/**
+ * The first-arrival label an account was given after it was made (a chat sign-in, then a signed-in
+ * page). Kept apart from the account and written with SET NX, so adopting it never rewrites the
+ * account and cannot overwrite a change another request saved meanwhile. Deleted with the account.
+ */
+function lateRefKey(userId) {
+  return `grill:hosted:ref:${userId}`;
+}
 /** The calendar link, by the hash of its secret: which account, and whether titles are on. */
 function calendarFeedKey(hash) {
   return `grill:hosted:calfeed:${hash}`;
@@ -1093,6 +1101,10 @@ async function loadAccount(id, deps) {
     const cipher = await redis(deps, ["GET", recordKeyRedisKey(id)]);
     if (typeof cipher === "string" && cipher) account.recordKeyCipher = cipher;
   }
+  if (!normalizeRef(account.ref)) {
+    const late = normalizeRef(await redis(deps, ["GET", lateRefKey(id)]));
+    if (late) account.ref = late;
+  }
   return account;
 }
 
@@ -1196,8 +1208,15 @@ async function adoptLateRef(account, ref, refAt, deps) {
   if (!arrival || normalizeRef(account.ref)) return false;
   const made = Date.parse(account.createdAt || "");
   if (!Number.isFinite(made) || !(refAt > 0) || refAt > made) return false;
+  // Only the label is written, in its own key, and only once. The account is not saved here, so a
+  // change another request saves meanwhile is kept. The request that loses the NX counts nothing.
+  const won = await redis(deps, ["SET", lateRefKey(account.id), arrival, "NX"]);
+  if (won !== "OK") {
+    const kept = normalizeRef(await redis(deps, ["GET", lateRefKey(account.id)]));
+    if (kept) account.ref = kept;
+    return false;
+  }
   account.ref = arrival;
-  await saveAccount(account, deps);
   try {
     const command = (args) => redis(deps, args);
     await countAccountRef(command, account, deps.env, "signup");
@@ -4212,6 +4231,7 @@ async function deleteAccount(account, deps, sub) {
   await redis(deps, ["DEL", autoChoiceKey(account.id)]);
   for (const kind of ["signup", "grill"]) await redis(deps, ["DEL", refOnceKey(account.id, kind)]);
   await redis(deps, ["DEL", recordKeyRedisKey(account.id)]);
+  await redis(deps, ["DEL", lateRefKey(account.id)]);
   await deleteFeedbackForAccount((command) => redis(deps, command), account.id);
   await calendarOff(account, deps);
   // A borrowing agent does not hold the cap, so their delete leaves the shared key and its index.
