@@ -34,9 +34,9 @@
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/mtangoz/grill/releases/download/v0.1.1/grill.mcpb",
-      "version": "0.1.1",
-      "fileSha256": "de55a661493c44a2f476595ec5bc2e25aba78405f7e6f69b1b55e6665fa97b57",
+      "identifier": "https://github.com/mtangoz/grill/releases/download/v0.2.0/grill.mcpb",
+      "version": "0.2.0",
+      "fileSha256": "00ac43ade50d4cff2342254e0b0eb27648e5c775ab145272fe229a5468ebd675",
       "transport": {
         "type": "stdio"
       },

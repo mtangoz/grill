@@ -358,9 +358,9 @@ describe("the registry listing", () => {
     assert.equal(server.repository.id, "1389543389");
     const pkg = server.packages[0];
     assert.equal(pkg.registryType, "mcpb");
-    assert.equal(pkg.identifier, "https://github.com/mtangoz/grill/releases/download/v0.1.1/grill.mcpb");
+    assert.equal(pkg.identifier, "https://github.com/mtangoz/grill/releases/download/v0.2.0/grill.mcpb");
     assert.match(pkg.identifier, /mcp/i);
-    assert.equal(pkg.fileSha256, "de55a661493c44a2f476595ec5bc2e25aba78405f7e6f69b1b55e6665fa97b57");
+    assert.equal(pkg.fileSha256, "00ac43ade50d4cff2342254e0b0eb27648e5c775ab145272fe229a5468ebd675");
     assert.match(pkg.fileSha256, /^[a-f0-9]{64}$/);
     assert.equal(pkg.transport.type, "stdio");
     assert.equal(pkg.registryBaseUrl, undefined);
