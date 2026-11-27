@@ -88,7 +88,7 @@ const problems = [
     jevEndpoints,
     zdr,
     JEV_ONLY_VERIFIED_ON,
-    "confirm live that OpenRouter's decisions endpoint honours provider.only and set checkCore.JEV_ONLY_VERIFIED_ON, or turn the check off",
+    "confirm live that OpenRouter's decisions endpoint honours provider.only (`OPENROUTER_API_KEY=... node scripts/jev-routing-probe.mjs`, then the activity log) and set checkCore.JEV_ONLY_VERIFIED_ON, or turn the check off",
   ),
 ];
 const retaining = otherEndpointsNotZdr(JEV_MODEL, JEV_ZDR_ENDPOINT, jevEndpoints, zdr);
