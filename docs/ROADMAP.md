@@ -89,6 +89,7 @@ To say no to one row, revert the commit named in it, or reword that sentence alo
 | Personal calibration view | Medium, retention | A person has 30 resolved calls | Not met |
 | Markdown export of a verdict | Low, usage | 2+ users ask, or the share link is used | Not met |
 | Optional second judge | Medium, trust | Feedback says one judge is not enough, and cost allows | Not met |
+| Hosted persona panel (simulated customers) | Low, usage, unproven | A real user asks for one, and a measured run costs Grill under $0.30 | Not met |
 | Perplexity on the connect page | Low, usage | A tested connect, or a user asks | Not met |
 | Agent-to-agent harness | Medium, new market | After shared sessions, or a platform asks | Not met |
 | Pinned judge for agent audits (separate product) | Unknown, new market | A platform offers to pay, and the owner makes the values call | Not met |
@@ -284,6 +285,16 @@ Two judges, from two companies that are not the one that wrote the answer, with 
 Consider when: feedback says one judge is not enough, and the cost of a grill is well under the ~$40/month line at 100 real users. Both feedback and cost. (competitor-only, needs user signal)
 
 Status 2026-11-13: not now (STRATEGY.md). The four-arm comparison comes first.
+
+## Hosted persona panel (simulated customers)
+
+Impact: low, usage, unproven.
+
+A panel of AI personas, run on Grill's key, that reacts to a plan. It is one model playing many customers: the council STRATEGY.md lists as not now, and a second promise next to the judge (principle 10). A large panel (100 or more model calls) would draw about 40 to 150 checks, 0.4 to 1.5 times anyone's free month. Pro adds no checks. Grill's part is the outside check of the call a panel leads to, and the record and look-back of what the panel predicted. Research and the reply test: [persona-sim-icp-2026-11-28.md](persona-sim-icp-2026-11-28.md).
+
+Consider when: a real user asks for a panel, and a measured run costs Grill under $0.30. Not before.
+
+Status 2026-11-28: not now.
 
 ## Perplexity on the connect page
 
